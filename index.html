@@ -528,30 +528,7 @@
       .placement { padding: 6px; gap: 6px; }
       .placement .label { font-size: 12px; }
       .placement .move-handle,
-      .placement .resize-handle { width: var(--mobileHandleW); min-width: var(--mobileHandleW); }
-    }
-      .panel-header,
-      .section,
-      .toolbar {
-        padding-left: 12px;
-        padding-right: 12px;
-      }
-      .compact-grid { grid-template-columns: 1fr; }
-      .move-card { grid-template-columns: 26px minmax(126px, 1fr) auto; gap: 8px; padding: 6px 8px; border-radius: 14px; }
-      .move-chip { width: 26px; height: 26px; border-radius: 9px; }
-      .move-chip::before { font-size: 9px; }
-      .move-name { font-size: 12px; line-height: 1.28; }
-      .category-shell { padding: 2px; gap: 5px; }
-      .category-dot { width: 8px; height: 8px; margin-left: 6px; }
-      .category-select { min-width: 94px; font-size: 11px; padding: 7px 24px 7px 10px; }
-      .move-actions { gap: 6px; justify-content: flex-end; }
-      .icon-btn { width: 26px; height: 26px; font-size: 10px; }
-      .palette-list { gap: 6px; max-height: none; }
-      .placement { padding: 6px; gap: 6px; }
-      .placement .label { font-size: 12px; }
-      .placement .move-handle,
-      .placement .resize-handle { width: var(--mobileHandleW); min-width: var(--mobileHandleW); }
-    }
+      .placement .resize-handle { width: 30px; min-width: 30px; }
     }
     @media (max-width: 720px) {
       :root {
@@ -618,6 +595,7 @@
         <p>안무표, 카테고리, 동작을 한 번에 관리</p>
       </div>
 
+      <div class="sidebar-scroll" style="flex:1; min-height:0; overflow-y:auto;">
       <section class="section stack">
         <div class="soft-card stack">
           <div style="font-size:13px; font-weight:800; color:#dbe4ef;">프로젝트 저장 / 불러오기</div>
@@ -690,6 +668,7 @@
         </div>
         <div class="palette-list" id="paletteList"></div>
       </section>
+      </div>
     </aside>
 
     <main class="panel workspace">
@@ -835,7 +814,7 @@
       boardSizeInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          applyBoardSizeFromInput();
+          boardSizeInput.blur();
         }
       });
       undoBtn.addEventListener('click', undo);
@@ -1431,10 +1410,11 @@
           removeIds.add(p.groupId);
         }
       });
+      const affectedRows = state.placements.filter(p => removeIds.has(p.groupId)).map(p => p.row);
       if (removeIds.size) {
         state.placements = state.placements.filter(p => !removeIds.has(p.groupId));
       }
-      return [...removeIds];
+      return affectedRows;
     }
 
     function removePlacementGroup(groupId) {
@@ -1449,7 +1429,7 @@
       const count = Math.min(totalCount, totalCellsFrom(startRow, startIndex));
       if (count <= 0) return;
       const segments = buildSegments(startRow, startIndex, count);
-      const removedRows = [...new Set(clearSegmentsArea(segments).flatMap(groupId => getAffectedRowsByGroup(groupId)))];
+      const removedRows = clearSegmentsArea(segments);
       const groupId = uid();
       state.placements.push(...segments.map(seg => ({
         id: uid(),
@@ -1471,7 +1451,7 @@
       const segments = buildSegments(targetRow, targetStartIndex, count);
       const meta = { name: group[0].name, category: group[0].category };
       state.placements = state.placements.filter(p => p.groupId !== groupId);
-      const removedRows = [...new Set(clearSegmentsArea(segments, groupId).flatMap(id => getAffectedRowsByGroup(id)))];
+      const removedRows = clearSegmentsArea(segments, groupId);
       state.placements.push(...segments.map(seg => ({
         id: uid(),
         groupId,
@@ -1493,7 +1473,7 @@
       const meta = { name: first.name, category: first.category };
       state.placements = state.placements.filter(p => p.groupId !== groupId);
       const segments = buildSegments(first.row, first.startIndex, newCount);
-      const removedRows = [...new Set(clearSegmentsArea(segments, groupId).flatMap(id => getAffectedRowsByGroup(id)))];
+      const removedRows = clearSegmentsArea(segments, groupId);
       state.placements.push(...segments.map(seg => ({
         id: uid(),
         groupId,
@@ -1706,6 +1686,13 @@
           placeMove(state.drag.moveId, +targetTrack.dataset.row, pointerToCellIndex(targetTrack, state.drag.lastX), DEFAULT_COUNT);
           saveHistory();
         }
+        clearTouchGhost();
+        clearPreview();
+        state.drag = null;
+      });
+
+      chip.addEventListener('touchcancel', () => {
+        clearTimeout(pressTimer);
         clearTouchGhost();
         clearPreview();
         state.drag = null;
