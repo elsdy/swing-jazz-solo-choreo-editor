@@ -659,19 +659,6 @@
 
       <section class="section stack">
         <div class="soft-card stack">
-          <div style="font-size:13px; font-weight:800; color:#dbe4ef;">클라우드 설정</div>
-          <div class="row wrap">
-            <input id="cloudConfigUrl" type="text" placeholder="클라우드 설정 JSON URL" />
-            <button id="loadCloudConfigBtn" class="primary">불러오기</button>
-            <button id="loadCloudConfigFileBtn" class="ghost">설정 파일</button>
-            <input id="cloudConfigFile" class="file-input" type="file" accept=".json,.cloudconfig,application/json" />
-          </div>
-          <div class="helper">Dropbox 공유 링크도 직접 다운로드 주소로 정규화해서 읽습니다.</div>
-        </div>
-      </section>
-
-      <section class="section stack">
-        <div class="soft-card stack">
           <div style="font-size:13px; font-weight:800; color:#dbe4ef;">카테고리 관리</div>
           <div id="categoryManager" class="stack"></div>
         </div>
@@ -767,8 +754,6 @@
     const boardTitle = document.getElementById('boardTitle');
     const undoBtn = document.getElementById('undoBtn');
     const redoBtn = document.getElementById('redoBtn');
-    const cloudConfigUrlInput = document.getElementById('cloudConfigUrl');
-    const cloudConfigFileInput = document.getElementById('cloudConfigFile');
     const newMoveCategory = document.getElementById('newMoveCategory');
     const categoryManager = document.getElementById('categoryManager');
 
@@ -868,17 +853,6 @@
       undoBtn.addEventListener('click', undo);
       redoBtn.addEventListener('click', redo);
       document.addEventListener('keydown', onHotkey);
-      document.getElementById('loadCloudConfigBtn').addEventListener('click', async () => {
-        const url = cloudConfigUrlInput.value.trim();
-        if (!url) return alert('클라우드 설정 JSON URL을 입력해 주세요.');
-        try {
-          await applyCloudConfig(await fetchJsonFromUrl(url));
-        } catch (err) {
-          alert(`클라우드 설정을 불러오지 못했습니다.\n${err.message}`);
-        }
-      });
-      document.getElementById('loadCloudConfigFileBtn').addEventListener('click', () => cloudConfigFileInput.click());
-      cloudConfigFileInput.addEventListener('change', handleCloudConfigFileImport);
       updateHistoryButtons();
     }
 
@@ -1820,7 +1794,7 @@
       const fileName = (fileNameInput.value.trim() || `project_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
       const payload = projectPayload(fileName);
       downloadJson(payload, `${fileName}.choreo`);
-      state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 20);
+      state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 5);
       localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
       renderSavedList();
     }
@@ -1965,101 +1939,6 @@
       saveHistory();
     }
 
-    async function handleCloudConfigFileImport(e) {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        await applyCloudConfig(JSON.parse(await file.text()));
-      } catch (err) {
-        alert(`설정 파일을 불러오지 못했습니다.\n${err.message}`);
-      }
-      e.target.value = '';
-    }
-
-    async function applyCloudConfig(config) {
-      if (!config || typeof config !== 'object') throw new Error('설정 JSON 형식이 올바르지 않습니다.');
-
-      if (config.board) {
-        state.cols = Math.max(1, Number(config.board.cols) || state.cols);
-        state.rows = Math.max(1, Number(config.board.rows) || state.rows);
-      }
-
-      if (config.categories) {
-        state.categories = normalizeCategories(config.categories);
-        renderCategoryOptions();
-      }
-
-      const nextMoves = await resolveCloudMoves(config.moves);
-      const nextChoreo = await resolveCloudChoreo(config.choreo);
-
-      if (nextMoves) {
-        state.moveLibrary = config.moves?.mode === 'replace' ? nextMoves : mergeMoves(state.moveLibrary, nextMoves);
-      }
-
-      if (nextChoreo) {
-        applyProjectData({
-          rows: nextChoreo.rows || state.rows,
-          cols: nextChoreo.cols || state.cols,
-          categories: nextChoreo.categories || state.categories,
-          moveLibrary: nextChoreo.moveLibrary || state.moveLibrary,
-          placements: nextChoreo.placements || [],
-          fileName: nextChoreo.fileName || fileNameInput.value
-        });
-        return;
-      }
-
-      state.moveLibrary = normalizeMoveList(state.moveLibrary);
-      const fallback = categoryNames()[0];
-      state.placements = state.placements.map(p => ({ ...p, category: state.categories[p.category] ? p.category : fallback }));
-      syncBoardSizeUI();
-      renderLegend();
-      renderPalette();
-      renderBoard(true);
-      saveHistory();
-      alert('클라우드 설정을 적용했습니다.');
-    }
-
-    async function resolveCloudChoreo(choreoConfig) {
-      if (!choreoConfig) return null;
-      if (choreoConfig.inline) return choreoConfig.inline;
-      if (choreoConfig.url) return await fetchJsonFromUrl(normalizeCloudUrl(choreoConfig.url));
-      throw new Error('choreo 설정에 url 또는 inline 이 필요합니다.');
-    }
-
-    async function resolveCloudMoves(movesConfig) {
-      if (!movesConfig) return null;
-      if (Array.isArray(movesConfig.inline)) return normalizeMoveList(movesConfig.inline);
-      if (movesConfig.url) {
-        const data = await fetchJsonFromUrl(normalizeCloudUrl(movesConfig.url));
-        return normalizeMoveList(Array.isArray(data) ? data : (data.moves || data.moveLibrary || []));
-      }
-      throw new Error('moves 설정에 url 또는 inline 이 필요합니다.');
-    }
-
-    function mergeMoves(baseList, addList) {
-      const map = new Map();
-      [...baseList, ...addList].forEach(item => {
-        const key = `${item.name}::${item.category}`;
-        if (!map.has(key)) map.set(key, item);
-      });
-      return normalizeMoveList([...map.values()]);
-    }
-
-    function normalizeCloudUrl(url) {
-      let out = String(url).trim();
-      if (out.includes('dropbox.com')) {
-        out = out.replace('www.dropbox.com', 'dl.dropboxusercontent.com');
-        out = out.replace('?dl=0', '?dl=1');
-        if (!/[?&]dl=1/.test(out)) out += (out.includes('?') ? '&' : '?') + 'dl=1';
-      }
-      return out;
-    }
-
-    async function fetchJsonFromUrl(url) {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    }
   </script>
 </body>
 </html>
