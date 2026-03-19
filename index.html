@@ -449,7 +449,83 @@
     }
 
     @media (max-width: 1040px) {
-      .app { grid-template-columns: 1fr; }
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100vh;
+        min-height: 100vh;
+      }
+      .sidebar,
+      .workspace {
+        max-height: none;
+        min-height: 0;
+      }
+      .sidebar {
+        height: min(42vh, 420px);
+      }
+      .workspace {
+        height: calc(100vh - 32px - min(42vh, 420px) - 16px);
+      }
+      .sidebar-scroll,
+      .board-wrap {
+        overscroll-behavior: contain;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .app {
+        padding: 8px;
+        gap: 8px;
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(220px, 34vh) minmax(0, 1fr);
+        height: 100vh;
+        min-height: 100vh;
+      }
+      .sidebar {
+        max-height: none;
+        height: auto;
+        min-height: 0;
+      }
+      .workspace {
+        max-height: none;
+        min-height: 0;
+        height: auto;
+      }
+      .sidebar-scroll {
+        max-height: none;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
+      .board-wrap {
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
+      .panel-header,
+      .section,
+      .toolbar {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+      .compact-grid { grid-template-columns: 1fr; }
+      .move-card { grid-template-columns: 26px minmax(126px, 1fr) auto; gap: 8px; padding: 6px 8px; border-radius: 14px; }
+      .move-chip { width: 26px; height: 26px; border-radius: 9px; }
+      .move-chip::before { font-size: 9px; }
+      .move-name { font-size: 12px; line-height: 1.28; }
+      .category-shell { padding: 2px; gap: 5px; }
+      .category-dot { width: 8px; height: 8px; margin-left: 6px; }
+      .category-select { min-width: 94px; font-size: 11px; padding: 7px 24px 7px 10px; }
+      .move-actions { gap: 6px; justify-content: flex-end; }
+      .icon-btn { width: 26px; height: 26px; font-size: 10px; }
+      .palette-list { gap: 6px; max-height: none; }
+      .placement { padding: 6px; gap: 6px; }
+      .placement .label { font-size: 12px; }
+      .placement .move-handle,
+      .placement .resize-handle { width: var(--mobileHandleW); min-width: var(--mobileHandleW); }
+    }
     }
     @media (max-width: 720px) {
       :root {
