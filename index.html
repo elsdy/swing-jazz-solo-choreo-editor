@@ -451,6 +451,52 @@
       display: inline-block;
     }
     .muted { color: var(--muted); }
+    .dropbox-status {
+      font-size: 11px;
+      font-weight: 800;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+    .dropbox-status.connected {
+      background: rgba(34,197,94,0.18);
+      color: #86efac;
+      border: 1px solid rgba(34,197,94,0.3);
+    }
+    .dropbox-status.disconnected {
+      background: rgba(239,68,68,0.12);
+      color: #fca5a5;
+      border: 1px solid rgba(239,68,68,0.2);
+    }
+    .dropbox-file-list {
+      display: grid;
+      gap: 6px;
+      max-height: 160px;
+      overflow: auto;
+    }
+    .dropbox-file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: #0b1220;
+      border: 1px solid var(--line);
+      font-size: 12px;
+    }
+    .dropbox-file-item .file-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+    .dropbox-file-item .file-date {
+      color: var(--muted);
+      font-size: 11px;
+      flex: 0 0 auto;
+    }
     .ghost-drag {
       position: fixed;
       z-index: 2000;
@@ -621,6 +667,28 @@
       </div>
 
       <div class="sidebar-scroll">
+      <section class="section stack dropbox-section">
+        <div class="soft-card stack">
+          <div class="row" style="justify-content:space-between; align-items:center;">
+            <div style="font-size:13px; font-weight:800; color:#dbe4ef;">Dropbox 연동</div>
+            <div class="dropbox-status" id="dropboxStatus"></div>
+          </div>
+          <div class="row wrap">
+            <input id="dropboxToken" type="password" placeholder="Dropbox 액세스 토큰" />
+            <button id="dropboxConnectBtn" class="primary">연결</button>
+          </div>
+          <div class="row wrap">
+            <input id="dropboxFolder" type="text" placeholder="폴더 경로 (예: /안무)" value="/안무" />
+          </div>
+          <div class="row wrap">
+            <button id="dropboxSaveBtn" class="warn" disabled>Dropbox에 저장</button>
+            <button id="dropboxListBtn" class="ghost" disabled>파일 목록</button>
+          </div>
+          <div class="dropbox-file-list" id="dropboxFileList"></div>
+          <div class="helper">Dropbox 앱 콘솔에서 액세스 토큰을 발급받아 입력하세요. 토큰은 브라우저에 저장됩니다.</div>
+        </div>
+      </section>
+
       <section class="section stack">
         <div class="soft-card stack">
           <div style="font-size:13px; font-weight:800; color:#dbe4ef;">프로젝트 저장 / 불러오기</div>
@@ -740,6 +808,14 @@
       ['Boogie Back','step']
     ].map(([name, category]) => ({ id: uid(), name, category }));
 
+    const dropboxTokenInput = document.getElementById('dropboxToken');
+    const dropboxFolderInput = document.getElementById('dropboxFolder');
+    const dropboxConnectBtn = document.getElementById('dropboxConnectBtn');
+    const dropboxSaveBtn = document.getElementById('dropboxSaveBtn');
+    const dropboxListBtn = document.getElementById('dropboxListBtn');
+    const dropboxStatusEl = document.getElementById('dropboxStatus');
+    const dropboxFileListEl = document.getElementById('dropboxFileList');
+
     const boardEl = document.getElementById('board');
     const paletteListEl = document.getElementById('paletteList');
     const legendEl = document.getElementById('legend');
@@ -773,6 +849,7 @@
       saveHistory();
       updateMobileCellSize();
       window.addEventListener('resize', updateMobileCellSize);
+      initDropbox();
     }
 
     function uid() {
@@ -1937,6 +2014,170 @@
       state.placements = [];
       renderRows(rows);
       saveHistory();
+    }
+
+    /* ── Dropbox 연동 ── */
+
+    function initDropbox() {
+      const savedToken = localStorage.getItem('choreo_dropbox_token') || '';
+      const savedFolder = localStorage.getItem('choreo_dropbox_folder') || '/안무';
+      if (savedToken) dropboxTokenInput.value = savedToken;
+      if (savedFolder) dropboxFolderInput.value = savedFolder;
+
+      dropboxConnectBtn.addEventListener('click', connectDropbox);
+      dropboxSaveBtn.addEventListener('click', saveToDropbox);
+      dropboxListBtn.addEventListener('click', listDropboxFiles);
+
+      if (savedToken) connectDropbox();
+      else updateDropboxStatus(false);
+    }
+
+    function getDropboxToken() {
+      return dropboxTokenInput.value.trim();
+    }
+
+    function getDropboxFolder() {
+      let folder = dropboxFolderInput.value.trim() || '/안무';
+      if (!folder.startsWith('/')) folder = '/' + folder;
+      if (folder.endsWith('/') && folder.length > 1) folder = folder.slice(0, -1);
+      return folder;
+    }
+
+    function updateDropboxStatus(connected) {
+      dropboxStatusEl.textContent = connected ? '연결됨' : '미연결';
+      dropboxStatusEl.className = 'dropbox-status ' + (connected ? 'connected' : 'disconnected');
+      dropboxSaveBtn.disabled = !connected;
+      dropboxListBtn.disabled = !connected;
+    }
+
+    async function connectDropbox() {
+      const token = getDropboxToken();
+      if (!token) return alert('Dropbox 액세스 토큰을 입력해 주세요.');
+      try {
+        const res = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('인증 실패');
+        localStorage.setItem('choreo_dropbox_token', token);
+        localStorage.setItem('choreo_dropbox_folder', getDropboxFolder());
+        updateDropboxStatus(true);
+      } catch {
+        updateDropboxStatus(false);
+        alert('Dropbox 연결에 실패했습니다. 토큰을 확인해 주세요.');
+      }
+    }
+
+    async function saveToDropbox() {
+      const token = getDropboxToken();
+      if (!token) return;
+      const folder = getDropboxFolder();
+      localStorage.setItem('choreo_dropbox_folder', folder);
+      const fileName = (fileNameInput.value.trim() || `project_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
+      const payload = projectPayload(fileName);
+      const path = `${folder}/${fileName}.choreo`;
+
+      dropboxSaveBtn.disabled = true;
+      dropboxSaveBtn.textContent = '저장 중...';
+      try {
+        const res = await fetch('https://content.dropboxapi.com/2/files/upload', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/octet-stream',
+            'Dropbox-API-Arg': JSON.stringify({ path, mode: 'overwrite', autorename: false })
+          },
+          body: JSON.stringify(payload, null, 2)
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(err);
+        }
+        alert(`Dropbox에 저장했습니다.\n${path}`);
+        listDropboxFiles();
+      } catch (err) {
+        alert(`Dropbox 저장 실패\n${err.message}`);
+      } finally {
+        dropboxSaveBtn.disabled = false;
+        dropboxSaveBtn.textContent = 'Dropbox에 저장';
+      }
+    }
+
+    async function listDropboxFiles() {
+      const token = getDropboxToken();
+      if (!token) return;
+      const folder = getDropboxFolder();
+      localStorage.setItem('choreo_dropbox_folder', folder);
+
+      dropboxFileListEl.innerHTML = '<div class="helper">불러오는 중...</div>';
+      try {
+        const res = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ path: folder, limit: 50 })
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          if (res.status === 409) {
+            dropboxFileListEl.innerHTML = '<div class="helper">폴더가 비어 있거나 존재하지 않습니다.</div>';
+            return;
+          }
+          throw new Error(errText);
+        }
+        const data = await res.json();
+        const files = (data.entries || [])
+          .filter(e => e['.tag'] === 'file' && (e.name.endsWith('.choreo') || e.name.endsWith('.json')))
+          .sort((a, b) => new Date(b.client_modified) - new Date(a.client_modified));
+
+        if (!files.length) {
+          dropboxFileListEl.innerHTML = '<div class="helper">폴더에 프로젝트 파일이 없습니다.</div>';
+          return;
+        }
+
+        dropboxFileListEl.innerHTML = '';
+        files.forEach(file => {
+          const item = document.createElement('div');
+          item.className = 'dropbox-file-item';
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'file-name';
+          nameSpan.textContent = file.name;
+          const dateSpan = document.createElement('span');
+          dateSpan.className = 'file-date';
+          dateSpan.textContent = new Date(file.client_modified).toLocaleDateString();
+          const loadBtn = document.createElement('button');
+          loadBtn.className = 'ghost';
+          loadBtn.style.padding = '4px 10px';
+          loadBtn.style.fontSize = '11px';
+          loadBtn.textContent = '열기';
+          loadBtn.addEventListener('click', () => loadFromDropbox(file.path_lower));
+          item.append(nameSpan, dateSpan, loadBtn);
+          dropboxFileListEl.appendChild(item);
+        });
+      } catch (err) {
+        dropboxFileListEl.innerHTML = `<div class="helper" style="color:#fca5a5;">목록 불러오기 실패: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    async function loadFromDropbox(path) {
+      const token = getDropboxToken();
+      if (!token) return;
+      try {
+        const res = await fetch('https://content.dropboxapi.com/2/files/download', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Dropbox-API-Arg': JSON.stringify({ path })
+          }
+        });
+        if (!res.ok) throw new Error('다운로드 실패');
+        const data = JSON.parse(await res.text());
+        applyProjectData(data);
+      } catch (err) {
+        alert(`Dropbox 파일 열기 실패\n${err.message}`);
+      }
     }
 
   </script>
