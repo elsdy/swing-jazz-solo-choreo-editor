@@ -66,7 +66,8 @@
       grid-template-columns: 380px 1fr;
       gap: 16px;
       padding: 16px;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
     .panel {
       background: var(--panel);
@@ -80,6 +81,13 @@
       display: flex;
       flex-direction: column;
       min-height: 0;
+      overflow: hidden;
+    }
+    .sidebar-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
     }
     .panel-header, .section, .toolbar {
       padding: 14px 16px;
@@ -102,8 +110,10 @@
     .file-input { display: none; }
     .workspace {
       min-width: 0;
+      min-height: 0;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
     }
     .toolbar {
       display: flex;
@@ -126,8 +136,9 @@
     }
     .board-wrap {
       padding: 16px;
-      overflow: auto;
+      flex: 1;
       min-height: 0;
+      overflow: auto;
     }
     .board {
       min-width: max-content;
@@ -598,7 +609,7 @@
         <p>안무표, 카테고리, 동작을 한 번에 관리</p>
       </div>
 
-      <div class="sidebar-scroll" style="flex:1; min-height:0; overflow-y:auto;">
+      <div class="sidebar-scroll">
       <section class="section stack">
         <div class="soft-card stack">
           <div style="font-size:13px; font-weight:800; color:#dbe4ef;">프로젝트 저장 / 불러오기</div>
