@@ -1407,50 +1407,75 @@
     function startResize(groupId, clientX) {
       const first = getGroup(groupId)[0];
       if (!first) return;
+      const placementEl = document.querySelector(`.placement[data-group-id="${groupId}"]`);
       state.resize = {
         groupId,
         startX: clientX,
         originRow: first.row,
         originStartIndex: first.startIndex,
-        originalCount: groupCount(groupId)
+        originalCount: groupCount(groupId),
+        previewCount: groupCount(groupId),
+        liveEl: placementEl || null
       };
+      if (state.resize.liveEl) state.resize.liveEl.classList.add('is-dragging');
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', stopMouseResize);
       document.addEventListener('touchmove', onTouchMoveResize, { passive: false });
       document.addEventListener('touchend', stopTouchResize);
+      document.addEventListener('touchcancel', stopTouchResize);
     }
 
     function onMouseMove(e) {
       if (!state.resize) return;
-      applyResizeFromPointer(e.clientX);
+      applyResizePreview(e.clientX);
     }
 
     function onTouchMoveResize(e) {
       if (!state.resize) return;
       e.preventDefault();
-      applyResizeFromPointer(e.touches[0].clientX);
+      applyResizePreview(e.touches[0].clientX);
     }
 
     function stopMouseResize() {
-      if (state.resize) saveHistory();
-      state.resize = null;
+      if (state.resize) {
+        finalizeResize();
+        saveHistory();
+      }
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', stopMouseResize);
       document.removeEventListener('touchmove', onTouchMoveResize);
       document.removeEventListener('touchend', stopTouchResize);
+      document.removeEventListener('touchcancel', stopTouchResize);
+      state.resize = null;
+      unmarkDraggingGroups();
     }
 
     function stopTouchResize() {
       stopMouseResize();
     }
 
-    function applyResizeFromPointer(clientX) {
+    function applyResizePreview(clientX) {
       const r = state.resize;
       if (!r) return;
       const stepWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cellW')) || 68;
-      const delta = Math.round((clientX - r.startX) / stepWidth);
+      const rawDelta = (clientX - r.startX) / stepWidth;
       const maxTotal = totalCellsFrom(r.originRow, r.originStartIndex);
-      rebuildGroup(r.groupId, clamp(r.originalCount + delta, 1, Math.min(16, maxTotal)));
+      const previewCount = clamp(r.originalCount + Math.round(rawDelta), 1, Math.min(16, maxTotal));
+      r.previewCount = previewCount;
+      if (!r.liveEl) return;
+      const currentGroup = getGroup(r.groupId);
+      if (!currentGroup.length) return;
+      const firstSeg = currentGroup[0];
+      const sameRowCount = Math.min(state.cols - firstSeg.startIndex, previewCount);
+      r.liveEl.style.width = `calc(${sameRowCount} * var(--cellW) - 8px)`;
+    }
+
+    function finalizeResize() {
+      const r = state.resize;
+      if (!r) return;
+      const maxTotal = totalCellsFrom(r.originRow, r.originStartIndex);
+      const finalCount = clamp(r.previewCount || r.originalCount, 1, Math.min(16, maxTotal));
+      rebuildGroup(r.groupId, finalCount);
     }
 
     function startTouchPlacementMove(groupId, x, y) {
