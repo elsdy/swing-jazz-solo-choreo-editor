@@ -451,24 +451,29 @@
     @media (max-width: 1040px) {
       .app {
         grid-template-columns: 1fr;
-        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-rows: min(42vh, 420px) minmax(0, 1fr);
         height: 100vh;
         min-height: 100vh;
-      }
-      .sidebar,
-      .workspace {
-        max-height: none;
-        min-height: 0;
+        overflow: hidden;
       }
       .sidebar {
-        height: min(42vh, 420px);
+        min-height: 0;
+        overflow: hidden;
       }
       .workspace {
-        height: calc(100vh - 32px - min(42vh, 420px) - 16px);
+        min-height: 0;
+        overflow: hidden;
       }
-      .sidebar-scroll,
-      .board-wrap {
+      .sidebar-scroll {
         overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
+      .board-wrap {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
       }
     }
 
@@ -480,28 +485,26 @@
         grid-template-rows: minmax(220px, 34vh) minmax(0, 1fr);
         height: 100vh;
         min-height: 100vh;
+        overflow: hidden;
       }
       .sidebar {
-        max-height: none;
-        height: auto;
         min-height: 0;
         min-width: 0;
+        overflow: hidden;
       }
       .workspace {
-        max-height: none;
         min-height: 0;
-        height: auto;
         min-width: 0;
+        overflow: hidden;
       }
       .sidebar-scroll {
-        max-height: none;
-        min-height: 0;
         overflow-y: auto;
         overflow-x: hidden;
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
       }
       .board-wrap {
+        flex: 1;
         min-height: 0;
         overflow-y: auto;
         overflow-x: auto;
