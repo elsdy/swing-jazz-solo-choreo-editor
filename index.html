@@ -252,6 +252,36 @@
       touch-action: none;
     }
     .placement.is-dragging { opacity: 1; }
+    .placement .tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+      z-index: 100;
+      pointer-events: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .placement .tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: rgba(0,0,0,0.85);
+    }
+    .placement:hover .tooltip,
+    .placement.show-tooltip .tooltip {
+      display: block;
+    }
     .placement .label {
       flex: 1;
       overflow: hidden;
@@ -1041,6 +1071,7 @@
           e.preventDefault();
           const placementEl = resizeHandle.closest('.placement');
           if (!placementEl) return;
+          placementEl.classList.add('show-tooltip');
           startResize(placementEl.dataset.groupId, e.touches[0].clientX);
           return;
         }
@@ -1050,6 +1081,7 @@
           e.preventDefault();
           const placementEl = moveHandle.closest('.placement');
           if (!placementEl) return;
+          placementEl.classList.add('show-tooltip');
           startTouchPlacementMove(placementEl.dataset.groupId, e.touches[0].clientX, e.touches[0].clientY);
         }
       }, { passive: false });
@@ -1062,6 +1094,7 @@
       }, { passive: false });
 
       boardEl.addEventListener('touchend', () => {
+        boardEl.querySelectorAll('.placement.show-tooltip').forEach(el => el.classList.remove('show-tooltip'));
         if (state.drag?.type !== 'placement-move' || !state.drag.isTouchDragging) return;
         finishTouchPlacementMove();
       });
@@ -1499,7 +1532,7 @@
       el.style.left = `calc(${placement.startIndex} * var(--cellW) + 4px)`;
       el.style.width = `calc(${placement.length} * var(--cellW) - 8px)`;
       el.style.background = categoryColor(placement.category);
-      el.innerHTML = `<div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${groupCount(placement.groupId)}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
+      el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${groupCount(placement.groupId)}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${groupCount(placement.groupId)}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
       return el;
     }
 
