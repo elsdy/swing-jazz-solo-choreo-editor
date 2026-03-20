@@ -717,7 +717,7 @@
             <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
             <button id="saveBtn" class="primary">프로젝트 저장</button>
             <button id="loadFileBtn" class="ghost">프로젝트 열기</button>
-            <input id="fileLoader" class="file-input" type="file" accept=".choreo,.json,application/json" />
+            <input id="fileLoader" class="file-input" type="file" accept=".choreo,.json,application/json,application/octet-stream,*/*" />
           </div>
           <div class="helper">프로젝트 저장에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다.</div>
         </div>
@@ -729,7 +729,7 @@
             <div class="row wrap">
               <button id="saveMoveListBtn" class="warn">동작 저장</button>
               <button id="loadMoveListBtn" class="ghost">동작 열기</button>
-              <input id="moveListLoader" class="file-input" type="file" accept=".moves,.json,application/json" />
+              <input id="moveListLoader" class="file-input" type="file" accept=".moves,.json,application/json,application/octet-stream,*/*" />
             </div>
             <div class="saved-list" id="savedMoveList"></div>
           </div>
@@ -739,7 +739,7 @@
             <div class="row wrap">
               <button id="saveCategoriesBtn" class="ghost accent">카테고리 저장</button>
               <button id="loadCategoriesBtn" class="ghost">카테고리 열기</button>
-              <input id="categoryLoader" class="file-input" type="file" accept=".categories,.json,application/json" />
+              <input id="categoryLoader" class="file-input" type="file" accept=".categories,.json,application/json,application/octet-stream,*/*" />
             </div>
             <div class="saved-list" id="savedCategoryList"></div>
           </div>
