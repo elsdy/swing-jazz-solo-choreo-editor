@@ -2074,10 +2074,15 @@
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + token }
         });
-        if (!res.ok) throw new Error();
+        if (!res.ok) {
+          const errBody = await res.text();
+          console.error('Dropbox verify failed:', res.status, errBody);
+          throw new Error(res.status);
+        }
         const user = await res.json();
         showDropboxConnected(user.name?.display_name || 'Dropbox 사용자');
-      } catch {
+      } catch (err) {
+        console.error('Dropbox 연결 확인 실패, 토큰 제거:', err);
         localStorage.removeItem(DROPBOX_TOKEN_KEY);
         showDropboxLogin();
       }
@@ -2180,10 +2185,15 @@
             code_verifier: verifier
           })
         });
-        if (!res.ok) throw new Error('토큰 교환 실패');
+        if (!res.ok) {
+          const errBody = await res.text();
+          console.error('Dropbox token exchange failed:', res.status, errBody);
+          throw new Error('토큰 교환 실패: ' + res.status);
+        }
         const data = await res.json();
         localStorage.setItem(DROPBOX_TOKEN_KEY, data.access_token);
       } catch (err) {
+        localStorage.removeItem(DROPBOX_TOKEN_KEY);
         alert('Dropbox 로그인 실패: ' + err.message);
       } finally {
         localStorage.removeItem(DROPBOX_VERIFIER_KEY);
