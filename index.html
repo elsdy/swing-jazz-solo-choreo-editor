@@ -2086,6 +2086,10 @@
       showDropboxLogin();
     }
 
+    function hasCryptoSubtle() {
+      return !!(crypto && crypto.subtle && crypto.subtle.digest);
+    }
+
     function generateRandomString(length) {
       const arr = new Uint8Array(length);
       crypto.getRandomValues(arr);
@@ -2102,27 +2106,56 @@
     }
 
     async function dropboxLogin() {
-      const appKey = dropboxAppKeyInput.value.trim();
-      if (!appKey) return alert('Dropbox App Key를 입력해 주세요.');
-      localStorage.setItem(DROPBOX_APPKEY_KEY, appKey);
+      try {
+        const appKey = dropboxAppKeyInput.value.trim();
+        if (!appKey) return alert('Dropbox App Key를 입력해 주세요.');
+        localStorage.setItem(DROPBOX_APPKEY_KEY, appKey);
 
-      const verifier = generateRandomString(64);
-      localStorage.setItem(DROPBOX_VERIFIER_KEY, verifier);
-      const challenge = base64urlencode(await sha256(verifier));
+        const redirectUri = window.location.origin + window.location.pathname;
 
-      const redirectUri = window.location.origin + window.location.pathname;
-      const params = new URLSearchParams({
-        client_id: appKey,
-        response_type: 'code',
-        code_challenge: challenge,
-        code_challenge_method: 'S256',
-        redirect_uri: redirectUri,
-        token_access_type: 'online'
-      });
-      window.location.href = 'https://www.dropbox.com/oauth2/authorize?' + params.toString();
+        if (hasCryptoSubtle()) {
+          // PKCE code flow (HTTPS / localhost)
+          const verifier = generateRandomString(64);
+          localStorage.setItem(DROPBOX_VERIFIER_KEY, verifier);
+          const challenge = base64urlencode(await sha256(verifier));
+          const params = new URLSearchParams({
+            client_id: appKey,
+            response_type: 'code',
+            code_challenge: challenge,
+            code_challenge_method: 'S256',
+            redirect_uri: redirectUri,
+            token_access_type: 'online'
+          });
+          window.location.href = 'https://www.dropbox.com/oauth2/authorize?' + params.toString();
+        } else {
+          // Implicit grant fallback (non-HTTPS)
+          const params = new URLSearchParams({
+            client_id: appKey,
+            response_type: 'token',
+            redirect_uri: redirectUri,
+            token_access_type: 'online'
+          });
+          window.location.href = 'https://www.dropbox.com/oauth2/authorize?' + params.toString();
+        }
+      } catch (err) {
+        alert('Dropbox 로그인 오류: ' + err.message);
+      }
     }
 
     async function handleDropboxOAuthRedirect() {
+      // 1) Implicit grant: token in hash fragment
+      const hash = window.location.hash;
+      if (hash && hash.includes('access_token')) {
+        const hashParams = new URLSearchParams(hash.slice(1));
+        const token = hashParams.get('access_token');
+        if (token) {
+          localStorage.setItem(DROPBOX_TOKEN_KEY, token);
+          window.history.replaceState({}, '', window.location.pathname);
+          return;
+        }
+      }
+
+      // 2) PKCE code flow: code in query string
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
       if (!code) return;
