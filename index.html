@@ -1173,7 +1173,26 @@
           saveHistory();
         });
 
-        row.append(colorInput, input);
+        const del = document.createElement('button');
+        del.className = 'icon-btn';
+        del.type = 'button';
+        del.textContent = '×';
+        del.title = '카테고리 삭제';
+        del.addEventListener('click', () => {
+          if (categoryNames().length <= 1) return alert('카테고리는 최소 1개 이상 있어야 합니다.');
+          if (!confirm(`카테고리 "${state.categories[name].label}" 을(를) 삭제할까요?\n해당 카테고리의 동작은 첫 번째 카테고리로 이동합니다.`)) return;
+          const fallback = categoryNames().find(n => n !== name);
+          state.moveLibrary = state.moveLibrary.map(m => m.category === name ? { ...m, category: fallback } : m);
+          state.placements = state.placements.map(p => p.category === name ? { ...p, category: fallback } : p);
+          delete state.categories[name];
+          renderCategoryOptions();
+          renderLegend();
+          renderPalette();
+          renderBoard(true);
+          saveHistory();
+        });
+
+        row.append(colorInput, input, del);
         categoryManager.appendChild(row);
       });
     }
