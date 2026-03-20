@@ -2126,7 +2126,8 @@
             code_challenge: challenge,
             code_challenge_method: 'S256',
             redirect_uri: redirectUri,
-            token_access_type: 'online'
+            token_access_type: 'online',
+            scope: 'files.content.write files.content.read files.metadata.read'
           });
           location.assign(url);
         } else {
@@ -2134,7 +2135,8 @@
             client_id: appKey,
             response_type: 'token',
             redirect_uri: redirectUri,
-            token_access_type: 'online'
+            token_access_type: 'online',
+            scope: 'files.content.write files.content.read files.metadata.read'
           });
           location.assign(url);
         }
