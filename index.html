@@ -143,6 +143,9 @@
       color: #8892a4;
       white-space: nowrap;
     }
+    .size-pill input[type=number]::-webkit-inner-spin-button,
+    .size-pill input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .size-pill input[type=number] { -moz-appearance: textfield; }
     .board-wrap {
       padding: 16px;
       flex: 1;
@@ -776,7 +779,7 @@
           <p>왼쪽 핸들로 이동, 오른쪽 핸들로 길이 조절.</p>
         </div>
         <div class="top-actions">
-          <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8x<input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
           <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
           <button id="undoBtn" class="ghost">Undo</button>
           <button id="redoBtn" class="ghost">Redo</button>
