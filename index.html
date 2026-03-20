@@ -171,7 +171,7 @@
       padding: 10px 12px;
       font-size: 13px;
       line-height: 1.4;
-      overflow-wrap: anywhere;
+      white-space: nowrap;
       color: #cbd5e1;
     }
     .header-cells {
@@ -886,7 +886,7 @@
       if (window.innerWidth > 720) {
         root.style.removeProperty('--cellW');
         root.style.removeProperty('--rowLabelW');
-        root.style.removeProperty('--noteW');
+        adjustNoteColumnWidth();
         return;
       }
       const appPadding = 10 * 2;
@@ -898,8 +898,8 @@
       const cellW = Math.max(24, Math.floor(available / state.cols));
       root.style.setProperty('--cellW', cellW + 'px');
       root.style.setProperty('--rowLabelW', rowLabelW + 'px');
-      root.style.setProperty('--noteW', '160px');
       root.style.setProperty('--cellH', '40px');
+      adjustNoteColumnWidth();
     }
 
     function escapeHtml(str) {
@@ -1492,6 +1492,17 @@
     function renderRows(rows) {
       const uniqueRows = [...new Set(rows)].filter(row => row >= 1 && row <= state.rows);
       uniqueRows.forEach(renderRow);
+      adjustNoteColumnWidth();
+    }
+
+    function adjustNoteColumnWidth() {
+      const noteCells = [...boardEl.querySelectorAll('.note-cell')];
+      if (!noteCells.length) return;
+      const root = document.documentElement;
+      root.style.setProperty('--noteW', '0px');
+      let maxW = 0;
+      noteCells.forEach(cell => { maxW = Math.max(maxW, cell.scrollWidth); });
+      root.style.setProperty('--noteW', `${Math.max(60, maxW)}px`);
     }
 
     function renderRow(row) {
