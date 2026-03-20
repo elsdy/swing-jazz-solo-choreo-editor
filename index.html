@@ -277,26 +277,26 @@
     }
     .palette-list {
       display: grid;
-      gap: 10px;
-      max-height: 42vh;
+      gap: 4px;
+      max-height: 54vh;
       overflow: auto;
       padding-right: 4px;
     }
     .move-card {
       display: grid;
-      grid-template-columns: 28px minmax(136px, 1fr) auto;
+      grid-template-columns: 22px minmax(80px, 1fr) auto;
       align-items: center;
-      gap: 8px;
-      padding: 7px 8px;
-      border-radius: 14px;
+      gap: 5px;
+      padding: 4px 6px;
+      border-radius: 10px;
       background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
       border: 1px solid rgba(148,163,184,0.14);
-      box-shadow: 0 12px 28px rgba(0,0,0,0.14);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.10);
     }
     .move-chip {
-      width: 28px;
-      height: 28px;
-      border-radius: 10px;
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -304,29 +304,30 @@
       touch-action: none;
       color: #08111f;
       font-weight: 900;
-      box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.14);
       user-select: none;
     }
     .move-chip::before {
       content: "⋮⋮";
-      font-size: 10px;
+      font-size: 8px;
       letter-spacing: -1px;
       opacity: 0.72;
     }
     .move-meta {
       min-width: 0;
-      display: grid;
+      display: flex;
+      align-items: center;
       gap: 4px;
     }
     .move-name {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
       color: var(--text);
-      white-space: normal;
-      overflow: visible;
-      text-overflow: clip;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
       word-break: keep-all;
-      line-height: 1.28;
+      line-height: 1.2;
       cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
@@ -359,44 +360,44 @@
     .category-shell {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 2px;
+      gap: 3px;
+      padding: 1px;
       border-radius: 999px;
       background: rgba(11,18,32,0.78);
       border: 1px solid rgba(148,163,184,0.14);
     }
     .category-dot {
-      width: 9px;
-      height: 9px;
+      width: 7px;
+      height: 7px;
       border-radius: 999px;
-      margin-left: 8px;
+      margin-left: 5px;
       flex: 0 0 auto;
     }
     .category-select {
-      min-width: 118px;
+      min-width: 72px;
       width: auto;
       border-radius: 999px;
       background: linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.90));
       border: 1px solid rgba(148,163,184,0.14);
-      font-size: 12px;
+      font-size: 10px;
       font-weight: 800;
-      padding: 8px 12px;
+      padding: 4px 20px 4px 6px;
       appearance: none;
       background-image: linear-gradient(45deg, transparent 50%, #94a3b8 50%), linear-gradient(135deg, #94a3b8 50%, transparent 50%);
-      background-position: calc(100% - 18px) calc(50% - 2px), calc(100% - 12px) calc(50% - 2px);
-      background-size: 6px 6px, 6px 6px;
+      background-position: calc(100% - 12px) calc(50% - 2px), calc(100% - 7px) calc(50% - 2px);
+      background-size: 5px 5px, 5px 5px;
       background-repeat: no-repeat;
     }
     .move-actions {
       display: flex;
-      gap: 6px;
+      gap: 4px;
       align-items: center;
       justify-content: flex-end;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
     .icon-btn {
-      width: 28px;
-      height: 28px;
+      width: 22px;
+      height: 22px;
       border-radius: 999px;
       border: 1px solid rgba(239,68,68,0.24);
       background: rgba(239,68,68,0.08);
@@ -404,8 +405,9 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 10px;
+      font-size: 13px;
       font-weight: 800;
+      flex-shrink: 0;
     }
     .soft-card {
       padding: 12px;
@@ -575,16 +577,16 @@
         padding-right: 12px;
       }
       .compact-grid { grid-template-columns: 1fr; }
-      .move-card { grid-template-columns: 26px minmax(126px, 1fr) auto; gap: 8px; padding: 6px 8px; border-radius: 14px; min-width: 0; }
-      .move-chip { width: 26px; height: 26px; border-radius: 9px; }
-      .move-chip::before { font-size: 9px; }
-      .move-name { font-size: 12px; line-height: 1.28; min-width: 0; }
-      .category-shell { padding: 2px; gap: 5px; min-width: 0; }
-      .category-dot { width: 8px; height: 8px; margin-left: 6px; }
-      .category-select { min-width: 94px; max-width: 120px; font-size: 11px; padding: 7px 24px 7px 10px; }
-      .move-actions { gap: 6px; justify-content: flex-end; min-width: 0; }
-      .icon-btn { width: 26px; height: 26px; font-size: 10px; }
-      .palette-list { gap: 6px; max-height: none; overflow-x: hidden; }
+      .move-card { grid-template-columns: 20px minmax(70px, 1fr) auto; gap: 4px; padding: 3px 6px; border-radius: 9px; min-width: 0; }
+      .move-chip { width: 20px; height: 20px; border-radius: 7px; }
+      .move-chip::before { font-size: 8px; }
+      .move-name { font-size: 11px; line-height: 1.2; min-width: 0; }
+      .category-shell { padding: 1px; gap: 3px; min-width: 0; }
+      .category-dot { width: 6px; height: 6px; margin-left: 4px; }
+      .category-select { min-width: 68px; max-width: 100px; font-size: 10px; padding: 3px 18px 3px 6px; }
+      .move-actions { gap: 4px; justify-content: flex-end; min-width: 0; }
+      .icon-btn { width: 20px; height: 20px; font-size: 12px; }
+      .palette-list { gap: 3px; max-height: none; overflow-x: hidden; }
       .placement { padding: 3px; gap: 3px; }
       .placement .label { font-size: 10px; }
       .placement .move-handle,
@@ -611,42 +613,42 @@
       .app { padding: 10px; gap: 10px; }
       .compact-grid { grid-template-columns: 1fr; }
       .move-card {
-        grid-template-columns: 24px minmax(132px, 1fr) auto;
-        gap: 7px;
-        padding: 5px 7px;
-        border-radius: 13px;
-      }
-      .move-chip {
-        width: 24px;
-        height: 24px;
+        grid-template-columns: 20px minmax(60px, 1fr) auto;
+        gap: 4px;
+        padding: 3px 5px;
         border-radius: 8px;
       }
-      .move-chip::before { font-size: 9px; }
-      .move-name { font-size: 11px; line-height: 1.24; }
-      .category-shell { padding: 2px; gap: 6px; }
+      .move-chip {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+      }
+      .move-chip::before { font-size: 7px; }
+      .move-name { font-size: 10px; line-height: 1.2; }
+      .category-shell { padding: 1px; gap: 3px; }
       .category-dot {
-        width: 8px;
-        height: 8px;
-        margin-left: 8px;
+        width: 6px;
+        height: 6px;
+        margin-left: 4px;
       }
       .category-select {
-        min-width: 98px;
-        font-size: 11px;
-        padding: 7px 24px 7px 10px;
+        min-width: 64px;
+        font-size: 9px;
+        padding: 3px 16px 3px 5px;
       }
       .move-actions {
-        gap: 6px;
+        gap: 3px;
         justify-content: flex-end;
       }
       .icon-btn {
-        width: 28px;
-        height: 28px;
-        font-size: 10px;
+        width: 20px;
+        height: 20px;
+        font-size: 12px;
         padding: 0;
       }
       .palette-list {
-        gap: 8px;
-        max-height: 34vh;
+        gap: 3px;
+        max-height: 44vh;
       }
       .placement { padding: 3px; gap: 3px; }
       .placement .label { font-size: 10px; }
@@ -1257,7 +1259,8 @@
         const del = document.createElement('button');
         del.className = 'icon-btn';
         del.type = 'button';
-        del.textContent = '삭제';
+        del.textContent = '×';
+        del.title = '삭제';
         del.addEventListener('click', () => {
           if (!confirm(`동작 "${move.name}" 을(를) 삭제할까요?`)) return;
           const affectedRows = getAffectedRowsByMoveName(move.name);
