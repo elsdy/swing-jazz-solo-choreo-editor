@@ -254,29 +254,6 @@
     .placement.is-dragging { opacity: 1; }
     .placement .tooltip {
       display: none;
-      position: fixed;
-      background: rgba(0,0,0,0.85);
-      color: #fff;
-      padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 700;
-      white-space: nowrap;
-      z-index: 9999;
-      pointer-events: none;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
-    .placement .tooltip::after {
-      content: '';
-      position: absolute;
-      top: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      border: 5px solid transparent;
-      border-top-color: rgba(0,0,0,0.85);
-    }
-    .placement.show-tooltip .tooltip {
-      display: block;
     }
     .placement .label {
       flex: 1;
@@ -1067,8 +1044,7 @@
           e.preventDefault();
           const placementEl = resizeHandle.closest('.placement');
           if (!placementEl) return;
-          placementEl.classList.add('show-tooltip');
-          positionTooltip(placementEl);
+          showFloatingTooltip(placementEl);
           startResize(placementEl.dataset.groupId, e.touches[0].clientX);
           return;
         }
@@ -1078,8 +1054,7 @@
           e.preventDefault();
           const placementEl = moveHandle.closest('.placement');
           if (!placementEl) return;
-          placementEl.classList.add('show-tooltip');
-          positionTooltip(placementEl);
+          showFloatingTooltip(placementEl);
           startTouchPlacementMove(placementEl.dataset.groupId, e.touches[0].clientX, e.touches[0].clientY);
         }
       }, { passive: false });
@@ -1092,36 +1067,49 @@
       }, { passive: false });
 
       boardEl.addEventListener('touchend', () => {
-        boardEl.querySelectorAll('.placement.show-tooltip').forEach(el => el.classList.remove('show-tooltip'));
+        hideFloatingTooltip();
         if (state.drag?.type !== 'placement-move' || !state.drag.isTouchDragging) return;
         finishTouchPlacementMove();
       });
 
       boardEl.addEventListener('touchcancel', () => {
-        boardEl.querySelectorAll('.placement.show-tooltip').forEach(el => el.classList.remove('show-tooltip'));
+        hideFloatingTooltip();
         if (state.drag?.type !== 'placement-move' || !state.drag.isTouchDragging) return;
         finishTouchPlacementMove(true);
       });
 
       // PC hover tooltip
-      function positionTooltip(placementEl) {
-        const tip = placementEl.querySelector('.tooltip');
-        if (!tip) return;
+      const floatingTip = document.createElement('div');
+      floatingTip.className = 'floating-tooltip';
+      floatingTip.style.cssText = 'display:none;position:fixed;background:rgba(0,0,0,.85);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.3);';
+      document.body.appendChild(floatingTip);
+
+      function showFloatingTooltip(placementEl) {
         const rect = placementEl.getBoundingClientRect();
-        tip.style.left = (rect.left + rect.width / 2) + 'px';
-        tip.style.top = (rect.top - 8) + 'px';
-        tip.style.transform = 'translate(-50%, -100%)';
+        const name = placementEl.dataset.name || '';
+        const tip = placementEl.querySelector('.tooltip');
+        floatingTip.textContent = tip ? tip.textContent : name;
+        floatingTip.style.display = 'block';
+        const tipRect = floatingTip.getBoundingClientRect();
+        floatingTip.style.left = (rect.left + rect.width / 2 - tipRect.width / 2) + 'px';
+        floatingTip.style.top = (rect.top - tipRect.height - 8) + 'px';
       }
+      function hideFloatingTooltip() {
+        floatingTip.style.display = 'none';
+      }
+
       boardEl.addEventListener('mouseenter', (e) => {
         const placementEl = e.target.closest('.placement');
         if (!placementEl) return;
-        placementEl.classList.add('show-tooltip');
-        positionTooltip(placementEl);
+        showFloatingTooltip(placementEl);
       }, true);
       boardEl.addEventListener('mouseleave', (e) => {
         const placementEl = e.target.closest('.placement');
         if (!placementEl) return;
-        placementEl.classList.remove('show-tooltip');
+        // only hide if we actually left the placement element
+        const related = e.relatedTarget;
+        if (related && placementEl.contains(related)) return;
+        hideFloatingTooltip();
       }, true);
     }
 
