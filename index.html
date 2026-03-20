@@ -1457,6 +1457,30 @@
       header.innerHTML = `<div class="corner">마디</div><div class="header-cells" style="grid-template-columns:repeat(${state.cols}, var(--cellW));">${Array.from({ length: state.cols }, (_, i) => `<div>${i + 1}</div>`).join('')}</div><div class="note-header">비고</div>`;
       boardEl.appendChild(header);
 
+      // intro row (row 0)
+      {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'board-row';
+        rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${state.cols}) var(--noteW)`;
+
+        const label = document.createElement('div');
+        label.className = 'row-label';
+        label.textContent = 'intro';
+
+        const track = document.createElement('div');
+        track.className = 'track';
+        track.dataset.row = 0;
+        track.style.width = `calc(var(--cellW) * ${state.cols})`;
+        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${state.cols}, var(--cellW));">${'<div></div>'.repeat(state.cols)}</div>`;
+
+        const note = document.createElement('div');
+        note.className = 'note-cell';
+
+        rowEl.append(label, track, note);
+        boardEl.appendChild(rowEl);
+        state.rowRefs.set(0, { rowEl, label, track, note });
+      }
+
       for (let row = 1; row <= state.rows; row++) {
         const rowEl = document.createElement('div');
         rowEl.className = 'board-row';
@@ -1483,14 +1507,14 @@
     }
 
     function renderBoard(forceRebuild = false) {
-      if (forceRebuild || state.boardSignature !== boardSignature() || state.rowRefs.size !== state.rows) {
+      if (forceRebuild || state.boardSignature !== boardSignature() || state.rowRefs.size !== state.rows + 1) {
         buildBoardSkeleton();
       }
-      renderRows(Array.from({ length: state.rows }, (_, i) => i + 1));
+      renderRows([0, ...Array.from({ length: state.rows }, (_, i) => i + 1)]);
     }
 
     function renderRows(rows) {
-      const uniqueRows = [...new Set(rows)].filter(row => row >= 1 && row <= state.rows);
+      const uniqueRows = [...new Set(rows)].filter(row => row >= 0 && row <= state.rows);
       uniqueRows.forEach(renderRow);
       adjustNoteColumnWidth();
     }
@@ -1508,7 +1532,7 @@
     function renderRow(row) {
       const ref = state.rowRefs.get(row);
       if (!ref) return;
-      ref.label.textContent = `${state.cols}x${row}`;
+      ref.label.textContent = row === 0 ? 'intro' : `${state.cols}x${row}`;
       ref.note.innerHTML = renderRowNotes(row) || '<span class="muted">-</span>';
       [...ref.track.querySelectorAll('.placement')].forEach(el => el.remove());
       state.placements.filter(p => p.row === row).forEach(p => ref.track.appendChild(createPlacementEl(p)));
