@@ -1022,6 +1022,7 @@
       }
       function updateTooltipPosition() {
         if (!tooltipTarget) return;
+        if (!document.body.contains(tooltipTarget)) { hideFloatingTooltip(); return; }
         const rect = tooltipTarget.getBoundingClientRect();
         floatingTip.style.display = 'block';
         floatingTip.style.left = Math.round(rect.left + rect.width / 2) + 'px';
@@ -1466,6 +1467,7 @@
       const uniqueRows = [...new Set(rows)].filter(row => row >= 0 && row <= state.rows);
       uniqueRows.forEach(renderRow);
       adjustNoteColumnWidth();
+      document.querySelector('.floating-tooltip')?.style.setProperty('display', 'none');
     }
 
     function adjustNoteColumnWidth() {
