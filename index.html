@@ -777,7 +777,7 @@
         </div>
         <div class="top-actions">
           <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8x<input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
-          <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0 4px;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
           <button id="undoBtn" class="ghost">Undo</button>
           <button id="redoBtn" class="ghost">Redo</button>
           <button id="clearBtn" class="danger">전체 초기화</button>
@@ -1193,17 +1193,14 @@
     }
 
     function syncBoardSizeUI() {
-      boardColsInput.value = state.cols;
-      boardTitle.textContent = `8x${state.cols} 안무 테이블`;
+      boardColsInput.value = state.rows;
+      boardTitle.textContent = `8x${state.rows} 안무 테이블`;
       updateMobileCellSize();
     }
 
     function applyBoardSizeFromInput() {
-      const cols = Math.max(1, parseInt(boardColsInput.value || '8', 10));
-      const parsed = { cols, rows: state.rows };
-      if (!parsed) return alert('예: 8x8 또는 8x16 형식으로 입력해 주세요.');
-      state.cols = parsed.cols;
-      state.rows = parsed.rows;
+      const rows = Math.max(1, parseInt(boardColsInput.value || '8', 10));
+      state.rows = rows;
       state.placements = state.placements
         .filter(p => p.row <= state.rows && p.startIndex < state.cols)
         .map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }))
