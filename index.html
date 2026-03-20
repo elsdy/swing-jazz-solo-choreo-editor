@@ -770,8 +770,8 @@
           <p>왼쪽 핸들로 이동, 오른쪽 핸들로 길이 조절.</p>
         </div>
         <div class="top-actions">
-          <label class="size-pill" style="display:flex;align-items:center;gap:4px;">안무표 크기 <input id="boardSizeInput" type="text" value="8x8" style="width:4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /></label>
-          <label class="size-pill" style="display:flex;align-items:center;gap:4px;">기본카운트 <input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /></label>
+          <span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">안무표 크기 8x<input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span>
+          <span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">기본카운트 <input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span>
           <button id="undoBtn" class="ghost">Undo</button>
           <button id="redoBtn" class="ghost">Redo</button>
           <button id="clearBtn" class="danger">전체 초기화</button>
@@ -843,7 +843,7 @@
     const fileLoader = document.getElementById('fileLoader');
     const moveListLoader = document.getElementById('moveListLoader');
     const categoryLoader = document.getElementById('categoryLoader');
-    const boardSizeInput = document.getElementById('boardSizeInput');
+    const boardColsInput = document.getElementById('boardColsInput');
     const defaultCountInput = document.getElementById('defaultCountInput');
     const boardTitle = document.getElementById('boardTitle');
     const undoBtn = document.getElementById('undoBtn');
@@ -943,18 +943,17 @@
       fileLoader.addEventListener('change', handleProjectImport);
       moveListLoader.addEventListener('change', handleMoveListImport);
       categoryLoader.addEventListener('change', handleCategoryImport);
-      boardSizeInput.addEventListener('change', applyBoardSizeFromInput);
+      boardColsInput.addEventListener('change', applyBoardSizeFromInput);
+      boardColsInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); boardColsInput.blur(); } });
+      document.getElementById('boardColsDec').addEventListener('click', () => { boardColsInput.value = Math.max(1, parseInt(boardColsInput.value||'8',10) - 1); applyBoardSizeFromInput(); });
+      document.getElementById('boardColsInc').addEventListener('click', () => { boardColsInput.value = Math.min(128, parseInt(boardColsInput.value||'8',10) + 1); applyBoardSizeFromInput(); });
       defaultCountInput.addEventListener('change', () => {
         const v = parseInt(defaultCountInput.value, 10);
         if (v >= 1) DEFAULT_COUNT = v;
         else defaultCountInput.value = DEFAULT_COUNT;
       });
-      boardSizeInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          boardSizeInput.blur();
-        }
-      });
+      document.getElementById('defaultCountDec').addEventListener('click', () => { const v = Math.max(1, parseInt(defaultCountInput.value||'1',10) - 1); defaultCountInput.value = v; DEFAULT_COUNT = v; });
+      document.getElementById('defaultCountInc').addEventListener('click', () => { const v = Math.min(64, parseInt(defaultCountInput.value||'1',10) + 1); defaultCountInput.value = v; DEFAULT_COUNT = v; });
       undoBtn.addEventListener('click', undo);
       redoBtn.addEventListener('click', redo);
       document.addEventListener('keydown', onHotkey);
@@ -1188,18 +1187,14 @@
     }
 
     function syncBoardSizeUI() {
-      boardSizeInput.value = `${state.cols}x${state.rows}`;
-      boardTitle.textContent = `${state.cols}x${state.rows} 안무 테이블`;
+      boardColsInput.value = state.cols;
+      boardTitle.textContent = `8x${state.cols} 안무 테이블`;
       updateMobileCellSize();
     }
 
-    function parseBoardSize(value) {
-      const m = String(value).trim().toLowerCase().match(/^(\d+)x(\d+)$/);
-      return m ? { cols: Math.max(1, +m[1]), rows: Math.max(1, +m[2]) } : null;
-    }
-
     function applyBoardSizeFromInput() {
-      const parsed = parseBoardSize(boardSizeInput.value);
+      const cols = Math.max(1, parseInt(boardColsInput.value || '8', 10));
+      const parsed = { cols, rows: state.rows };
       if (!parsed) return alert('예: 8x8 또는 8x16 형식으로 입력해 주세요.');
       state.cols = parsed.cols;
       state.rows = parsed.rows;
