@@ -1912,7 +1912,7 @@
       const fileName = (fileNameInput.value.trim() || `project_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
       const payload = projectPayload(fileName);
       downloadJson(payload, `${fileName}.choreo`);
-      state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 5);
+      state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
       localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
       renderSavedList();
     }
@@ -2072,7 +2072,13 @@
       if (!file) return;
       file.text().then(text => {
         try {
-          applyProjectData(JSON.parse(text));
+          const data = JSON.parse(text);
+          applyProjectData(data);
+          const fileName = data.fileName || file.name.replace(/\.[^.]+$/, '');
+          const savedAt = data.savedAt || new Date().toISOString();
+          state.savedFiles = [{ fileName, savedAt, data }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
+          localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
+          renderSavedList();
         } catch {
           alert('올바른 프로젝트 파일이 아닙니다.');
         }
@@ -2093,6 +2099,12 @@
           renderPalette();
           renderBoard(true);
           saveHistory();
+          const fileName = data.fileName || file.name.replace(/\.[^.]+$/, '');
+          const savedAt = data.savedAt || new Date().toISOString();
+          const snapshot = { version: 1, savedAt, fileName, categories: state.categories, moves: state.moveLibrary };
+          state.savedMoveFiles = [{ fileName, savedAt, data: snapshot }, ...state.savedMoveFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
+          localStorage.setItem('choreo_saved_moves', JSON.stringify(state.savedMoveFiles));
+          renderSavedMoveList();
         } catch {
           alert('동작 파일을 읽을 수 없습니다.');
         }
@@ -2115,6 +2127,12 @@
           renderPalette();
           renderBoard(true);
           saveHistory();
+          const fileName = data.fileName || file.name.replace(/\.[^.]+$/, '');
+          const savedAt = data.savedAt || new Date().toISOString();
+          const snapshot = { version: 1, savedAt, fileName, categories: state.categories };
+          state.savedCategoryFiles = [{ fileName, savedAt, data: snapshot }, ...state.savedCategoryFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
+          localStorage.setItem('choreo_saved_categories', JSON.stringify(state.savedCategoryFiles));
+          renderSavedCategoryList();
         } catch {
           alert('카테고리 파일을 읽을 수 없습니다.');
         }
