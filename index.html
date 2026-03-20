@@ -1217,19 +1217,20 @@
         const chip = document.createElement('div');
         chip.className = 'move-chip';
         chip.style.background = categoryColor(move.category);
-        chip.draggable = true;
         chip.title = `${move.name} 드래그`;
-        chip.addEventListener('dragstart', (e) => {
+        card.draggable = true;
+        card.addEventListener('dragstart', (e) => {
+          if (e.target.closest('select, button')) { e.preventDefault(); return; }
           state.drag = { type: 'palette', moveId: move.id, previewCount: DEFAULT_COUNT };
           e.dataTransfer.setData('text/plain', move.id);
           e.dataTransfer.effectAllowed = 'copy';
         });
-        chip.addEventListener('dragend', () => {
+        card.addEventListener('dragend', () => {
           state.drag = null;
           clearTrackHighlights();
           clearPreview();
         });
-        attachTouchDragToPaletteChip(chip, move);
+        attachTouchDragToPaletteChip(card, move);
 
         const meta = document.createElement('div');
         meta.className = 'move-meta';
