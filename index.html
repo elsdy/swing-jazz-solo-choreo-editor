@@ -313,6 +313,11 @@
       border: 1px solid rgba(148,163,184,0.14);
       box-shadow: 0 4px 12px rgba(0,0,0,0.10);
     }
+    .move-card.palette-active {
+      outline: 2px solid #7eb8f7;
+      background: linear-gradient(180deg, rgba(126,184,247,0.18), rgba(126,184,247,0.10));
+    }
+    .track.draw-hover { cursor: crosshair; }
     .move-chip {
       width: 22px;
       height: 22px;
@@ -738,6 +743,7 @@
       moveLibrary: [],
       categories: structuredClone(DEFAULT_CATEGORIES),
       drag: null,
+      activePaletteMove: null,
       resize: null,
       savedFiles: [],
       savedMoveFiles: [],
@@ -1046,10 +1052,93 @@
         if (e.relatedTarget && p.contains(e.relatedTarget)) return;
         hideFloatingTooltip();
       }, true);
+
+      // ── Click-to-activate + draw-to-place ──────────────────────────────────
+      let drawState = null; // { row, startIndex, track }
+
+      function drawPreview(row, startIndex, endIndex) {
+        const count = Math.max(1, endIndex - startIndex + 1);
+        updatePreview(row, startIndex, count);
+      }
+
+      boardEl.addEventListener('mousedown', (e) => {
+        if (!state.activePaletteMove) return;
+        const track = e.target.closest('.track');
+        if (!track) return;
+        if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
+        e.preventDefault();
+        const row = Number(track.dataset.row);
+        const startIndex = pointerToCellIndex(track, e.clientX);
+        drawState = { row, startIndex, track };
+        drawPreview(row, startIndex, startIndex);
+      });
+
+      boardEl.addEventListener('mousemove', (e) => {
+        if (!drawState || !state.activePaletteMove) return;
+        const track = e.target.closest('.track') || drawState.track;
+        const endIndex = pointerToCellIndex(drawState.track, e.clientX);
+        drawPreview(drawState.row, drawState.startIndex, endIndex);
+      });
+
+      document.addEventListener('mouseup', (e) => {
+        if (!drawState || !state.activePaletteMove) return;
+        const endIndex = pointerToCellIndex(drawState.track, e.clientX);
+        const count = Math.max(DEFAULT_COUNT, endIndex - drawState.startIndex + 1);
+        placeMove(state.activePaletteMove.moveId, drawState.row, drawState.startIndex, count);
+        saveHistory();
+        clearPreview();
+        drawState = null;
+      });
+
+      // Touch draw-to-place (board)
+      boardEl.addEventListener('touchstart', (e) => {
+        if (!state.activePaletteMove) return;
+        const touch = e.touches[0];
+        const track = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
+        if (!track) return;
+        if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
+        e.stopPropagation();
+        const row = Number(track.dataset.row);
+        const startIndex = pointerToCellIndex(track, touch.clientX);
+        drawState = { row, startIndex, track };
+        drawPreview(row, startIndex, startIndex);
+      }, { passive: true });
+
+      boardEl.addEventListener('touchmove', (e) => {
+        if (!drawState || !state.activePaletteMove) return;
+        const touch = e.touches[0];
+        const endIndex = pointerToCellIndex(drawState.track, touch.clientX);
+        drawPreview(drawState.row, drawState.startIndex, endIndex);
+      }, { passive: true });
+
+      boardEl.addEventListener('touchend', (e) => {
+        if (!drawState || !state.activePaletteMove) return;
+        const touch = (e.changedTouches || e.touches)[0];
+        const endIndex = pointerToCellIndex(drawState.track, touch.clientX);
+        const count = Math.max(DEFAULT_COUNT, endIndex - drawState.startIndex + 1);
+        placeMove(state.activePaletteMove.moveId, drawState.row, drawState.startIndex, count);
+        saveHistory();
+        clearPreview();
+        drawState = null;
+      });
+
+      boardEl.addEventListener('touchcancel', () => {
+        if (!drawState) return;
+        clearPreview();
+        drawState = null;
+      });
+      // ───────────────────────────────────────────────────────────────────────
+    }
+
+    function cancelActivePaletteMove() {
+      if (!state.activePaletteMove) return;
+      state.activePaletteMove = null;
+      renderPalette();
     }
 
     function onHotkey(e) {
       const key = e.key.toLowerCase();
+      if (e.key === 'Escape') { cancelActivePaletteMove(); return; }
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'z') {
         e.preventDefault();
         undo();
@@ -1213,7 +1302,13 @@
       const moves = q ? state.moveLibrary.filter(m => m.name.toLowerCase().includes(q)) : state.moveLibrary;
       moves.forEach(move => {
         const card = document.createElement('div');
-        card.className = 'move-card';
+        card.className = 'move-card' + (state.activePaletteMove?.moveId === move.id ? ' palette-active' : '');
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('select, button')) return;
+          const wasActive = state.activePaletteMove?.moveId === move.id;
+          state.activePaletteMove = wasActive ? null : { moveId: move.id };
+          renderPalette();
+        });
 
         const chip = document.createElement('div');
         chip.className = 'move-chip';
@@ -1222,6 +1317,7 @@
         card.draggable = true;
         card.addEventListener('dragstart', (e) => {
           if (e.target.closest('select, button')) { e.preventDefault(); return; }
+          state.activePaletteMove = null;
           state.drag = { type: 'palette', moveId: move.id, previewCount: DEFAULT_COUNT };
           e.dataTransfer.setData('text/plain', move.id);
           e.dataTransfer.effectAllowed = 'copy';
@@ -1785,10 +1881,11 @@
       boardEl.querySelectorAll('.placement.is-dragging').forEach(el => el.classList.remove('is-dragging'));
     }
 
-    function updatePreview(row, startIndex) {
+    function updatePreview(row, startIndex, overrideCount) {
       clearPreview();
-      if (!state.drag) return;
-      const previewCount = state.drag.type === 'palette' ? DEFAULT_COUNT : groupCount(state.drag.groupId);
+      if (!state.drag && overrideCount == null) return;
+      const previewCount = overrideCount != null ? overrideCount :
+        (state.drag.type === 'palette' ? DEFAULT_COUNT : groupCount(state.drag.groupId));
       buildSegments(row, startIndex, Math.min(previewCount, totalCellsFrom(row, startIndex))).forEach((seg, index) => {
         const ref = state.rowRefs.get(seg.row);
         if (!ref) return;
