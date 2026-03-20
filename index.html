@@ -842,6 +842,11 @@
     const newMoveCategory = document.getElementById('newMoveCategory');
     const categoryManager = document.getElementById('categoryManager');
 
+    const DROPBOX_TOKEN_KEY = 'choreo_dropbox_token';
+    const DROPBOX_APPKEY_KEY = 'choreo_dropbox_appkey';
+    const DROPBOX_FOLDER_KEY = 'choreo_dropbox_folder';
+    const DROPBOX_VERIFIER_KEY = 'choreo_dropbox_pkce_verifier';
+
     init();
 
     function init() {
@@ -2026,11 +2031,6 @@
     }
 
     /* ── Dropbox OAuth PKCE 연동 ── */
-
-    const DROPBOX_TOKEN_KEY = 'choreo_dropbox_token';
-    const DROPBOX_APPKEY_KEY = 'choreo_dropbox_appkey';
-    const DROPBOX_FOLDER_KEY = 'choreo_dropbox_folder';
-    const DROPBOX_VERIFIER_KEY = 'choreo_dropbox_pkce_verifier';
 
     function initDropbox() {
       const savedAppKey = localStorage.getItem(DROPBOX_APPKEY_KEY) || '';
