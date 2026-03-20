@@ -131,11 +131,17 @@
       align-items: center;
     }
     .size-pill {
-      width: 90px;
+      width: auto;
       text-align: center;
       border-radius: 999px;
       background: rgba(11,18,32,0.9);
       font-size: 11px;
+      padding: 2px 8px;
+    }
+    .size-pill-label {
+      font-size: 11px;
+      color: #8892a4;
+      white-space: nowrap;
     }
     .board-wrap {
       padding: 16px;
@@ -770,8 +776,8 @@
           <p>왼쪽 핸들로 이동, 오른쪽 핸들로 길이 조절.</p>
         </div>
         <div class="top-actions">
-          <span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">안무표 크기 8x<input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span>
-          <span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">기본카운트 <input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8x<input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0 4px;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
           <button id="undoBtn" class="ghost">Undo</button>
           <button id="redoBtn" class="ghost">Redo</button>
           <button id="clearBtn" class="danger">전체 초기화</button>
