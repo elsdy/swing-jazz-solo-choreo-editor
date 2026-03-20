@@ -769,6 +769,7 @@
           <h3 style="margin:0; font-size:12px;">동작 팔레트</h3>
           <div class="legend" id="legend"></div>
         </div>
+        <input id="paletteSearch" type="text" placeholder="동작 검색..." style="width:100%;box-sizing:border-box;" />
         <div class="palette-list" id="paletteList"></div>
       </section>
       </div>
@@ -949,6 +950,7 @@
       document.addEventListener('scroll', () => {
         if (state.moveContextMenu) closeMoveContextMenu();
       }, true);
+      document.getElementById('paletteSearch').addEventListener('input', () => renderPalette());
       document.getElementById('addMoveBtn').addEventListener('click', addCustomMove);
       document.getElementById('saveBtn').addEventListener('click', saveProjectFile);
       document.getElementById('loadFileBtn').addEventListener('click', () => fileLoader.click());
@@ -1278,7 +1280,9 @@
 
     function renderPalette() {
       paletteListEl.innerHTML = '';
-      state.moveLibrary.forEach(move => {
+      const q = (document.getElementById('paletteSearch')?.value || '').toLowerCase();
+      const moves = q ? state.moveLibrary.filter(m => m.name.toLowerCase().includes(q)) : state.moveLibrary;
+      moves.forEach(move => {
         const card = document.createElement('div');
         card.className = 'move-card';
 
