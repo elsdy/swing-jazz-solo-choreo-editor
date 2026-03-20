@@ -1959,7 +1959,9 @@
           color: String(value.color || DEFAULT_CATEGORIES[key]?.color || '#cbd5e1')
         };
       });
-      return Object.keys(out).length ? out : structuredClone(DEFAULT_CATEGORIES);
+      const sorted = {};
+      Object.keys(out).sort((a, b) => a.localeCompare(b)).forEach(k => { sorted[k] = out[k]; });
+      return Object.keys(sorted).length ? sorted : structuredClone(DEFAULT_CATEGORIES);
     }
 
     function normalizeMoveList(list) {
@@ -1969,7 +1971,7 @@
         id: item.id || uid(),
         name: String(item.name),
         category: valid.has(item.category) ? item.category : fallback
-      }));
+      })).sort((a, b) => a.name.localeCompare(b.name));
     }
 
     function projectPayload(fileName) {
@@ -1996,12 +1998,15 @@
 
     function saveMoveListFile() {
       const fileName = (moveListFileNameInput.value.trim() || `moves_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
-      downloadJson({ version: 1, savedAt: new Date().toISOString(), fileName, categories: state.categories, moves: state.moveLibrary }, `${fileName}.moves`);
+      const sortedMoves = [...state.moveLibrary].sort((a, b) => a.name.localeCompare(b.name));
+      const sortedCategories = Object.fromEntries(Object.entries(state.categories).sort(([a], [b]) => a.localeCompare(b)));
+      downloadJson({ version: 1, savedAt: new Date().toISOString(), fileName, categories: sortedCategories, moves: sortedMoves }, `${fileName}.moves`);
     }
 
     function saveCategoriesFile() {
       const fileName = (categoryFileNameInput.value.trim() || `categories_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
-      downloadJson({ version: 1, savedAt: new Date().toISOString(), fileName, categories: state.categories }, `${fileName}.categories`);
+      const sortedCategories = Object.fromEntries(Object.entries(state.categories).sort(([a], [b]) => a.localeCompare(b)));
+      downloadJson({ version: 1, savedAt: new Date().toISOString(), fileName, categories: sortedCategories }, `${fileName}.categories`);
     }
 
     function downloadJson(payload, filename) {
