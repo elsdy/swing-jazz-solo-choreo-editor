@@ -1502,7 +1502,7 @@
       root.style.setProperty('--noteW', '0px');
       let maxW = 0;
       noteCells.forEach(cell => { maxW = Math.max(maxW, cell.scrollWidth); });
-      root.style.setProperty('--noteW', `${Math.max(60, maxW)}px`);
+      root.style.setProperty('--noteW', `${Math.max(60, maxW + 16)}px`);
     }
 
     function renderRow(row) {
@@ -1537,7 +1537,7 @@
         .map(seg => {
           const s = seg.startIndex + 1;
           const e = seg.startIndex + seg.length;
-          return `${state.cols}x${seg.row}-${s}${s === e ? '' : `~${e}`}`;
+          return `${state.cols}x${seg.row} : ${s}${s === e ? '' : `~${e}`}`;
         })
         .join(', ');
     }
