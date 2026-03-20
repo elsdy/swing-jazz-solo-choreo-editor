@@ -2093,7 +2093,7 @@
         try {
           const data = JSON.parse(text);
           applyProjectData(data);
-          const fileName = data.fileName || file.name.replace(/\.[^.]+$/, '');
+          const fileName = file.name.replace(/\.[^.]+$/, '');
           const savedAt = data.savedAt || new Date().toISOString();
           state.savedFiles = [{ fileName, savedAt, data }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
           localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
@@ -2118,7 +2118,7 @@
           renderPalette();
           renderBoard(true);
           saveHistory();
-          const fileName = data.fileName || file.name.replace(/\.[^.]+$/, '');
+          const fileName = file.name.replace(/\.[^.]+$/, '');
           const savedAt = data.savedAt || new Date().toISOString();
           const snapshot = { version: 1, savedAt, fileName, categories: state.categories, moves: state.moveLibrary };
           state.savedMoveFiles = [{ fileName, savedAt, data: snapshot }, ...state.savedMoveFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
@@ -2146,7 +2146,7 @@
           renderPalette();
           renderBoard(true);
           saveHistory();
-          const fileName = data.fileName || file.name.replace(/\.[^.]+$/, '');
+          const fileName = file.name.replace(/\.[^.]+$/, '');
           const savedAt = data.savedAt || new Date().toISOString();
           const snapshot = { version: 1, savedAt, fileName, categories: state.categories };
           state.savedCategoryFiles = [{ fileName, savedAt, data: snapshot }, ...state.savedCategoryFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
