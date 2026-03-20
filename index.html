@@ -1170,14 +1170,22 @@
       categoryNames().forEach(name => {
         const row = document.createElement('div');
         row.className = 'row';
-        row.style.gap = '8px';
+        row.style.gap = '5px';
 
-        const dot = document.createElement('span');
-        dot.className = 'category-dot';
-        dot.style.background = categoryColor(name);
-        dot.style.marginLeft = '0';
-        dot.style.width = '12px';
-        dot.style.height = '12px';
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.value = categoryColor(name);
+        colorInput.style.cssText = 'width:22px; height:22px; padding:0; border:1px solid rgba(148,163,184,0.2); border-radius:6px; cursor:pointer; background:none; flex:0 0 auto;';
+        colorInput.title = '색상 변경';
+        colorInput.addEventListener('input', () => {
+          state.categories[name] = { ...state.categories[name], color: colorInput.value };
+          renderLegend();
+          renderPalette();
+          renderRows(Array.from({ length: state.rows }, (_, i) => i + 1));
+        });
+        colorInput.addEventListener('change', () => {
+          saveHistory();
+        });
 
         const input = document.createElement('input');
         input.type = 'text';
@@ -1192,7 +1200,7 @@
           saveHistory();
         });
 
-        row.append(dot, input);
+        row.append(colorInput, input);
         categoryManager.appendChild(row);
       });
     }
