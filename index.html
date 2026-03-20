@@ -254,10 +254,7 @@
     .placement.is-dragging { opacity: 1; }
     .placement .tooltip {
       display: none;
-      position: absolute;
-      bottom: calc(100% + 6px);
-      left: 50%;
-      transform: translateX(-50%);
+      position: fixed;
       background: rgba(0,0,0,0.85);
       color: #fff;
       padding: 4px 10px;
@@ -265,7 +262,7 @@
       font-size: 12px;
       font-weight: 700;
       white-space: nowrap;
-      z-index: 100;
+      z-index: 9999;
       pointer-events: none;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
@@ -278,7 +275,6 @@
       border: 5px solid transparent;
       border-top-color: rgba(0,0,0,0.85);
     }
-    .placement:hover .tooltip,
     .placement.show-tooltip .tooltip {
       display: block;
     }
@@ -1072,6 +1068,7 @@
           const placementEl = resizeHandle.closest('.placement');
           if (!placementEl) return;
           placementEl.classList.add('show-tooltip');
+          positionTooltip(placementEl);
           startResize(placementEl.dataset.groupId, e.touches[0].clientX);
           return;
         }
@@ -1082,6 +1079,7 @@
           const placementEl = moveHandle.closest('.placement');
           if (!placementEl) return;
           placementEl.classList.add('show-tooltip');
+          positionTooltip(placementEl);
           startTouchPlacementMove(placementEl.dataset.groupId, e.touches[0].clientX, e.touches[0].clientY);
         }
       }, { passive: false });
@@ -1100,9 +1098,31 @@
       });
 
       boardEl.addEventListener('touchcancel', () => {
+        boardEl.querySelectorAll('.placement.show-tooltip').forEach(el => el.classList.remove('show-tooltip'));
         if (state.drag?.type !== 'placement-move' || !state.drag.isTouchDragging) return;
         finishTouchPlacementMove(true);
       });
+
+      // PC hover tooltip
+      function positionTooltip(placementEl) {
+        const tip = placementEl.querySelector('.tooltip');
+        if (!tip) return;
+        const rect = placementEl.getBoundingClientRect();
+        tip.style.left = (rect.left + rect.width / 2) + 'px';
+        tip.style.top = (rect.top - 8) + 'px';
+        tip.style.transform = 'translate(-50%, -100%)';
+      }
+      boardEl.addEventListener('mouseenter', (e) => {
+        const placementEl = e.target.closest('.placement');
+        if (!placementEl) return;
+        placementEl.classList.add('show-tooltip');
+        positionTooltip(placementEl);
+      }, true);
+      boardEl.addEventListener('mouseleave', (e) => {
+        const placementEl = e.target.closest('.placement');
+        if (!placementEl) return;
+        placementEl.classList.remove('show-tooltip');
+      }, true);
     }
 
     function onHotkey(e) {
