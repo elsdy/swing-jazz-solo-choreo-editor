@@ -608,13 +608,6 @@
       :root {
         --cellH: 48px;
       }
-      .note-header, .note-cell { display: none; }
-      .board-header, .board-row {
-        grid-template-columns: var(--rowLabelW) 1fr !important;
-      }
-      .track {
-        width: 100% !important;
-      }
       .board { gap: 6px; }
       .board-header, .board-row { gap: 6px; }
       .corner, .row-label { font-size: 11px; padding: 4px; min-height: 40px; border-radius: 10px; }
@@ -905,7 +898,7 @@
       const cellW = Math.max(24, Math.floor(available / state.cols));
       root.style.setProperty('--cellW', cellW + 'px');
       root.style.setProperty('--rowLabelW', rowLabelW + 'px');
-      root.style.setProperty('--noteW', '0px');
+      root.style.setProperty('--noteW', '160px');
       root.style.setProperty('--cellH', '40px');
     }
 
