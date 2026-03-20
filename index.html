@@ -731,6 +731,7 @@
               <button id="loadMoveListBtn" class="ghost">동작 열기</button>
               <input id="moveListLoader" class="file-input" type="file" accept=".moves,.json,application/json" />
             </div>
+            <div class="saved-list" id="savedMoveList"></div>
           </div>
           <div class="soft-card stack">
             <div style="font-size:11px; font-weight:800; color:#dbe4ef;">카테고리 저장 / 불러오기</div>
@@ -740,6 +741,7 @@
               <button id="loadCategoriesBtn" class="ghost">카테고리 열기</button>
               <input id="categoryLoader" class="file-input" type="file" accept=".categories,.json,application/json" />
             </div>
+            <div class="saved-list" id="savedCategoryList"></div>
           </div>
         </div>
 
@@ -810,6 +812,8 @@
       drag: null,
       resize: null,
       savedFiles: [],
+      savedMoveFiles: [],
+      savedCategoryFiles: [],
       history: [],
       future: [],
       boardSignature: '',
@@ -846,6 +850,8 @@
     const paletteListEl = document.getElementById('paletteList');
     const legendEl = document.getElementById('legend');
     const savedListEl = document.getElementById('savedList');
+    const savedMoveListEl = document.getElementById('savedMoveList');
+    const savedCategoryListEl = document.getElementById('savedCategoryList');
     const fileNameInput = document.getElementById('fileNameInput');
     const moveListFileNameInput = document.getElementById('moveListFileNameInput');
     const categoryFileNameInput = document.getElementById('categoryFileNameInput');
@@ -878,6 +884,8 @@
       renderPalette();
       renderBoard(true);
       renderSavedList();
+      renderSavedMoveList();
+      renderSavedCategoryList();
       saveHistory();
       updateMobileCellSize();
       window.addEventListener('resize', updateMobileCellSize);
@@ -2000,13 +2008,21 @@
       const fileName = (moveListFileNameInput.value.trim() || `moves_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
       const sortedMoves = [...state.moveLibrary].sort((a, b) => a.name.localeCompare(b.name));
       const sortedCategories = Object.fromEntries(Object.entries(state.categories).sort(([a], [b]) => a.localeCompare(b)));
-      downloadJson({ version: 1, savedAt: new Date().toISOString(), fileName, categories: sortedCategories, moves: sortedMoves }, `${fileName}.moves`);
+      const payload = { version: 1, savedAt: new Date().toISOString(), fileName, categories: sortedCategories, moves: sortedMoves };
+      downloadJson(payload, `${fileName}.moves`);
+      state.savedMoveFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedMoveFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
+      localStorage.setItem('choreo_saved_moves', JSON.stringify(state.savedMoveFiles));
+      renderSavedMoveList();
     }
 
     function saveCategoriesFile() {
       const fileName = (categoryFileNameInput.value.trim() || `categories_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
       const sortedCategories = Object.fromEntries(Object.entries(state.categories).sort(([a], [b]) => a.localeCompare(b)));
-      downloadJson({ version: 1, savedAt: new Date().toISOString(), fileName, categories: sortedCategories }, `${fileName}.categories`);
+      const payload = { version: 1, savedAt: new Date().toISOString(), fileName, categories: sortedCategories };
+      downloadJson(payload, `${fileName}.categories`);
+      state.savedCategoryFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedCategoryFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
+      localStorage.setItem('choreo_saved_categories', JSON.stringify(state.savedCategoryFiles));
+      renderSavedCategoryList();
     }
 
     function downloadJson(payload, filename) {
@@ -2026,6 +2042,16 @@
         state.savedFiles = JSON.parse(localStorage.getItem('choreo_saved_files') || '[]');
       } catch {
         state.savedFiles = [];
+      }
+      try {
+        state.savedMoveFiles = JSON.parse(localStorage.getItem('choreo_saved_moves') || '[]');
+      } catch {
+        state.savedMoveFiles = [];
+      }
+      try {
+        state.savedCategoryFiles = JSON.parse(localStorage.getItem('choreo_saved_categories') || '[]');
+      } catch {
+        state.savedCategoryFiles = [];
       }
     }
 
@@ -2048,6 +2074,58 @@
           renderSavedList();
         });
         savedListEl.appendChild(row);
+      });
+    }
+
+    function renderSavedMoveList() {
+      savedMoveListEl.innerHTML = '';
+      if (!state.savedMoveFiles.length) return;
+      state.savedMoveFiles.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'saved-item';
+        row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost">불러오기</button><button class="danger">삭제</button></div>`;
+        const [loadBtn, delBtn] = row.querySelectorAll('button');
+        loadBtn.addEventListener('click', () => {
+          const data = item.data;
+          if (data.categories) state.categories = normalizeCategories(data.categories);
+          renderCategoryOptions();
+          state.moveLibrary = normalizeMoveList(data.moves || data.moveLibrary || []);
+          renderLegend(); renderPalette(); renderBoard(true); saveHistory();
+        });
+        delBtn.addEventListener('click', () => {
+          if (!confirm(`저장 목록에서 ${item.fileName} 을(를) 삭제할까요?`)) return;
+          state.savedMoveFiles = state.savedMoveFiles.filter(f => f.fileName !== item.fileName);
+          localStorage.setItem('choreo_saved_moves', JSON.stringify(state.savedMoveFiles));
+          renderSavedMoveList();
+        });
+        savedMoveListEl.appendChild(row);
+      });
+    }
+
+    function renderSavedCategoryList() {
+      savedCategoryListEl.innerHTML = '';
+      if (!state.savedCategoryFiles.length) return;
+      state.savedCategoryFiles.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'saved-item';
+        row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost">불러오기</button><button class="danger">삭제</button></div>`;
+        const [loadBtn, delBtn] = row.querySelectorAll('button');
+        loadBtn.addEventListener('click', () => {
+          const data = item.data;
+          state.categories = normalizeCategories(data.categories || data);
+          renderCategoryOptions();
+          state.moveLibrary = normalizeMoveList(state.moveLibrary);
+          const fallback = categoryNames()[0];
+          state.placements = state.placements.map(p => ({ ...p, category: state.categories[p.category] ? p.category : fallback }));
+          renderLegend(); renderPalette(); renderBoard(true); saveHistory();
+        });
+        delBtn.addEventListener('click', () => {
+          if (!confirm(`저장 목록에서 ${item.fileName} 을(를) 삭제할까요?`)) return;
+          state.savedCategoryFiles = state.savedCategoryFiles.filter(f => f.fileName !== item.fileName);
+          localStorage.setItem('choreo_saved_categories', JSON.stringify(state.savedCategoryFiles));
+          renderSavedCategoryList();
+        });
+        savedCategoryListEl.appendChild(row);
       });
     }
 
