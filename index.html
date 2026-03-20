@@ -255,9 +255,14 @@
     .placement .label {
       flex: 1;
       overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      font-size: 13px;
+      white-space: normal;
+      word-break: break-all;
+      line-height: 1.15;
+      font-size: 11px;
+      max-height: 100%;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
     }
     .placement .move-handle,
     .placement .resize-handle {
