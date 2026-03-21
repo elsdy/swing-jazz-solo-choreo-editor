@@ -649,7 +649,7 @@
             <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
             <button id="saveBtn" class="primary">프로젝트 저장</button>
             <button id="loadFileBtn" class="ghost">프로젝트 열기</button>
-            <input id="fileLoader" class="file-input" type="file" accept=".choreo,.json,application/json,application/octet-stream,*/*" />
+            <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
           </div>
           <div class="helper">프로젝트 저장에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다.</div>
           <div class="saved-list" id="savedList"></div>
@@ -662,7 +662,7 @@
             <div class="row wrap">
               <button id="saveMoveListBtn" class="warn">동작 저장</button>
               <button id="loadMoveListBtn" class="ghost">동작 열기</button>
-              <input id="moveListLoader" class="file-input" type="file" accept=".moves,.json,application/json,application/octet-stream,*/*" />
+              <input id="moveListLoader" class="file-input" type="file" accept=".json,application/json" />
             </div>
             <div class="saved-list" id="savedMoveList"></div>
           </div>
@@ -672,7 +672,7 @@
             <div class="row wrap">
               <button id="saveCategoriesBtn" class="ghost accent">카테고리 저장</button>
               <button id="loadCategoriesBtn" class="ghost">카테고리 열기</button>
-              <input id="categoryLoader" class="file-input" type="file" accept=".categories,.json,application/json,application/octet-stream,*/*" />
+              <input id="categoryLoader" class="file-input" type="file" accept=".json,application/json" />
             </div>
             <div class="saved-list" id="savedCategoryList"></div>
           </div>
@@ -2030,7 +2030,7 @@
     function saveProjectFile() {
       const fileName = (fileNameInput.value.trim() || `project_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
       const payload = projectPayload(fileName);
-      downloadJson(payload, `${fileName}.choreo`);
+      downloadJson(payload, `${fileName}-project.json`);
       state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
       localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
       renderSavedList();
@@ -2041,7 +2041,7 @@
       const sortedMoves = [...state.moveLibrary].sort((a, b) => a.name.localeCompare(b.name));
       const sortedCategories = Object.fromEntries(Object.entries(state.categories).sort(([a], [b]) => a.localeCompare(b)));
       const payload = { version: 1, savedAt: new Date().toISOString(), fileName, categories: sortedCategories, moves: sortedMoves };
-      downloadJson(payload, `${fileName}.moves`);
+      downloadJson(payload, `${fileName}-moves.json`);
       state.savedMoveFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedMoveFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
       localStorage.setItem('choreo_saved_moves', JSON.stringify(state.savedMoveFiles));
       renderSavedMoveList();
@@ -2051,7 +2051,7 @@
       const fileName = (categoryFileNameInput.value.trim() || `categories_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
       const sortedCategories = Object.fromEntries(Object.entries(state.categories).sort(([a], [b]) => a.localeCompare(b)));
       const payload = { version: 1, savedAt: new Date().toISOString(), fileName, categories: sortedCategories };
-      downloadJson(payload, `${fileName}.categories`);
+      downloadJson(payload, `${fileName}-categories.json`);
       state.savedCategoryFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedCategoryFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
       localStorage.setItem('choreo_saved_categories', JSON.stringify(state.savedCategoryFiles));
       renderSavedCategoryList();
