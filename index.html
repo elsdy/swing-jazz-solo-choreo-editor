@@ -649,7 +649,9 @@
             <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
             <button id="saveBtn" class="primary">프로젝트 저장</button>
             <button id="loadFileBtn" class="ghost">프로젝트 열기</button>
+            <button id="mergeFileBtn" class="ghost accent">부분 채우기</button>
             <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
+            <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
           </div>
           <div class="helper">프로젝트 저장에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다.</div>
           <div class="saved-list" id="savedList"></div>
@@ -778,6 +780,7 @@
     const moveListFileNameInput = document.getElementById('moveListFileNameInput');
     const categoryFileNameInput = document.getElementById('categoryFileNameInput');
     const fileLoader = document.getElementById('fileLoader');
+    const mergeFileLoader = document.getElementById('mergeFileLoader');
     const moveListLoader = document.getElementById('moveListLoader');
     const categoryLoader = document.getElementById('categoryLoader');
     const boardColsInput = document.getElementById('boardColsInput');
@@ -869,12 +872,14 @@
       document.getElementById('addMoveBtn').addEventListener('click', addCustomMove);
       document.getElementById('saveBtn').addEventListener('click', saveProjectFile);
       document.getElementById('loadFileBtn').addEventListener('click', () => fileLoader.click());
+      document.getElementById('mergeFileBtn').addEventListener('click', () => mergeFileLoader.click());
       document.getElementById('saveMoveListBtn').addEventListener('click', saveMoveListFile);
       document.getElementById('loadMoveListBtn').addEventListener('click', () => moveListLoader.click());
       document.getElementById('saveCategoriesBtn').addEventListener('click', saveCategoriesFile);
       document.getElementById('loadCategoriesBtn').addEventListener('click', () => categoryLoader.click());
       document.getElementById('clearBtn').addEventListener('click', clearBoard);
       fileLoader.addEventListener('change', handleProjectImport);
+      mergeFileLoader.addEventListener('change', handleMergeImport);
       moveListLoader.addEventListener('change', handleMoveListImport);
       categoryLoader.addEventListener('change', handleCategoryImport);
       boardColsInput.addEventListener('change', applyBoardSizeFromInput);
@@ -2057,6 +2062,44 @@
       renderSavedCategoryList();
     }
 
+    function mergeProjectData(data) {
+      if (!data || !Array.isArray(data.placements)) return alert('잘못된 프로젝트 파일 형식입니다.');
+
+      if (data.categories) {
+        Object.entries(normalizeCategories(data.categories)).forEach(([k, v]) => {
+          if (!state.categories[k]) state.categories[k] = v;
+        });
+      }
+
+      const existingNames = new Set(state.moveLibrary.map(m => m.name));
+      const newMoves = normalizeMoveList(data.moveLibrary || []).filter(m => !existingNames.has(m.name));
+      state.moveLibrary = [...state.moveLibrary, ...newMoves];
+
+      const fallback = categoryNames()[0];
+      let added = 0, skipped = 0;
+      (data.placements || []).filter(p => p && p.name).forEach(p => {
+        const norm = {
+          id: uid(), groupId: uid(),
+          name: String(p.name),
+          category: state.categories[p.category] ? p.category : fallback,
+          row: Math.max(1, Number(p.row) || 1),
+          startIndex: Math.max(0, Number(p.startIndex) || 0),
+          length: Math.max(1, Number(p.length) || 1)
+        };
+        norm.length = Math.min(norm.length, state.cols - norm.startIndex);
+        if (norm.row > state.rows || norm.startIndex >= state.cols) { skipped++; return; }
+        const conflict = state.placements.some(ex =>
+          ex.row === norm.row &&
+          !(norm.startIndex + norm.length - 1 < ex.startIndex ||
+            ex.startIndex + ex.length - 1 < norm.startIndex)
+        );
+        if (conflict) { skipped++; } else { state.placements.push(norm); added++; }
+      });
+
+      renderCategoryOptions(); renderLegend(); renderPalette(); renderBoard(true); saveHistory();
+      alert(`병합 완료: ${added}개 배치됨${skipped ? `, ${skipped}개 충돌/범위 초과로 건너뜀` : ''}`);
+    }
+
     function downloadJson(payload, filename) {
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -2198,6 +2241,20 @@
           state.savedFiles = [{ fileName, savedAt, data }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
           localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
           renderSavedList();
+        } catch {
+          alert('올바른 프로젝트 파일이 아닙니다.');
+        }
+      });
+      e.target.value = '';
+    }
+
+    function handleMergeImport(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      file.text().then(text => {
+        try {
+          const data = JSON.parse(text);
+          mergeProjectData(data);
         } catch {
           alert('올바른 프로젝트 파일이 아닙니다.');
         }
