@@ -676,6 +676,85 @@
         min-width: 14px;
       }
     }
+
+    /* ── 빠른 배치 팝업 ── */
+    .quick-popup {
+      position: fixed;
+      z-index: 4000;
+      background: var(--panel);
+      border: 1px solid rgba(148,163,184,0.2);
+      border-radius: 14px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.55);
+      backdrop-filter: blur(12px);
+      min-width: 230px;
+      max-width: 300px;
+      max-height: 68vh;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .quick-popup-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2px;
+    }
+    .quick-popup-title {
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .quick-popup-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text);
+      text-align: left;
+      width: 100%;
+      font: inherit;
+      transition: background 0.12s;
+    }
+    .quick-popup-item:hover { background: rgba(148,163,184,0.1); }
+    .quick-popup-item.new-action {
+      border-color: rgba(34,197,94,0.35);
+      color: var(--accent);
+      font-weight: 800;
+    }
+    .quick-popup-divider {
+      height: 1px;
+      background: var(--line);
+      margin: 4px 0;
+    }
+    .quick-btn-active {
+      background: rgba(34,197,94,0.16) !important;
+      border: 1px solid rgba(34,197,94,0.45) !important;
+      color: var(--accent) !important;
+      font-weight: 800;
+    }
+    .star-btn {
+      background: none;
+      border: none;
+      padding: 0 2px;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+      line-height: 1;
+      flex-shrink: 0;
+      border-radius: 4px;
+    }
+    .star-btn:hover { color: #facc15; }
+    .star-btn.active { color: #facc15; }
+
   </style>
 </head>
 <body>
@@ -763,6 +842,7 @@
         <div class="top-actions">
           <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
           <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+          <button id="quickPlaceBtn" class="ghost">+ 빠른 배치</button>
           <button id="undoBtn" class="ghost">Undo</button>
           <button id="redoBtn" class="ghost">Redo</button>
           <button id="clearBtn" class="danger">전체 초기화</button>
@@ -811,7 +891,10 @@
       future: [],
       boardSignature: '',
       rowRefs: new Map(),
-      moveContextMenu: null
+      moveContextMenu: null,
+      favoriteMoveNames: new Set(),
+      favoriteCategories: new Set(),
+      quickPlaceMode: false,
     };
 
     const DEFAULT_MOVES = [
@@ -898,6 +981,23 @@
           boardLockBtn.classList.add('locked');
         }
       });
+
+      // 빠른 배치 모드 토글
+      const quickPlaceBtn = document.getElementById('quickPlaceBtn');
+      quickPlaceBtn.addEventListener('click', () => {
+        state.quickPlaceMode = !state.quickPlaceMode;
+        if (state.quickPlaceMode) {
+          quickPlaceBtn.classList.add('quick-btn-active');
+          quickPlaceBtn.classList.remove('ghost');
+          // 활성화 시 기존 팔레트 활성 동작 해제
+          state.activePaletteMove = null;
+          renderPalette();
+        } else {
+          quickPlaceBtn.classList.remove('quick-btn-active');
+          quickPlaceBtn.classList.add('ghost');
+          closeQuickPicker();
+        }
+      });
     }
 
     function uid() {
@@ -919,6 +1019,243 @@
         btn.textContent = label;
       }, 2000);
     }
+
+    // ── 빠른 배치 팝업 ────────────────────────────────────────────────────────
+
+    let quickPickerEl = null;
+
+    function closeQuickPicker() {
+      if (quickPickerEl) { quickPickerEl.remove(); quickPickerEl = null; }
+    }
+
+    function positionPopup(popup, clientX, clientY) {
+      popup.style.left = '0px';
+      popup.style.top = '0px';
+      // allow layout so getBoundingClientRect has dimensions
+      requestAnimationFrame(() => {
+        const rect = popup.getBoundingClientRect();
+        const W = window.innerWidth, H = window.innerHeight;
+        let left = clientX + 12;
+        let top  = clientY + 12;
+        if (left + rect.width  > W - 12) left = clientX - rect.width  - 12;
+        if (top  + rect.height > H - 12) top  = clientY - rect.height - 12;
+        popup.style.left = `${Math.max(8, left)}px`;
+        popup.style.top  = `${Math.max(8, top)}px`;
+      });
+    }
+
+    function openQuickPicker(row, cellIndex, clientX, clientY) {
+      closeQuickPicker();
+      const popup = document.createElement('div');
+      popup.className = 'quick-popup';
+      quickPickerEl = popup;
+      document.body.appendChild(popup);
+      positionPopup(popup, clientX, clientY);
+      showMovePickerScreen(popup, row, cellIndex, clientX, clientY);
+
+      // 외부 탭/클릭 시 닫기
+      setTimeout(() => {
+        function outsideClose(e) {
+          if (quickPickerEl && !quickPickerEl.contains(e.target)) {
+            closeQuickPicker();
+            document.removeEventListener('pointerdown', outsideClose);
+          }
+        }
+        document.addEventListener('pointerdown', outsideClose);
+      }, 0);
+    }
+
+    function qDivider() {
+      const d = document.createElement('div');
+      d.className = 'quick-popup-divider';
+      return d;
+    }
+
+    function qLabel(text) {
+      const l = document.createElement('div');
+      l.className = 'quick-popup-title';
+      l.textContent = text;
+      return l;
+    }
+
+    function showMovePickerScreen(popup, row, cellIndex, clientX, clientY) {
+      popup.innerHTML = '';
+
+      const header = document.createElement('div');
+      header.className = 'quick-popup-header';
+      header.appendChild(qLabel('동작 선택'));
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'icon-btn';
+      closeBtn.type = 'button';
+      closeBtn.textContent = '×';
+      closeBtn.addEventListener('click', closeQuickPicker);
+      header.appendChild(closeBtn);
+      popup.appendChild(header);
+
+      // 신규 동작 on track
+      const newBtn = document.createElement('button');
+      newBtn.type = 'button';
+      newBtn.className = 'quick-popup-item new-action';
+      newBtn.innerHTML = '<span>✚</span><span>신규 동작 on track</span>';
+      newBtn.addEventListener('click', () => showNewMoveScreen(popup, row, cellIndex));
+      popup.appendChild(newBtn);
+
+      // 즐겨찾기 동작 목록
+      const favMoves = state.moveLibrary.filter(m => state.favoriteMoveNames.has(m.name));
+      if (favMoves.length > 0) {
+        popup.appendChild(qDivider());
+        popup.appendChild(qLabel('즐겨찾기 동작'));
+        favMoves.forEach(move => {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'quick-popup-item';
+          const dot = document.createElement('span');
+          dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(move.category)};flex-shrink:0;`;
+          const label = document.createElement('span');
+          label.textContent = move.name;
+          item.append(dot, label);
+          item.addEventListener('click', () => {
+            placeMove(move.id, row, cellIndex, DEFAULT_COUNT);
+            saveHistory();
+            closeQuickPicker();
+          });
+          popup.appendChild(item);
+        });
+      } else {
+        popup.appendChild(qDivider());
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+        hint.textContent = '팔레트에서 ★ 로 즐겨찾기를 추가하세요.';
+        popup.appendChild(hint);
+      }
+
+      positionPopup(popup, clientX, clientY);
+    }
+
+    function showNewMoveScreen(popup, row, cellIndex) {
+      popup.innerHTML = '';
+
+      const header = document.createElement('div');
+      header.className = 'quick-popup-header';
+      const backBtn = document.createElement('button');
+      backBtn.type = 'button';
+      backBtn.className = 'icon-btn';
+      backBtn.textContent = '←';
+      backBtn.addEventListener('click', () => {
+        const rect = popup.getBoundingClientRect();
+        showMovePickerScreen(popup, row, cellIndex, rect.left, rect.top);
+      });
+      header.appendChild(backBtn);
+      header.appendChild(qLabel('신규 동작 추가'));
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'icon-btn';
+      closeBtn.textContent = '×';
+      closeBtn.addEventListener('click', closeQuickPicker);
+      header.appendChild(closeBtn);
+      popup.appendChild(header);
+
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.placeholder = '동작 이름 입력...';
+      nameInput.style.marginBottom = '8px';
+      popup.appendChild(nameInput);
+
+      // 카테고리 선택 섹션
+      popup.appendChild(qDivider());
+      popup.appendChild(qLabel('카테고리 선택'));
+
+      // 신규 카테고리 버튼
+      const newCatBtn = document.createElement('button');
+      newCatBtn.type = 'button';
+      newCatBtn.className = 'quick-popup-item new-action';
+      newCatBtn.innerHTML = '<span>✚</span><span>신규 카테고리</span>';
+      popup.appendChild(newCatBtn);
+
+      // 신규 카테고리 인라인 폼 (초기 숨김)
+      const newCatForm = document.createElement('div');
+      newCatForm.style.cssText = 'display:none;flex-direction:column;gap:6px;padding:6px 4px;';
+      const catRow = document.createElement('div');
+      catRow.className = 'row';
+      catRow.style.gap = '6px';
+      const catColorInput = document.createElement('input');
+      catColorInput.type = 'color';
+      catColorInput.value = '#22c55e';
+      catColorInput.style.cssText = 'width:28px;height:28px;padding:0;border:1px solid rgba(148,163,184,0.2);border-radius:6px;cursor:pointer;background:none;flex:0 0 auto;';
+      const catNameInput = document.createElement('input');
+      catNameInput.type = 'text';
+      catNameInput.placeholder = '카테고리 이름...';
+      catRow.append(catColorInput, catNameInput);
+      const confirmNewCatBtn = document.createElement('button');
+      confirmNewCatBtn.type = 'button';
+      confirmNewCatBtn.className = 'primary';
+      confirmNewCatBtn.textContent = '추가 & 배치';
+      confirmNewCatBtn.style.cssText = 'width:100%;margin-top:2px;';
+      newCatForm.append(catRow, confirmNewCatBtn);
+      popup.appendChild(newCatForm);
+
+      newCatBtn.addEventListener('click', () => {
+        const showing = newCatForm.style.display !== 'none';
+        newCatForm.style.display = showing ? 'none' : 'flex';
+        newCatForm.style.flexDirection = 'column';
+        if (!showing) catNameInput.focus();
+      });
+
+      confirmNewCatBtn.addEventListener('click', () => {
+        const moveName = nameInput.value.trim();
+        if (!moveName) { nameInput.focus(); nameInput.style.borderColor = 'var(--danger)'; return; }
+        const catLabel = catNameInput.value.trim();
+        if (!catLabel) { catNameInput.focus(); return; }
+        const catKey = catLabel.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        const catKeyFinal = state.categories[catKey] ? catKey + '_' + uid().slice(0,4) : (catKey || uid().slice(0,6));
+        state.categories[catKeyFinal] = { label: catLabel, color: catColorInput.value };
+        renderCategoryOptions();
+        renderLegend();
+        createAndPlaceQuickMove(moveName, catKeyFinal, row, cellIndex);
+        closeQuickPicker();
+      });
+
+      // 즐겨찾기 카테고리
+      const favCats = categoryNames().filter(k => state.favoriteCategories.has(k));
+      if (favCats.length > 0) {
+        popup.appendChild(qDivider());
+        popup.appendChild(qLabel('즐겨찾기 카테고리'));
+        favCats.forEach(key => {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'quick-popup-item';
+          const dot = document.createElement('span');
+          dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(key)};flex-shrink:0;`;
+          const label = document.createElement('span');
+          label.textContent = state.categories[key].label;
+          item.append(dot, label);
+          item.addEventListener('click', () => {
+            const moveName = nameInput.value.trim();
+            if (!moveName) { nameInput.focus(); nameInput.style.borderColor = 'var(--danger)'; return; }
+            createAndPlaceQuickMove(moveName, key, row, cellIndex);
+            closeQuickPicker();
+          });
+          popup.appendChild(item);
+        });
+      } else {
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+        hint.textContent = '카테고리 관리에서 ★ 로 즐겨찾기를 추가하세요.';
+        popup.appendChild(hint);
+      }
+
+      nameInput.focus();
+    }
+
+    function createAndPlaceQuickMove(name, categoryKey, row, cellIndex) {
+      const newMove = { id: uid(), name, category: categoryKey };
+      state.moveLibrary.push(newMove);
+      renderPalette();
+      placeMove(newMove.id, row, cellIndex, DEFAULT_COUNT);
+      saveHistory();
+    }
+
+    // ── End 빠른 배치 팝업 ────────────────────────────────────────────────────
 
     function clamp(num, min, max) {
       return Math.max(min, Math.min(max, num));
@@ -1237,6 +1574,44 @@
         clearPreview();
         drawState = null;
       });
+
+      // ── 빠른 배치 모드: 빈 트랙 탭 → quickPicker ────────────────────────
+      let quickTouchAnchor = null;
+
+      boardEl.addEventListener('touchstart', (e) => {
+        if (!state.quickPlaceMode || state.activePaletteMove || drawState) return;
+        if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
+        const touch = e.touches[0];
+        const track = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
+        if (!track) return;
+        quickTouchAnchor = { x: touch.clientX, y: touch.clientY, track };
+      }, { passive: true });
+
+      boardEl.addEventListener('touchend', (e) => {
+        if (!state.quickPlaceMode || !quickTouchAnchor) return;
+        const touch = (e.changedTouches || e.touches)[0];
+        const dx = Math.abs(touch.clientX - quickTouchAnchor.x);
+        const dy = Math.abs(touch.clientY - quickTouchAnchor.y);
+        const track = quickTouchAnchor.track;
+        quickTouchAnchor = null;
+        if (dx > 12 || dy > 12) return;
+        const row = Number(track.dataset.row);
+        const cellIndex = pointerToCellIndex(track, touch.clientX);
+        openQuickPicker(row, cellIndex, touch.clientX, touch.clientY);
+      });
+
+      boardEl.addEventListener('touchcancel', () => { quickTouchAnchor = null; });
+
+      // 데스크탑 클릭
+      boardEl.addEventListener('click', (e) => {
+        if (!state.quickPlaceMode || state.activePaletteMove) return;
+        if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
+        const track = e.target.closest('.track');
+        if (!track) return;
+        const row = Number(track.dataset.row);
+        const cellIndex = pointerToCellIndex(track, e.clientX);
+        openQuickPicker(row, cellIndex, e.clientX, e.clientY);
+      });
       // ───────────────────────────────────────────────────────────────────────
     }
 
@@ -1393,7 +1768,22 @@
           });
         });
 
-        row.append(colorInput, input, del);
+        const catStarBtn = document.createElement('button');
+        catStarBtn.type = 'button';
+        catStarBtn.className = 'star-btn' + (state.favoriteCategories.has(name) ? ' active' : '');
+        catStarBtn.textContent = '★';
+        catStarBtn.title = '즐겨찾기 (빠른 배치에 표시)';
+        catStarBtn.addEventListener('click', () => {
+          if (state.favoriteCategories.has(name)) {
+            state.favoriteCategories.delete(name);
+          } else {
+            state.favoriteCategories.add(name);
+          }
+          saveFavorites();
+          renderCategoryOptions();
+        });
+
+        row.append(colorInput, input, catStarBtn, del);
         categoryManager.appendChild(row);
       });
     }
@@ -1487,7 +1877,22 @@
           });
         });
 
-        actions.append(shell, del);
+        const starBtn = document.createElement('button');
+        starBtn.type = 'button';
+        starBtn.className = 'star-btn' + (state.favoriteMoveNames.has(move.name) ? ' active' : '');
+        starBtn.textContent = '★';
+        starBtn.title = '즐겨찾기 (빠른 배치에 표시)';
+        starBtn.addEventListener('click', () => {
+          if (state.favoriteMoveNames.has(move.name)) {
+            state.favoriteMoveNames.delete(move.name);
+          } else {
+            state.favoriteMoveNames.add(move.name);
+          }
+          saveFavorites();
+          renderPalette();
+        });
+
+        actions.append(shell, starBtn, del);
         card.append(chip, meta, actions);
         paletteListEl.appendChild(card);
       });
@@ -2234,6 +2639,21 @@
       } catch {
         state.savedCategoryFiles = [];
       }
+      try {
+        state.favoriteMoveNames = new Set(JSON.parse(localStorage.getItem('choreo_fav_moves') || '[]'));
+      } catch {
+        state.favoriteMoveNames = new Set();
+      }
+      try {
+        state.favoriteCategories = new Set(JSON.parse(localStorage.getItem('choreo_fav_cats') || '[]'));
+      } catch {
+        state.favoriteCategories = new Set();
+      }
+    }
+
+    function saveFavorites() {
+      localStorage.setItem('choreo_fav_moves', JSON.stringify([...state.favoriteMoveNames]));
+      localStorage.setItem('choreo_fav_cats', JSON.stringify([...state.favoriteCategories]));
     }
 
     function renderSavedList() {
