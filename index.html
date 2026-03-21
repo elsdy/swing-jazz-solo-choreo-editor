@@ -1092,13 +1092,13 @@
       header.appendChild(closeBtn);
       popup.appendChild(header);
 
-      // 신규 동작 on track
-      const newBtn = document.createElement('button');
-      newBtn.type = 'button';
-      newBtn.className = 'quick-popup-item new-action';
-      newBtn.innerHTML = '<span>✚</span><span>신규 동작 on track</span>';
-      newBtn.addEventListener('click', () => showNewMoveScreen(popup, row, cellIndex));
-      popup.appendChild(newBtn);
+      // 동작 검색 버튼 (구 "신규 동작 on track")
+      const searchBtn = document.createElement('button');
+      searchBtn.type = 'button';
+      searchBtn.className = 'quick-popup-item new-action';
+      searchBtn.innerHTML = '<span>🔍</span><span>동작 검색</span>';
+      searchBtn.addEventListener('click', () => showMoveSearchScreen(popup, row, cellIndex));
+      popup.appendChild(searchBtn);
 
       // 즐겨찾기 동작 목록
       const favMoves = state.moveLibrary.filter(m => state.favoriteMoveNames.has(m.name));
@@ -1106,20 +1106,11 @@
         popup.appendChild(qDivider());
         popup.appendChild(qLabel('즐겨찾기 동작'));
         favMoves.forEach(move => {
-          const item = document.createElement('button');
-          item.type = 'button';
-          item.className = 'quick-popup-item';
-          const dot = document.createElement('span');
-          dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(move.category)};flex-shrink:0;`;
-          const label = document.createElement('span');
-          label.textContent = move.name;
-          item.append(dot, label);
-          item.addEventListener('click', () => {
+          popup.appendChild(makeQuickMoveItem(move, () => {
             placeMove(move.id, row, cellIndex, DEFAULT_COUNT);
             saveHistory();
             closeQuickPicker();
-          });
-          popup.appendChild(item);
+          }));
         });
       } else {
         popup.appendChild(qDivider());
@@ -1132,7 +1123,46 @@
       positionPopup(popup, clientX, clientY);
     }
 
-    function showNewMoveScreen(popup, row, cellIndex) {
+    function makeQuickMoveItem(move, onClick) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'quick-popup-item';
+      const dot = document.createElement('span');
+      dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(move.category)};flex-shrink:0;`;
+      const label = document.createElement('span');
+      label.textContent = move.name;
+      label.style.flex = '1';
+      const catBadge = document.createElement('span');
+      catBadge.style.cssText = 'font-size:10px;color:var(--muted);flex-shrink:0;';
+      catBadge.textContent = state.categories[move.category]?.label || move.category;
+      item.append(dot, label, catBadge);
+      item.addEventListener('click', onClick);
+      return item;
+    }
+
+    function makeQuickCatItem(key, onClick) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'quick-popup-item';
+      const dot = document.createElement('span');
+      dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(key)};flex-shrink:0;`;
+      const label = document.createElement('span');
+      label.textContent = state.categories[key].label;
+      item.append(dot, label);
+      item.addEventListener('click', onClick);
+      return item;
+    }
+
+    function makeAddBtn() {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.style.cssText = 'padding:4px 12px;width:auto;flex-shrink:0;font-size:18px;font-weight:bold;border-radius:8px;display:none;background:rgba(34,197,94,0.16);border:1px solid rgba(34,197,94,0.45);color:var(--accent);cursor:pointer;line-height:1;';
+      btn.textContent = '+';
+      return btn;
+    }
+
+    // ── Screen 2: 동작 검색 ─────────────────────────────────────────────────
+    function showMoveSearchScreen(popup, row, cellIndex) {
       popup.innerHTML = '';
 
       const header = document.createElement('div');
@@ -1146,7 +1176,7 @@
         showMovePickerScreen(popup, row, cellIndex, rect.left, rect.top);
       });
       header.appendChild(backBtn);
-      header.appendChild(qLabel('신규 동작 추가'));
+      header.appendChild(qLabel('동작 검색'));
       const closeBtn = document.createElement('button');
       closeBtn.type = 'button';
       closeBtn.className = 'icon-btn';
@@ -1155,59 +1185,123 @@
       header.appendChild(closeBtn);
       popup.appendChild(header);
 
+      // 입력 + [+] 버튼
+      const inputRow = document.createElement('div');
+      inputRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
       const nameInput = document.createElement('input');
       nameInput.type = 'text';
-      nameInput.placeholder = '동작 이름 입력...';
-      nameInput.style.marginBottom = '8px';
-      popup.appendChild(nameInput);
+      nameInput.placeholder = '동작 이름 검색...';
+      nameInput.style.flex = '1';
+      const addBtn = makeAddBtn();
+      addBtn.title = '새 동작으로 추가';
+      inputRow.append(nameInput, addBtn);
+      popup.appendChild(inputRow);
 
-      // 카테고리 선택 섹션
-      popup.appendChild(qDivider());
-      popup.appendChild(qLabel('카테고리 선택'));
+      const resultList = document.createElement('div');
+      resultList.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:45vh;overflow-y:auto;';
+      popup.appendChild(resultList);
 
-      // 신규 카테고리 버튼
-      const newCatBtn = document.createElement('button');
-      newCatBtn.type = 'button';
-      newCatBtn.className = 'quick-popup-item new-action';
-      newCatBtn.innerHTML = '<span>✚</span><span>신규 카테고리</span>';
-      popup.appendChild(newCatBtn);
+      function render() {
+        const q = nameInput.value.trim();
+        const ql = q.toLowerCase();
+        resultList.innerHTML = '';
 
-      // 신규 카테고리 인라인 폼 (초기 숨김)
+        if (!ql) {
+          addBtn.style.display = 'none';
+          const favs = state.moveLibrary.filter(m => state.favoriteMoveNames.has(m.name));
+          const others = state.moveLibrary.filter(m => !state.favoriteMoveNames.has(m.name));
+          if (favs.length) {
+            resultList.appendChild(qLabel('즐겨찾기'));
+            favs.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, DEFAULT_COUNT); saveHistory(); closeQuickPicker(); })));
+            if (others.length) resultList.appendChild(qDivider());
+          }
+          others.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, DEFAULT_COUNT); saveHistory(); closeQuickPicker(); })));
+          return;
+        }
+
+        const matches = state.moveLibrary.filter(m => m.name.toLowerCase().includes(ql));
+        if (matches.length === 0) {
+          addBtn.style.display = '';
+          const hint = document.createElement('div');
+          hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+          hint.textContent = `"${q}" 와 일치하는 동작이 없습니다.`;
+          resultList.appendChild(hint);
+        } else {
+          addBtn.style.display = 'none';
+          matches.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, DEFAULT_COUNT); saveHistory(); closeQuickPicker(); })));
+        }
+      }
+
+      nameInput.addEventListener('input', render);
+      addBtn.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        if (!name) return;
+        showCategoryScreen(popup, name, row, cellIndex);
+      });
+
+      render();
+      nameInput.focus();
+    }
+
+    // ── Screen 3: 카테고리 선택 ─────────────────────────────────────────────
+    function showCategoryScreen(popup, moveName, row, cellIndex) {
+      popup.innerHTML = '';
+
+      const header = document.createElement('div');
+      header.className = 'quick-popup-header';
+      const backBtn = document.createElement('button');
+      backBtn.type = 'button';
+      backBtn.className = 'icon-btn';
+      backBtn.textContent = '←';
+      backBtn.addEventListener('click', () => showMoveSearchScreen(popup, row, cellIndex));
+      header.appendChild(backBtn);
+      header.appendChild(qLabel('카테고리 선택'));
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'icon-btn';
+      closeBtn.textContent = '×';
+      closeBtn.addEventListener('click', closeQuickPicker);
+      header.appendChild(closeBtn);
+      popup.appendChild(header);
+
+      const badge = document.createElement('div');
+      badge.style.cssText = 'font-size:11px;color:var(--muted);padding:2px 4px 4px;';
+      badge.textContent = `동작: "${moveName}"`;
+      popup.appendChild(badge);
+
+      // 입력 + [+] 버튼
+      const inputRow = document.createElement('div');
+      inputRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
+      const catInput = document.createElement('input');
+      catInput.type = 'text';
+      catInput.placeholder = '카테고리 검색...';
+      catInput.style.flex = '1';
+      const addBtn = makeAddBtn();
+      addBtn.title = '새 카테고리로 추가';
+      inputRow.append(catInput, addBtn);
+      popup.appendChild(inputRow);
+
+      // 새 카테고리 색상 폼 (초기 숨김)
       const newCatForm = document.createElement('div');
-      newCatForm.style.cssText = 'display:none;flex-direction:column;gap:6px;padding:6px 4px;';
-      const catRow = document.createElement('div');
-      catRow.className = 'row';
-      catRow.style.gap = '6px';
+      newCatForm.style.cssText = 'display:none;align-items:center;gap:6px;padding:4px 0;';
       const catColorInput = document.createElement('input');
       catColorInput.type = 'color';
       catColorInput.value = '#22c55e';
       catColorInput.style.cssText = 'width:28px;height:28px;padding:0;border:1px solid rgba(148,163,184,0.2);border-radius:6px;cursor:pointer;background:none;flex:0 0 auto;';
-      const catNameInput = document.createElement('input');
-      catNameInput.type = 'text';
-      catNameInput.placeholder = '카테고리 이름...';
-      catRow.append(catColorInput, catNameInput);
-      const confirmNewCatBtn = document.createElement('button');
-      confirmNewCatBtn.type = 'button';
-      confirmNewCatBtn.className = 'primary';
-      confirmNewCatBtn.textContent = '추가 & 배치';
-      confirmNewCatBtn.style.cssText = 'width:100%;margin-top:2px;';
-      newCatForm.append(catRow, confirmNewCatBtn);
+      const confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button';
+      confirmBtn.className = 'primary';
+      confirmBtn.textContent = '추가 & 배치';
+      confirmBtn.style.flex = '1';
+      newCatForm.append(catColorInput, confirmBtn);
       popup.appendChild(newCatForm);
 
-      newCatBtn.addEventListener('click', () => {
-        const showing = newCatForm.style.display !== 'none';
-        newCatForm.style.display = showing ? 'none' : 'flex';
-        newCatForm.style.flexDirection = 'column';
-        if (!showing) catNameInput.focus();
-      });
-
-      confirmNewCatBtn.addEventListener('click', () => {
-        const moveName = nameInput.value.trim();
-        if (!moveName) { nameInput.focus(); nameInput.style.borderColor = 'var(--danger)'; return; }
-        const catLabel = catNameInput.value.trim();
-        if (!catLabel) { catNameInput.focus(); return; }
-        const catKey = catLabel.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-        const catKeyFinal = state.categories[catKey] ? catKey + '_' + uid().slice(0,4) : (catKey || uid().slice(0,6));
+      confirmBtn.addEventListener('click', () => {
+        const catLabel = catInput.value.trim();
+        if (!catLabel) { catInput.focus(); return; }
+        const base = catLabel.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        const catKey = base || uid().slice(0, 6);
+        const catKeyFinal = state.categories[catKey] ? catKey + '_' + uid().slice(0, 4) : catKey;
         state.categories[catKeyFinal] = { label: catLabel, color: catColorInput.value };
         renderCategoryOptions();
         renderLegend();
@@ -1215,43 +1309,62 @@
         closeQuickPicker();
       });
 
-      // 즐겨찾기 카테고리
-      const favCats = categoryNames().filter(k => state.favoriteCategories.has(k));
-      if (favCats.length > 0) {
-        popup.appendChild(qDivider());
-        popup.appendChild(qLabel('즐겨찾기 카테고리'));
-        favCats.forEach(key => {
-          const item = document.createElement('button');
-          item.type = 'button';
-          item.className = 'quick-popup-item';
-          const dot = document.createElement('span');
-          dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(key)};flex-shrink:0;`;
-          const label = document.createElement('span');
-          label.textContent = state.categories[key].label;
-          item.append(dot, label);
-          item.addEventListener('click', () => {
-            const moveName = nameInput.value.trim();
-            if (!moveName) { nameInput.focus(); nameInput.style.borderColor = 'var(--danger)'; return; }
-            createAndPlaceQuickMove(moveName, key, row, cellIndex);
-            closeQuickPicker();
-          });
-          popup.appendChild(item);
-        });
-      } else {
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
-        hint.textContent = '카테고리 관리에서 ★ 로 즐겨찾기를 추가하세요.';
-        popup.appendChild(hint);
+      const resultList = document.createElement('div');
+      resultList.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:40vh;overflow-y:auto;';
+      popup.appendChild(resultList);
+
+      function render() {
+        const q = catInput.value.trim();
+        const ql = q.toLowerCase();
+        resultList.innerHTML = '';
+        newCatForm.style.display = 'none';
+
+        if (!ql) {
+          addBtn.style.display = 'none';
+          const favKeys = categoryNames().filter(k => state.favoriteCategories.has(k));
+          const otherKeys = categoryNames().filter(k => !state.favoriteCategories.has(k));
+          if (favKeys.length) {
+            resultList.appendChild(qLabel('즐겨찾기'));
+            favKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex); closeQuickPicker(); })));
+            if (otherKeys.length) resultList.appendChild(qDivider());
+          }
+          otherKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex); closeQuickPicker(); })));
+          return;
+        }
+
+        const matches = categoryNames().filter(k => state.categories[k].label.toLowerCase().includes(ql));
+        if (matches.length === 0) {
+          addBtn.style.display = '';
+          newCatForm.style.display = 'flex';
+          const hint = document.createElement('div');
+          hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+          hint.textContent = `"${q}" 와 일치하는 카테고리가 없습니다.`;
+          resultList.appendChild(hint);
+        } else {
+          addBtn.style.display = 'none';
+          matches.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex); closeQuickPicker(); })));
+        }
       }
 
-      nameInput.focus();
+      catInput.addEventListener('input', render);
+      addBtn.addEventListener('click', () => {
+        newCatForm.style.display = 'flex';
+        newCatForm.style.alignItems = 'center';
+      });
+
+      render();
+      catInput.focus();
     }
 
     function createAndPlaceQuickMove(name, categoryKey, row, cellIndex) {
-      const newMove = { id: uid(), name, category: categoryKey };
-      state.moveLibrary.push(newMove);
-      renderPalette();
-      placeMove(newMove.id, row, cellIndex, DEFAULT_COUNT);
+      // 이미 같은 이름의 동작이 있으면 재사용
+      let move = state.moveLibrary.find(m => m.name === name);
+      if (!move) {
+        move = { id: uid(), name, category: categoryKey };
+        state.moveLibrary.push(move);
+        renderPalette();
+      }
+      placeMove(move.id, row, cellIndex, DEFAULT_COUNT);
       saveHistory();
     }
 
