@@ -487,6 +487,51 @@
       transform: translate(-50%, -50%);
     }
 
+    /* ── 스크롤 락 버튼 ── */
+    .scroll-locks {
+      display: none;
+      position: fixed;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 3000;
+      flex-direction: column;
+      gap: 6px;
+    }
+    @media (max-width: 1040px) {
+      .scroll-locks { display: flex; }
+    }
+    .scroll-lock-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 8px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      background: rgba(17,24,39,0.88);
+      border: 1px solid rgba(148,163,184,0.22);
+      color: var(--muted);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+      line-height: 1.2;
+      min-width: 44px;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+    .scroll-lock-btn .lock-icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+    .scroll-lock-btn.locked {
+      background: rgba(34,197,94,0.18);
+      border-color: rgba(34,197,94,0.5);
+      color: var(--accent);
+    }
+    .scroll-lock-btn.locked .lock-icon::after { content: '🔒'; }
+    .scroll-lock-btn:not(.locked) .lock-icon::after { content: '🔓'; }
+
     @media (max-width: 1040px) {
       .app {
         grid-template-columns: 1fr;
@@ -727,6 +772,18 @@
     </main>
   </div>
 
+  <!-- 스크롤 락 버튼 (모바일용, 항상 화면에 고정) -->
+  <div class="scroll-locks" id="scrollLocks">
+    <button class="scroll-lock-btn" id="sidebarLockBtn" title="사이드바 스크롤 잠금">
+      <span class="lock-icon"></span>
+      <span>사이드바</span>
+    </button>
+    <button class="scroll-lock-btn" id="boardLockBtn" title="보드 스크롤 잠금">
+      <span class="lock-icon"></span>
+      <span>보드</span>
+    </button>
+  </div>
+
   <script>
     let DEFAULT_COUNT = 1;
     const DEFAULT_CATEGORIES = {
@@ -809,6 +866,38 @@
       saveHistory();
       updateMobileCellSize();
       window.addEventListener('resize', updateMobileCellSize);
+
+      // 스크롤 락 버튼
+      const sidebarScrollEl = document.querySelector('.sidebar-scroll');
+      const boardWrapEl = document.querySelector('.board-wrap');
+      const sidebarLockBtn = document.getElementById('sidebarLockBtn');
+      const boardLockBtn = document.getElementById('boardLockBtn');
+
+      sidebarLockBtn.addEventListener('click', () => {
+        const locked = sidebarScrollEl.dataset.locked === '1';
+        if (locked) {
+          sidebarScrollEl.dataset.locked = '0';
+          sidebarScrollEl.style.overflowY = '';
+          sidebarLockBtn.classList.remove('locked');
+        } else {
+          sidebarScrollEl.dataset.locked = '1';
+          sidebarScrollEl.style.overflowY = 'hidden';
+          sidebarLockBtn.classList.add('locked');
+        }
+      });
+
+      boardLockBtn.addEventListener('click', () => {
+        const locked = boardWrapEl.dataset.locked === '1';
+        if (locked) {
+          boardWrapEl.dataset.locked = '0';
+          boardWrapEl.style.overflow = '';
+          boardLockBtn.classList.remove('locked');
+        } else {
+          boardWrapEl.dataset.locked = '1';
+          boardWrapEl.style.overflow = 'hidden';
+          boardLockBtn.classList.add('locked');
+        }
+      });
     }
 
     function uid() {
