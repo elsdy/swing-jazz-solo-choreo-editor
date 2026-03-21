@@ -815,6 +815,22 @@
       return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
     }
 
+    function confirmOnce(btn, label, fn) {
+      if (btn.dataset.pendingConfirm === '1') {
+        clearTimeout(btn._confirmTimer);
+        delete btn.dataset.pendingConfirm;
+        btn.textContent = label;
+        fn();
+        return;
+      }
+      btn.dataset.pendingConfirm = '1';
+      btn.textContent = '정말요?';
+      btn._confirmTimer = setTimeout(() => {
+        delete btn.dataset.pendingConfirm;
+        btn.textContent = label;
+      }, 2000);
+    }
+
     function clamp(num, min, max) {
       return Math.max(min, Math.min(max, num));
     }
@@ -877,7 +893,9 @@
       document.getElementById('loadMoveListBtn').addEventListener('click', () => moveListLoader.click());
       document.getElementById('saveCategoriesBtn').addEventListener('click', saveCategoriesFile);
       document.getElementById('loadCategoriesBtn').addEventListener('click', () => categoryLoader.click());
-      document.getElementById('clearBtn').addEventListener('click', clearBoard);
+      document.getElementById('clearBtn').addEventListener('click', (e) => {
+        confirmOnce(e.currentTarget, '전체 초기화', clearBoard);
+      });
       fileLoader.addEventListener('change', handleProjectImport);
       mergeFileLoader.addEventListener('change', handleMergeImport);
       moveListLoader.addEventListener('change', handleMoveListImport);
@@ -939,8 +957,6 @@
         const placementEl = e.target.closest('.placement');
         if (!placementEl) return;
         const groupId = placementEl.dataset.groupId;
-        const name = placementEl.dataset.name || '동작';
-        if (!confirm(`"${name}" 배치를 삭제할까요?`)) return;
         removePlacementGroup(groupId);
         saveHistory();
       });
@@ -1275,7 +1291,7 @@
         del.title = '카테고리 삭제';
         del.addEventListener('click', () => {
           if (categoryNames().length <= 1) return alert('카테고리는 최소 1개 이상 있어야 합니다.');
-          if (!confirm(`카테고리 "${state.categories[name].label}" 을(를) 삭제할까요?\n해당 카테고리의 동작은 첫 번째 카테고리로 이동합니다.`)) return;
+          confirmOnce(del, '×', () => {
           const fallback = categoryNames().find(n => n !== name);
           state.moveLibrary = state.moveLibrary.map(m => m.category === name ? { ...m, category: fallback } : m);
           state.placements = state.placements.map(p => p.category === name ? { ...p, category: fallback } : p);
@@ -1285,6 +1301,7 @@
           renderPalette();
           renderBoard(true);
           saveHistory();
+          });
         });
 
         row.append(colorInput, input, del);
@@ -1371,13 +1388,14 @@
         del.textContent = '×';
         del.title = '삭제';
         del.addEventListener('click', () => {
-          if (!confirm(`동작 "${move.name}" 을(를) 삭제할까요?`)) return;
-          const affectedRows = getAffectedRowsByMoveName(move.name);
-          state.moveLibrary = state.moveLibrary.filter(m => m.id !== move.id);
-          state.placements = state.placements.filter(p => p.name !== move.name);
-          renderPalette();
-          renderRows(affectedRows);
-          saveHistory();
+          confirmOnce(del, '×', () => {
+            const affectedRows = getAffectedRowsByMoveName(move.name);
+            state.moveLibrary = state.moveLibrary.filter(m => m.id !== move.id);
+            state.placements = state.placements.filter(p => p.name !== move.name);
+            renderPalette();
+            renderRows(affectedRows);
+            saveHistory();
+          });
         });
 
         actions.append(shell, del);
@@ -1404,7 +1422,6 @@
     function deleteMove(moveId) {
       const move = state.moveLibrary.find(m => m.id === moveId);
       if (!move) return;
-      if (!confirm(`동작 "${move.name}" 을(를) 삭제할까요?`)) return;
       const affectedRows = getAffectedRowsByMoveName(move.name);
       state.moveLibrary = state.moveLibrary.filter(m => m.id !== moveId);
       state.placements = state.placements.filter(p => p.name !== move.name);
@@ -1483,7 +1500,7 @@
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
       deleteBtn.textContent = '삭제';
-      deleteBtn.addEventListener('click', () => deleteMove(moveId));
+      deleteBtn.addEventListener('click', () => confirmOnce(deleteBtn, '삭제', () => deleteMove(moveId)));
       menu.append(renameBtn, categoryBtn, deleteBtn);
       document.body.appendChild(menu);
       const rect = menu.getBoundingClientRect();
@@ -2143,10 +2160,11 @@
         const [loadBtn, delBtn] = row.querySelectorAll('button');
         loadBtn.addEventListener('click', () => applyProjectData(item.data));
         delBtn.addEventListener('click', () => {
-          if (!confirm(`저장 목록에서 ${item.fileName} 을(를) 삭제할까요?`)) return;
-          state.savedFiles = state.savedFiles.filter(f => f.fileName !== item.fileName);
-          localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
-          renderSavedList();
+          confirmOnce(delBtn, '삭제', () => {
+            state.savedFiles = state.savedFiles.filter(f => f.fileName !== item.fileName);
+            localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
+            renderSavedList();
+          });
         });
         savedListEl.appendChild(row);
       });
@@ -2168,10 +2186,11 @@
           renderLegend(); renderPalette(); renderBoard(true); saveHistory();
         });
         delBtn.addEventListener('click', () => {
-          if (!confirm(`저장 목록에서 ${item.fileName} 을(를) 삭제할까요?`)) return;
-          state.savedMoveFiles = state.savedMoveFiles.filter(f => f.fileName !== item.fileName);
-          localStorage.setItem('choreo_saved_moves', JSON.stringify(state.savedMoveFiles));
-          renderSavedMoveList();
+          confirmOnce(delBtn, '삭제', () => {
+            state.savedMoveFiles = state.savedMoveFiles.filter(f => f.fileName !== item.fileName);
+            localStorage.setItem('choreo_saved_moves', JSON.stringify(state.savedMoveFiles));
+            renderSavedMoveList();
+          });
         });
         savedMoveListEl.appendChild(row);
       });
@@ -2195,10 +2214,11 @@
           renderLegend(); renderPalette(); renderBoard(true); saveHistory();
         });
         delBtn.addEventListener('click', () => {
-          if (!confirm(`저장 목록에서 ${item.fileName} 을(를) 삭제할까요?`)) return;
-          state.savedCategoryFiles = state.savedCategoryFiles.filter(f => f.fileName !== item.fileName);
-          localStorage.setItem('choreo_saved_categories', JSON.stringify(state.savedCategoryFiles));
-          renderSavedCategoryList();
+          confirmOnce(delBtn, '삭제', () => {
+            state.savedCategoryFiles = state.savedCategoryFiles.filter(f => f.fileName !== item.fileName);
+            localStorage.setItem('choreo_saved_categories', JSON.stringify(state.savedCategoryFiles));
+            renderSavedCategoryList();
+          });
         });
         savedCategoryListEl.appendChild(row);
       });
@@ -2317,7 +2337,6 @@
     }
 
     function clearBoard() {
-      if (!confirm('전체 안무를 초기화할까요?')) return;
       const rows = state.placements.map(p => p.row);
       state.placements = [];
       renderRows(rows);
