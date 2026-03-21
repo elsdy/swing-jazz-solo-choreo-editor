@@ -754,6 +754,35 @@
     }
     .star-btn:hover { color: #facc15; }
     .star-btn.active { color: #facc15; }
+    .sort-mode-btn {
+      flex: 1;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: transparent;
+      border: 1px solid rgba(148,163,184,0.2);
+      color: var(--muted);
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .sort-mode-btn.active {
+      background: rgba(96,165,250,0.18);
+      border-color: rgba(96,165,250,0.4);
+      color: #93c5fd;
+      font-weight: 800;
+    }
+    .sort-dir-btn {
+      font-size: 13px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: transparent;
+      border: 1px solid rgba(148,163,184,0.2);
+      color: var(--muted);
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .sort-dir-btn:hover { background: rgba(148,163,184,0.1); color: var(--text); }
 
   </style>
 </head>
@@ -828,6 +857,11 @@
           <div class="legend" id="legend"></div>
         </div>
         <input id="paletteSearch" type="text" placeholder="동작 검색..." style="width:100%;box-sizing:border-box;" />
+        <div class="row" style="gap:4px;">
+          <button id="sortAlphaBtn" class="sort-mode-btn active" title="가나다 순">가나다</button>
+          <button id="sortAddedBtn" class="sort-mode-btn" title="추가된 순">추가순</button>
+          <button id="sortDirBtn" class="sort-dir-btn" title="정렬 방향">↑</button>
+        </div>
         <div class="palette-list" id="paletteList"></div>
       </section>
       </div>
@@ -895,6 +929,8 @@
       favoriteMoveNames: new Set(),
       favoriteCategories: new Set(),
       quickPlaceMode: false,
+      paletteSortMode: 'alpha',  // 'alpha' | 'added'
+      paletteSortDir: 'asc',     // 'asc' | 'desc'
     };
 
     const DEFAULT_MOVES = [
@@ -1123,33 +1159,67 @@
       positionPopup(popup, clientX, clientY);
     }
 
+    function makeInlineStarBtn(isActive, onToggle) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'star-btn' + (isActive() ? ' active' : '');
+      btn.textContent = '★';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const nowFav = !isActive();
+        onToggle(nowFav);
+        btn.classList.toggle('active', nowFav);
+      });
+      return btn;
+    }
+
     function makeQuickMoveItem(move, onClick) {
-      const item = document.createElement('button');
-      item.type = 'button';
+      const item = document.createElement('div');
       item.className = 'quick-popup-item';
+      item.style.cursor = 'default';
+
+      const clickZone = document.createElement('div');
+      clickZone.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;min-width:0;';
+      clickZone.addEventListener('click', onClick);
+
       const dot = document.createElement('span');
       dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(move.category)};flex-shrink:0;`;
       const label = document.createElement('span');
       label.textContent = move.name;
-      label.style.flex = '1';
+      label.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
       const catBadge = document.createElement('span');
       catBadge.style.cssText = 'font-size:10px;color:var(--muted);flex-shrink:0;';
       catBadge.textContent = state.categories[move.category]?.label || move.category;
-      item.append(dot, label, catBadge);
-      item.addEventListener('click', onClick);
+      clickZone.append(dot, label, catBadge);
+
+      const star = makeInlineStarBtn(
+        () => state.favoriteMoveNames.has(move.name),
+        (nowFav) => { if (nowFav) state.favoriteMoveNames.add(move.name); else state.favoriteMoveNames.delete(move.name); saveFavorites(); }
+      );
+      item.append(clickZone, star);
       return item;
     }
 
     function makeQuickCatItem(key, onClick) {
-      const item = document.createElement('button');
-      item.type = 'button';
+      const item = document.createElement('div');
       item.className = 'quick-popup-item';
+      item.style.cursor = 'default';
+
+      const clickZone = document.createElement('div');
+      clickZone.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;';
+      clickZone.addEventListener('click', onClick);
+
       const dot = document.createElement('span');
       dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(key)};flex-shrink:0;`;
       const label = document.createElement('span');
       label.textContent = state.categories[key].label;
-      item.append(dot, label);
-      item.addEventListener('click', onClick);
+      clickZone.append(dot, label);
+
+      const star = makeInlineStarBtn(
+        () => state.favoriteCategories.has(key),
+        (nowFav) => { if (nowFav) state.favoriteCategories.add(key); else state.favoriteCategories.delete(key); saveFavorites(); }
+      );
+      item.append(clickZone, star);
       return item;
     }
 
@@ -1424,6 +1494,28 @@
         if (state.moveContextMenu) closeMoveContextMenu();
       }, true);
       document.getElementById('paletteSearch').addEventListener('input', () => renderPalette());
+
+      // 팔레트 정렬 버튼
+      const sortAlphaBtn = document.getElementById('sortAlphaBtn');
+      const sortAddedBtn = document.getElementById('sortAddedBtn');
+      const sortDirBtn   = document.getElementById('sortDirBtn');
+      sortAlphaBtn.addEventListener('click', () => {
+        state.paletteSortMode = 'alpha';
+        sortAlphaBtn.classList.add('active');
+        sortAddedBtn.classList.remove('active');
+        renderPalette();
+      });
+      sortAddedBtn.addEventListener('click', () => {
+        state.paletteSortMode = 'added';
+        sortAddedBtn.classList.add('active');
+        sortAlphaBtn.classList.remove('active');
+        renderPalette();
+      });
+      sortDirBtn.addEventListener('click', () => {
+        state.paletteSortDir = state.paletteSortDir === 'asc' ? 'desc' : 'asc';
+        sortDirBtn.textContent = state.paletteSortDir === 'asc' ? '↑' : '↓';
+        renderPalette();
+      });
       document.getElementById('addMoveBtn').addEventListener('click', addCustomMove);
       document.getElementById('saveBtn').addEventListener('click', saveProjectFile);
       document.getElementById('loadFileBtn').addEventListener('click', () => fileLoader.click());
@@ -1913,7 +2005,8 @@
     function renderPalette() {
       paletteListEl.innerHTML = '';
       const q = (document.getElementById('paletteSearch')?.value || '').toLowerCase();
-      const moves = q ? state.moveLibrary.filter(m => m.name.toLowerCase().includes(q)) : state.moveLibrary;
+      const base = q ? state.moveLibrary.filter(m => m.name.toLowerCase().includes(q)) : state.moveLibrary;
+      const moves = applySortToMoves(base);
       moves.forEach(move => {
         const card = document.createElement('div');
         card.className = 'move-card' + (state.activePaletteMove?.moveId === move.id ? ' palette-active' : '');
@@ -2767,6 +2860,21 @@
     function saveFavorites() {
       localStorage.setItem('choreo_fav_moves', JSON.stringify([...state.favoriteMoveNames]));
       localStorage.setItem('choreo_fav_cats', JSON.stringify([...state.favoriteCategories]));
+    }
+
+    function applySortToMoves(moves) {
+      const arr = [...moves];
+      if (state.paletteSortMode === 'alpha') {
+        arr.sort((a, b) => {
+          const cmp = a.name.localeCompare(b.name, 'ko');
+          return state.paletteSortDir === 'asc' ? cmp : -cmp;
+        });
+      } else {
+        // 'added': 배열 삽입 순서 기준
+        // asc = 최신이 위 (reverse), desc = 오래된 게 위 (원래 순서)
+        if (state.paletteSortDir === 'asc') arr.reverse();
+      }
+      return arr;
     }
 
     function renderSavedList() {
