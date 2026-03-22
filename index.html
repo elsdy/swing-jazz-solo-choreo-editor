@@ -3344,29 +3344,46 @@
       const newMoves = normalizeMoveList(data.moveLibrary || []).filter(m => !existingNames.has(m.name));
       state.moveLibrary = [...state.moveLibrary, ...newMoves];
 
-      // 루틴 병합 (id 기준, 이미 있는 것은 건너뜀)
+      // 루틴 병합: id가 다른 루틴은 추가, 같은 id는 건너뜀
+      // 이름이 겹치면 "(2)" 등 붙여 구분
       if (Array.isArray(data.routines)) {
-        const existingIds = new Set(state.routines.map(r => r.id));
-        const newRoutines = data.routines.filter(r => r.id && !existingIds.has(r.id)).map(r => ({
-          id: r.id, name: String(r.name || '루틴'),
-          rows: Math.max(1, Number(r.rows) || 4),
-          cols: Math.max(1, Number(r.cols) || 8),
-          placements: Array.isArray(r.placements) ? r.placements : [],
-          color: r.color || '#6366f1',
-          isFavorite: false
-        }));
-        state.routines = [...state.routines, ...newRoutines];
+        const existingIds  = new Set(state.routines.map(r => r.id));
+        const existingNames = () => new Set(state.routines.map(r => r.name));
+        const newRoutines = [];
+        data.routines.forEach(r => {
+          if (!r.id || existingIds.has(r.id)) return; // 같은 id → 건너뜀
+          let name = String(r.name || '루틴');
+          // 이름 중복 시 번호 붙이기
+          const names = existingNames();
+          if (names.has(name)) {
+            let n = 2;
+            while (names.has(`${name} (${n})`)) n++;
+            name = `${name} (${n})`;
+          }
+          const merged = {
+            id: r.id, name,
+            rows: Math.max(1, Number(r.rows) || 4),
+            cols: Math.max(1, Number(r.cols) || 8),
+            placements: Array.isArray(r.placements) ? r.placements : [],
+            color: r.color || '#6366f1',
+            isFavorite: false
+          };
+          newRoutines.push(merged);
+          state.routines.push(merged); // 즉시 추가해야 existingNames()가 갱신됨
+          existingIds.add(r.id);
+        });
       }
 
       const fallback = categoryNames()[0];
-      let added = 0, stacked = 0, skipped = 0;
+      let added = 0, stacked = 0;
 
       // 병합 전 기존 배치를 subRow=0으로 초기화 (아직 없는 경우)
       state.placements.forEach(p => { if (p.subRow === undefined) p.subRow = 0; });
 
-      // 새 배치들을 startIndex 순으로 정렬 (먼저 나오는 것이 위로)
-      const incoming = (data.placements || []).filter(p => p && p.name).map(p => ({
-        id: uid(), groupId: p.groupId || uid(),
+      // 들어오는 배치 정규화 (각 세그먼트에 newGroupId 준비)
+      const rawIncoming = (data.placements || []).filter(p => p && p.name).map(p => ({
+        id: uid(),
+        groupId: p.groupId || uid(),   // 원래 그룹 ID 보존 (그룹 단위 처리에 사용)
         name: String(p.name),
         category: state.categories[p.category] ? p.category : fallback,
         row: Math.max(1, Number(p.row) || 1),
@@ -3376,34 +3393,49 @@
         ...(p.type      ? { type: p.type }           : {}),
         ...(p.routineId ? { routineId: p.routineId } : {})
       })).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }))
-         .filter(p => p.row <= state.rows && p.startIndex < state.cols && p.length > 0)
-         .sort((a, b) => a.startIndex - b.startIndex);
+         .filter(p => p.row <= state.rows && p.startIndex < state.cols && p.length > 0);
 
-      incoming.forEach(norm => {
-        // 같은 row에서 겹치는 기존 배치들 중 겹치지 않는 가장 작은 subRow 찾기
-        const placedEnd = norm.startIndex + norm.length - 1;
+      // groupId 별로 묶기 (루틴처럼 여러 행에 걸친 배치를 하나의 그룹으로)
+      const groupMap = new Map();
+      rawIncoming.forEach(p => {
+        if (!groupMap.has(p.groupId)) groupMap.set(p.groupId, []);
+        groupMap.get(p.groupId).push(p);
+      });
+
+      // 그룹의 시작 위치(row→startIndex)로 정렬: 카운트상 먼저 나오는 것이 위(subRow=0)
+      const sortedGroups = [...groupMap.values()].sort((a, b) => {
+        const aFirst = a.reduce((m, p) => (p.row < m.row || (p.row === m.row && p.startIndex < m.startIndex)) ? p : m, a[0]);
+        const bFirst = b.reduce((m, p) => (p.row < m.row || (p.row === m.row && p.startIndex < m.startIndex)) ? p : m, b[0]);
+        return aFirst.row - bFirst.row || aFirst.startIndex - bFirst.startIndex;
+      });
+
+      // 그룹 단위로 충돌 검사: 그룹의 모든 세그먼트가 들어갈 수 있는 가장 낮은 subRow 탐색
+      sortedGroups.forEach(group => {
         let targetSubRow = 0;
         while (true) {
-          const conflict = state.placements.some(ex =>
-            ex.row === norm.row && (ex.subRow || 0) === targetSubRow &&
-            !(placedEnd < ex.startIndex || ex.startIndex + ex.length - 1 < norm.startIndex)
-          );
-          if (!conflict) break;
+          const hasConflict = group.some(norm => {
+            const normEnd = norm.startIndex + norm.length - 1;
+            return state.placements.some(ex =>
+              ex.row === norm.row && (ex.subRow || 0) === targetSubRow &&
+              !(normEnd < ex.startIndex || ex.startIndex + ex.length - 1 < norm.startIndex)
+            );
+          });
+          if (!hasConflict) break;
           targetSubRow++;
         }
-        norm.subRow = targetSubRow;
-        state.placements.push(norm);
+        // 그룹 전체를 같은 subRow에 배치 (루틴 세그먼트가 레이어 분리되지 않도록)
+        group.forEach(norm => {
+          norm.subRow = targetSubRow;
+          state.placements.push(norm);
+        });
         if (targetSubRow > 0) stacked++; else added++;
       });
 
-      // 같은 row+subRow 내에서 startIndex 기준 정렬 보장 (시각적으로 먼저 나오는 것이 위)
-      // subRow 번호는 이미 충돌 순서대로 배정됐으므로 추가 정렬 불필요
-
       renderCategoryOptions(); renderLegend(); renderPalette(); renderBoard(true);
       renderRoutineList(); saveHistory();
-      const msg = `병합 완료: ${added}개 배치됨` +
-        (stacked ? `, ${stacked}개 충돌→아래 레이어에 배치` : '') +
-        (skipped ? `, ${skipped}개 범위 초과로 건너뜀` : '');
+      const total = added + stacked;
+      const msg = `병합 완료: ${total}개 그룹 배치됨` +
+        (stacked ? ` (${stacked}개 충돌 → 아래 레이어)` : '');
       alert(msg);
     }
 
