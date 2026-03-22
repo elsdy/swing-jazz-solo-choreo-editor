@@ -784,6 +784,129 @@
     }
     .sort-dir-btn:hover { background: rgba(148,163,184,0.1); color: var(--text); }
 
+    /* ── 루틴 편집기 레이아웃 ── */
+    .boards-container {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      gap: 0;
+    }
+    .main-board-area {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .routine-editor-panel {
+      display: flex;
+      flex-direction: column;
+      flex: 0 0 48%;
+      max-width: 48%;
+      min-width: 0;
+      min-height: 0;
+      border-left: 2px solid rgba(99,102,241,0.35);
+      background: linear-gradient(180deg, rgba(99,102,241,0.05), rgba(99,102,241,0.02));
+    }
+    .re-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(99,102,241,0.2);
+      background: rgba(99,102,241,0.06);
+    }
+    .re-toolbar h2 { margin:0; font-size:13px; color:rgba(165,180,252,0.95); }
+    .re-toolbar p  { margin:0; font-size:11px; color:var(--muted); }
+    .re-close-btn {
+      background: rgba(99,102,241,0.15);
+      border: 1px solid rgba(99,102,241,0.4);
+      color: #a5b4fc;
+      font-weight: 800;
+    }
+    .re-close-btn:hover { background: rgba(99,102,241,0.28); }
+
+    /* ── 루틴 카드 ── */
+    .routine-card {
+      display: grid;
+      grid-template-columns: 22px minmax(80px,1fr) auto;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 6px;
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(99,102,241,0.1), rgba(99,102,241,0.05));
+      border: 1px solid rgba(99,102,241,0.22);
+      cursor: grab;
+      user-select: none;
+    }
+    .routine-card.is-editing {
+      outline: 2px solid rgba(99,102,241,0.85);
+      background: linear-gradient(180deg, rgba(99,102,241,0.18), rgba(99,102,241,0.1));
+    }
+    .routine-chip {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 10px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    .routine-chip::before { content: "▶"; font-size:8px; }
+    .routine-name-text {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .routine-meta-text {
+      font-size: 9px;
+      color: var(--muted);
+      line-height: 1.2;
+    }
+    .routine-actions {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+      flex-wrap: nowrap;
+    }
+    .edit-btn {
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      border: 1px solid rgba(99,102,241,0.35);
+      background: rgba(99,102,241,0.12);
+      color: #a5b4fc;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .edit-btn:hover { background: rgba(99,102,241,0.25); }
+
+    /* ── 루틴 배치 블록 ── */
+    .placement.is-routine {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+      color: white !important;
+    }
+    .placement.is-routine .label { color: white; }
+    .placement.is-routine .move-handle,
+    .placement.is-routine .resize-handle {
+      background: rgba(255,255,255,0.25);
+    }
+
   </style>
 </head>
 <body>
@@ -851,7 +974,7 @@
         <div class="helper">동작 카테고리는 팔레트에서 바로 수정되고, 카테고리 이름을 바꾸면 전체 UI에 반영됩니다.</div>
       </section>
 
-      <section class="section stack" style="min-height:0; flex:1;">
+      <section class="section stack" style="min-height:0;">
         <div class="row wrap" style="justify-content:space-between;">
           <h3 style="margin:0; font-size:12px;">동작 팔레트</h3>
           <div class="legend" id="legend"></div>
@@ -864,25 +987,58 @@
         </div>
         <div class="palette-list" id="paletteList"></div>
       </section>
+
+      <section class="section stack" style="min-height:0; flex:1;">
+        <div class="row wrap" style="justify-content:space-between; align-items:center;">
+          <h3 style="margin:0; font-size:12px;">루틴 목록</h3>
+          <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;">+ 새 루틴</button>
+        </div>
+        <div class="helper">루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.</div>
+        <div class="palette-list" id="routineList"></div>
+      </section>
       </div>
     </aside>
 
     <main class="panel workspace">
-      <div class="toolbar">
-        <div>
-          <h2 id="boardTitle">8x8 안무 테이블</h2>
-          <p>왼쪽 핸들로 이동, 오른쪽 핸들로 길이 조절.</p>
+      <div class="boards-container" id="boardsContainer">
+        <div class="main-board-area">
+          <div class="toolbar">
+            <div>
+              <h2 id="boardTitle">8x8 안무 테이블</h2>
+              <p>왼쪽 핸들로 이동, 오른쪽 핸들로 길이 조절.</p>
+            </div>
+            <div class="top-actions">
+              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+              <button id="quickPlaceBtn" class="ghost">+ 빠른 배치</button>
+              <button id="undoBtn" class="ghost">Undo</button>
+              <button id="redoBtn" class="ghost">Redo</button>
+              <button id="clearBtn" class="danger">전체 초기화</button>
+            </div>
+          </div>
+          <div class="board-wrap" id="mainBoardWrap"><div class="board" id="board"></div></div>
         </div>
-        <div class="top-actions">
-          <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
-          <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
-          <button id="quickPlaceBtn" class="ghost">+ 빠른 배치</button>
-          <button id="undoBtn" class="ghost">Undo</button>
-          <button id="redoBtn" class="ghost">Redo</button>
-          <button id="clearBtn" class="danger">전체 초기화</button>
+
+        <!-- 루틴 편집 패널 (기본 숨김) -->
+        <div class="routine-editor-panel" id="routineEditorPanel" style="display:none;">
+          <div class="re-toolbar">
+            <div>
+              <h2 id="reTitle">루틴 편집</h2>
+              <p id="reSubtitle">이름을 클릭해 편집</p>
+            </div>
+            <div class="top-actions" style="flex-wrap:wrap;">
+              <span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><span class="size-pill-label">박자</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="reColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="reColsInput" type="number" min="1" max="64" value="8" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+              <span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><span class="size-pill-label">행</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="reRowsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="reRowsInput" type="number" min="1" max="32" value="4" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reRowsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+              <button id="reQuickPlaceBtn" class="ghost">+ 빠른 배치</button>
+              <button id="reUndoBtn" class="ghost" disabled>Undo</button>
+              <button id="reRedoBtn" class="ghost" disabled>Redo</button>
+              <button id="reClearBtn" class="danger">초기화</button>
+              <button id="closeRoutineEditorBtn" class="re-close-btn">✕ 닫기</button>
+            </div>
+          </div>
+          <div class="board-wrap" id="reBoardWrap"><div class="board" id="reBoard"></div></div>
         </div>
       </div>
-      <div class="board-wrap"><div class="board" id="board"></div></div>
     </main>
   </div>
 
@@ -931,7 +1087,28 @@
       quickPlaceMode: false,
       paletteSortMode: 'alpha',  // 'alpha' | 'added'
       paletteSortDir: 'asc',     // 'asc' | 'desc'
+      routines: [],              // 루틴 목록
+      favoriteRoutineIds: new Set(), // 루틴 즐겨찾기
     };
+
+    // 루틴 편집기 전용 상태
+    const reState = {
+      routineId: null,
+      rows: 4,
+      cols: 8,
+      placements: [],
+      rowRefs: new Map(),
+      drag: null,
+      resize: null,
+      activePaletteMove: null,
+      boardSig: '',
+      quickPlaceMode: false,
+      history: [],
+      future: [],
+      quickPickerEl: null,
+    };
+    // 현재 리사이즈 중인 컨텍스트 (onMouseMove 공유)
+    let activeResizeCtx = null;
 
     const DEFAULT_MOVES = [
       ['Jazz Square','step'],
@@ -947,6 +1124,46 @@
     ].map(([name, category]) => ({ id: uid(), name, category }));
 
     const boardEl = document.getElementById('board');
+    const reBoardEl = document.getElementById('reBoard');
+    const routineEditorPanel = document.getElementById('routineEditorPanel');
+    const routineListEl = document.getElementById('routineList');
+
+    // ── 보드 컨텍스트 (mainCtx: 메인 보드, reCtx: 루틴 편집 보드) ──────────
+    // ctx 구조: el, rows(get/set), cols, placements, rowRefs, drag, resize,
+    //           activePaletteMove, boardSig, quickPlaceMode, history, future
+    const mainCtx = {
+      get el()                { return boardEl; },
+      get rows()              { return state.rows; },              set rows(v)              { state.rows = v; },
+      get cols()              { return state.cols; },              set cols(v)              { state.cols = v; },
+      get placements()        { return state.placements; },        set placements(v)        { state.placements = v; },
+      get rowRefs()           { return state.rowRefs; },
+      get drag()              { return state.drag; },              set drag(v)              { state.drag = v; },
+      get resize()            { return state.resize; },            set resize(v)            { state.resize = v; },
+      get activePaletteMove() { return state.activePaletteMove; }, set activePaletteMove(v) { state.activePaletteMove = v; },
+      get boardSig()          { return state.boardSignature; },    set boardSig(v)          { state.boardSignature = v; },
+      get quickPlaceMode()    { return state.quickPlaceMode; },    set quickPlaceMode(v)    { state.quickPlaceMode = v; },
+      get history()           { return state.history; },
+      get future()            { return state.future; },
+      onHistoryUpdate()       { updateHistoryButtons(); },
+      get noteRoot()          { return document.getElementById('mainBoardWrap'); },
+    };
+    const reCtx = {
+      get el()                { return reBoardEl; },
+      get rows()              { return reState.rows; },              set rows(v)              { reState.rows = v; },
+      get cols()              { return reState.cols; },              set cols(v)              { reState.cols = v; },
+      get placements()        { return reState.placements; },        set placements(v)        { reState.placements = v; },
+      get rowRefs()           { return reState.rowRefs; },
+      get drag()              { return reState.drag; },              set drag(v)              { reState.drag = v; },
+      get resize()            { return reState.resize; },            set resize(v)            { reState.resize = v; },
+      get activePaletteMove() { return reState.activePaletteMove; }, set activePaletteMove(v) { reState.activePaletteMove = v; },
+      get boardSig()          { return reState.boardSig; },          set boardSig(v)          { reState.boardSig = v; },
+      get quickPlaceMode()    { return reState.quickPlaceMode; },    set quickPlaceMode(v)    { reState.quickPlaceMode = v; },
+      get history()           { return reState.history; },
+      get future()            { return reState.future; },
+      onHistoryUpdate()       { updateReHistoryButtons(); },
+      get noteRoot()          { return document.getElementById('reBoardWrap'); },
+    };
+
     const paletteListEl = document.getElementById('paletteList');
     const legendEl = document.getElementById('legend');
     const savedListEl = document.getElementById('savedList');
@@ -973,7 +1190,7 @@
       state.moveLibrary = [...DEFAULT_MOVES];
       loadLocalMeta();
       bindControls();
-      bindBoardDelegatedEvents();
+      bindBoardDelegatedEvents(mainCtx);
       syncBoardSizeUI();
       renderCategoryOptions();
       renderLegend();
@@ -982,13 +1199,14 @@
       renderSavedList();
       renderSavedMoveList();
       renderSavedCategoryList();
+      renderRoutineList();
       saveHistory();
       updateMobileCellSize();
       window.addEventListener('resize', updateMobileCellSize);
 
       // 스크롤 락 버튼
       const sidebarScrollEl = document.querySelector('.sidebar-scroll');
-      const boardWrapEl = document.querySelector('.board-wrap');
+      const boardWrapEl = document.getElementById('mainBoardWrap');
       const sidebarLockBtn = document.getElementById('sidebarLockBtn');
       const boardLockBtn = document.getElementById('boardLockBtn');
 
@@ -1483,8 +1701,8 @@
       return Object.keys(state.categories);
     }
 
-    function boardSignature() {
-      return `${state.cols}x${state.rows}`;
+    function boardSignature(ctx = mainCtx) {
+      return `${ctx.cols}x${ctx.rows}`;
     }
 
     function bindControls() {
@@ -1547,19 +1765,27 @@
       redoBtn.addEventListener('click', redo);
       document.addEventListener('keydown', onHotkey);
       updateHistoryButtons();
+      document.getElementById('addRoutineBtn').addEventListener('click', createRoutine);
     }
 
-    function bindBoardDelegatedEvents() {
-      boardEl.addEventListener('dragover', (e) => {
+    // ── 범용 보드 이벤트 바인딩 (mainCtx 및 reCtx 모두 사용) ─────────────────
+    // quickPickerFn: (row, startIndex, clientX, clientY, count) => void
+    // saveHistoryFn: () => void
+    function bindBoardDelegatedEvents(ctx = mainCtx, quickPickerFn = null, saveHistoryFn = null) {
+      const el = ctx.el;
+      const _saveHistory = saveHistoryFn || (() => saveHistory());
+      const _openQuickPicker = quickPickerFn || ((row, si, cx, cy, cnt) => openQuickPicker(row, si, cx, cy, cnt));
+
+      el.addEventListener('dragover', (e) => {
         const track = e.target.closest('.track');
         if (!track) return;
         e.preventDefault();
-        clearTrackHighlights();
+        clearTrackHighlights(ctx);
         track.classList.add('drop-hover');
-        updatePreview(Number(track.dataset.row), pointerToCellIndex(track, e.clientX));
+        updatePreview(Number(track.dataset.row), pointerToCellIndex(track, e.clientX, ctx), undefined, ctx);
       });
 
-      boardEl.addEventListener('dragleave', (e) => {
+      el.addEventListener('dragleave', (e) => {
         const track = e.target.closest('.track');
         if (!track) return;
         const related = e.relatedTarget;
@@ -1567,139 +1793,111 @@
         track.classList.remove('drop-hover');
       });
 
-      boardEl.addEventListener('drop', (e) => {
+      el.addEventListener('drop', (e) => {
         const track = e.target.closest('.track');
         if (!track) return;
         e.preventDefault();
-        clearTrackHighlights();
+        clearTrackHighlights(ctx);
         const row = Number(track.dataset.row);
-        const startIndex = pointerToCellIndex(track, e.clientX);
-        clearPreview();
-        if (state.drag?.type === 'palette') {
-          placeMove(state.drag.moveId, row, startIndex, DEFAULT_COUNT);
-          saveHistory();
-        } else if (state.drag?.type === 'placement-move') {
-          movePlacementGroup(state.drag.groupId, row, startIndex);
-          saveHistory();
+        const startIndex = pointerToCellIndex(track, e.clientX, ctx);
+        clearPreview(ctx);
+        if (ctx.drag?.type === 'palette') {
+          placeMove(ctx.drag.moveId, row, startIndex, DEFAULT_COUNT, ctx);
+          _saveHistory();
+        } else if (ctx.drag?.type === 'placement-move') {
+          movePlacementGroup(ctx.drag.groupId, row, startIndex, ctx);
+          _saveHistory();
+        } else if (ctx.drag?.type === 'routine' && ctx === mainCtx) {
+          placeRoutineOnBoard(ctx.drag.routineId, row, startIndex);
+          _saveHistory();
         }
-        state.drag = null;
+        ctx.drag = null;
       });
 
-      boardEl.addEventListener('dblclick', (e) => {
+      el.addEventListener('dblclick', (e) => {
         const placementEl = e.target.closest('.placement');
         if (!placementEl) return;
         const groupId = placementEl.dataset.groupId;
-        removePlacementGroup(groupId);
-        saveHistory();
+        removePlacementGroup(groupId, ctx);
+        _saveHistory();
       });
 
-      boardEl.addEventListener('dragstart', (e) => {
+      el.addEventListener('dragstart', (e) => {
         const moveHandle = e.target.closest('.move-handle');
         if (!moveHandle) return;
         const placementEl = moveHandle.closest('.placement');
         if (!placementEl) return;
         const groupId = placementEl.dataset.groupId;
-        state.drag = { type: 'placement-move', groupId };
+        ctx.drag = { type: 'placement-move', groupId };
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', groupId);
-        markDraggingGroup(groupId);
+        markDraggingGroup(groupId, ctx);
       });
 
-      boardEl.addEventListener('dragend', (e) => {
+      el.addEventListener('dragend', (e) => {
         if (!e.target.closest('.move-handle')) return;
-        state.drag = null;
-        clearTrackHighlights();
-        clearPreview();
-        unmarkDraggingGroups();
+        ctx.drag = null;
+        clearTrackHighlights(ctx);
+        clearPreview(ctx);
+        unmarkDraggingGroups(ctx);
       });
 
-      boardEl.addEventListener('mousedown', (e) => {
+      el.addEventListener('mousedown', (e) => {
         const resizeHandle = e.target.closest('.resize-handle');
         if (resizeHandle) {
           e.preventDefault();
           const placementEl = resizeHandle.closest('.placement');
           if (!placementEl) return;
-          startResize(placementEl.dataset.groupId, e.clientX);
+          startResize(placementEl.dataset.groupId, e.clientX, ctx);
           return;
         }
       });
 
-      boardEl.addEventListener('touchstart', (e) => {
+      el.addEventListener('touchstart', (e) => {
         const resizeHandle = e.target.closest('.resize-handle');
         if (resizeHandle) {
           e.preventDefault();
           const placementEl = resizeHandle.closest('.placement');
           if (!placementEl) return;
           showFloatingTooltip(placementEl);
-          startResize(placementEl.dataset.groupId, e.touches[0].clientX);
+          startResize(placementEl.dataset.groupId, e.touches[0].clientX, ctx);
           return;
         }
-
         const moveHandle = e.target.closest('.move-handle');
         if (moveHandle) {
           e.preventDefault();
           const placementEl = moveHandle.closest('.placement');
           if (!placementEl) return;
           showFloatingTooltip(placementEl);
-          startTouchPlacementMove(placementEl.dataset.groupId, e.touches[0].clientX, e.touches[0].clientY);
+          startTouchPlacementMove(placementEl.dataset.groupId, e.touches[0].clientX, e.touches[0].clientY, ctx);
         }
       }, { passive: false });
 
-      boardEl.addEventListener('touchmove', (e) => {
-        if (state.drag?.type !== 'placement-move' || !state.drag.isTouchDragging) return;
+      el.addEventListener('touchmove', (e) => {
+        if (ctx.drag?.type !== 'placement-move' || !ctx.drag.isTouchDragging) return;
         e.preventDefault();
         const touch = e.touches[0];
-        moveTouchPlacementGhost(touch.clientX, touch.clientY);
+        moveTouchPlacementGhost(touch.clientX, touch.clientY, ctx);
       }, { passive: false });
 
-      boardEl.addEventListener('touchend', () => {
+      el.addEventListener('touchend', () => {
         hideFloatingTooltip();
-        if (state.drag?.type !== 'placement-move' || !state.drag.isTouchDragging) return;
-        finishTouchPlacementMove();
+        if (ctx.drag?.type !== 'placement-move' || !ctx.drag.isTouchDragging) return;
+        finishTouchPlacementMove(false, ctx);
       });
 
-      boardEl.addEventListener('touchcancel', () => {
+      el.addEventListener('touchcancel', () => {
         hideFloatingTooltip();
-        if (state.drag?.type !== 'placement-move' || !state.drag.isTouchDragging) return;
-        finishTouchPlacementMove(true);
+        if (ctx.drag?.type !== 'placement-move' || !ctx.drag.isTouchDragging) return;
+        finishTouchPlacementMove(true, ctx);
       });
 
-      // PC hover tooltip
-      const floatingTip = document.createElement('div');
-      floatingTip.className = 'floating-tooltip';
-      floatingTip.style.cssText = 'display:none;position:fixed;background:rgba(0,0,0,.85);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.3);';
-      document.body.appendChild(floatingTip);
-
-      let tooltipTarget = null;
-
-      function showFloatingTooltip(placementEl) {
-        const name = placementEl.dataset.name || '';
-        const tip = placementEl.querySelector('.tooltip');
-        floatingTip.textContent = tip ? tip.textContent : name;
-        tooltipTarget = placementEl;
-        updateTooltipPosition();
-      }
-      function updateTooltipPosition() {
-        if (!tooltipTarget) return;
-        if (!document.body.contains(tooltipTarget)) { hideFloatingTooltip(); return; }
-        const rect = tooltipTarget.getBoundingClientRect();
-        floatingTip.style.display = 'block';
-        floatingTip.style.left = Math.round(rect.left + rect.width / 2) + 'px';
-        floatingTip.style.top = Math.round(rect.top - 8) + 'px';
-        floatingTip.style.transform = 'translate(-50%, -100%)';
-      }
-      function hideFloatingTooltip() {
-        floatingTip.style.display = 'none';
-        floatingTip.style.transform = '';
-        tooltipTarget = null;
-      }
-
-      boardEl.addEventListener('mouseenter', (e) => {
+      el.addEventListener('mouseenter', (e) => {
         const p = e.target.closest('.placement');
         if (!p) return;
         showFloatingTooltip(p);
       }, true);
-      boardEl.addEventListener('mouseleave', (e) => {
+      el.addEventListener('mouseleave', (e) => {
         const p = e.target.closest('.placement');
         if (!p) return;
         if (e.relatedTarget && p.contains(e.relatedTarget)) return;
@@ -1707,145 +1905,144 @@
       }, true);
 
       // ── Click-to-activate + draw-to-place ──────────────────────────────────
-      let drawState = null;      // { row, startIndex, track }
-      let quickDrawState = null; // { row, startIndex, count, clientX, clientY } — 빠른 배치 드래그
+      let drawState = null;
+      let quickDrawState = null;
 
       function drawPreview(row, startIndex, endIndex) {
         const count = Math.max(1, endIndex - startIndex + 1);
-        updatePreview(row, startIndex, count);
+        updatePreview(row, startIndex, count, ctx);
       }
 
-      boardEl.addEventListener('mousedown', (e) => {
-        // ── 빠른 배치 모드: 드래그로 길이 결정 ─────────────────────────────
-        if (state.quickPlaceMode && !state.activePaletteMove && !drawState) {
+      el.addEventListener('mousedown', (e) => {
+        if (ctx.quickPlaceMode && !ctx.activePaletteMove && !drawState) {
           if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
           const track = e.target.closest('.track');
           if (!track) return;
           e.preventDefault();
           const row = Number(track.dataset.row);
-          const startIndex = pointerToCellIndex(track, e.clientX);
+          const startIndex = pointerToCellIndex(track, e.clientX, ctx);
           quickDrawState = { row, startIndex, track, count: DEFAULT_COUNT, clientX: e.clientX, clientY: e.clientY };
-          updatePreview(row, startIndex, DEFAULT_COUNT);
+          updatePreview(row, startIndex, DEFAULT_COUNT, ctx);
           return;
         }
-        // ── 팔레트 동작 드로우 배치 ─────────────────────────────────────────
-        if (!state.activePaletteMove) return;
+        if (!ctx.activePaletteMove) return;
         const track = e.target.closest('.track');
         if (!track) return;
         if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
         e.preventDefault();
         const row = Number(track.dataset.row);
-        const startIndex = pointerToCellIndex(track, e.clientX);
+        const startIndex = pointerToCellIndex(track, e.clientX, ctx);
         drawState = { row, startIndex, track };
         drawPreview(row, startIndex, startIndex);
       });
 
-      boardEl.addEventListener('mousemove', (e) => {
-        // 빠른 배치 드래그 미리보기
+      el.addEventListener('mousemove', (e) => {
         if (quickDrawState) {
           const endTrack = document.elementFromPoint(e.clientX, e.clientY)?.closest('.track');
-          const endRow = endTrack ? Number(endTrack.dataset.row) : quickDrawState.row;
-          const endTrackEl = endTrack || quickDrawState.track;
-          const endCol = pointerToCellIndex(endTrackEl, e.clientX);
+          const inBoard = endTrack && el.contains(endTrack);
+          const endRow = inBoard ? Number(endTrack.dataset.row) : quickDrawState.row;
+          const endTrackEl = (inBoard ? endTrack : null) || quickDrawState.track;
+          const endCol = pointerToCellIndex(endTrackEl, e.clientX, ctx);
           const count = Math.max(1, Math.min(
-            calcCrossRowCount(quickDrawState.row, quickDrawState.startIndex, endRow, endCol),
-            totalCellsFrom(quickDrawState.row, quickDrawState.startIndex)
+            calcCrossRowCount(quickDrawState.row, quickDrawState.startIndex, endRow, endCol, ctx),
+            totalCellsFrom(quickDrawState.row, quickDrawState.startIndex, ctx)
           ));
           quickDrawState.count = count;
           quickDrawState.clientX = e.clientX;
           quickDrawState.clientY = e.clientY;
-          updatePreview(quickDrawState.row, quickDrawState.startIndex, count);
+          updatePreview(quickDrawState.row, quickDrawState.startIndex, count, ctx);
           return;
         }
-        if (!drawState || !state.activePaletteMove) return;
+        if (!drawState || !ctx.activePaletteMove) return;
         const endTrack = document.elementFromPoint(e.clientX, e.clientY)?.closest('.track');
-        const endRow = endTrack ? Number(endTrack.dataset.row) : drawState.row;
-        const endTrackEl = endTrack || drawState.track;
-        const endCol = pointerToCellIndex(endTrackEl, e.clientX);
+        const inBoard = endTrack && el.contains(endTrack);
+        const endRow = inBoard ? Number(endTrack.dataset.row) : drawState.row;
+        const endTrackEl = (inBoard ? endTrack : null) || drawState.track;
+        const endCol = pointerToCellIndex(endTrackEl, e.clientX, ctx);
         const count = Math.max(1, Math.min(
-          calcCrossRowCount(drawState.row, drawState.startIndex, endRow, endCol),
-          totalCellsFrom(drawState.row, drawState.startIndex)
+          calcCrossRowCount(drawState.row, drawState.startIndex, endRow, endCol, ctx),
+          totalCellsFrom(drawState.row, drawState.startIndex, ctx)
         ));
-        updatePreview(drawState.row, drawState.startIndex, count);
+        updatePreview(drawState.row, drawState.startIndex, count, ctx);
       });
 
       document.addEventListener('mouseup', (e) => {
-        // 빠른 배치 드래그 완료 → 팝업 열기 (드래그 길이 전달)
-        if (quickDrawState) {
+        if (quickDrawState && ctx.quickPlaceMode) {
           const { row, startIndex, count, clientX, clientY } = quickDrawState;
           quickDrawState = null;
-          openQuickPicker(row, startIndex, clientX, clientY, count);
+          _openQuickPicker(row, startIndex, clientX, clientY, count);
           return;
         }
-        if (drawState && state.activePaletteMove) {
+        if (quickDrawState) { quickDrawState = null; clearPreview(ctx); return; }
+        if (drawState && ctx.activePaletteMove) {
           const endTrack = document.elementFromPoint(e.clientX, e.clientY)?.closest('.track');
-          const endRow = endTrack ? Number(endTrack.dataset.row) : drawState.row;
-          const endTrackEl = endTrack || drawState.track;
-          const endCol = pointerToCellIndex(endTrackEl, e.clientX);
+          const inBoard = endTrack && el.contains(endTrack);
+          const endRow = inBoard ? Number(endTrack.dataset.row) : drawState.row;
+          const endTrackEl = (inBoard ? endTrack : null) || drawState.track;
+          const endCol = pointerToCellIndex(endTrackEl, e.clientX, ctx);
           const count = Math.max(DEFAULT_COUNT, Math.min(
-            calcCrossRowCount(drawState.row, drawState.startIndex, endRow, endCol),
-            totalCellsFrom(drawState.row, drawState.startIndex)
+            calcCrossRowCount(drawState.row, drawState.startIndex, endRow, endCol, ctx),
+            totalCellsFrom(drawState.row, drawState.startIndex, ctx)
           ));
-          placeMove(state.activePaletteMove.moveId, drawState.row, drawState.startIndex, count);
-          saveHistory();
-          clearPreview();
+          placeMove(ctx.activePaletteMove.moveId, drawState.row, drawState.startIndex, count, ctx);
+          _saveHistory();
+          clearPreview(ctx);
           drawState = null;
-          return;
         }
       });
 
-      // Touch draw-to-place (board)
-      boardEl.addEventListener('touchstart', (e) => {
-        if (!state.activePaletteMove) return;
+      // Touch draw-to-place
+      el.addEventListener('touchstart', (e) => {
+        if (!ctx.activePaletteMove) return;
         const touch = e.touches[0];
         const track = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
-        if (!track) return;
+        if (!track || !el.contains(track)) return;
         if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
         e.stopPropagation();
         const row = Number(track.dataset.row);
-        const startIndex = pointerToCellIndex(track, touch.clientX);
+        const startIndex = pointerToCellIndex(track, touch.clientX, ctx);
         drawState = { row, startIndex, track };
         drawPreview(row, startIndex, startIndex);
       }, { passive: true });
 
-      boardEl.addEventListener('touchmove', (e) => {
-        if (!drawState || !state.activePaletteMove) return;
+      el.addEventListener('touchmove', (e) => {
+        if (!drawState || !ctx.activePaletteMove) return;
         const touch = e.touches[0];
-        const endIndex = pointerToCellIndex(drawState.track, touch.clientX);
+        const endIndex = pointerToCellIndex(drawState.track, touch.clientX, ctx);
         drawPreview(drawState.row, drawState.startIndex, endIndex);
       }, { passive: true });
 
-      boardEl.addEventListener('touchend', (e) => {
-        if (!drawState || !state.activePaletteMove) return;
+      el.addEventListener('touchend', (e) => {
+        if (!drawState || !ctx.activePaletteMove) return;
         const touch = (e.changedTouches || e.touches)[0];
-        const endIndex = pointerToCellIndex(drawState.track, touch.clientX);
+        const endIndex = pointerToCellIndex(drawState.track, touch.clientX, ctx);
         const count = Math.max(DEFAULT_COUNT, endIndex - drawState.startIndex + 1);
-        placeMove(state.activePaletteMove.moveId, drawState.row, drawState.startIndex, count);
-        saveHistory();
-        clearPreview();
+        placeMove(ctx.activePaletteMove.moveId, drawState.row, drawState.startIndex, count, ctx);
+        _saveHistory();
+        clearPreview(ctx);
         drawState = null;
       });
 
-      boardEl.addEventListener('touchcancel', () => {
+      el.addEventListener('touchcancel', () => {
         if (!drawState) return;
-        clearPreview();
+        clearPreview(ctx);
         drawState = null;
       });
 
-      // ── 빠른 배치 모드: 빈 트랙 탭 → quickPicker ────────────────────────
+      // 빠른 배치 모드: 빈 트랙 탭 → quickPicker
       let quickTouchAnchor = null;
 
-      boardEl.addEventListener('touchstart', (e) => {
-        if (!state.quickPlaceMode || state.activePaletteMove || drawState) return;
+      el.addEventListener('touchstart', (e) => {
+        if (!ctx.quickPlaceMode || ctx.activePaletteMove || drawState) return;
         if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
         const touch = e.touches[0];
         const track = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
-        if (!track) return;
+        if (!track || !el.contains(track)) return;
         quickTouchAnchor = { x: touch.clientX, y: touch.clientY, track };
       }, { passive: true });
 
-      boardEl.addEventListener('touchend', (e) => {
-        if (!state.quickPlaceMode || !quickTouchAnchor) return;
+      el.addEventListener('touchend', (e) => {
+        if (!ctx.quickPlaceMode || !quickTouchAnchor) return;
         const touch = (e.changedTouches || e.touches)[0];
         const dx = Math.abs(touch.clientX - quickTouchAnchor.x);
         const dy = Math.abs(touch.clientY - quickTouchAnchor.y);
@@ -1853,13 +2050,34 @@
         quickTouchAnchor = null;
         if (dx > 12 || dy > 12) return;
         const row = Number(track.dataset.row);
-        const cellIndex = pointerToCellIndex(track, touch.clientX);
-        openQuickPicker(row, cellIndex, touch.clientX, touch.clientY);
+        const cellIndex = pointerToCellIndex(track, touch.clientX, ctx);
+        _openQuickPicker(row, cellIndex, touch.clientX, touch.clientY, DEFAULT_COUNT);
       });
 
-      boardEl.addEventListener('touchcancel', () => { quickTouchAnchor = null; });
+      el.addEventListener('touchcancel', () => { quickTouchAnchor = null; });
+    }
 
-      // ───────────────────────────────────────────────────────────────────────
+    // ── PC/Mobile hover tooltip (모듈 레벨) ────────────────────────────────
+    const floatingTip = document.createElement('div');
+    floatingTip.className = 'floating-tooltip';
+    floatingTip.style.cssText = 'display:none;position:fixed;background:rgba(0,0,0,.85);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.3);';
+    document.body.appendChild(floatingTip);
+    let _tooltipTarget = null;
+    function showFloatingTooltip(placementEl) {
+      const tip = placementEl.querySelector('.tooltip');
+      floatingTip.textContent = tip ? tip.textContent : (placementEl.dataset.name || '');
+      _tooltipTarget = placementEl;
+      if (!document.body.contains(_tooltipTarget)) { hideFloatingTooltip(); return; }
+      const rect = _tooltipTarget.getBoundingClientRect();
+      floatingTip.style.display = 'block';
+      floatingTip.style.left = Math.round(rect.left + rect.width / 2) + 'px';
+      floatingTip.style.top = Math.round(rect.top - 8) + 'px';
+      floatingTip.style.transform = 'translate(-50%, -100%)';
+    }
+    function hideFloatingTooltip() {
+      floatingTip.style.display = 'none';
+      floatingTip.style.transform = '';
+      _tooltipTarget = null;
     }
 
     function cancelActivePaletteMove() {
@@ -1887,7 +2105,8 @@
         cols: state.cols,
         placements: state.placements,
         moveLibrary: state.moveLibrary,
-        categories: state.categories
+        categories: state.categories,
+        routines: state.routines
       });
     }
 
@@ -1898,11 +2117,13 @@
       state.placements = data.placements || [];
       state.moveLibrary = data.moveLibrary || [];
       state.categories = normalizeCategories(data.categories || DEFAULT_CATEGORIES);
+      if (Array.isArray(data.routines)) state.routines = data.routines;
       syncBoardSizeUI();
       renderCategoryOptions();
       renderLegend();
       renderPalette();
       renderBoard(true);
+      renderRoutineList();
       updateHistoryButtons();
     }
 
@@ -1936,10 +2157,64 @@
       redoBtn.disabled = state.future.length === 0;
     }
 
+    function updateReHistoryButtons() {
+      const reUndoBtn = document.getElementById('reUndoBtn');
+      const reRedoBtn = document.getElementById('reRedoBtn');
+      if (reUndoBtn) reUndoBtn.disabled = reState.history.length <= 1;
+      if (reRedoBtn) reRedoBtn.disabled = reState.future.length === 0;
+    }
+
+    function snapshotStateRe() {
+      return JSON.stringify({ rows: reState.rows, cols: reState.cols, placements: reState.placements });
+    }
+
+    function saveHistoryRe() {
+      const snap = snapshotStateRe();
+      if (reState.history[reState.history.length - 1] === snap) { updateReHistoryButtons(); return; }
+      reState.history.push(snap);
+      if (reState.history.length > 100) reState.history.shift();
+      reState.future = [];
+      updateReHistoryButtons();
+      syncCurrentRoutine();
+    }
+
+    function undoRe() {
+      if (reState.history.length <= 1) return;
+      reState.future.push(reState.history.pop());
+      const data = JSON.parse(reState.history[reState.history.length - 1]);
+      reState.rows = data.rows; reState.cols = data.cols; reState.placements = data.placements;
+      syncReBoardSizeUI();
+      renderBoard(true, reCtx);
+      updateReHistoryButtons();
+      syncCurrentRoutine();
+    }
+
+    function redoRe() {
+      if (!reState.future.length) return;
+      const snap = reState.future.pop();
+      reState.history.push(snap);
+      const data = JSON.parse(snap);
+      reState.rows = data.rows; reState.cols = data.cols; reState.placements = data.placements;
+      syncReBoardSizeUI();
+      renderBoard(true, reCtx);
+      updateReHistoryButtons();
+      syncCurrentRoutine();
+    }
+
     function syncBoardSizeUI() {
       boardColsInput.value = state.rows;
       boardTitle.textContent = `8x${state.rows} 안무 테이블`;
       updateMobileCellSize();
+    }
+
+    function syncReBoardSizeUI() {
+      document.getElementById('reColsInput').value = reState.cols;
+      document.getElementById('reRowsInput').value = reState.rows;
+      const routine = state.routines.find(r => r.id === reState.routineId);
+      if (routine) {
+        document.getElementById('reTitle').textContent = routine.name;
+        document.getElementById('reSubtitle').textContent = `${reState.cols}박자 × ${reState.rows}행`;
+      }
     }
 
     function applyBoardSizeFromInput() {
@@ -2279,162 +2554,160 @@
       }
     }
 
-    function buildBoardSkeleton() {
-      boardEl.innerHTML = '';
-      state.rowRefs.clear();
+    function buildBoardSkeleton(ctx = mainCtx) {
+      ctx.el.innerHTML = '';
+      ctx.rowRefs.clear();
       const header = document.createElement('div');
       header.className = 'board-header';
-      header.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${state.cols}) var(--noteW)`;
-      header.innerHTML = `<div class="corner">마디</div><div class="header-cells" style="grid-template-columns:repeat(${state.cols}, var(--cellW));">${Array.from({ length: state.cols }, (_, i) => `<div>${i + 1}</div>`).join('')}</div><div class="note-header">비고</div>`;
-      boardEl.appendChild(header);
+      header.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${ctx.cols}) var(--noteW)`;
+      header.innerHTML = `<div class="corner">마디</div><div class="header-cells" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${Array.from({ length: ctx.cols }, (_, i) => `<div>${i + 1}</div>`).join('')}</div><div class="note-header">비고</div>`;
+      ctx.el.appendChild(header);
 
       // intro row (row 0)
       {
         const rowEl = document.createElement('div');
         rowEl.className = 'board-row';
-        rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${state.cols}) var(--noteW)`;
-
+        rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${ctx.cols}) var(--noteW)`;
         const label = document.createElement('div');
         label.className = 'row-label';
         label.textContent = 'intro';
-
         const track = document.createElement('div');
         track.className = 'track';
         track.dataset.row = 0;
-        track.style.width = `calc(var(--cellW) * ${state.cols})`;
-        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${state.cols}, var(--cellW));">${'<div></div>'.repeat(state.cols)}</div>`;
-
+        track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
+        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
         const note = document.createElement('div');
         note.className = 'note-cell';
-
         rowEl.append(label, track, note);
-        boardEl.appendChild(rowEl);
-        state.rowRefs.set(0, { rowEl, label, track, note });
+        ctx.el.appendChild(rowEl);
+        ctx.rowRefs.set(0, { rowEl, label, track, note });
       }
 
-      for (let row = 1; row <= state.rows; row++) {
+      for (let row = 1; row <= ctx.rows; row++) {
         const rowEl = document.createElement('div');
         rowEl.className = 'board-row';
-        rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${state.cols}) var(--noteW)`;
-
+        rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${ctx.cols}) var(--noteW)`;
         const label = document.createElement('div');
         label.className = 'row-label';
-        label.textContent = `${state.cols}x${row}`;
-
+        label.textContent = `${ctx.cols}x${row}`;
         const track = document.createElement('div');
         track.className = 'track';
         track.dataset.row = row;
-        track.style.width = `calc(var(--cellW) * ${state.cols})`;
-        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${state.cols}, var(--cellW));">${'<div></div>'.repeat(state.cols)}</div>`;
-
+        track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
+        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
         const note = document.createElement('div');
         note.className = 'note-cell';
-
         rowEl.append(label, track, note);
-        boardEl.appendChild(rowEl);
-        state.rowRefs.set(row, { rowEl, label, track, note });
+        ctx.el.appendChild(rowEl);
+        ctx.rowRefs.set(row, { rowEl, label, track, note });
       }
-      state.boardSignature = boardSignature();
+      ctx.boardSig = boardSignature(ctx);
     }
 
-    function renderBoard(forceRebuild = false) {
-      if (forceRebuild || state.boardSignature !== boardSignature() || state.rowRefs.size !== state.rows + 1) {
-        buildBoardSkeleton();
+    function renderBoard(forceRebuild = false, ctx = mainCtx) {
+      if (forceRebuild || ctx.boardSig !== boardSignature(ctx) || ctx.rowRefs.size !== ctx.rows + 1) {
+        buildBoardSkeleton(ctx);
       }
-      renderRows([0, ...Array.from({ length: state.rows }, (_, i) => i + 1)]);
+      renderRows([0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)], ctx);
     }
 
-    function renderRows(rows) {
-      const uniqueRows = [...new Set(rows)].filter(row => row >= 0 && row <= state.rows);
-      uniqueRows.forEach(renderRow);
-      adjustNoteColumnWidth();
+    function renderRows(rows, ctx = mainCtx) {
+      const uniqueRows = [...new Set(rows)].filter(row => row >= 0 && row <= ctx.rows);
+      uniqueRows.forEach(row => renderRow(row, ctx));
+      adjustNoteColumnWidth(ctx);
       document.querySelector('.floating-tooltip')?.style.setProperty('display', 'none');
     }
 
-    function adjustNoteColumnWidth() {
-      const noteCells = [...boardEl.querySelectorAll('.note-cell')];
+    function adjustNoteColumnWidth(ctx = mainCtx) {
+      const noteCells = [...ctx.el.querySelectorAll('.note-cell')];
       if (!noteCells.length) return;
-      const root = document.documentElement;
+      const root = ctx.noteRoot || document.documentElement;
       root.style.setProperty('--noteW', '0px');
       let maxW = 0;
       noteCells.forEach(cell => { maxW = Math.max(maxW, cell.scrollWidth); });
       root.style.setProperty('--noteW', `${Math.max(60, maxW + 16)}px`);
     }
 
-    function renderRow(row) {
-      const ref = state.rowRefs.get(row);
+    function renderRow(row, ctx = mainCtx) {
+      const ref = ctx.rowRefs.get(row);
       if (!ref) return;
-      ref.label.textContent = row === 0 ? 'intro' : `${state.cols}x${row}`;
-      ref.note.innerHTML = renderRowNotes(row) || '<span class="muted">-</span>';
+      ref.label.textContent = row === 0 ? 'intro' : `${ctx.cols}x${row}`;
+      ref.note.innerHTML = renderRowNotes(row, ctx) || '<span class="muted">-</span>';
       [...ref.track.querySelectorAll('.placement')].forEach(el => el.remove());
-      state.placements.filter(p => p.row === row).forEach(p => ref.track.appendChild(createPlacementEl(p)));
+      ctx.placements.filter(p => p.row === row).forEach(p => ref.track.appendChild(createPlacementEl(p, ctx)));
     }
 
-    function getAffectedRowsByGroup(groupId) {
-      return state.placements.filter(p => p.groupId === groupId).map(p => p.row);
+    function getAffectedRowsByGroup(groupId, ctx = mainCtx) {
+      return ctx.placements.filter(p => p.groupId === groupId).map(p => p.row);
     }
 
-    function getAffectedRowsByMoveName(name) {
-      return state.placements.filter(p => p.name === name).map(p => p.row);
+    function getAffectedRowsByMoveName(name, ctx = mainCtx) {
+      return ctx.placements.filter(p => p.name === name).map(p => p.row);
     }
 
-    function renderRowNotes(row) {
-      return state.placements
+    function renderRowNotes(row, ctx = mainCtx) {
+      return ctx.placements
         .filter(p => p.row === row)
         .sort((a, b) => a.startIndex - b.startIndex)
-        .map(p => escapeHtml(`${p.name} (${placementRangeLabel(p.groupId)})`))
+        .map(p => {
+          if (p.type === 'routine') return escapeHtml(`▶ ${p.name}`);
+          return escapeHtml(`${p.name} (${placementRangeLabel(p.groupId, ctx)})`);
+        })
         .join('<br>');
     }
 
-    function placementRangeLabel(groupId) {
-      return state.placements
+    function placementRangeLabel(groupId, ctx = mainCtx) {
+      return ctx.placements
         .filter(p => p.groupId === groupId)
         .sort((a, b) => a.row - b.row || a.startIndex - b.startIndex)
         .map(seg => {
           const s = seg.startIndex + 1;
           const e = seg.startIndex + seg.length;
-          return `${state.cols}x${seg.row} : ${s}${s === e ? '' : `~${e}`}`;
+          return `${ctx.cols}x${seg.row} : ${s}${s === e ? '' : `~${e}`}`;
         })
         .join(', ');
     }
 
-    function createPlacementEl(placement) {
+    function createPlacementEl(placement, ctx = mainCtx) {
       const el = document.createElement('div');
       el.className = 'placement';
-      if (state.drag?.type === 'placement-move' && state.drag.groupId === placement.groupId) el.classList.add('is-dragging');
+      if (placement.type === 'routine') el.classList.add('is-routine');
+      if (ctx.drag?.type === 'placement-move' && ctx.drag.groupId === placement.groupId) el.classList.add('is-dragging');
       el.dataset.groupId = placement.groupId;
       el.dataset.name = placement.name;
+      if (placement.routineId) el.dataset.routineId = placement.routineId;
       el.style.left = `calc(${placement.startIndex} * var(--cellW) + 4px)`;
       el.style.width = `calc(${placement.length} * var(--cellW) - 8px)`;
-      el.style.background = categoryColor(placement.category);
-      el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${groupCount(placement.groupId)}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${groupCount(placement.groupId)}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
+      if (placement.type !== 'routine') el.style.background = categoryColor(placement.category);
+      const cnt = groupCount(placement.groupId, ctx);
+      el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${cnt}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
       return el;
     }
 
-    function pointerToCellIndex(track, clientX) {
+    function pointerToCellIndex(track, clientX, ctx = mainCtx) {
       const rect = track.getBoundingClientRect();
       const x = Math.max(0, Math.min(clientX - rect.left, rect.width - 1));
-      return Math.max(0, Math.min(state.cols - 1, Math.floor(x / (rect.width / state.cols))));
+      return Math.max(0, Math.min(ctx.cols - 1, Math.floor(x / (rect.width / ctx.cols))));
     }
 
-    function totalCellsFrom(row, startIndex) {
-      return ((state.rows - row) * state.cols) + (state.cols - startIndex);
+    function totalCellsFrom(row, startIndex, ctx = mainCtx) {
+      return ((ctx.rows - row) * ctx.cols) + (ctx.cols - startIndex);
     }
 
     // 시작(row,col)→끝(row,col)까지 셀 수 계산 (다중 행 포함)
-    function calcCrossRowCount(startRow, startCol, endRow, endCol) {
+    function calcCrossRowCount(startRow, startCol, endRow, endCol, ctx = mainCtx) {
       if (endRow < startRow || (endRow === startRow && endCol < startCol)) return 1;
       if (endRow === startRow) return endCol - startCol + 1;
-      return (state.cols - startCol) + (endRow - startRow - 1) * state.cols + (endCol + 1);
+      return (ctx.cols - startCol) + (endRow - startRow - 1) * ctx.cols + (endCol + 1);
     }
 
-    function buildSegments(startRow, startIndex, totalCount) {
+    function buildSegments(startRow, startIndex, totalCount, ctx = mainCtx) {
       const segments = [];
       let remaining = totalCount;
       let row = startRow;
       let col = startIndex;
-      while (remaining > 0 && row <= state.rows) {
-        const len = Math.min(state.cols - col, remaining);
+      while (remaining > 0 && row <= ctx.rows) {
+        const len = Math.min(ctx.cols - col, remaining);
         segments.push({ row, startIndex: col, length: len });
         remaining -= len;
         row += 1;
@@ -2443,112 +2716,116 @@
       return segments;
     }
 
-    function groupCount(groupId) {
-      return state.placements.filter(p => p.groupId === groupId).reduce((sum, p) => sum + p.length, 0);
+    function groupCount(groupId, ctx = mainCtx) {
+      return ctx.placements.filter(p => p.groupId === groupId).reduce((sum, p) => sum + p.length, 0);
     }
 
-    function getGroup(groupId) {
-      return state.placements.filter(p => p.groupId === groupId).sort((a, b) => a.row - b.row || a.startIndex - b.startIndex);
+    function getGroup(groupId, ctx = mainCtx) {
+      return ctx.placements.filter(p => p.groupId === groupId).sort((a, b) => a.row - b.row || a.startIndex - b.startIndex);
     }
 
-    function clearSegmentsArea(segments, ignoreGroupId = null) {
+    function clearSegmentsArea(segments, ignoreGroupId = null, ctx = mainCtx) {
       const removeIds = new Set();
-      state.placements.forEach(p => {
+      ctx.placements.forEach(p => {
         if (ignoreGroupId && p.groupId === ignoreGroupId) return;
         if (segments.some(seg => seg.row === p.row && !(seg.startIndex + seg.length - 1 < p.startIndex || p.startIndex + p.length - 1 < seg.startIndex))) {
           removeIds.add(p.groupId);
         }
       });
-      const affectedRows = state.placements.filter(p => removeIds.has(p.groupId)).map(p => p.row);
+      const affectedRows = ctx.placements.filter(p => removeIds.has(p.groupId)).map(p => p.row);
       if (removeIds.size) {
-        state.placements = state.placements.filter(p => !removeIds.has(p.groupId));
+        ctx.placements = ctx.placements.filter(p => !removeIds.has(p.groupId));
       }
       return affectedRows;
     }
 
-    function removePlacementGroup(groupId) {
-      const affectedRows = getAffectedRowsByGroup(groupId);
-      state.placements = state.placements.filter(p => p.groupId !== groupId);
-      renderRows(affectedRows);
+    function removePlacementGroup(groupId, ctx = mainCtx) {
+      const affectedRows = getAffectedRowsByGroup(groupId, ctx);
+      ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
+      renderRows(affectedRows, ctx);
     }
 
-    function placeMove(moveId, startRow, startIndex, totalCount) {
+    function placeMove(moveId, startRow, startIndex, totalCount, ctx = mainCtx) {
       const move = state.moveLibrary.find(m => m.id === moveId);
       if (!move) return;
-      const count = Math.min(totalCount, totalCellsFrom(startRow, startIndex));
+      const count = Math.min(totalCount, totalCellsFrom(startRow, startIndex, ctx));
       if (count <= 0) return;
-      const segments = buildSegments(startRow, startIndex, count);
-      const removedRows = clearSegmentsArea(segments);
+      const segments = buildSegments(startRow, startIndex, count, ctx);
+      const removedRows = clearSegmentsArea(segments, null, ctx);
       const groupId = uid();
-      state.placements.push(...segments.map(seg => ({
-        id: uid(),
-        groupId,
-        name: move.name,
-        category: move.category,
-        row: seg.row,
-        startIndex: seg.startIndex,
-        length: seg.length
+      ctx.placements.push(...segments.map(seg => ({
+        id: uid(), groupId,
+        name: move.name, category: move.category,
+        row: seg.row, startIndex: seg.startIndex, length: seg.length
       })));
-      renderRows([...segments.map(s => s.row), ...removedRows]);
+      renderRows([...segments.map(s => s.row), ...removedRows], ctx);
     }
 
-    function movePlacementGroup(groupId, targetRow, targetStartIndex) {
-      const group = getGroup(groupId);
+    function placeRoutineOnBoard(routineId, startRow, startIndex) {
+      const routine = state.routines.find(r => r.id === routineId);
+      if (!routine) return;
+      const length = routine.cols;
+      const groupId = uid();
+      const removedRows = clearSegmentsArea([{ row: startRow, startIndex, length }], null, mainCtx);
+      mainCtx.placements.push({
+        id: uid(), groupId,
+        name: routine.name, category: 'routine',
+        type: 'routine', routineId,
+        row: startRow, startIndex, length
+      });
+      renderRows([startRow, ...removedRows], mainCtx);
+    }
+
+    function movePlacementGroup(groupId, targetRow, targetStartIndex, ctx = mainCtx) {
+      const group = getGroup(groupId, ctx);
       if (!group.length) return;
       const previousRows = group.map(p => p.row);
-      const count = Math.min(groupCount(groupId), totalCellsFrom(targetRow, targetStartIndex));
-      const segments = buildSegments(targetRow, targetStartIndex, count);
-      const meta = { name: group[0].name, category: group[0].category };
-      state.placements = state.placements.filter(p => p.groupId !== groupId);
-      const removedRows = clearSegmentsArea(segments, groupId);
-      state.placements.push(...segments.map(seg => ({
-        id: uid(),
-        groupId,
-        name: meta.name,
-        category: meta.category,
-        row: seg.row,
-        startIndex: seg.startIndex,
-        length: seg.length
+      const count = Math.min(groupCount(groupId, ctx), totalCellsFrom(targetRow, targetStartIndex, ctx));
+      const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
+      const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
+      ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
+      const removedRows = clearSegmentsArea(segments, groupId, ctx);
+      ctx.placements.push(...segments.map(seg => ({
+        id: uid(), groupId,
+        name: meta.name, category: meta.category,
+        ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
+        row: seg.row, startIndex: seg.startIndex, length: seg.length
       })));
-      unmarkDraggingGroups();
-      renderRows([...previousRows, ...segments.map(s => s.row), ...removedRows]);
+      unmarkDraggingGroups(ctx);
+      renderRows([...previousRows, ...segments.map(s => s.row), ...removedRows], ctx);
     }
 
-    function rebuildGroup(groupId, newCount) {
-      const group = getGroup(groupId);
+    function rebuildGroup(groupId, newCount, ctx = mainCtx) {
+      const group = getGroup(groupId, ctx);
       if (!group.length) return;
       const previousRows = group.map(p => p.row);
       const first = group[0];
-      const meta = { name: first.name, category: first.category };
-      state.placements = state.placements.filter(p => p.groupId !== groupId);
-      const segments = buildSegments(first.row, first.startIndex, newCount);
-      const removedRows = clearSegmentsArea(segments, groupId);
-      state.placements.push(...segments.map(seg => ({
-        id: uid(),
-        groupId,
-        name: meta.name,
-        category: meta.category,
-        row: seg.row,
-        startIndex: seg.startIndex,
-        length: seg.length
+      const meta = { name: first.name, category: first.category, type: first.type, routineId: first.routineId };
+      ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
+      const segments = buildSegments(first.row, first.startIndex, newCount, ctx);
+      const removedRows = clearSegmentsArea(segments, groupId, ctx);
+      ctx.placements.push(...segments.map(seg => ({
+        id: uid(), groupId,
+        name: meta.name, category: meta.category,
+        ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
+        row: seg.row, startIndex: seg.startIndex, length: seg.length
       })));
-      renderRows([...previousRows, ...segments.map(s => s.row), ...removedRows]);
+      renderRows([...previousRows, ...segments.map(s => s.row), ...removedRows], ctx);
     }
 
-    function startResize(groupId, clientX) {
-      const first = getGroup(groupId)[0];
+    function startResize(groupId, clientX, ctx = mainCtx) {
+      const first = getGroup(groupId, ctx)[0];
       if (!first) return;
-      const placementEl = document.querySelector(`.placement[data-group-id="${groupId}"]`);
-      state.resize = {
-        groupId,
-        startX: clientX,
-        originRow: first.row,
-        originStartIndex: first.startIndex,
-        originalCount: groupCount(groupId),
-        previewCount: groupCount(groupId),
+      const placementEl = ctx.el.querySelector(`.placement[data-group-id="${CSS.escape(groupId)}"]`);
+      ctx.resize = {
+        groupId, startX: clientX,
+        originRow: first.row, originStartIndex: first.startIndex,
+        originalCount: groupCount(groupId, ctx),
+        previewCount: groupCount(groupId, ctx),
         liveEl: placementEl || null
       };
-      if (state.resize.liveEl) state.resize.liveEl.classList.add('is-dragging');
+      activeResizeCtx = ctx;
+      if (ctx.resize.liveEl) ctx.resize.liveEl.classList.add('is-dragging');
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', stopMouseResize);
       document.addEventListener('touchmove', onTouchMoveResize, { passive: false });
@@ -2557,131 +2834,129 @@
     }
 
     function onMouseMove(e) {
-      if (!state.resize) return;
-      applyResizePreview(e.clientX, e.clientY);
+      if (!activeResizeCtx?.resize) return;
+      applyResizePreview(e.clientX, e.clientY, activeResizeCtx);
     }
 
     function onTouchMoveResize(e) {
-      if (!state.resize) return;
+      if (!activeResizeCtx?.resize) return;
       e.preventDefault();
-      applyResizePreview(e.touches[0].clientX, e.touches[0].clientY);
+      applyResizePreview(e.touches[0].clientX, e.touches[0].clientY, activeResizeCtx);
     }
 
     function stopMouseResize() {
-      if (state.resize) {
-        finalizeResize();
-        saveHistory();
+      const ctx = activeResizeCtx;
+      if (ctx?.resize) {
+        finalizeResize(ctx);
+        if (ctx === mainCtx) saveHistory(); else saveHistoryRe();
       }
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', stopMouseResize);
       document.removeEventListener('touchmove', onTouchMoveResize);
       document.removeEventListener('touchend', stopTouchResize);
       document.removeEventListener('touchcancel', stopTouchResize);
-      state.resize = null;
-      unmarkDraggingGroups();
+      if (ctx) { ctx.resize = null; unmarkDraggingGroups(ctx); }
+      activeResizeCtx = null;
     }
 
     function stopTouchResize() {
       stopMouseResize();
     }
 
-    function applyResizePreview(clientX, clientY) {
-      const r = state.resize;
+    function applyResizePreview(clientX, clientY, ctx = mainCtx) {
+      const r = ctx.resize;
       if (!r) return;
-      const maxTotal = totalCellsFrom(r.originRow, r.originStartIndex);
+      const maxTotal = totalCellsFrom(r.originRow, r.originStartIndex, ctx);
       let previewCount;
       const endTrack = document.elementFromPoint(clientX, clientY)?.closest('.track');
-      if (endTrack) {
+      if (endTrack && ctx.el.contains(endTrack)) {
         const endRow = Number(endTrack.dataset.row);
-        const endCol = pointerToCellIndex(endTrack, clientX);
-        previewCount = clamp(calcCrossRowCount(r.originRow, r.originStartIndex, endRow, endCol), 1, maxTotal);
+        const endCol = pointerToCellIndex(endTrack, clientX, ctx);
+        previewCount = clamp(calcCrossRowCount(r.originRow, r.originStartIndex, endRow, endCol, ctx), 1, maxTotal);
       } else {
         const stepWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cellW')) || 68;
         previewCount = clamp(r.originalCount + Math.round((clientX - r.startX) / stepWidth), 1, maxTotal);
       }
       r.previewCount = previewCount;
-      rebuildGroup(r.groupId, previewCount);
+      rebuildGroup(r.groupId, previewCount, ctx);
     }
 
-    function finalizeResize() {
-      const r = state.resize;
+    function finalizeResize(ctx = mainCtx) {
+      const r = ctx.resize;
       if (!r) return;
-      const maxTotal = totalCellsFrom(r.originRow, r.originStartIndex);
+      const maxTotal = totalCellsFrom(r.originRow, r.originStartIndex, ctx);
       const finalCount = clamp(r.previewCount || r.originalCount, 1, maxTotal);
-      rebuildGroup(r.groupId, finalCount);
+      rebuildGroup(r.groupId, finalCount, ctx);
     }
 
-    function startTouchPlacementMove(groupId, x, y) {
-      const group = getGroup(groupId);
+    function startTouchPlacementMove(groupId, x, y, ctx = mainCtx) {
+      const group = getGroup(groupId, ctx);
       if (!group.length) return;
-      state.drag = { type: 'placement-move', groupId, isTouchDragging: true, lastX: x, lastY: y };
-      markDraggingGroup(groupId);
+      ctx.drag = { type: 'placement-move', groupId, isTouchDragging: true, lastX: x, lastY: y };
+      markDraggingGroup(groupId, ctx);
       const ghost = document.createElement('div');
       ghost.className = 'ghost-drag';
       ghost.id = 'touchPlacementGhost';
       ghost.style.padding = '8px 12px';
       ghost.style.borderRadius = '12px';
-      ghost.style.background = categoryColor(group[0].category);
+      ghost.style.background = group[0].type === 'routine' ? '#6366f1' : categoryColor(group[0].category);
       ghost.style.color = '#08111f';
       ghost.style.fontWeight = '900';
       ghost.style.boxShadow = '0 8px 18px rgba(0,0,0,0.2)';
-      ghost.textContent = `${group[0].name} ${groupCount(groupId)}c`;
+      ghost.textContent = `${group[0].name} ${groupCount(groupId, ctx)}c`;
       document.body.appendChild(ghost);
-      moveTouchPlacementGhost(x, y);
+      moveTouchPlacementGhost(x, y, ctx);
     }
 
-    function moveTouchPlacementGhost(x, y) {
-      if (!state.drag) return;
-      state.drag.lastX = x;
-      state.drag.lastY = y;
+    function moveTouchPlacementGhost(x, y, ctx = mainCtx) {
+      if (!ctx.drag) return;
+      ctx.drag.lastX = x;
+      ctx.drag.lastY = y;
       const ghost = document.getElementById('touchPlacementGhost');
-      if (ghost) {
-        ghost.style.left = `${x}px`;
-        ghost.style.top = `${y}px`;
-      }
-      clearTrackHighlights();
+      if (ghost) { ghost.style.left = `${x}px`; ghost.style.top = `${y}px`; }
+      clearTrackHighlights(ctx);
       const targetTrack = document.elementFromPoint(x, y)?.closest('.track');
-      if (targetTrack) {
+      if (targetTrack && ctx.el.contains(targetTrack)) {
         targetTrack.classList.add('drop-hover');
-        updatePreview(Number(targetTrack.dataset.row), pointerToCellIndex(targetTrack, x));
+        updatePreview(Number(targetTrack.dataset.row), pointerToCellIndex(targetTrack, x, ctx), undefined, ctx);
       } else {
-        clearPreview();
+        clearPreview(ctx);
       }
     }
 
-    function finishTouchPlacementMove(cancelled = false) {
-      const drag = state.drag;
-      clearTrackHighlights();
-      clearPreview();
+    function finishTouchPlacementMove(cancelled = false, ctx = mainCtx) {
+      const drag = ctx.drag;
+      clearTrackHighlights(ctx);
+      clearPreview(ctx);
       document.getElementById('touchPlacementGhost')?.remove();
-      unmarkDraggingGroups();
+      unmarkDraggingGroups(ctx);
       if (!cancelled && drag) {
         const targetTrack = document.elementFromPoint(drag.lastX, drag.lastY)?.closest('.track');
-        if (targetTrack) {
-          movePlacementGroup(drag.groupId, Number(targetTrack.dataset.row), pointerToCellIndex(targetTrack, drag.lastX));
-          saveHistory();
+        if (targetTrack && ctx.el.contains(targetTrack)) {
+          movePlacementGroup(drag.groupId, Number(targetTrack.dataset.row), pointerToCellIndex(targetTrack, drag.lastX, ctx), ctx);
+          if (ctx === mainCtx) saveHistory(); else saveHistoryRe();
         }
       }
-      state.drag = null;
-      unmarkDraggingGroups();
-      renderRows(Array.from({ length: state.rows }, (_, i) => i + 1));
+      ctx.drag = null;
+      unmarkDraggingGroups(ctx);
+      renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
     }
 
-    function markDraggingGroup(groupId) {
-      boardEl.querySelectorAll(`.placement[data-group-id="${CSS.escape(groupId)}"]`).forEach(el => el.classList.add('is-dragging'));
+    function markDraggingGroup(groupId, ctx = mainCtx) {
+      ctx.el.querySelectorAll(`.placement[data-group-id="${CSS.escape(groupId)}"]`).forEach(el => el.classList.add('is-dragging'));
     }
 
-    function unmarkDraggingGroups() {
-      boardEl.querySelectorAll('.placement.is-dragging').forEach(el => el.classList.remove('is-dragging'));
+    function unmarkDraggingGroups(ctx = mainCtx) {
+      ctx.el.querySelectorAll('.placement.is-dragging').forEach(el => el.classList.remove('is-dragging'));
     }
 
-    function updatePreview(row, startIndex, overrideCount) {
-      clearPreview();
-      if (!state.drag && overrideCount == null) return;
+    function updatePreview(row, startIndex, overrideCount, ctx = mainCtx) {
+      clearPreview(ctx);
+      if (!ctx.drag && overrideCount == null) return;
       const previewCount = overrideCount != null ? overrideCount :
-        (state.drag.type === 'palette' ? DEFAULT_COUNT : groupCount(state.drag.groupId));
-      buildSegments(row, startIndex, Math.min(previewCount, totalCellsFrom(row, startIndex))).forEach((seg, index) => {
-        const ref = state.rowRefs.get(seg.row);
+        (ctx.drag.type === 'palette' ? DEFAULT_COUNT : groupCount(ctx.drag.groupId, ctx));
+      buildSegments(row, startIndex, Math.min(previewCount, totalCellsFrom(row, startIndex, ctx)), ctx).forEach((seg, index) => {
+        const ref = ctx.rowRefs.get(seg.row);
         if (!ref) return;
         const snap = document.createElement('div');
         snap.className = 'snap-indicator';
@@ -2698,12 +2973,12 @@
       });
     }
 
-    function clearPreview() {
-      boardEl.querySelectorAll('[data-preview="1"]').forEach(el => el.remove());
+    function clearPreview(ctx = mainCtx) {
+      ctx.el.querySelectorAll('[data-preview="1"]').forEach(el => el.remove());
     }
 
-    function clearTrackHighlights() {
-      boardEl.querySelectorAll('.track.drop-hover').forEach(t => t.classList.remove('drop-hover'));
+    function clearTrackHighlights(ctx = mainCtx) {
+      ctx.el.querySelectorAll('.track.drop-hover').forEach(t => t.classList.remove('drop-hover'));
     }
 
     function attachTouchDragToPaletteChip(chip, move) {
@@ -2711,7 +2986,7 @@
       chip.addEventListener('touchstart', (e) => {
         const touch = e.touches[0];
         pressTimer = setTimeout(() => {
-          state.drag = { type: 'palette', moveId: move.id, isTouchDragging: true, lastX: touch.clientX, lastY: touch.clientY, previewCount: DEFAULT_COUNT };
+          mainCtx.drag = { type: 'palette', moveId: move.id, isTouchDragging: true, lastX: touch.clientX, lastY: touch.clientY, previewCount: DEFAULT_COUNT };
           const ghost = document.createElement('div');
           ghost.className = 'ghost-drag move-chip';
           ghost.id = 'touchGhost';
@@ -2722,54 +2997,46 @@
       }, { passive: true });
 
       chip.addEventListener('touchmove', (e) => {
-        if (!state.drag?.isTouchDragging || state.drag.type !== 'palette') return;
+        if (!mainCtx.drag?.isTouchDragging || mainCtx.drag.type !== 'palette') return;
         e.preventDefault();
         const touch = e.touches[0];
         moveTouchGhost(touch.clientX, touch.clientY);
         const targetTrack = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
-        if (targetTrack) updatePreview(+targetTrack.dataset.row, pointerToCellIndex(targetTrack, touch.clientX));
+        if (targetTrack && boardEl.contains(targetTrack)) updatePreview(+targetTrack.dataset.row, pointerToCellIndex(targetTrack, touch.clientX, mainCtx), undefined, mainCtx);
       }, { passive: false });
 
       chip.addEventListener('touchend', () => {
         clearTimeout(pressTimer);
-        if (!state.drag?.isTouchDragging || state.drag.type !== 'palette') return;
-        const targetTrack = document.elementFromPoint(state.drag.lastX, state.drag.lastY)?.closest('.track');
-        if (targetTrack) {
-          placeMove(state.drag.moveId, +targetTrack.dataset.row, pointerToCellIndex(targetTrack, state.drag.lastX), DEFAULT_COUNT);
+        if (!mainCtx.drag?.isTouchDragging || mainCtx.drag.type !== 'palette') return;
+        const targetTrack = document.elementFromPoint(mainCtx.drag.lastX, mainCtx.drag.lastY)?.closest('.track');
+        if (targetTrack && boardEl.contains(targetTrack)) {
+          placeMove(mainCtx.drag.moveId, +targetTrack.dataset.row, pointerToCellIndex(targetTrack, mainCtx.drag.lastX, mainCtx), DEFAULT_COUNT);
           saveHistory();
         }
         clearTouchGhost();
-        clearPreview();
-        state.drag = null;
+        clearPreview(mainCtx);
+        mainCtx.drag = null;
       });
 
       chip.addEventListener('touchcancel', () => {
         clearTimeout(pressTimer);
         clearTouchGhost();
-        clearPreview();
-        state.drag = null;
+        clearPreview(mainCtx);
+        mainCtx.drag = null;
       });
     }
 
     function moveTouchGhost(x, y) {
-      if (state.drag) {
-        state.drag.lastX = x;
-        state.drag.lastY = y;
-      }
+      if (mainCtx.drag) { mainCtx.drag.lastX = x; mainCtx.drag.lastY = y; }
       const ghost = document.getElementById('touchGhost');
-      if (ghost) {
-        ghost.style.left = `${x}px`;
-        ghost.style.top = `${y}px`;
-      }
-      clearTrackHighlights();
+      if (ghost) { ghost.style.left = `${x}px`; ghost.style.top = `${y}px`; }
+      clearTrackHighlights(mainCtx);
       const targetTrack = document.elementFromPoint(x, y)?.closest('.track');
-      if (targetTrack) {
-        targetTrack.classList.add('drop-hover');
-      }
+      if (targetTrack && boardEl.contains(targetTrack)) targetTrack.classList.add('drop-hover');
     }
 
     function clearTouchGhost() {
-      clearTrackHighlights();
+      clearTrackHighlights(mainCtx);
       document.getElementById('touchGhost')?.remove();
     }
 
@@ -2823,7 +3090,7 @@
 
     function saveProjectFile() {
       const fileName = (fileNameInput.value.trim() || `project_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
-      const payload = projectPayload(fileName);
+      const payload = projectPayloadWithRoutines(fileName);
       downloadJson(payload, `${fileName}-project.json`);
       state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
       localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
@@ -2926,6 +3193,11 @@
         state.favoriteCategories = new Set(JSON.parse(localStorage.getItem('choreo_fav_cats') || '[]'));
       } catch {
         state.favoriteCategories = new Set();
+      }
+      try {
+        state.favoriteRoutineIds = new Set(JSON.parse(localStorage.getItem('choreo_fav_routines') || '[]'));
+      } catch {
+        state.favoriteRoutineIds = new Set();
       }
     }
 
@@ -3043,11 +3315,24 @@
         startIndex: Math.max(0, Number(p.startIndex) || 0),
         length: Math.max(1, Number(p.length) || 1)
       })).filter(p => p.row <= state.rows && p.startIndex < state.cols).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }));
+      if (Array.isArray(data.routines)) {
+        state.routines = data.routines.map(r => ({
+          id: r.id || uid(), name: String(r.name || '루틴'),
+          rows: Math.max(1, Number(r.rows) || 4),
+          cols: Math.max(1, Number(r.cols) || 8),
+          placements: Array.isArray(r.placements) ? r.placements : [],
+          color: r.color || '#6366f1',
+          isFavorite: !!r.isFavorite
+        }));
+      } else {
+        state.routines = [];
+      }
       fileNameInput.value = data.fileName || '';
       syncBoardSizeUI();
       renderLegend();
       renderPalette();
       renderBoard(true);
+      renderRoutineList();
       saveHistory();
     }
 
@@ -3143,6 +3428,439 @@
       state.placements = [];
       renderRows(rows);
       saveHistory();
+    }
+
+    // ── 루틴 관리 ──────────────────────────────────────────────────────────────
+
+    const ROUTINE_COLORS = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#06b6d4'];
+    let _routineColorIdx = 0;
+    function nextRoutineColor() {
+      const c = ROUTINE_COLORS[_routineColorIdx % ROUTINE_COLORS.length];
+      _routineColorIdx++;
+      return c;
+    }
+
+    function createRoutine() {
+      const name = `루틴 ${state.routines.length + 1}`;
+      const routine = {
+        id: uid(), name,
+        rows: 4, cols: 8,
+        placements: [],
+        isFavorite: false,
+        color: nextRoutineColor()
+      };
+      state.routines.push(routine);
+      renderRoutineList();
+      saveHistory();
+      openRoutineEditor(routine.id);
+    }
+
+    function deleteRoutine(routineId) {
+      if (reState.routineId === routineId) closeRoutineEditor();
+      // 메인 보드에서 해당 루틴 배치 제거
+      const affectedRows = state.placements.filter(p => p.routineId === routineId).map(p => p.row);
+      state.placements = state.placements.filter(p => p.routineId !== routineId);
+      if (affectedRows.length) renderRows([...new Set(affectedRows)]);
+      state.routines = state.routines.filter(r => r.id !== routineId);
+      state.favoriteRoutineIds.delete(routineId);
+      renderRoutineList();
+      saveHistory();
+    }
+
+    function toggleRoutineFavorite(routineId) {
+      if (state.favoriteRoutineIds.has(routineId)) {
+        state.favoriteRoutineIds.delete(routineId);
+      } else {
+        state.favoriteRoutineIds.add(routineId);
+      }
+      saveRoutineFavorites();
+      renderRoutineList();
+    }
+
+    function saveRoutineFavorites() {
+      localStorage.setItem('choreo_fav_routines', JSON.stringify([...state.favoriteRoutineIds]));
+    }
+
+    function syncCurrentRoutine() {
+      if (!reState.routineId) return;
+      const routine = state.routines.find(r => r.id === reState.routineId);
+      if (!routine) return;
+      routine.rows = reState.rows;
+      routine.cols = reState.cols;
+      routine.placements = JSON.parse(JSON.stringify(reState.placements));
+      renderRoutineList();
+      // 메인 보드의 루틴 블록 길이 업데이트
+      const affected = state.placements.filter(p => p.routineId === routine.id);
+      if (affected.length) {
+        affected.forEach(p => { p.length = routine.cols; p.name = routine.name; });
+        const rows = [...new Set(affected.map(p => p.row))];
+        renderRows(rows);
+      }
+    }
+
+    function renameRoutine(routineId) {
+      const routine = state.routines.find(r => r.id === routineId);
+      if (!routine) return;
+      const next = prompt('루틴 이름', routine.name);
+      if (next == null) return;
+      const trimmed = next.trim();
+      if (!trimmed) return;
+      routine.name = trimmed;
+      // 메인 보드 배치 이름 업데이트
+      state.placements.filter(p => p.routineId === routineId).forEach(p => { p.name = trimmed; });
+      renderRoutineList();
+      if (reState.routineId === routineId) syncReBoardSizeUI();
+      renderRows([...new Set(state.placements.filter(p => p.routineId === routineId).map(p => p.row))]);
+      saveHistory();
+    }
+
+    function renderRoutineList() {
+      routineListEl.innerHTML = '';
+      if (!state.routines.length) {
+        routineListEl.innerHTML = '<div class="helper" style="padding:4px 2px;">아직 루틴이 없습니다. + 새 루틴을 눌러 만들어 보세요.</div>';
+        return;
+      }
+      const favs   = state.routines.filter(r =>  state.favoriteRoutineIds.has(r.id));
+      const others = state.routines.filter(r => !state.favoriteRoutineIds.has(r.id));
+
+      function buildCard(routine) {
+        const card = document.createElement('div');
+        card.className = 'routine-card' + (reState.routineId === routine.id ? ' is-editing' : '');
+        card.draggable = true;
+        card.dataset.routineId = routine.id;
+
+        // 드래그 → 메인 보드에 루틴 배치
+        card.addEventListener('dragstart', (e) => {
+          mainCtx.drag = { type: 'routine', routineId: routine.id };
+          e.dataTransfer.effectAllowed = 'copy';
+          e.dataTransfer.setData('text/plain', routine.id);
+        });
+        card.addEventListener('dragend', () => { mainCtx.drag = null; clearTrackHighlights(mainCtx); clearPreview(mainCtx); });
+
+        const chip = document.createElement('div');
+        chip.className = 'routine-chip';
+        chip.style.background = routine.color || '#6366f1';
+
+        const info = document.createElement('div');
+        info.innerHTML = `<div class="routine-name-text">${escapeHtml(routine.name)}</div><div class="routine-meta-text">${routine.cols}박자 × ${routine.rows}행</div>`;
+        info.style.minWidth = '0';
+        info.addEventListener('dblclick', () => renameRoutine(routine.id));
+
+        const actions = document.createElement('div');
+        actions.className = 'routine-actions';
+
+        const starBtn = document.createElement('button');
+        starBtn.type = 'button';
+        starBtn.className = 'star-btn' + (state.favoriteRoutineIds.has(routine.id) ? ' active' : '');
+        starBtn.textContent = '★';
+        starBtn.title = '즐겨찾기';
+        starBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleRoutineFavorite(routine.id); });
+
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'edit-btn';
+        editBtn.textContent = '✏';
+        editBtn.title = '루틴 편집';
+        editBtn.addEventListener('click', (e) => { e.stopPropagation(); openRoutineEditor(routine.id); });
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'icon-btn';
+        delBtn.textContent = '×';
+        delBtn.title = '루틴 삭제';
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          confirmOnce(delBtn, '×', () => deleteRoutine(routine.id));
+        });
+
+        actions.append(starBtn, editBtn, delBtn);
+        card.append(chip, info, actions);
+        return card;
+      }
+
+      if (favs.length) {
+        const favHeader = document.createElement('div');
+        favHeader.style.cssText = 'font-size:10px;font-weight:800;color:#facc15;padding:4px 2px 2px;letter-spacing:0.04em;';
+        favHeader.textContent = '★ 즐겨찾기';
+        routineListEl.appendChild(favHeader);
+        favs.forEach(r => routineListEl.appendChild(buildCard(r)));
+        if (others.length) {
+          const div = document.createElement('div');
+          div.style.cssText = 'height:1px;background:var(--line);margin:6px 0 4px;';
+          routineListEl.appendChild(div);
+        }
+      }
+      others.forEach(r => routineListEl.appendChild(buildCard(r)));
+    }
+
+    // ── 루틴 편집기 열기/닫기 ──────────────────────────────────────────────────
+
+    let reQuickPickerEl = null;
+
+    function closeReQuickPicker(keepPreview = false) {
+      if (reQuickPickerEl) { reQuickPickerEl.remove(); reQuickPickerEl = null; }
+      if (!keepPreview) clearPreview(reCtx);
+    }
+
+    function openRoutineEditor(routineId) {
+      const routine = state.routines.find(r => r.id === routineId);
+      if (!routine) return;
+
+      // 이미 같은 루틴이 열려있으면 포커스
+      if (reState.routineId === routineId) {
+        routineEditorPanel.style.display = 'flex';
+        return;
+      }
+
+      // 루틴 에디터 상태 초기화
+      reState.routineId = routineId;
+      reState.rows = routine.rows;
+      reState.cols = routine.cols;
+      reState.placements = JSON.parse(JSON.stringify(routine.placements));
+      reState.rowRefs.clear();
+      reState.drag = null; reState.resize = null;
+      reState.activePaletteMove = null;
+      reState.boardSig = '';
+      reState.quickPlaceMode = false;
+      reState.history = [];
+      reState.future = [];
+      reQuickPickerEl = null;
+
+      // 패널 표시
+      routineEditorPanel.style.display = 'flex';
+      syncReBoardSizeUI();
+
+      // 보드 빌드 & 이벤트 바인딩
+      renderBoard(true, reCtx);
+
+      // 히스토리 초기화 (최초 스냅샷)
+      reState.history = [snapshotStateRe()];
+      updateReHistoryButtons();
+
+      // 루틴 목록 카드 상태 업데이트
+      renderRoutineList();
+
+      // 퀵 배치 버튼 연동
+      const reQuickPlaceBtn = document.getElementById('reQuickPlaceBtn');
+      reQuickPlaceBtn.className = 'ghost';
+      reQuickPlaceBtn.textContent = '+ 빠른 배치';
+
+      document.getElementById('reUndoBtn').onclick = undoRe;
+      document.getElementById('reRedoBtn').onclick = redoRe;
+      document.getElementById('reClearBtn').onclick = () => {
+        const rows = reState.placements.map(p => p.row);
+        reState.placements = [];
+        renderRows(rows, reCtx);
+        saveHistoryRe();
+      };
+      document.getElementById('closeRoutineEditorBtn').onclick = closeRoutineEditor;
+      document.getElementById('reTitle').ondblclick = () => renameRoutine(routineId);
+
+      reQuickPlaceBtn.onclick = () => {
+        reState.quickPlaceMode = !reState.quickPlaceMode;
+        if (reState.quickPlaceMode) {
+          reQuickPlaceBtn.classList.add('quick-btn-active');
+          reQuickPlaceBtn.classList.remove('ghost');
+          reState.activePaletteMove = null;
+        } else {
+          reQuickPlaceBtn.classList.remove('quick-btn-active');
+          reQuickPlaceBtn.classList.add('ghost');
+          closeReQuickPicker();
+        }
+      };
+
+      const reColsInput = document.getElementById('reColsInput');
+      const reRowsInput = document.getElementById('reRowsInput');
+      reColsInput.onchange = applyReBoardSizeFromInput;
+      reRowsInput.onchange = applyReBoardSizeFromInput;
+      document.getElementById('reColsDec').onclick = () => { reColsInput.value = Math.max(1, parseInt(reColsInput.value||'8',10) - 1); applyReBoardSizeFromInput(); };
+      document.getElementById('reColsInc').onclick = () => { reColsInput.value = Math.min(64, parseInt(reColsInput.value||'8',10) + 1); applyReBoardSizeFromInput(); };
+      document.getElementById('reRowsDec').onclick = () => { reRowsInput.value = Math.max(1, parseInt(reRowsInput.value||'4',10) - 1); applyReBoardSizeFromInput(); };
+      document.getElementById('reRowsInc').onclick = () => { reRowsInput.value = Math.min(32, parseInt(reRowsInput.value||'4',10) + 1); applyReBoardSizeFromInput(); };
+    }
+
+    function applyReBoardSizeFromInput() {
+      const cols = Math.max(1, parseInt(document.getElementById('reColsInput').value || '8', 10));
+      const rows = Math.max(1, parseInt(document.getElementById('reRowsInput').value || '4', 10));
+      reState.cols = cols;
+      reState.rows = rows;
+      reState.placements = reState.placements
+        .filter(p => p.row <= reState.rows && p.startIndex < reState.cols)
+        .map(p => ({ ...p, length: Math.min(p.length, reState.cols - p.startIndex) }))
+        .filter(p => p.length > 0);
+      syncReBoardSizeUI();
+      renderBoard(true, reCtx);
+      saveHistoryRe();
+    }
+
+    function closeRoutineEditor() {
+      syncCurrentRoutine();
+      closeReQuickPicker();
+      routineEditorPanel.style.display = 'none';
+      reState.routineId = null;
+      renderRoutineList();
+    }
+
+    // 루틴 편집기 이벤트 바인딩은 패널이 처음 열릴 때 한 번만 등록
+    (function initRoutineEditorEvents() {
+      bindBoardDelegatedEvents(
+        reCtx,
+        (row, si, cx, cy, cnt) => openReQuickPicker(row, si, cx, cy, cnt),
+        () => saveHistoryRe()
+      );
+    })();
+
+    // ── 루틴 편집기 퀵 배치 팝업 ────────────────────────────────────────────────
+    function openReQuickPicker(row, cellIndex, clientX, clientY, count = DEFAULT_COUNT) {
+      closeReQuickPicker(true);
+      const popup = document.createElement('div');
+      popup.className = 'quick-popup';
+      reQuickPickerEl = popup;
+      document.body.appendChild(popup);
+      positionPopup(popup, clientX, clientY);
+      showReMovePickerScreen(popup, row, cellIndex, clientX, clientY, count);
+      setTimeout(() => {
+        function outsideClose(e) {
+          if (reQuickPickerEl && !reQuickPickerEl.contains(e.target)) {
+            closeReQuickPicker();
+            document.removeEventListener('pointerdown', outsideClose);
+          }
+        }
+        document.addEventListener('pointerdown', outsideClose);
+      }, 0);
+    }
+
+    function showReMovePickerScreen(popup, row, cellIndex, clientX, clientY, count) {
+      popup.innerHTML = '';
+      const header = document.createElement('div');
+      header.className = 'quick-popup-header';
+      header.appendChild(qLabel('동작 선택 (루틴)'));
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'icon-btn'; closeBtn.type = 'button'; closeBtn.textContent = '×';
+      closeBtn.addEventListener('click', closeReQuickPicker);
+      header.appendChild(closeBtn);
+      popup.appendChild(header);
+
+      const searchBtn = document.createElement('button');
+      searchBtn.type = 'button'; searchBtn.className = 'quick-popup-item new-action';
+      searchBtn.innerHTML = '<span>🔍</span><span>동작 검색</span>';
+      searchBtn.addEventListener('click', () => showReMoveSearchScreen(popup, row, cellIndex, count));
+      popup.appendChild(searchBtn);
+
+      const favMoves = state.moveLibrary.filter(m => state.favoriteMoveNames.has(m.name));
+      if (favMoves.length > 0) {
+        popup.appendChild(qDivider()); popup.appendChild(qLabel('즐겨찾기 동작'));
+        favMoves.forEach(move => {
+          popup.appendChild(makeQuickMoveItem(move, () => {
+            placeMove(move.id, row, cellIndex, count, reCtx);
+            saveHistoryRe(); closeReQuickPicker();
+          }));
+        });
+      } else {
+        popup.appendChild(qDivider());
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+        hint.textContent = '팔레트에서 ★ 로 즐겨찾기를 추가하세요.';
+        popup.appendChild(hint);
+      }
+      positionPopup(popup, clientX, clientY);
+    }
+
+    function showReMoveSearchScreen(popup, row, cellIndex, count) {
+      popup.innerHTML = '';
+      const header = document.createElement('div');
+      header.className = 'quick-popup-header';
+      const backBtn = document.createElement('button');
+      backBtn.type = 'button'; backBtn.className = 'icon-btn'; backBtn.textContent = '←';
+      backBtn.addEventListener('click', () => { const rect = popup.getBoundingClientRect(); showReMovePickerScreen(popup, row, cellIndex, rect.left, rect.top, count); });
+      header.appendChild(backBtn); header.appendChild(qLabel('동작 검색'));
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button'; closeBtn.className = 'icon-btn'; closeBtn.textContent = '×';
+      closeBtn.addEventListener('click', closeReQuickPicker);
+      header.appendChild(closeBtn);
+      popup.appendChild(header);
+
+      const inputRow = document.createElement('div');
+      inputRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text'; nameInput.placeholder = '동작 이름 검색...'; nameInput.style.flex = '1';
+      const addBtn = makeAddBtn(); addBtn.title = '새 동작으로 추가';
+      inputRow.append(nameInput, addBtn); popup.appendChild(inputRow);
+
+      const resultList = document.createElement('div');
+      resultList.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:45vh;overflow-y:auto;';
+      popup.appendChild(resultList);
+
+      function render() {
+        const q = nameInput.value.trim(); const ql = q.toLowerCase();
+        resultList.innerHTML = '';
+        if (!ql) {
+          addBtn.style.display = 'none';
+          const favs = state.moveLibrary.filter(m => state.favoriteMoveNames.has(m.name));
+          const others = state.moveLibrary.filter(m => !state.favoriteMoveNames.has(m.name));
+          if (favs.length) { resultList.appendChild(qLabel('즐겨찾기')); favs.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count, reCtx); saveHistoryRe(); closeReQuickPicker(); }))); if (others.length) resultList.appendChild(qDivider()); }
+          others.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count, reCtx); saveHistoryRe(); closeReQuickPicker(); })));
+          return;
+        }
+        const matches = state.moveLibrary.filter(m => m.name.toLowerCase().includes(ql));
+        if (matches.length === 0) {
+          addBtn.style.display = '';
+          const hint = document.createElement('div');
+          hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+          hint.textContent = `"${q}" 와 일치하는 동작이 없습니다.`;
+          resultList.appendChild(hint);
+        } else {
+          addBtn.style.display = 'none';
+          matches.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count, reCtx); saveHistoryRe(); closeReQuickPicker(); })));
+        }
+      }
+
+      nameInput.addEventListener('input', render);
+      addBtn.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        if (!name) return;
+        showReCategoryScreen(popup, name, row, cellIndex, count);
+      });
+      render(); nameInput.focus();
+    }
+
+    function showReCategoryScreen(popup, moveName, row, cellIndex, count) {
+      popup.innerHTML = '';
+      const header = document.createElement('div');
+      header.className = 'quick-popup-header';
+      const backBtn = document.createElement('button');
+      backBtn.type = 'button'; backBtn.className = 'icon-btn'; backBtn.textContent = '←';
+      backBtn.addEventListener('click', () => showReMoveSearchScreen(popup, row, cellIndex, count));
+      header.appendChild(backBtn); header.appendChild(qLabel('카테고리 선택'));
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button'; closeBtn.className = 'icon-btn'; closeBtn.textContent = '×';
+      closeBtn.addEventListener('click', closeReQuickPicker);
+      header.appendChild(closeBtn);
+      popup.appendChild(header);
+
+      const badge = document.createElement('div');
+      badge.style.cssText = 'font-size:11px;color:var(--muted);padding:2px 4px 4px;';
+      badge.textContent = `동작: "${moveName}"`; popup.appendChild(badge);
+
+      const resultList = document.createElement('div');
+      resultList.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:40vh;overflow-y:auto;';
+      popup.appendChild(resultList);
+      categoryNames().forEach(k => resultList.appendChild(makeQuickCatItem(k, () => {
+        let move = state.moveLibrary.find(m => m.name === moveName);
+        if (!move) { move = { id: uid(), name: moveName, category: k }; state.moveLibrary.push(move); renderPalette(); }
+        placeMove(move.id, row, cellIndex, count, reCtx);
+        saveHistoryRe(); closeReQuickPicker();
+      })));
+    }
+
+    // ── 프로젝트 저장/불러오기 routines 반영 ─────────────────────────────────
+    function projectPayloadWithRoutines(fileName) {
+      return {
+        version: 1, savedAt: new Date().toISOString(), fileName,
+        rows: state.rows, cols: state.cols,
+        categories: state.categories, moveLibrary: state.moveLibrary,
+        placements: state.placements, routines: state.routines
+      };
     }
 
   </script>
