@@ -2176,12 +2176,13 @@
 
     function saveHistoryRe() {
       const snap = snapshotStateRe();
-      if (reState.history[reState.history.length - 1] === snap) { updateReHistoryButtons(); return; }
-      reState.history.push(snap);
-      if (reState.history.length > 100) reState.history.shift();
-      reState.future = [];
+      if (reState.history[reState.history.length - 1] !== snap) {
+        reState.history.push(snap);
+        if (reState.history.length > 100) reState.history.shift();
+        reState.future = [];
+      }
       updateReHistoryButtons();
-      syncCurrentRoutine();
+      syncCurrentRoutine(); // 항상 메인 보드에 실시간 반영
     }
 
     function undoRe() {
@@ -2649,7 +2650,7 @@
       ref.label.textContent = row === 0 ? 'intro' : `${ctx.cols}x${row}`;
       ref.note.innerHTML = renderRowNotes(row, ctx) || '<span class="muted">-</span>';
       [...ref.track.querySelectorAll('.placement')].forEach(el => el.remove());
-      ctx.placements.filter(p => p.row === row).forEach(p => ref.track.appendChild(createPlacementEl(p, ctx)));
+      ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols).forEach(p => ref.track.appendChild(createPlacementEl(p, ctx)));
     }
 
     function getAffectedRowsByGroup(groupId, ctx = mainCtx) {
@@ -3699,8 +3700,10 @@
       const rows = Math.max(1, parseInt(document.getElementById('reRowsInput').value || '4', 10));
       reState.cols = cols;
       reState.rows = rows;
+      // 행 초과 배치는 숨길 뿐 삭제하지 않음 (행을 다시 늘리면 복원됨)
+      // 열 초과 배치만 길이를 자름
       reState.placements = reState.placements
-        .filter(p => p.row <= reState.rows && p.startIndex < reState.cols)
+        .filter(p => p.startIndex < reState.cols)
         .map(p => ({ ...p, length: Math.min(p.length, reState.cols - p.startIndex) }))
         .filter(p => p.length > 0);
       syncReBoardSizeUI();
