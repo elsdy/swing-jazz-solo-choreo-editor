@@ -3040,9 +3040,10 @@
       const count = Math.min(groupCount(groupId, ctx), totalCellsFrom(targetRow, targetStartIndex, ctx));
       const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
       const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
+      const originalSubRow = group[0].subRow || 0;
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
-      // 이동 대상에서 충돌 없는 가장 낮은 DATA subRow 탐색
-      let targetSubRow = 0;
+      // 원래 subRow부터 탐색 — 레이어 정체성 유지 (충돌 시 그 이상으로)
+      let targetSubRow = originalSubRow;
       outer: for (;;) {
         for (const seg of segments) {
           const conflict = ctx.placements.some(p =>
