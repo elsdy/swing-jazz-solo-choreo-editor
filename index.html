@@ -3305,16 +3305,33 @@
       const newMoves = normalizeMoveList(data.moveLibrary || []).filter(m => !existingNames.has(m.name));
       state.moveLibrary = [...state.moveLibrary, ...newMoves];
 
+      // 루틴 병합 (id 기준, 이미 있는 것은 건너뜀)
+      if (Array.isArray(data.routines)) {
+        const existingIds = new Set(state.routines.map(r => r.id));
+        const newRoutines = data.routines.filter(r => r.id && !existingIds.has(r.id)).map(r => ({
+          id: r.id, name: String(r.name || '루틴'),
+          rows: Math.max(1, Number(r.rows) || 4),
+          cols: Math.max(1, Number(r.cols) || 8),
+          placements: Array.isArray(r.placements) ? r.placements : [],
+          color: r.color || '#6366f1',
+          isFavorite: false
+        }));
+        state.routines = [...state.routines, ...newRoutines];
+      }
+
       const fallback = categoryNames()[0];
       let added = 0, skipped = 0;
       (data.placements || []).filter(p => p && p.name).forEach(p => {
         const norm = {
-          id: uid(), groupId: uid(),
+          id: uid(), groupId: p.groupId || uid(),
           name: String(p.name),
           category: state.categories[p.category] ? p.category : fallback,
           row: Math.max(1, Number(p.row) || 1),
           startIndex: Math.max(0, Number(p.startIndex) || 0),
-          length: Math.max(1, Number(p.length) || 1)
+          length: Math.max(1, Number(p.length) || 1),
+          // 루틴 배치 필드 보존
+          ...(p.type      ? { type: p.type }           : {}),
+          ...(p.routineId ? { routineId: p.routineId } : {})
         };
         norm.length = Math.min(norm.length, state.cols - norm.startIndex);
         if (norm.row > state.rows || norm.startIndex >= state.cols) { skipped++; return; }
@@ -3326,7 +3343,8 @@
         if (conflict) { skipped++; } else { state.placements.push(norm); added++; }
       });
 
-      renderCategoryOptions(); renderLegend(); renderPalette(); renderBoard(true); saveHistory();
+      renderCategoryOptions(); renderLegend(); renderPalette(); renderBoard(true);
+      renderRoutineList(); saveHistory();
       alert(`병합 완료: ${added}개 배치됨${skipped ? `, ${skipped}개 충돌/범위 초과로 건너뜀` : ''}`);
     }
 
@@ -3487,7 +3505,10 @@
         category: state.categories[p.category] ? p.category : fallback,
         row: Math.max(1, Number(p.row) || 1),
         startIndex: Math.max(0, Number(p.startIndex) || 0),
-        length: Math.max(1, Number(p.length) || 1)
+        length: Math.max(1, Number(p.length) || 1),
+        // 루틴 배치 필드 보존
+        ...(p.type     ? { type: p.type }         : {}),
+        ...(p.routineId ? { routineId: p.routineId } : {})
       })).filter(p => p.row <= state.rows && p.startIndex < state.cols).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }));
       if (Array.isArray(data.routines)) {
         state.routines = data.routines.map(r => ({
@@ -3498,8 +3519,13 @@
           color: r.color || '#6366f1',
           isFavorite: !!r.isFavorite
         }));
+        // favoriteRoutineIds를 isFavorite 값 기준으로 재구성
+        state.favoriteRoutineIds = new Set(state.routines.filter(r => r.isFavorite).map(r => r.id));
+        saveRoutineFavorites();
       } else {
         state.routines = [];
+        state.favoriteRoutineIds = new Set();
+        saveRoutineFavorites();
       }
       fileNameInput.value = data.fileName || '';
       applyLinksData(data); // 링크 (youtubeUrl, customLinks 등)
@@ -4209,7 +4235,9 @@
         version: 1, savedAt: new Date().toISOString(), fileName,
         rows: state.rows, cols: state.cols,
         categories: state.categories, moveLibrary: state.moveLibrary,
-        placements: state.placements, routines: state.routines,
+        placements: state.placements,
+        // isFavorite을 favoriteRoutineIds 기준으로 동기화해서 저장
+        routines: state.routines.map(r => ({ ...r, isFavorite: state.favoriteRoutineIds.has(r.id) })),
         youtubeUrl: state.youtubeUrl, youtubeTitle: state.youtubeTitle,
         customLinks: state.customLinks
       };
