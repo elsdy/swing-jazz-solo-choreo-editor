@@ -955,11 +955,26 @@
     }
     .link-row input:focus { border-color: rgba(99,102,241,0.5); }
     .link-label-input { max-width: 90px !important; flex: 0 0 90px !important; }
+    /* URL입력 + 제목 칩을 gap 없이 붙여서 담는 sub-container */
+    .yt-url-group {
+      display: flex; flex: 1; min-width: 0; gap: 0; overflow: hidden;
+    }
+    /* URL 입력: flex-shrink 높게 → 먼저 줄어듦 */
+    .yt-url-group #youtubeUrlInput {
+      flex: 1 4 120px; min-width: 60px;
+      border-radius: 5px 0 0 5px; border-right: none;
+    }
+    /* 제목 없을 때 border-radius 복원 */
+    .yt-url-group:not(:has(.link-title-chip)) #youtubeUrlInput {
+      border-radius: 5px; border-right: 1px solid rgba(255,255,255,0.09);
+    }
     .link-title-chip {
       font-size: 11px; color: #a5b4fc; text-decoration: none;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      background: rgba(99,102,241,0.14); border-radius: 4px; padding: 2px 8px;
-      flex: 1; min-width: 0; border: 1px solid rgba(99,102,241,0.25);
+      background: rgba(99,102,241,0.14); padding: 2px 8px;
+      /* URL이 충분히 줄어든 뒤에 제목도 줄어들게 — flex-shrink 낮게 */
+      flex: 0 1 auto; min-width: 60px;
+      border: 1px solid rgba(99,102,241,0.25); border-radius: 0 5px 5px 0;
     }
     .link-title-chip:hover { background: rgba(99,102,241,0.28); }
     .link-title-fetching { font-size: 11px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
@@ -1083,7 +1098,9 @@
           <div class="links-bar" id="linksBar">
             <div class="link-row" id="youtubeLinkRow">
               <span class="link-badge yt">▶ YouTube</span>
-              <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
+              <div class="yt-url-group" id="ytUrlGroup">
+                <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
+              </div>
             </div>
             <div id="customLinksContainer"></div>
             <div><button id="addCustomLinkBtn" class="ghost link-add-btn">+ 링크 추가</button></div>
@@ -4082,8 +4099,12 @@
 
     function renderYoutubeExtras() {
       const row = document.getElementById('youtubeLinkRow');
-      if (!row) return;
-      row.querySelectorAll('.link-title-chip, .link-title-fetching, .link-open-btn').forEach(el => el.remove());
+      const group = document.getElementById('ytUrlGroup');
+      if (!row || !group) return;
+      // 제목 칩·스피너는 group 안에서 제거 (URL 입력 바로 옆)
+      group.querySelectorAll('.link-title-chip, .link-title-fetching').forEach(el => el.remove());
+      // ↗ 버튼은 row 레벨에서 제거
+      row.querySelectorAll('.link-open-btn').forEach(el => el.remove());
       if (!state.youtubeUrl) return;
       if (state.youtubeTitle) {
         const a = document.createElement('a');
@@ -4092,13 +4113,13 @@
         a.target = '_blank'; a.rel = 'noopener noreferrer';
         a.title = state.youtubeTitle;
         a.textContent = state.youtubeTitle;
-        row.appendChild(a);
+        group.appendChild(a); // URL 바로 옆, gap 없이
       }
       const openBtn = document.createElement('button');
       openBtn.className = 'ghost link-open-btn'; openBtn.type = 'button'; openBtn.title = '새 창에서 열기';
       openBtn.textContent = '↗';
       openBtn.addEventListener('click', () => window.open(normalizeYoutubeUrl(state.youtubeUrl), '_blank', 'noopener'));
-      row.appendChild(openBtn);
+      row.appendChild(openBtn); // ↗ 버튼은 group 바깥 row에
     }
 
     function renderCustomLinks() {
@@ -4162,11 +4183,11 @@
         renderYoutubeExtras();
         clearTimeout(ytTimer);
         if (!url) { saveLinks(); return; }
-        // 로딩 표시
-        const row = document.getElementById('youtubeLinkRow');
+        // 로딩 표시 — URL 바로 옆(group 안)에 붙임
+        const group = document.getElementById('ytUrlGroup');
         const spinner = document.createElement('span');
         spinner.className = 'link-title-fetching'; spinner.textContent = '제목 불러오는 중…';
-        row.appendChild(spinner);
+        if (group) group.appendChild(spinner);
         ytTimer = setTimeout(async () => {
           const title = await fetchYoutubeTitle(url);
           if (state.youtubeUrl === url) {
