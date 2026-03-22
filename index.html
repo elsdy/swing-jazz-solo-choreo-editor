@@ -3436,19 +3436,25 @@
       // 병합 전 기존 배치를 subRow=0으로 초기화 (아직 없는 경우)
       state.placements.forEach(p => { if (p.subRow === undefined) p.subRow = 0; });
 
-      // 들어오는 배치 정규화 (각 세그먼트에 newGroupId 준비)
-      const rawIncoming = (data.placements || []).filter(p => p && p.name).map(p => ({
-        id: uid(),
-        groupId: p.groupId || uid(),   // 원래 그룹 ID 보존 (그룹 단위 처리에 사용)
-        name: String(p.name),
-        category: state.categories[p.category] ? p.category : fallback,
-        row: Math.max(1, Number(p.row) || 1),
-        startIndex: Math.max(0, Number(p.startIndex) || 0),
-        length: Math.max(1, Number(p.length) || 1),
-        subRow: 0,
-        ...(p.type      ? { type: p.type }           : {}),
-        ...(p.routineId ? { routineId: p.routineId } : {})
-      })).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }))
+      // 들어오는 배치 정규화 — groupId를 새로 생성하여 기존 배치와 충돌 방지
+      // (같은 프로젝트를 부분 채우기하면 원래 groupId가 겹쳐 이동/삭제 시 합쳐짐)
+      const groupIdRemap = new Map();  // 원본 groupId → 새 groupId
+      const rawIncoming = (data.placements || []).filter(p => p && p.name).map(p => {
+        const origGid = p.groupId || uid();
+        if (!groupIdRemap.has(origGid)) groupIdRemap.set(origGid, uid());
+        return {
+          id: uid(),
+          groupId: groupIdRemap.get(origGid),
+          name: String(p.name),
+          category: state.categories[p.category] ? p.category : fallback,
+          row: Math.max(1, Number(p.row) || 1),
+          startIndex: Math.max(0, Number(p.startIndex) || 0),
+          length: Math.max(1, Number(p.length) || 1),
+          subRow: 0,
+          ...(p.type      ? { type: p.type }           : {}),
+          ...(p.routineId ? { routineId: p.routineId } : {})
+        };
+      }).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }))
          .filter(p => p.row <= state.rows && p.startIndex < state.cols && p.length > 0);
 
       // groupId 별로 묶기 (루틴처럼 여러 행에 걸친 배치를 하나의 그룹으로)
