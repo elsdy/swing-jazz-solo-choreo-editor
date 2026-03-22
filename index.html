@@ -911,6 +911,26 @@
       display: none;
       pointer-events: none;
     }
+    .routine-action-popup {
+      position: fixed; z-index: 9999;
+      background: var(--surface, #1e1e2e); border: 1px solid rgba(99,102,241,0.45);
+      border-radius: 8px; padding: 6px;
+      display: flex; flex-direction: column; gap: 4px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+      min-width: 130px;
+    }
+    .routine-action-popup .rap-title {
+      font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.55);
+      padding: 2px 6px 4px; border-bottom: 1px solid rgba(255,255,255,0.08);
+      margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .routine-action-popup button {
+      text-align: left; padding: 5px 10px; border-radius: 5px;
+      background: transparent; border: none; cursor: pointer;
+      font-size: 12px; color: var(--text, #cdd6f4);
+    }
+    .routine-action-popup button:hover { background: rgba(99,102,241,0.25); }
+    .routine-action-popup button.danger:hover { background: rgba(239,68,68,0.25); color: #f87171; }
 
   </style>
 </head>
@@ -1282,6 +1302,62 @@
     // ── 빠른 배치 팝업 ────────────────────────────────────────────────────────
 
     let quickPickerEl = null;
+    let routineActionPopupEl = null;
+
+    function closeRoutineActionPopup() {
+      if (routineActionPopupEl) { routineActionPopupEl.remove(); routineActionPopupEl = null; }
+    }
+
+    function showRoutineActionPopup(placement, clientX, clientY) {
+      closeRoutineActionPopup();
+      const popup = document.createElement('div');
+      popup.className = 'routine-action-popup';
+      routineActionPopupEl = popup;
+
+      const title = document.createElement('div');
+      title.className = 'rap-title';
+      title.textContent = placement.name;
+      popup.appendChild(title);
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.textContent = '✏ 편집';
+      editBtn.addEventListener('click', () => {
+        closeRoutineActionPopup();
+        if (placement.routineId) openRoutineEditor(placement.routineId);
+      });
+      popup.appendChild(editBtn);
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'danger';
+      delBtn.textContent = '× 삭제';
+      delBtn.addEventListener('click', () => {
+        closeRoutineActionPopup();
+        removePlacementGroup(placement.groupId, mainCtx);
+        saveHistory();
+      });
+      popup.appendChild(delBtn);
+
+      document.body.appendChild(popup);
+
+      // 팝업 위치 계산
+      const pw = 140, ph = 100;
+      const x = Math.min(clientX, window.innerWidth - pw - 8);
+      const y = Math.min(clientY + 6, window.innerHeight - ph - 8);
+      popup.style.left = `${x}px`;
+      popup.style.top = `${y}px`;
+
+      setTimeout(() => {
+        function outsideClick(e) {
+          if (routineActionPopupEl && !routineActionPopupEl.contains(e.target)) {
+            closeRoutineActionPopup();
+            document.removeEventListener('pointerdown', outsideClick);
+          }
+        }
+        document.addEventListener('pointerdown', outsideClick);
+      }, 0);
+    }
 
     function closeQuickPicker(keepPreview = false) {
       if (quickPickerEl) { quickPickerEl.remove(); quickPickerEl = null; }
@@ -1819,9 +1895,21 @@
         ctx.drag = null;
       });
 
+      el.addEventListener('click', (e) => {
+        const placementEl = e.target.closest('.placement');
+        if (!placementEl || !placementEl.classList.contains('is-routine') || ctx !== mainCtx) return;
+        // 루틴 배치 단일 클릭 → 편집/삭제 팝업
+        const groupId = placementEl.dataset.groupId;
+        const placement = ctx.placements.find(p => p.groupId === groupId);
+        if (!placement) return;
+        e.stopPropagation();
+        showRoutineActionPopup(placement, e.clientX, e.clientY);
+      });
+
       el.addEventListener('dblclick', (e) => {
         const placementEl = e.target.closest('.placement');
         if (!placementEl) return;
+        if (placementEl.classList.contains('is-routine') && ctx === mainCtx) return; // 루틴은 팝업으로 처리
         const groupId = placementEl.dataset.groupId;
         removePlacementGroup(groupId, ctx);
         _saveHistory();
@@ -3708,6 +3796,7 @@
         .filter(p => p.length > 0);
       syncReBoardSizeUI();
       renderBoard(true, reCtx);
+      syncCurrentRoutine(); // 직접 호출 — saveHistoryRe 경로와 무관하게 즉시 반영
       saveHistoryRe();
     }
 
