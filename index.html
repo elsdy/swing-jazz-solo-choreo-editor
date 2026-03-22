@@ -1080,14 +1080,14 @@
       });
     }
 
-    function openQuickPicker(row, cellIndex, clientX, clientY) {
+    function openQuickPicker(row, cellIndex, clientX, clientY, count = DEFAULT_COUNT) {
       closeQuickPicker();
       const popup = document.createElement('div');
       popup.className = 'quick-popup';
       quickPickerEl = popup;
       document.body.appendChild(popup);
       positionPopup(popup, clientX, clientY);
-      showMovePickerScreen(popup, row, cellIndex, clientX, clientY);
+      showMovePickerScreen(popup, row, cellIndex, clientX, clientY, count);
 
       // 외부 탭/클릭 시 닫기
       setTimeout(() => {
@@ -1114,7 +1114,7 @@
       return l;
     }
 
-    function showMovePickerScreen(popup, row, cellIndex, clientX, clientY) {
+    function showMovePickerScreen(popup, row, cellIndex, clientX, clientY, count = DEFAULT_COUNT) {
       popup.innerHTML = '';
 
       const header = document.createElement('div');
@@ -1128,12 +1128,12 @@
       header.appendChild(closeBtn);
       popup.appendChild(header);
 
-      // 동작 검색 버튼 (구 "신규 동작 on track")
+      // 동작 검색 버튼
       const searchBtn = document.createElement('button');
       searchBtn.type = 'button';
       searchBtn.className = 'quick-popup-item new-action';
       searchBtn.innerHTML = '<span>🔍</span><span>동작 검색</span>';
-      searchBtn.addEventListener('click', () => showMoveSearchScreen(popup, row, cellIndex));
+      searchBtn.addEventListener('click', () => showMoveSearchScreen(popup, row, cellIndex, count));
       popup.appendChild(searchBtn);
 
       // 즐겨찾기 동작 목록
@@ -1143,7 +1143,7 @@
         popup.appendChild(qLabel('즐겨찾기 동작'));
         favMoves.forEach(move => {
           popup.appendChild(makeQuickMoveItem(move, () => {
-            placeMove(move.id, row, cellIndex, DEFAULT_COUNT);
+            placeMove(move.id, row, cellIndex, count);
             saveHistory();
             closeQuickPicker();
           }));
@@ -1232,7 +1232,7 @@
     }
 
     // ── Screen 2: 동작 검색 ─────────────────────────────────────────────────
-    function showMoveSearchScreen(popup, row, cellIndex) {
+    function showMoveSearchScreen(popup, row, cellIndex, count = DEFAULT_COUNT) {
       popup.innerHTML = '';
 
       const header = document.createElement('div');
@@ -1243,7 +1243,7 @@
       backBtn.textContent = '←';
       backBtn.addEventListener('click', () => {
         const rect = popup.getBoundingClientRect();
-        showMovePickerScreen(popup, row, cellIndex, rect.left, rect.top);
+        showMovePickerScreen(popup, row, cellIndex, rect.left, rect.top, count);
       });
       header.appendChild(backBtn);
       header.appendChild(qLabel('동작 검색'));
@@ -1282,10 +1282,10 @@
           const others = state.moveLibrary.filter(m => !state.favoriteMoveNames.has(m.name));
           if (favs.length) {
             resultList.appendChild(qLabel('즐겨찾기'));
-            favs.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, DEFAULT_COUNT); saveHistory(); closeQuickPicker(); })));
+            favs.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
             if (others.length) resultList.appendChild(qDivider());
           }
-          others.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, DEFAULT_COUNT); saveHistory(); closeQuickPicker(); })));
+          others.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
           return;
         }
 
@@ -1298,7 +1298,7 @@
           resultList.appendChild(hint);
         } else {
           addBtn.style.display = 'none';
-          matches.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, DEFAULT_COUNT); saveHistory(); closeQuickPicker(); })));
+          matches.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
         }
       }
 
@@ -1306,7 +1306,7 @@
       addBtn.addEventListener('click', () => {
         const name = nameInput.value.trim();
         if (!name) return;
-        showCategoryScreen(popup, name, row, cellIndex);
+        showCategoryScreen(popup, name, row, cellIndex, count);
       });
 
       render();
@@ -1314,7 +1314,7 @@
     }
 
     // ── Screen 3: 카테고리 선택 ─────────────────────────────────────────────
-    function showCategoryScreen(popup, moveName, row, cellIndex) {
+    function showCategoryScreen(popup, moveName, row, cellIndex, count = DEFAULT_COUNT) {
       popup.innerHTML = '';
 
       const header = document.createElement('div');
@@ -1323,7 +1323,7 @@
       backBtn.type = 'button';
       backBtn.className = 'icon-btn';
       backBtn.textContent = '←';
-      backBtn.addEventListener('click', () => showMoveSearchScreen(popup, row, cellIndex));
+      backBtn.addEventListener('click', () => showMoveSearchScreen(popup, row, cellIndex, count));
       header.appendChild(backBtn);
       header.appendChild(qLabel('카테고리 선택'));
       const closeBtn = document.createElement('button');
@@ -1375,7 +1375,7 @@
         state.categories[catKeyFinal] = { label: catLabel, color: catColorInput.value };
         renderCategoryOptions();
         renderLegend();
-        createAndPlaceQuickMove(moveName, catKeyFinal, row, cellIndex);
+        createAndPlaceQuickMove(moveName, catKeyFinal, row, cellIndex, count);
         closeQuickPicker();
       });
 
@@ -1395,10 +1395,10 @@
           const otherKeys = categoryNames().filter(k => !state.favoriteCategories.has(k));
           if (favKeys.length) {
             resultList.appendChild(qLabel('즐겨찾기'));
-            favKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex); closeQuickPicker(); })));
+            favKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex, count); closeQuickPicker(); })));
             if (otherKeys.length) resultList.appendChild(qDivider());
           }
-          otherKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex); closeQuickPicker(); })));
+          otherKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex, count); closeQuickPicker(); })));
           return;
         }
 
@@ -1412,7 +1412,7 @@
           resultList.appendChild(hint);
         } else {
           addBtn.style.display = 'none';
-          matches.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex); closeQuickPicker(); })));
+          matches.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex, count); closeQuickPicker(); })));
         }
       }
 
@@ -1426,7 +1426,7 @@
       catInput.focus();
     }
 
-    function createAndPlaceQuickMove(name, categoryKey, row, cellIndex) {
+    function createAndPlaceQuickMove(name, categoryKey, row, cellIndex, count = DEFAULT_COUNT) {
       // 이미 같은 이름의 동작이 있으면 재사용
       let move = state.moveLibrary.find(m => m.name === name);
       if (!move) {
@@ -1434,7 +1434,7 @@
         state.moveLibrary.push(move);
         renderPalette();
       }
-      placeMove(move.id, row, cellIndex, DEFAULT_COUNT);
+      placeMove(move.id, row, cellIndex, count);
       saveHistory();
     }
 
@@ -1706,7 +1706,8 @@
       }, true);
 
       // ── Click-to-activate + draw-to-place ──────────────────────────────────
-      let drawState = null; // { row, startIndex, track }
+      let drawState = null;      // { row, startIndex, track }
+      let quickDrawState = null; // { row, startIndex, count, clientX, clientY } — 빠른 배치 드래그
 
       function drawPreview(row, startIndex, endIndex) {
         const count = Math.max(1, endIndex - startIndex + 1);
@@ -1714,6 +1715,19 @@
       }
 
       boardEl.addEventListener('mousedown', (e) => {
+        // ── 빠른 배치 모드: 드래그로 길이 결정 ─────────────────────────────
+        if (state.quickPlaceMode && !state.activePaletteMove && !drawState) {
+          if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
+          const track = e.target.closest('.track');
+          if (!track) return;
+          e.preventDefault();
+          const row = Number(track.dataset.row);
+          const startIndex = pointerToCellIndex(track, e.clientX);
+          quickDrawState = { row, startIndex, track, count: DEFAULT_COUNT, clientX: e.clientX, clientY: e.clientY };
+          updatePreview(row, startIndex, DEFAULT_COUNT);
+          return;
+        }
+        // ── 팔레트 동작 드로우 배치 ─────────────────────────────────────────
         if (!state.activePaletteMove) return;
         const track = e.target.closest('.track');
         if (!track) return;
@@ -1726,20 +1740,58 @@
       });
 
       boardEl.addEventListener('mousemove', (e) => {
+        // 빠른 배치 드래그 미리보기
+        if (quickDrawState) {
+          const endTrack = document.elementFromPoint(e.clientX, e.clientY)?.closest('.track');
+          const endRow = endTrack ? Number(endTrack.dataset.row) : quickDrawState.row;
+          const endTrackEl = endTrack || quickDrawState.track;
+          const endCol = pointerToCellIndex(endTrackEl, e.clientX);
+          const count = Math.max(1, Math.min(
+            calcCrossRowCount(quickDrawState.row, quickDrawState.startIndex, endRow, endCol),
+            totalCellsFrom(quickDrawState.row, quickDrawState.startIndex)
+          ));
+          quickDrawState.count = count;
+          quickDrawState.clientX = e.clientX;
+          quickDrawState.clientY = e.clientY;
+          updatePreview(quickDrawState.row, quickDrawState.startIndex, count);
+          return;
+        }
         if (!drawState || !state.activePaletteMove) return;
-        const track = e.target.closest('.track') || drawState.track;
-        const endIndex = pointerToCellIndex(drawState.track, e.clientX);
-        drawPreview(drawState.row, drawState.startIndex, endIndex);
+        const endTrack = document.elementFromPoint(e.clientX, e.clientY)?.closest('.track');
+        const endRow = endTrack ? Number(endTrack.dataset.row) : drawState.row;
+        const endTrackEl = endTrack || drawState.track;
+        const endCol = pointerToCellIndex(endTrackEl, e.clientX);
+        const count = Math.max(1, Math.min(
+          calcCrossRowCount(drawState.row, drawState.startIndex, endRow, endCol),
+          totalCellsFrom(drawState.row, drawState.startIndex)
+        ));
+        updatePreview(drawState.row, drawState.startIndex, count);
       });
 
       document.addEventListener('mouseup', (e) => {
-        if (!drawState || !state.activePaletteMove) return;
-        const endIndex = pointerToCellIndex(drawState.track, e.clientX);
-        const count = Math.max(DEFAULT_COUNT, endIndex - drawState.startIndex + 1);
-        placeMove(state.activePaletteMove.moveId, drawState.row, drawState.startIndex, count);
-        saveHistory();
-        clearPreview();
-        drawState = null;
+        // 빠른 배치 드래그 완료 → 팝업 열기 (드래그 길이 전달)
+        if (quickDrawState) {
+          const { row, startIndex, count, clientX, clientY } = quickDrawState;
+          clearPreview();
+          quickDrawState = null;
+          openQuickPicker(row, startIndex, clientX, clientY, count);
+          return;
+        }
+        if (drawState && state.activePaletteMove) {
+          const endTrack = document.elementFromPoint(e.clientX, e.clientY)?.closest('.track');
+          const endRow = endTrack ? Number(endTrack.dataset.row) : drawState.row;
+          const endTrackEl = endTrack || drawState.track;
+          const endCol = pointerToCellIndex(endTrackEl, e.clientX);
+          const count = Math.max(DEFAULT_COUNT, Math.min(
+            calcCrossRowCount(drawState.row, drawState.startIndex, endRow, endCol),
+            totalCellsFrom(drawState.row, drawState.startIndex)
+          ));
+          placeMove(state.activePaletteMove.moveId, drawState.row, drawState.startIndex, count);
+          saveHistory();
+          clearPreview();
+          drawState = null;
+          return;
+        }
       });
 
       // Touch draw-to-place (board)
@@ -1807,16 +1859,6 @@
 
       boardEl.addEventListener('touchcancel', () => { quickTouchAnchor = null; });
 
-      // 데스크탑 클릭
-      boardEl.addEventListener('click', (e) => {
-        if (!state.quickPlaceMode || state.activePaletteMove) return;
-        if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
-        const track = e.target.closest('.track');
-        if (!track) return;
-        const row = Number(track.dataset.row);
-        const cellIndex = pointerToCellIndex(track, e.clientX);
-        openQuickPicker(row, cellIndex, e.clientX, e.clientY);
-      });
       // ───────────────────────────────────────────────────────────────────────
     }
 
@@ -2379,6 +2421,13 @@
       return ((state.rows - row) * state.cols) + (state.cols - startIndex);
     }
 
+    // 시작(row,col)→끝(row,col)까지 셀 수 계산 (다중 행 포함)
+    function calcCrossRowCount(startRow, startCol, endRow, endCol) {
+      if (endRow < startRow || (endRow === startRow && endCol < startCol)) return 1;
+      if (endRow === startRow) return endCol - startCol + 1;
+      return (state.cols - startCol) + (endRow - startRow - 1) * state.cols + (endCol + 1);
+    }
+
     function buildSegments(startRow, startIndex, totalCount) {
       const segments = [];
       let remaining = totalCount;
@@ -2509,13 +2558,13 @@
 
     function onMouseMove(e) {
       if (!state.resize) return;
-      applyResizePreview(e.clientX);
+      applyResizePreview(e.clientX, e.clientY);
     }
 
     function onTouchMoveResize(e) {
       if (!state.resize) return;
       e.preventDefault();
-      applyResizePreview(e.touches[0].clientX);
+      applyResizePreview(e.touches[0].clientX, e.touches[0].clientY);
     }
 
     function stopMouseResize() {
@@ -2536,20 +2585,22 @@
       stopMouseResize();
     }
 
-    function applyResizePreview(clientX) {
+    function applyResizePreview(clientX, clientY) {
       const r = state.resize;
       if (!r) return;
-      const stepWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cellW')) || 68;
-      const rawDelta = (clientX - r.startX) / stepWidth;
       const maxTotal = totalCellsFrom(r.originRow, r.originStartIndex);
-      const previewCount = clamp(r.originalCount + Math.round(rawDelta), 1, Math.min(16, maxTotal));
+      let previewCount;
+      const endTrack = document.elementFromPoint(clientX, clientY)?.closest('.track');
+      if (endTrack) {
+        const endRow = Number(endTrack.dataset.row);
+        const endCol = pointerToCellIndex(endTrack, clientX);
+        previewCount = clamp(calcCrossRowCount(r.originRow, r.originStartIndex, endRow, endCol), 1, Math.min(16, maxTotal));
+      } else {
+        const stepWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cellW')) || 68;
+        previewCount = clamp(r.originalCount + Math.round((clientX - r.startX) / stepWidth), 1, Math.min(16, maxTotal));
+      }
       r.previewCount = previewCount;
-      if (!r.liveEl) return;
-      const currentGroup = getGroup(r.groupId);
-      if (!currentGroup.length) return;
-      const firstSeg = currentGroup[0];
-      const sameRowCount = Math.min(state.cols - firstSeg.startIndex, previewCount);
-      r.liveEl.style.width = `calc(${sameRowCount} * var(--cellW) - 8px)`;
+      rebuildGroup(r.groupId, previewCount);
     }
 
     function finalizeResize() {
