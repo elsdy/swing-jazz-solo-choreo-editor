@@ -200,9 +200,15 @@
       font-size: 13px;
       color: #cbd5e1;
     }
+    .track-spacer {
+      display: block;
+      width: 0;
+      height: var(--cellH);
+      pointer-events: none;
+      visibility: hidden;
+    }
     .track {
       position: relative;
-      min-height: var(--cellH);
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid rgba(148,163,184,0.16);
@@ -636,7 +642,8 @@
       .corner, .row-label { font-size: 11px; padding: 4px; min-height: 40px; border-radius: 10px; }
       .header-cells > div { font-size: 10px; min-height: 40px; }
       .header-cells { border-radius: 10px; }
-      .track { border-radius: 10px; min-height: 40px; }
+      .track { border-radius: 10px; }
+      .track-spacer { height: var(--cellH); }
       .board-wrap { padding: 8px; }
       .app { padding: 10px; gap: 10px; }
       .compact-grid { grid-template-columns: 1fr; }
@@ -2752,7 +2759,7 @@
         track.className = 'track';
         track.dataset.row = row;
         track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
-        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
+        track.innerHTML = `<div class="track-spacer"></div><div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
         const note = document.createElement('div');
         note.className = 'note-cell';
         rowEl.append(label, track, note);
@@ -2807,9 +2814,10 @@
       const placements = ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols);
       const maxSubRow = placements.reduce((m, p) => Math.max(m, p.subRow || 0), 0);
 
-      // 레이어 수만큼 트랙 높이를 px로 직접 설정 (absolute 자식은 grid 높이에 미기여)
+      // spacer로 트랙 높이를 강제 확장 (absolute 자식은 grid 높이에 미기여하므로 in-flow spacer 사용)
       const cellHPx = getCellHPx();
-      ref.track.style.minHeight = `${(maxSubRow + 1) * cellHPx}px`;
+      const spacer = ref.track.querySelector('.track-spacer');
+      if (spacer) spacer.style.height = `${(maxSubRow + 1) * cellHPx}px`;
       // 레이어 구분선 표시 (충돌 행에만)
       ref.track.dataset.layers = maxSubRow > 0 ? String(maxSubRow + 1) : '';
 
