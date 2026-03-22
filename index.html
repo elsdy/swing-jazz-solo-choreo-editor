@@ -2812,17 +2812,38 @@
       ref.note.innerHTML = renderRowNotes(row, ctx) || '<span class="muted">-</span>';
 
       const placements = ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols);
-      const maxSubRow = placements.reduce((m, p) => Math.max(m, p.subRow || 0), 0);
+
+      // 시각적 subRow를 데이터 subRow 순서를 보존하며 공간적으로 압축 (데이터 미수정)
+      const visualSubRows = new Map();
+      {
+        const sorted = [...placements].sort((a, b) => (a.subRow || 0) - (b.subRow || 0) || a.startIndex - b.startIndex);
+        const layers = [];
+        sorted.forEach(p => {
+          let s = 0;
+          while (true) {
+            const layer = layers[s] || [];
+            const conflict = layer.some(ex =>
+              !(p.startIndex + p.length - 1 < ex.startIndex || ex.startIndex + ex.length - 1 < p.startIndex)
+            );
+            if (!conflict) break;
+            s++;
+          }
+          visualSubRows.set(p.id, s);
+          if (!layers[s]) layers[s] = [];
+          layers[s].push(p);
+        });
+      }
+      const maxVisualSubRow = placements.reduce((m, p) => Math.max(m, visualSubRows.get(p.id) || 0), 0);
 
       // spacer로 트랙 높이를 강제 확장 (absolute 자식은 grid 높이에 미기여하므로 in-flow spacer 사용)
       const cellHPx = getCellHPx();
       const spacer = ref.track.querySelector('.track-spacer');
-      if (spacer) spacer.style.height = `${(maxSubRow + 1) * cellHPx}px`;
+      if (spacer) spacer.style.height = `${(maxVisualSubRow + 1) * cellHPx}px`;
       // 레이어 구분선 표시 (충돌 행에만)
-      ref.track.dataset.layers = maxSubRow > 0 ? String(maxSubRow + 1) : '';
+      ref.track.dataset.layers = maxVisualSubRow > 0 ? String(maxVisualSubRow + 1) : '';
 
       [...ref.track.querySelectorAll('.placement')].forEach(el => el.remove());
-      placements.forEach(p => ref.track.appendChild(createPlacementEl(p, ctx)));
+      placements.forEach(p => ref.track.appendChild(createPlacementEl(p, visualSubRows.get(p.id) || 0, ctx)));
     }
 
     function getAffectedRowsByGroup(groupId, ctx = mainCtx) {
@@ -2856,7 +2877,7 @@
         .join(', ');
     }
 
-    function createPlacementEl(placement, ctx = mainCtx) {
+    function createPlacementEl(placement, visualSubRow, ctx = mainCtx) {
       const el = document.createElement('div');
       el.className = 'placement';
       if (placement.type === 'routine') el.classList.add('is-routine');
@@ -2866,8 +2887,8 @@
       if (placement.routineId) el.dataset.routineId = placement.routineId;
       el.style.left = `calc(${placement.startIndex} * var(--cellW) + 4px)`;
       el.style.width = `calc(${placement.length} * var(--cellW) - 8px)`;
-      // subRow에 따라 레이어 위치를 px로 직접 지정
-      el.style.top = `${(placement.subRow || 0) * getCellHPx() + 6}px`;
+      // 시각적 subRow로 레이어 위치를 px로 직접 지정
+      el.style.top = `${visualSubRow * getCellHPx() + 6}px`;
       if (placement.type !== 'routine') el.style.background = categoryColor(placement.category);
       const cnt = groupCount(placement.groupId, ctx);
       el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${cnt}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
@@ -3031,16 +3052,27 @@
       const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
       const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
-      // subRow=0으로 일단 삽입 후, repackSubRows가 올바른 레이어 자동 배정
+      // 이동 대상에서 충돌 없는 가장 낮은 DATA subRow 탐색
+      let targetSubRow = 0;
+      outer: for (;;) {
+        for (const seg of segments) {
+          const conflict = ctx.placements.some(p =>
+            p.row === seg.row && (p.subRow || 0) === targetSubRow &&
+            !(seg.startIndex + seg.length - 1 < p.startIndex || p.startIndex + p.length - 1 < seg.startIndex)
+          );
+          if (conflict) { targetSubRow++; continue outer; }
+        }
+        break;
+      }
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: meta.name, category: meta.category,
         ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
         row: seg.row, startIndex: seg.startIndex, length: seg.length,
-        subRow: 0
+        subRow: targetSubRow
       })));
+      // 소스 행은 repackSubRows 하지 않음 — renderRow의 시각적 압축이 처리
       const affectedRows = [...new Set([...previousRows, ...segments.map(s => s.row)])];
-      repackSubRows(affectedRows, ctx);
       unmarkDraggingGroups(ctx);
       renderRows(affectedRows, ctx);
     }
