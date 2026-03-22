@@ -2931,9 +2931,37 @@
       return affectedRows;
     }
 
+    // 지정 행들의 subRow를 재정렬: 갭 없이 0부터 촘촘하게 재배정
+    // 배치 이동/삭제 후 "빈 상단 레이어" 현상을 방지
+    function repackSubRows(rows, ctx = mainCtx) {
+      [...new Set(rows)].forEach(row => {
+        const rp = ctx.placements.filter(p => p.row === row);
+        if (!rp.length) return;
+        // 현재 subRow → startIndex 순으로 정렬 (stable sort: 동점 시 기존 순서 유지)
+        rp.sort((a, b) => (a.subRow || 0) - (b.subRow || 0) || a.startIndex - b.startIndex);
+        // 각 배치에 충돌 없는 최소 subRow 재배정
+        const layers = []; // layers[s] = 이미 배정된 배치 목록
+        rp.forEach(p => {
+          let s = 0;
+          while (true) {
+            const layer = layers[s] || [];
+            const conflict = layer.some(ex =>
+              !(p.startIndex + p.length - 1 < ex.startIndex || ex.startIndex + ex.length - 1 < p.startIndex)
+            );
+            if (!conflict) break;
+            s++;
+          }
+          p.subRow = s;
+          if (!layers[s]) layers[s] = [];
+          layers[s].push(p);
+        });
+      });
+    }
+
     function removePlacementGroup(groupId, ctx = mainCtx) {
       const affectedRows = getAffectedRowsByGroup(groupId, ctx);
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
+      repackSubRows(affectedRows, ctx);
       renderRows(affectedRows, ctx);
     }
 
@@ -3002,29 +3030,19 @@
       const count = Math.min(groupCount(groupId, ctx), totalCellsFrom(targetRow, targetStartIndex, ctx));
       const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
       const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
-      // 이동 대상 그룹 먼저 제거 후, 빈 레이어 탐색 (placeMove와 동일한 로직)
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
-      let targetSubRow = 0;
-      while (true) {
-        const hasConflict = segments.some(seg => {
-          const segEnd = seg.startIndex + seg.length - 1;
-          return ctx.placements.some(ex =>
-            ex.row === seg.row && (ex.subRow || 0) === targetSubRow &&
-            !(segEnd < ex.startIndex || ex.startIndex + ex.length - 1 < seg.startIndex)
-          );
-        });
-        if (!hasConflict) break;
-        targetSubRow++;
-      }
+      // subRow=0으로 일단 삽입 후, repackSubRows가 올바른 레이어 자동 배정
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: meta.name, category: meta.category,
         ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
         row: seg.row, startIndex: seg.startIndex, length: seg.length,
-        subRow: targetSubRow
+        subRow: 0
       })));
+      const affectedRows = [...new Set([...previousRows, ...segments.map(s => s.row)])];
+      repackSubRows(affectedRows, ctx);
       unmarkDraggingGroups(ctx);
-      renderRows([...new Set([...previousRows, ...segments.map(s => s.row)])], ctx);
+      renderRows(affectedRows, ctx);
     }
 
     function rebuildGroup(groupId, newCount, ctx = mainCtx) {
@@ -3044,7 +3062,9 @@
         row: seg.row, startIndex: seg.startIndex, length: seg.length,
         subRow: originalSubRow
       })));
-      renderRows([...previousRows, ...segments.map(s => s.row), ...removedRows], ctx);
+      const affectedRows = [...new Set([...previousRows, ...segments.map(s => s.row), ...removedRows])];
+      repackSubRows(affectedRows, ctx);
+      renderRows(affectedRows, ctx);
     }
 
     function startResize(groupId, clientX, ctx = mainCtx) {
