@@ -3055,10 +3055,9 @@
         row: seg.row, startIndex: seg.startIndex, length: seg.length,
         subRow: targetSubRow
       })));
-      // 소스 행은 repackSubRows 하지 않음 — renderRow의 시각적 압축이 처리
-      const affectedRows = [...new Set([...previousRows, ...segments.map(s => s.row)])];
+      // 이동 후 전체 행을 다시 렌더링하여 spacer 높이·DOM 일관성 보장
       unmarkDraggingGroups(ctx);
-      renderRows(affectedRows, ctx);
+      renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
     }
 
     function rebuildGroup(groupId, newCount, ctx = mainCtx) {
@@ -3654,6 +3653,7 @@
         row: Math.max(1, Number(p.row) || 1),
         startIndex: Math.max(0, Number(p.startIndex) || 0),
         length: Math.max(1, Number(p.length) || 1),
+        subRow: Number(p.subRow) || 0,
         // 루틴 배치 필드 보존
         ...(p.type     ? { type: p.type }         : {}),
         ...(p.routineId ? { routineId: p.routineId } : {})
