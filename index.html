@@ -906,6 +906,11 @@
     .placement.is-routine .resize-handle {
       background: rgba(255,255,255,0.25);
     }
+    /* 메인 보드의 루틴 배치는 크기 조절 불가 */
+    .main-board-area .placement.is-routine .resize-handle {
+      display: none;
+      pointer-events: none;
+    }
 
   </style>
 </head>
@@ -1848,6 +1853,7 @@
           e.preventDefault();
           const placementEl = resizeHandle.closest('.placement');
           if (!placementEl) return;
+          if (placementEl.classList.contains('is-routine') && ctx === mainCtx) return;
           startResize(placementEl.dataset.groupId, e.clientX, ctx);
           return;
         }
@@ -2346,14 +2352,19 @@
         card.addEventListener('dragstart', (e) => {
           if (e.target.closest('select, button')) { e.preventDefault(); return; }
           state.activePaletteMove = null;
-          state.drag = { type: 'palette', moveId: move.id, previewCount: DEFAULT_COUNT };
+          const paletteDrag = { type: 'palette', moveId: move.id, previewCount: DEFAULT_COUNT };
+          state.drag = paletteDrag;
+          reState.drag = paletteDrag; // 루틴 보드에도 팔레트 드래그 허용
           e.dataTransfer.setData('text/plain', move.id);
           e.dataTransfer.effectAllowed = 'copy';
         });
         card.addEventListener('dragend', () => {
           state.drag = null;
-          clearTrackHighlights();
-          clearPreview();
+          reState.drag = null;
+          clearTrackHighlights(mainCtx);
+          clearPreview(mainCtx);
+          clearTrackHighlights(reCtx);
+          clearPreview(reCtx);
         });
         attachTouchDragToPaletteChip(card, move);
 
@@ -2563,8 +2574,8 @@
       header.innerHTML = `<div class="corner">마디</div><div class="header-cells" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${Array.from({ length: ctx.cols }, (_, i) => `<div>${i + 1}</div>`).join('')}</div><div class="note-header">비고</div>`;
       ctx.el.appendChild(header);
 
-      // intro row (row 0)
-      {
+      // intro row (row 0) — main board only
+      if (ctx === mainCtx) {
         const rowEl = document.createElement('div');
         rowEl.className = 'board-row';
         rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${ctx.cols}) var(--noteW)`;
@@ -2605,10 +2616,14 @@
     }
 
     function renderBoard(forceRebuild = false, ctx = mainCtx) {
-      if (forceRebuild || ctx.boardSig !== boardSignature(ctx) || ctx.rowRefs.size !== ctx.rows + 1) {
+      const expectedSize = ctx === mainCtx ? ctx.rows + 1 : ctx.rows;
+      if (forceRebuild || ctx.boardSig !== boardSignature(ctx) || ctx.rowRefs.size !== expectedSize) {
         buildBoardSkeleton(ctx);
       }
-      renderRows([0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)], ctx);
+      const rows = ctx === mainCtx
+        ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
+        : Array.from({ length: ctx.rows }, (_, i) => i + 1);
+      renderRows(rows, ctx);
     }
 
     function renderRows(rows, ctx = mainCtx) {
@@ -2764,7 +2779,7 @@
     function placeRoutineOnBoard(routineId, startRow, startIndex) {
       const routine = state.routines.find(r => r.id === routineId);
       if (!routine) return;
-      const length = routine.cols;
+      const length = routine.rows * routine.cols;
       const groupId = uid();
       const removedRows = clearSegmentsArea([{ row: startRow, startIndex, length }], null, mainCtx);
       mainCtx.placements.push({
@@ -3492,7 +3507,7 @@
       // 메인 보드의 루틴 블록 길이 업데이트
       const affected = state.placements.filter(p => p.routineId === routine.id);
       if (affected.length) {
-        affected.forEach(p => { p.length = routine.cols; p.name = routine.name; });
+        affected.forEach(p => { p.length = routine.rows * routine.cols; p.name = routine.name; });
         const rows = [...new Set(affected.map(p => p.row))];
         renderRows(rows);
       }
