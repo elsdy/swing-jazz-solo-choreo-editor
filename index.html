@@ -200,16 +200,6 @@
       font-size: 13px;
       color: #cbd5e1;
     }
-    /* 여러 레이어(병합 충돌)를 세로로 쌓는 컨테이너 */
-    .track-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .track-stack .track:not(:first-child) {
-      border-style: dashed;       /* 겹침 레이어임을 점선으로 표시 */
-      opacity: 0.88;
-    }
     .track {
       position: relative;
       min-height: var(--cellH);
@@ -218,6 +208,16 @@
       border: 1px solid rgba(148,163,184,0.16);
       background: linear-gradient(90deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) calc(var(--cellW) - 1px), rgba(255,255,255,0.08) calc(var(--cellW) - 1px), rgba(255,255,255,0.08) var(--cellW));
       background-size: var(--cellW) 100%;
+    }
+    /* 병합 충돌로 레이어가 2개 이상인 행: 레이어 경계선 표시 */
+    .track[data-layers]::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0;
+      top: var(--cellH);
+      height: 1px;
+      background: rgba(148,163,184,0.35);
+      pointer-events: none;
     }
     .track.drop-hover {
       outline: 3px dashed rgba(96,165,250,0.7);
@@ -1937,7 +1937,7 @@
 
       el.addEventListener('dragover', (e) => {
         const track = e.target.closest('.track');
-        if (!track || parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 드롭 불가
+        if (!track) return;
         e.preventDefault();
         clearTrackHighlights(ctx);
         track.classList.add('drop-hover');
@@ -1954,7 +1954,7 @@
 
       el.addEventListener('drop', (e) => {
         const track = e.target.closest('.track');
-        if (!track || parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 드롭 불가
+        if (!track) return;
         e.preventDefault();
         clearTrackHighlights(ctx);
         const row = Number(track.dataset.row);
@@ -2089,7 +2089,7 @@
         if (ctx.quickPlaceMode && !ctx.activePaletteMove && !drawState) {
           if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
           const track = e.target.closest('.track');
-          if (!track || parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 배치 불가
+          if (!track) return;
           e.preventDefault();
           const row = Number(track.dataset.row);
           const startIndex = pointerToCellIndex(track, e.clientX, ctx);
@@ -2099,7 +2099,7 @@
         }
         if (!ctx.activePaletteMove) return;
         const track = e.target.closest('.track');
-        if (!track || parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 배치 불가
+        if (!track) return;
         if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
         e.preventDefault();
         const row = Number(track.dataset.row);
@@ -2169,7 +2169,6 @@
         const touch = e.touches[0];
         const track = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
         if (!track || !el.contains(track)) return;
-        if (parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 배치 불가
         if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
         e.stopPropagation();
         const row = Number(track.dataset.row);
@@ -2211,7 +2210,6 @@
         const touch = e.touches[0];
         const track = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
         if (!track || !el.contains(track)) return;
-        if (parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 배치 불가
         quickTouchAnchor = { x: touch.clientX, y: touch.clientY, track };
       }, { passive: true });
 
@@ -2734,34 +2732,6 @@
       }
     }
 
-    function createTrackEl(ctx, row, subRow) {
-      const track = document.createElement('div');
-      track.className = 'track';
-      track.dataset.row = row;
-      track.dataset.subRow = subRow;
-      track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
-      track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
-      return track;
-    }
-
-    function makeRowRef(rowEl, label, note, track0) {
-      return {
-        rowEl, label, note,
-        trackStack: track0.parentElement,
-        tracks: [track0],
-        get track() { return this.tracks[0]; }
-      };
-    }
-
-    function ensureSubRows(ref, maxSubRow, ctx, row) {
-      while (ref.tracks.length <= maxSubRow) {
-        const subRow = ref.tracks.length;
-        const t = createTrackEl(ctx, row, subRow);
-        ref.trackStack.appendChild(t);
-        ref.tracks.push(t);
-      }
-    }
-
     function buildBoardSkeleton(ctx = mainCtx) {
       ctx.el.innerHTML = '';
       ctx.rowRefs.clear();
@@ -2778,15 +2748,16 @@
         const label = document.createElement('div');
         label.className = 'row-label';
         label.textContent = labelText;
-        const trackStack = document.createElement('div');
-        trackStack.className = 'track-stack';
-        const track = createTrackEl(ctx, row, 0);
-        trackStack.appendChild(track);
+        const track = document.createElement('div');
+        track.className = 'track';
+        track.dataset.row = row;
+        track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
+        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
         const note = document.createElement('div');
         note.className = 'note-cell';
-        rowEl.append(label, trackStack, note);
+        rowEl.append(label, track, note);
         ctx.el.appendChild(rowEl);
-        ctx.rowRefs.set(row, makeRowRef(rowEl, label, note, track));
+        ctx.rowRefs.set(row, { rowEl, label, track, note });
       }
 
       // intro row (row 0) — main board only
@@ -2829,25 +2800,18 @@
       ref.label.textContent = row === 0 ? 'intro' : `${ctx.cols}x${row}`;
       ref.note.innerHTML = renderRowNotes(row, ctx) || '<span class="muted">-</span>';
 
-      // 현재 행의 배치들 (subRow 기준으로 레이어 구분)
       const placements = ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols);
       const maxSubRow = placements.reduce((m, p) => Math.max(m, p.subRow || 0), 0);
 
-      // 필요한 수만큼 레이어 트랙 확보
-      ensureSubRows(ref, maxSubRow, ctx, row);
+      // 레이어가 2개 이상이면 트랙 높이를 늘려 상하 배치가 가능하게 함
+      ref.track.style.minHeight = maxSubRow > 0
+        ? `calc(${maxSubRow + 1} * var(--cellH))`
+        : '';
+      // 레이어 구분선 표시 (충돌 행에만)
+      ref.track.dataset.layers = maxSubRow > 0 ? String(maxSubRow + 1) : '';
 
-      // 모든 레이어에서 기존 배치 엘리먼트 제거
-      ref.tracks.forEach((t, i) => {
-        [...t.querySelectorAll('.placement')].forEach(el => el.remove());
-        // 사용하지 않는 레이어 숨김
-        t.style.display = i <= maxSubRow ? '' : 'none';
-      });
-
-      // 각 배치를 해당 subRow 레이어에 추가
-      placements.forEach(p => {
-        const subRow = p.subRow || 0;
-        ref.tracks[subRow].appendChild(createPlacementEl(p, ctx));
-      });
+      [...ref.track.querySelectorAll('.placement')].forEach(el => el.remove());
+      placements.forEach(p => ref.track.appendChild(createPlacementEl(p, ctx)));
     }
 
     function getAffectedRowsByGroup(groupId, ctx = mainCtx) {
@@ -2891,6 +2855,9 @@
       if (placement.routineId) el.dataset.routineId = placement.routineId;
       el.style.left = `calc(${placement.startIndex} * var(--cellW) + 4px)`;
       el.style.width = `calc(${placement.length} * var(--cellW) - 8px)`;
+      // 병합 충돌 시 subRow > 0 이면 아래쪽 레이어에 배치
+      const subRow = placement.subRow || 0;
+      el.style.top = `calc(${subRow} * var(--cellH) + 6px)`;
       if (placement.type !== 'routine') el.style.background = categoryColor(placement.category);
       const cnt = groupCount(placement.groupId, ctx);
       el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${cnt}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
