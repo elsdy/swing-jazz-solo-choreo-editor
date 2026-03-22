@@ -2914,10 +2914,12 @@
       return ctx.placements.filter(p => p.groupId === groupId).sort((a, b) => a.row - b.row || a.startIndex - b.startIndex);
     }
 
-    function clearSegmentsArea(segments, ignoreGroupId = null, ctx = mainCtx) {
+    function clearSegmentsArea(segments, ignoreGroupId = null, ctx = mainCtx, subRow = null) {
       const removeIds = new Set();
       ctx.placements.forEach(p => {
         if (ignoreGroupId && p.groupId === ignoreGroupId) return;
+        // subRow 지정 시 같은 레이어만 제거 (다른 레이어는 보존)
+        if (subRow !== null && (p.subRow || 0) !== subRow) return;
         if (segments.some(seg => seg.row === p.row && !(seg.startIndex + seg.length - 1 < p.startIndex || p.startIndex + p.length - 1 < seg.startIndex))) {
           removeIds.add(p.groupId);
         }
@@ -2997,16 +2999,18 @@
       const group = getGroup(groupId, ctx);
       if (!group.length) return;
       const previousRows = group.map(p => p.row);
+      const originalSubRow = group[0].subRow || 0;
       const count = Math.min(groupCount(groupId, ctx), totalCellsFrom(targetRow, targetStartIndex, ctx));
       const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
       const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
-      const removedRows = clearSegmentsArea(segments, groupId, ctx);
+      const removedRows = clearSegmentsArea(segments, groupId, ctx, originalSubRow);
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: meta.name, category: meta.category,
         ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
-        row: seg.row, startIndex: seg.startIndex, length: seg.length
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: originalSubRow
       })));
       unmarkDraggingGroups(ctx);
       renderRows([...previousRows, ...segments.map(s => s.row), ...removedRows], ctx);
@@ -3017,15 +3021,17 @@
       if (!group.length) return;
       const previousRows = group.map(p => p.row);
       const first = group[0];
+      const originalSubRow = first.subRow || 0;
       const meta = { name: first.name, category: first.category, type: first.type, routineId: first.routineId };
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
       const segments = buildSegments(first.row, first.startIndex, newCount, ctx);
-      const removedRows = clearSegmentsArea(segments, groupId, ctx);
+      const removedRows = clearSegmentsArea(segments, groupId, ctx, originalSubRow);
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: meta.name, category: meta.category,
         ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
-        row: seg.row, startIndex: seg.startIndex, length: seg.length
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: originalSubRow
       })));
       renderRows([...previousRows, ...segments.map(s => s.row), ...removedRows], ctx);
     }
