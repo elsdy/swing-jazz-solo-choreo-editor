@@ -1062,6 +1062,7 @@
 
     function closeQuickPicker() {
       if (quickPickerEl) { quickPickerEl.remove(); quickPickerEl = null; }
+      clearPreview();
     }
 
     function positionPopup(popup, clientX, clientY) {
@@ -1772,7 +1773,6 @@
         // 빠른 배치 드래그 완료 → 팝업 열기 (드래그 길이 전달)
         if (quickDrawState) {
           const { row, startIndex, count, clientX, clientY } = quickDrawState;
-          clearPreview();
           quickDrawState = null;
           openQuickPicker(row, startIndex, clientX, clientY, count);
           return;
@@ -2594,10 +2594,10 @@
       if (endTrack) {
         const endRow = Number(endTrack.dataset.row);
         const endCol = pointerToCellIndex(endTrack, clientX);
-        previewCount = clamp(calcCrossRowCount(r.originRow, r.originStartIndex, endRow, endCol), 1, Math.min(16, maxTotal));
+        previewCount = clamp(calcCrossRowCount(r.originRow, r.originStartIndex, endRow, endCol), 1, maxTotal);
       } else {
         const stepWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cellW')) || 68;
-        previewCount = clamp(r.originalCount + Math.round((clientX - r.startX) / stepWidth), 1, Math.min(16, maxTotal));
+        previewCount = clamp(r.originalCount + Math.round((clientX - r.startX) / stepWidth), 1, maxTotal);
       }
       r.previewCount = previewCount;
       rebuildGroup(r.groupId, previewCount);
@@ -2607,7 +2607,7 @@
       const r = state.resize;
       if (!r) return;
       const maxTotal = totalCellsFrom(r.originRow, r.originStartIndex);
-      const finalCount = clamp(r.previewCount || r.originalCount, 1, Math.min(16, maxTotal));
+      const finalCount = clamp(r.previewCount || r.originalCount, 1, maxTotal);
       rebuildGroup(r.groupId, finalCount);
     }
 
