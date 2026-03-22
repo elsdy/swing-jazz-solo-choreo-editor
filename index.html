@@ -1060,9 +1060,9 @@
 
     let quickPickerEl = null;
 
-    function closeQuickPicker() {
+    function closeQuickPicker(keepPreview = false) {
       if (quickPickerEl) { quickPickerEl.remove(); quickPickerEl = null; }
-      clearPreview();
+      if (!keepPreview) clearPreview();
     }
 
     function positionPopup(popup, clientX, clientY) {
@@ -1082,7 +1082,7 @@
     }
 
     function openQuickPicker(row, cellIndex, clientX, clientY, count = DEFAULT_COUNT) {
-      closeQuickPicker();
+      closeQuickPicker(true); // 기존 팝업만 제거, 미리보기는 유지
       const popup = document.createElement('div');
       popup.className = 'quick-popup';
       quickPickerEl = popup;
