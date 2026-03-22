@@ -932,6 +932,45 @@
     .routine-action-popup button:hover { background: rgba(99,102,241,0.25); }
     .routine-action-popup button.danger:hover { background: rgba(239,68,68,0.25); color: #f87171; }
 
+    /* 링크바 */
+    .links-bar {
+      padding: 5px 10px;
+      border-bottom: 1px solid rgba(148,163,184,0.10);
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .link-row {
+      display: flex; align-items: center; gap: 6px; min-height: 26px;
+    }
+    .link-badge {
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+      white-space: nowrap; flex-shrink: 0; letter-spacing: .3px;
+    }
+    .link-badge.yt { background: #ff0000; color: #fff; }
+    .link-badge.custom { background: rgba(99,102,241,0.22); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
+    .link-row input[type="url"], .link-row input[type="text"] {
+      flex: 1; min-width: 0;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 5px; padding: 3px 7px; font-size: 12px;
+      color: var(--text, #cdd6f4); outline: none;
+    }
+    .link-row input:focus { border-color: rgba(99,102,241,0.5); }
+    .link-label-input { max-width: 90px !important; flex: 0 0 90px !important; }
+    .link-title-chip {
+      font-size: 11px; color: #a5b4fc; text-decoration: none;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
+      background: rgba(99,102,241,0.14); border-radius: 4px; padding: 2px 8px;
+      flex-shrink: 0; border: 1px solid rgba(99,102,241,0.25);
+    }
+    .link-title-chip:hover { background: rgba(99,102,241,0.28); }
+    .link-title-fetching { font-size: 11px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
+    .link-open-btn { padding: 2px 7px !important; font-size: 13px !important; flex-shrink: 0; }
+    .link-del-btn {
+      padding: 2px 6px; font-size: 13px; background: transparent; border: none;
+      cursor: pointer; color: rgba(255,255,255,0.3); border-radius: 4px; flex-shrink: 0;
+    }
+    .link-del-btn:hover { color: #f87171; background: rgba(239,68,68,0.15); }
+    .link-add-btn { font-size: 11px !important; padding: 2px 8px !important; }
+
   </style>
 </head>
 <body>
@@ -1041,6 +1080,14 @@
               <button id="clearBtn" class="danger">전체 초기화</button>
             </div>
           </div>
+          <div class="links-bar" id="linksBar">
+            <div class="link-row" id="youtubeLinkRow">
+              <span class="link-badge yt">▶ YouTube</span>
+              <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
+            </div>
+            <div id="customLinksContainer"></div>
+            <div><button id="addCustomLinkBtn" class="ghost link-add-btn">+ 링크 추가</button></div>
+          </div>
           <div class="board-wrap" id="mainBoardWrap"><div class="board" id="board"></div></div>
         </div>
 
@@ -1114,6 +1161,9 @@
       paletteSortDir: 'asc',     // 'asc' | 'desc'
       routines: [],              // 루틴 목록
       favoriteRoutineIds: new Set(), // 루틴 즐겨찾기
+      youtubeUrl: '',       // YouTube URL
+      youtubeTitle: '',     // oEmbed로 캐시된 제목
+      customLinks: [],      // [{id, label, url}]
     };
 
     // 루틴 편집기 전용 상태
@@ -1225,6 +1275,7 @@
       renderSavedMoveList();
       renderSavedCategoryList();
       renderRoutineList();
+      initLinksBar();
       saveHistory();
       updateMobileCellSize();
       window.addEventListener('resize', updateMobileCellSize);
@@ -3434,6 +3485,7 @@
         state.routines = [];
       }
       fileNameInput.value = data.fileName || '';
+      applyLinksData(data); // 링크 (youtubeUrl, customLinks 등)
       syncBoardSizeUI();
       renderLegend();
       renderPalette();
@@ -3978,12 +4030,167 @@
     }
 
     // ── 프로젝트 저장/불러오기 routines 반영 ─────────────────────────────────
+    // ── 링크바 ────────────────────────────────────────────────────────────
+
+    function normalizeYoutubeUrl(raw) {
+      try {
+        const u = new URL(raw.trim());
+        if (u.hostname === 'youtu.be') return `https://www.youtube.com/watch?v=${u.pathname.slice(1).split('?')[0]}`;
+        if (u.hostname.includes('youtube.com')) {
+          const v = u.searchParams.get('v');
+          if (v) return `https://www.youtube.com/watch?v=${v}`;
+        }
+      } catch {}
+      return raw.trim();
+    }
+
+    async function fetchYoutubeTitle(url) {
+      try {
+        const canonical = normalizeYoutubeUrl(url);
+        const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonical)}&format=json`);
+        if (!res.ok) return '';
+        const data = await res.json();
+        return data.title || '';
+      } catch { return ''; }
+    }
+
+    function saveLinks() {
+      localStorage.setItem('choreo_links', JSON.stringify({
+        youtubeUrl: state.youtubeUrl, youtubeTitle: state.youtubeTitle,
+        customLinks: state.customLinks
+      }));
+    }
+
+    function loadLinks() {
+      try {
+        const d = JSON.parse(localStorage.getItem('choreo_links') || '{}');
+        state.youtubeUrl = d.youtubeUrl || '';
+        state.youtubeTitle = d.youtubeTitle || '';
+        state.customLinks = Array.isArray(d.customLinks) ? d.customLinks : [];
+      } catch { state.youtubeUrl = ''; state.youtubeTitle = ''; state.customLinks = []; }
+    }
+
+    function applyLinksData(data) {
+      state.youtubeUrl = data.youtubeUrl || '';
+      state.youtubeTitle = data.youtubeTitle || '';
+      state.customLinks = Array.isArray(data.customLinks)
+        ? data.customLinks.map(l => ({ id: l.id || uid(), label: String(l.label || ''), url: String(l.url || '') }))
+        : [];
+      saveLinks();
+      renderLinksBar();
+    }
+
+    function renderYoutubeExtras() {
+      const row = document.getElementById('youtubeLinkRow');
+      if (!row) return;
+      row.querySelectorAll('.link-title-chip, .link-title-fetching, .link-open-btn').forEach(el => el.remove());
+      if (!state.youtubeUrl) return;
+      if (state.youtubeTitle) {
+        const a = document.createElement('a');
+        a.className = 'link-title-chip';
+        a.href = normalizeYoutubeUrl(state.youtubeUrl);
+        a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.title = state.youtubeTitle;
+        a.textContent = state.youtubeTitle;
+        row.appendChild(a);
+      }
+      const openBtn = document.createElement('button');
+      openBtn.className = 'ghost link-open-btn'; openBtn.type = 'button'; openBtn.title = '새 창에서 열기';
+      openBtn.textContent = '↗';
+      openBtn.addEventListener('click', () => window.open(normalizeYoutubeUrl(state.youtubeUrl), '_blank', 'noopener'));
+      row.appendChild(openBtn);
+    }
+
+    function renderCustomLinks() {
+      const container = document.getElementById('customLinksContainer');
+      if (!container) return;
+      container.innerHTML = '';
+      state.customLinks.forEach(link => {
+        const row = document.createElement('div');
+        row.className = 'link-row';
+
+        const badge = document.createElement('span');
+        badge.className = 'link-badge custom'; badge.textContent = '🔗';
+        row.appendChild(badge);
+
+        const labelInput = document.createElement('input');
+        labelInput.type = 'text'; labelInput.className = 'link-label-input';
+        labelInput.placeholder = '레이블'; labelInput.value = link.label;
+        labelInput.addEventListener('change', () => { link.label = labelInput.value; saveLinks(); });
+        row.appendChild(labelInput);
+
+        const urlInput = document.createElement('input');
+        urlInput.type = 'url'; urlInput.placeholder = 'URL 입력...'; urlInput.value = link.url;
+        urlInput.addEventListener('change', () => { link.url = urlInput.value.trim(); saveLinks(); renderCustomLinks(); });
+        row.appendChild(urlInput);
+
+        const openBtn = document.createElement('button');
+        openBtn.className = 'ghost link-open-btn'; openBtn.type = 'button'; openBtn.title = '새 창에서 열기';
+        openBtn.textContent = '↗';
+        openBtn.addEventListener('click', () => { const u = urlInput.value.trim(); if (u) window.open(u, '_blank', 'noopener'); });
+        row.appendChild(openBtn);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'link-del-btn'; delBtn.type = 'button'; delBtn.title = '삭제'; delBtn.textContent = '×';
+        delBtn.addEventListener('click', () => {
+          state.customLinks = state.customLinks.filter(l => l.id !== link.id);
+          saveLinks(); renderCustomLinks();
+        });
+        row.appendChild(delBtn);
+
+        container.appendChild(row);
+      });
+    }
+
+    function renderLinksBar() {
+      const ytInput = document.getElementById('youtubeUrlInput');
+      if (ytInput) ytInput.value = state.youtubeUrl;
+      renderYoutubeExtras();
+      renderCustomLinks();
+    }
+
+    function initLinksBar() {
+      loadLinks();
+      renderLinksBar();
+
+      let ytTimer = null;
+      const ytInput = document.getElementById('youtubeUrlInput');
+      ytInput.addEventListener('input', () => {
+        const url = ytInput.value.trim();
+        state.youtubeUrl = url;
+        state.youtubeTitle = '';
+        renderYoutubeExtras();
+        clearTimeout(ytTimer);
+        if (!url) { saveLinks(); return; }
+        // 로딩 표시
+        const row = document.getElementById('youtubeLinkRow');
+        const spinner = document.createElement('span');
+        spinner.className = 'link-title-fetching'; spinner.textContent = '제목 불러오는 중…';
+        row.appendChild(spinner);
+        ytTimer = setTimeout(async () => {
+          const title = await fetchYoutubeTitle(url);
+          if (state.youtubeUrl === url) {
+            state.youtubeTitle = title;
+            renderYoutubeExtras();
+            saveLinks();
+          }
+        }, 700);
+      });
+
+      document.getElementById('addCustomLinkBtn').addEventListener('click', () => {
+        state.customLinks.push({ id: uid(), label: '', url: '' });
+        saveLinks(); renderCustomLinks();
+      });
+    }
+
     function projectPayloadWithRoutines(fileName) {
       return {
         version: 1, savedAt: new Date().toISOString(), fileName,
         rows: state.rows, cols: state.cols,
         categories: state.categories, moveLibrary: state.moveLibrary,
-        placements: state.placements, routines: state.routines
+        placements: state.placements, routines: state.routines,
+        youtubeUrl: state.youtubeUrl, youtubeTitle: state.youtubeTitle,
+        customLinks: state.customLinks
       };
     }
 
