@@ -2958,7 +2958,6 @@
       const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
       const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
-      const removedRows = clearSegmentsArea(segments, groupId, ctx);
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: meta.name, category: meta.category,
@@ -2966,7 +2965,7 @@
         row: seg.row, startIndex: seg.startIndex, length: seg.length
       })));
       unmarkDraggingGroups(ctx);
-      renderRows([...previousRows, ...segments.map(s => s.row), ...removedRows], ctx);
+      renderRows([...previousRows, ...segments.map(s => s.row)], ctx);
     }
 
     function rebuildGroup(groupId, newCount, ctx = mainCtx) {
@@ -2977,14 +2976,13 @@
       const meta = { name: first.name, category: first.category, type: first.type, routineId: first.routineId };
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
       const segments = buildSegments(first.row, first.startIndex, newCount, ctx);
-      const removedRows = clearSegmentsArea(segments, groupId, ctx);
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: meta.name, category: meta.category,
         ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
         row: seg.row, startIndex: seg.startIndex, length: seg.length
       })));
-      renderRows([...previousRows, ...segments.map(s => s.row), ...removedRows], ctx);
+      renderRows([...previousRows, ...segments.map(s => s.row)], ctx);
     }
 
     function startResize(groupId, clientX, ctx = mainCtx) {
