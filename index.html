@@ -202,7 +202,7 @@
     }
     .track {
       position: relative;
-      min-height: var(--cellH);
+      min-height: calc(var(--layer-count, 1) * var(--cellH));
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid rgba(148,163,184,0.16);
@@ -256,7 +256,7 @@
     }
     .placement {
       position: absolute;
-      top: 6px;
+      top: calc(var(--sub-row, 0) * var(--cellH) + 6px);
       height: calc(var(--cellH) - 12px);
       border-radius: 12px;
       display: flex;
@@ -2803,10 +2803,8 @@
       const placements = ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols);
       const maxSubRow = placements.reduce((m, p) => Math.max(m, p.subRow || 0), 0);
 
-      // 레이어가 2개 이상이면 트랙 높이를 늘려 상하 배치가 가능하게 함
-      ref.track.style.minHeight = maxSubRow > 0
-        ? `calc(${maxSubRow + 1} * var(--cellH))`
-        : '';
+      // 레이어 수만큼 트랙 높이를 CSS 변수로 설정 (--layer-count)
+      ref.track.style.setProperty('--layer-count', String(maxSubRow + 1));
       // 레이어 구분선 표시 (충돌 행에만)
       ref.track.dataset.layers = maxSubRow > 0 ? String(maxSubRow + 1) : '';
 
@@ -2855,9 +2853,8 @@
       if (placement.routineId) el.dataset.routineId = placement.routineId;
       el.style.left = `calc(${placement.startIndex} * var(--cellW) + 4px)`;
       el.style.width = `calc(${placement.length} * var(--cellW) - 8px)`;
-      // 병합 충돌 시 subRow > 0 이면 아래쪽 레이어에 배치
-      const subRow = placement.subRow || 0;
-      el.style.top = `calc(${subRow} * var(--cellH) + 6px)`;
+      // subRow에 따라 레이어 위치 지정 (CSS --sub-row 변수로 top 계산)
+      el.style.setProperty('--sub-row', String(placement.subRow || 0));
       if (placement.type !== 'routine') el.style.background = categoryColor(placement.category);
       const cnt = groupCount(placement.groupId, ctx);
       el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${cnt}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
