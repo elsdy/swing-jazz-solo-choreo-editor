@@ -2931,14 +2931,27 @@
       const count = Math.min(totalCount, totalCellsFrom(startRow, startIndex, ctx));
       if (count <= 0) return;
       const segments = buildSegments(startRow, startIndex, count, ctx);
-      const removedRows = clearSegmentsArea(segments, null, ctx);
+      // 충돌 없는 가장 낮은 subRow 탐색 (이미 배치된 동작 위에 스택)
+      let targetSubRow = 0;
+      while (true) {
+        const hasConflict = segments.some(seg => {
+          const segEnd = seg.startIndex + seg.length - 1;
+          return ctx.placements.some(ex =>
+            ex.row === seg.row && (ex.subRow || 0) === targetSubRow &&
+            !(segEnd < ex.startIndex || ex.startIndex + ex.length - 1 < seg.startIndex)
+          );
+        });
+        if (!hasConflict) break;
+        targetSubRow++;
+      }
       const groupId = uid();
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: move.name, category: move.category,
-        row: seg.row, startIndex: seg.startIndex, length: seg.length
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: targetSubRow
       })));
-      renderRows([...segments.map(s => s.row), ...removedRows], ctx);
+      renderRows(segments.map(s => s.row), ctx);
     }
 
     function placeRoutineOnBoard(routineId, startRow, startIndex) {
@@ -2946,16 +2959,28 @@
       if (!routine) return;
       const totalCount = routine.rows * routine.cols;
       const groupId = uid();
-      // buildSegments로 메인 보드 열 수에 맞게 여러 행에 분산
       const segments = buildSegments(startRow, startIndex, totalCount, mainCtx);
-      const removedRows = clearSegmentsArea(segments, null, mainCtx);
+      // 충돌 없는 가장 낮은 subRow 탐색
+      let targetSubRow = 0;
+      while (true) {
+        const hasConflict = segments.some(seg => {
+          const segEnd = seg.startIndex + seg.length - 1;
+          return mainCtx.placements.some(ex =>
+            ex.row === seg.row && (ex.subRow || 0) === targetSubRow &&
+            !(segEnd < ex.startIndex || ex.startIndex + ex.length - 1 < seg.startIndex)
+          );
+        });
+        if (!hasConflict) break;
+        targetSubRow++;
+      }
       mainCtx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: routine.name, category: 'routine',
         type: 'routine', routineId,
-        row: seg.row, startIndex: seg.startIndex, length: seg.length
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: targetSubRow
       })));
-      renderRows([...new Set([...segments.map(s => s.row), ...removedRows])], mainCtx);
+      renderRows([...new Set(segments.map(s => s.row))], mainCtx);
     }
 
     function movePlacementGroup(groupId, targetRow, targetStartIndex, ctx = mainCtx) {
