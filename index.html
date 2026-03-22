@@ -2868,16 +2868,18 @@
     function placeRoutineOnBoard(routineId, startRow, startIndex) {
       const routine = state.routines.find(r => r.id === routineId);
       if (!routine) return;
-      const length = routine.rows * routine.cols;
+      const totalCount = routine.rows * routine.cols;
       const groupId = uid();
-      const removedRows = clearSegmentsArea([{ row: startRow, startIndex, length }], null, mainCtx);
-      mainCtx.placements.push({
+      // buildSegments로 메인 보드 열 수에 맞게 여러 행에 분산
+      const segments = buildSegments(startRow, startIndex, totalCount, mainCtx);
+      const removedRows = clearSegmentsArea(segments, null, mainCtx);
+      mainCtx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: routine.name, category: 'routine',
         type: 'routine', routineId,
-        row: startRow, startIndex, length
-      });
-      renderRows([startRow, ...removedRows], mainCtx);
+        row: seg.row, startIndex: seg.startIndex, length: seg.length
+      })));
+      renderRows([...new Set([...segments.map(s => s.row), ...removedRows])], mainCtx);
     }
 
     function movePlacementGroup(groupId, targetRow, targetStartIndex, ctx = mainCtx) {
@@ -3593,13 +3595,28 @@
       routine.cols = reState.cols;
       routine.placements = JSON.parse(JSON.stringify(reState.placements));
       renderRoutineList();
-      // 메인 보드의 루틴 블록 길이 업데이트
-      const affected = state.placements.filter(p => p.routineId === routine.id);
-      if (affected.length) {
-        affected.forEach(p => { p.length = routine.rows * routine.cols; p.name = routine.name; });
-        const rows = [...new Set(affected.map(p => p.row))];
-        renderRows(rows);
-      }
+      // 메인 보드의 루틴 배치를 새로운 카운트에 맞게 buildSegments로 재분산
+      const affectedPlacements = state.placements.filter(p => p.routineId === routine.id);
+      if (!affectedPlacements.length) return;
+      const newTotalCount = routine.rows * routine.cols;
+      const groupIds = [...new Set(affectedPlacements.map(p => p.groupId))];
+      const affectedRows = new Set();
+      groupIds.forEach(groupId => {
+        const groupSegs = state.placements
+          .filter(p => p.groupId === groupId)
+          .sort((a, b) => a.row - b.row || a.startIndex - b.startIndex);
+        const firstSeg = groupSegs[0];
+        groupSegs.forEach(p => affectedRows.add(p.row));
+        state.placements = state.placements.filter(p => p.groupId !== groupId);
+        const newSegs = buildSegments(firstSeg.row, firstSeg.startIndex, newTotalCount, mainCtx);
+        newSegs.forEach(s => affectedRows.add(s.row));
+        state.placements.push(...newSegs.map(seg => ({
+          id: uid(), groupId,
+          name: routine.name, category: 'routine', type: 'routine', routineId: routine.id,
+          row: seg.row, startIndex: seg.startIndex, length: seg.length
+        })));
+      });
+      renderRows([...affectedRows]);
     }
 
     function renameRoutine(routineId) {
