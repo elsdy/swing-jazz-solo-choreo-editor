@@ -202,7 +202,7 @@
     }
     .track {
       position: relative;
-      min-height: calc(var(--layer-count, 1) * var(--cellH));
+      min-height: var(--cellH);
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid rgba(148,163,184,0.16);
@@ -256,7 +256,7 @@
     }
     .placement {
       position: absolute;
-      top: calc(var(--sub-row, 0) * var(--cellH) + 6px);
+      top: 6px;
       height: calc(var(--cellH) - 12px);
       border-radius: 12px;
       display: flex;
@@ -2777,6 +2777,10 @@
       renderRows(rows, ctx);
     }
 
+    function getCellHPx() {
+      return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cellH')) || 52;
+    }
+
     function renderRows(rows, ctx = mainCtx) {
       const uniqueRows = [...new Set(rows)].filter(row => row >= 0 && row <= ctx.rows);
       uniqueRows.forEach(row => renderRow(row, ctx));
@@ -2803,8 +2807,9 @@
       const placements = ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols);
       const maxSubRow = placements.reduce((m, p) => Math.max(m, p.subRow || 0), 0);
 
-      // 레이어 수만큼 트랙 높이를 CSS 변수로 설정 (--layer-count)
-      ref.track.style.setProperty('--layer-count', String(maxSubRow + 1));
+      // 레이어 수만큼 트랙 높이를 px로 직접 설정 (absolute 자식은 grid 높이에 미기여)
+      const cellHPx = getCellHPx();
+      ref.track.style.minHeight = `${(maxSubRow + 1) * cellHPx}px`;
       // 레이어 구분선 표시 (충돌 행에만)
       ref.track.dataset.layers = maxSubRow > 0 ? String(maxSubRow + 1) : '';
 
@@ -2853,8 +2858,8 @@
       if (placement.routineId) el.dataset.routineId = placement.routineId;
       el.style.left = `calc(${placement.startIndex} * var(--cellW) + 4px)`;
       el.style.width = `calc(${placement.length} * var(--cellW) - 8px)`;
-      // subRow에 따라 레이어 위치 지정 (CSS --sub-row 변수로 top 계산)
-      el.style.setProperty('--sub-row', String(placement.subRow || 0));
+      // subRow에 따라 레이어 위치를 px로 직접 지정
+      el.style.top = `${(placement.subRow || 0) * getCellHPx() + 6}px`;
       if (placement.type !== 'routine') el.style.background = categoryColor(placement.category);
       const cnt = groupCount(placement.groupId, ctx);
       el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${cnt}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
