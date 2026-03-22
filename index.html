@@ -2169,6 +2169,7 @@
         const touch = e.touches[0];
         const track = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
         if (!track || !el.contains(track)) return;
+        if (parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 배치 불가
         if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
         e.stopPropagation();
         const row = Number(track.dataset.row);
@@ -2210,6 +2211,7 @@
         const touch = e.touches[0];
         const track = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
         if (!track || !el.contains(track)) return;
+        if (parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 배치 불가
         quickTouchAnchor = { x: touch.clientX, y: touch.clientY, track };
       }, { passive: true });
 
