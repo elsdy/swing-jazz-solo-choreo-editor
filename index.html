@@ -2813,27 +2813,16 @@
 
       const placements = ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols);
 
-      // 시각적 subRow를 데이터 subRow 순서를 보존하며 공간적으로 압축 (데이터 미수정)
+      // 시각적 subRow = DATA subRow의 상대적 순위
+      // (동일 행에 여러 레이어가 있으면 순위대로 상/하 분리, 혼자 있으면 항상 0으로 압축)
       const visualSubRows = new Map();
+      let maxVisualSubRow = 0;
       {
-        const sorted = [...placements].sort((a, b) => (a.subRow || 0) - (b.subRow || 0) || a.startIndex - b.startIndex);
-        const layers = [];
-        sorted.forEach(p => {
-          let s = 0;
-          while (true) {
-            const layer = layers[s] || [];
-            const conflict = layer.some(ex =>
-              !(p.startIndex + p.length - 1 < ex.startIndex || ex.startIndex + ex.length - 1 < p.startIndex)
-            );
-            if (!conflict) break;
-            s++;
-          }
-          visualSubRows.set(p.id, s);
-          if (!layers[s]) layers[s] = [];
-          layers[s].push(p);
-        });
+        const distinctSubRows = [...new Set(placements.map(p => p.subRow || 0))].sort((a, b) => a - b);
+        const rankOf = new Map(distinctSubRows.map((s, i) => [s, i]));
+        placements.forEach(p => visualSubRows.set(p.id, rankOf.get(p.subRow || 0) || 0));
+        maxVisualSubRow = Math.max(0, distinctSubRows.length - 1);
       }
-      const maxVisualSubRow = placements.reduce((m, p) => Math.max(m, visualSubRows.get(p.id) || 0), 0);
 
       // spacer로 트랙 높이를 강제 확장 (absolute 자식은 grid 높이에 미기여하므로 in-flow spacer 사용)
       const cellHPx = getCellHPx();
