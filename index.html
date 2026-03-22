@@ -2938,7 +2938,9 @@
     // 지정 행들의 subRow를 재정렬: 갭 없이 0부터 촘촘하게 재배정
     // 배치 이동/삭제 후 "빈 상단 레이어" 현상을 방지
     function repackSubRows(rows, ctx = mainCtx) {
-      [...new Set(rows)].forEach(row => {
+      const uniqueRows = [...new Set(rows)];
+      // Phase 1: 행별 탐욕 배정 (기존 로직)
+      uniqueRows.forEach(row => {
         const rp = ctx.placements.filter(p => p.row === row);
         if (!rp.length) return;
         // 현재 subRow → startIndex 순으로 정렬 (stable sort: 동점 시 기존 순서 유지)
@@ -2959,6 +2961,40 @@
           if (!layers[s]) layers[s] = [];
           layers[s].push(p);
         });
+      });
+
+      // Phase 2: 그룹 일관성 보장 — 여러 행에 걸친 그룹의 subRow를 통일
+      // (스케일링으로 새 행에 세그먼트가 생기면 행별 배정에서 subRow가 달라질 수 있음)
+      const rowSet = new Set(uniqueRows);
+      const groupsInScope = new Set();
+      ctx.placements.forEach(p => { if (rowSet.has(p.row)) groupsInScope.add(p.groupId); });
+
+      const groupAllSegs = new Map();
+      ctx.placements.forEach(p => {
+        if (!groupsInScope.has(p.groupId)) return;
+        if (!groupAllSegs.has(p.groupId)) groupAllSegs.set(p.groupId, []);
+        groupAllSegs.get(p.groupId).push(p);
+      });
+
+      groupAllSegs.forEach((segs, gid) => {
+        if (segs.length <= 1) return;
+        const maxSub = Math.max(...segs.map(p => p.subRow || 0));
+        if (segs.every(p => (p.subRow || 0) === maxSub)) return;
+
+        // 그룹 전체가 들어갈 수 있는 충돌 없는 subRow 탐색 (maxSub부터)
+        let targetSub = maxSub;
+        while (true) {
+          const hasConflict = segs.some(seg =>
+            ctx.placements.some(p =>
+              p.groupId !== gid &&
+              p.row === seg.row && (p.subRow || 0) === targetSub &&
+              !(seg.startIndex + seg.length - 1 < p.startIndex || p.startIndex + p.length - 1 < seg.startIndex)
+            )
+          );
+          if (!hasConflict) break;
+          targetSub++;
+        }
+        segs.forEach(p => p.subRow = targetSub);
       });
     }
 
