@@ -200,6 +200,16 @@
       font-size: 13px;
       color: #cbd5e1;
     }
+    /* 여러 레이어(병합 충돌)를 세로로 쌓는 컨테이너 */
+    .track-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .track-stack .track:not(:first-child) {
+      border-style: dashed;       /* 겹침 레이어임을 점선으로 표시 */
+      opacity: 0.88;
+    }
     .track {
       position: relative;
       min-height: var(--cellH);
@@ -1927,7 +1937,7 @@
 
       el.addEventListener('dragover', (e) => {
         const track = e.target.closest('.track');
-        if (!track) return;
+        if (!track || parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 드롭 불가
         e.preventDefault();
         clearTrackHighlights(ctx);
         track.classList.add('drop-hover');
@@ -1944,7 +1954,7 @@
 
       el.addEventListener('drop', (e) => {
         const track = e.target.closest('.track');
-        if (!track) return;
+        if (!track || parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 드롭 불가
         e.preventDefault();
         clearTrackHighlights(ctx);
         const row = Number(track.dataset.row);
@@ -2079,7 +2089,7 @@
         if (ctx.quickPlaceMode && !ctx.activePaletteMove && !drawState) {
           if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
           const track = e.target.closest('.track');
-          if (!track) return;
+          if (!track || parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 배치 불가
           e.preventDefault();
           const row = Number(track.dataset.row);
           const startIndex = pointerToCellIndex(track, e.clientX, ctx);
@@ -2089,7 +2099,7 @@
         }
         if (!ctx.activePaletteMove) return;
         const track = e.target.closest('.track');
-        if (!track) return;
+        if (!track || parseInt(track.dataset.subRow || '0') > 0) return; // 오버레이 레이어엔 배치 불가
         if (e.target.closest('.placement, .resize-handle, .move-handle')) return;
         e.preventDefault();
         const row = Number(track.dataset.row);
@@ -2722,6 +2732,34 @@
       }
     }
 
+    function createTrackEl(ctx, row, subRow) {
+      const track = document.createElement('div');
+      track.className = 'track';
+      track.dataset.row = row;
+      track.dataset.subRow = subRow;
+      track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
+      track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
+      return track;
+    }
+
+    function makeRowRef(rowEl, label, note, track0) {
+      return {
+        rowEl, label, note,
+        trackStack: track0.parentElement,
+        tracks: [track0],
+        get track() { return this.tracks[0]; }
+      };
+    }
+
+    function ensureSubRows(ref, maxSubRow, ctx, row) {
+      while (ref.tracks.length <= maxSubRow) {
+        const subRow = ref.tracks.length;
+        const t = createTrackEl(ctx, row, subRow);
+        ref.trackStack.appendChild(t);
+        ref.tracks.push(t);
+      }
+    }
+
     function buildBoardSkeleton(ctx = mainCtx) {
       ctx.el.innerHTML = '';
       ctx.rowRefs.clear();
@@ -2731,44 +2769,27 @@
       header.innerHTML = `<div class="corner">마디</div><div class="header-cells" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${Array.from({ length: ctx.cols }, (_, i) => `<div>${i + 1}</div>`).join('')}</div><div class="note-header">비고</div>`;
       ctx.el.appendChild(header);
 
-      // intro row (row 0) — main board only
-      if (ctx === mainCtx) {
+      function buildRow(row, labelText) {
         const rowEl = document.createElement('div');
         rowEl.className = 'board-row';
         rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${ctx.cols}) var(--noteW)`;
         const label = document.createElement('div');
         label.className = 'row-label';
-        label.textContent = 'intro';
-        const track = document.createElement('div');
-        track.className = 'track';
-        track.dataset.row = 0;
-        track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
-        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
+        label.textContent = labelText;
+        const trackStack = document.createElement('div');
+        trackStack.className = 'track-stack';
+        const track = createTrackEl(ctx, row, 0);
+        trackStack.appendChild(track);
         const note = document.createElement('div');
         note.className = 'note-cell';
-        rowEl.append(label, track, note);
+        rowEl.append(label, trackStack, note);
         ctx.el.appendChild(rowEl);
-        ctx.rowRefs.set(0, { rowEl, label, track, note });
+        ctx.rowRefs.set(row, makeRowRef(rowEl, label, note, track));
       }
 
-      for (let row = 1; row <= ctx.rows; row++) {
-        const rowEl = document.createElement('div');
-        rowEl.className = 'board-row';
-        rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${ctx.cols}) var(--noteW)`;
-        const label = document.createElement('div');
-        label.className = 'row-label';
-        label.textContent = `${ctx.cols}x${row}`;
-        const track = document.createElement('div');
-        track.className = 'track';
-        track.dataset.row = row;
-        track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
-        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
-        const note = document.createElement('div');
-        note.className = 'note-cell';
-        rowEl.append(label, track, note);
-        ctx.el.appendChild(rowEl);
-        ctx.rowRefs.set(row, { rowEl, label, track, note });
-      }
+      // intro row (row 0) — main board only
+      if (ctx === mainCtx) buildRow(0, 'intro');
+      for (let row = 1; row <= ctx.rows; row++) buildRow(row, `${ctx.cols}x${row}`);
       ctx.boardSig = boardSignature(ctx);
     }
 
@@ -2805,8 +2826,26 @@
       if (!ref) return;
       ref.label.textContent = row === 0 ? 'intro' : `${ctx.cols}x${row}`;
       ref.note.innerHTML = renderRowNotes(row, ctx) || '<span class="muted">-</span>';
-      [...ref.track.querySelectorAll('.placement')].forEach(el => el.remove());
-      ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols).forEach(p => ref.track.appendChild(createPlacementEl(p, ctx)));
+
+      // 현재 행의 배치들 (subRow 기준으로 레이어 구분)
+      const placements = ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols);
+      const maxSubRow = placements.reduce((m, p) => Math.max(m, p.subRow || 0), 0);
+
+      // 필요한 수만큼 레이어 트랙 확보
+      ensureSubRows(ref, maxSubRow, ctx, row);
+
+      // 모든 레이어에서 기존 배치 엘리먼트 제거
+      ref.tracks.forEach((t, i) => {
+        [...t.querySelectorAll('.placement')].forEach(el => el.remove());
+        // 사용하지 않는 레이어 숨김
+        t.style.display = i <= maxSubRow ? '' : 'none';
+      });
+
+      // 각 배치를 해당 subRow 레이어에 추가
+      placements.forEach(p => {
+        const subRow = p.subRow || 0;
+        ref.tracks[subRow].appendChild(createPlacementEl(p, ctx));
+      });
     }
 
     function getAffectedRowsByGroup(groupId, ctx = mainCtx) {
@@ -3320,32 +3359,52 @@
       }
 
       const fallback = categoryNames()[0];
-      let added = 0, skipped = 0;
-      (data.placements || []).filter(p => p && p.name).forEach(p => {
-        const norm = {
-          id: uid(), groupId: p.groupId || uid(),
-          name: String(p.name),
-          category: state.categories[p.category] ? p.category : fallback,
-          row: Math.max(1, Number(p.row) || 1),
-          startIndex: Math.max(0, Number(p.startIndex) || 0),
-          length: Math.max(1, Number(p.length) || 1),
-          // 루틴 배치 필드 보존
-          ...(p.type      ? { type: p.type }           : {}),
-          ...(p.routineId ? { routineId: p.routineId } : {})
-        };
-        norm.length = Math.min(norm.length, state.cols - norm.startIndex);
-        if (norm.row > state.rows || norm.startIndex >= state.cols) { skipped++; return; }
-        const conflict = state.placements.some(ex =>
-          ex.row === norm.row &&
-          !(norm.startIndex + norm.length - 1 < ex.startIndex ||
-            ex.startIndex + ex.length - 1 < norm.startIndex)
-        );
-        if (conflict) { skipped++; } else { state.placements.push(norm); added++; }
+      let added = 0, stacked = 0, skipped = 0;
+
+      // 병합 전 기존 배치를 subRow=0으로 초기화 (아직 없는 경우)
+      state.placements.forEach(p => { if (p.subRow === undefined) p.subRow = 0; });
+
+      // 새 배치들을 startIndex 순으로 정렬 (먼저 나오는 것이 위로)
+      const incoming = (data.placements || []).filter(p => p && p.name).map(p => ({
+        id: uid(), groupId: p.groupId || uid(),
+        name: String(p.name),
+        category: state.categories[p.category] ? p.category : fallback,
+        row: Math.max(1, Number(p.row) || 1),
+        startIndex: Math.max(0, Number(p.startIndex) || 0),
+        length: Math.max(1, Number(p.length) || 1),
+        subRow: 0,
+        ...(p.type      ? { type: p.type }           : {}),
+        ...(p.routineId ? { routineId: p.routineId } : {})
+      })).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }))
+         .filter(p => p.row <= state.rows && p.startIndex < state.cols && p.length > 0)
+         .sort((a, b) => a.startIndex - b.startIndex);
+
+      incoming.forEach(norm => {
+        // 같은 row에서 겹치는 기존 배치들 중 겹치지 않는 가장 작은 subRow 찾기
+        const placedEnd = norm.startIndex + norm.length - 1;
+        let targetSubRow = 0;
+        while (true) {
+          const conflict = state.placements.some(ex =>
+            ex.row === norm.row && (ex.subRow || 0) === targetSubRow &&
+            !(placedEnd < ex.startIndex || ex.startIndex + ex.length - 1 < norm.startIndex)
+          );
+          if (!conflict) break;
+          targetSubRow++;
+        }
+        norm.subRow = targetSubRow;
+        state.placements.push(norm);
+        if (targetSubRow > 0) stacked++; else added++;
       });
+
+      // 같은 row+subRow 내에서 startIndex 기준 정렬 보장 (시각적으로 먼저 나오는 것이 위)
+      // subRow 번호는 이미 충돌 순서대로 배정됐으므로 추가 정렬 불필요
 
       renderCategoryOptions(); renderLegend(); renderPalette(); renderBoard(true);
       renderRoutineList(); saveHistory();
-      alert(`병합 완료: ${added}개 배치됨${skipped ? `, ${skipped}개 충돌/범위 초과로 건너뜀` : ''}`);
+      const msg = `병합 완료: ${added}개 배치됨` +
+        (stacked ? `, ${stacked}개 충돌→아래 레이어에 배치` : '') +
+        (skipped ? `, ${skipped}개 범위 초과로 건너뜀` : '');
+      alert(msg);
     }
 
     function downloadJson(payload, filename) {
