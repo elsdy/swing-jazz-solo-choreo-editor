@@ -1194,7 +1194,7 @@
 
       const star = makeInlineStarBtn(
         () => state.favoriteMoveNames.has(move.name),
-        (nowFav) => { if (nowFav) state.favoriteMoveNames.add(move.name); else state.favoriteMoveNames.delete(move.name); saveFavorites(); }
+        (nowFav) => { if (nowFav) state.favoriteMoveNames.add(move.name); else state.favoriteMoveNames.delete(move.name); saveFavorites(); renderPalette(); }
       );
       item.append(clickZone, star);
       return item;
@@ -1217,7 +1217,7 @@
 
       const star = makeInlineStarBtn(
         () => state.favoriteCategories.has(key),
-        (nowFav) => { if (nowFav) state.favoriteCategories.add(key); else state.favoriteCategories.delete(key); saveFavorites(); }
+        (nowFav) => { if (nowFav) state.favoriteCategories.add(key); else state.favoriteCategories.delete(key); saveFavorites(); renderCategoryOptions(); }
       );
       item.append(clickZone, star);
       return item;
@@ -2006,8 +2006,12 @@
       paletteListEl.innerHTML = '';
       const q = (document.getElementById('paletteSearch')?.value || '').toLowerCase();
       const base = q ? state.moveLibrary.filter(m => m.name.toLowerCase().includes(q)) : state.moveLibrary;
-      const moves = applySortToMoves(base);
-      moves.forEach(move => {
+
+      // 즐겨찾기 / 일반 분리 후 각각 정렬
+      const favs   = applySortToMoves(base.filter(m =>  state.favoriteMoveNames.has(m.name)));
+      const others = applySortToMoves(base.filter(m => !state.favoriteMoveNames.has(m.name)));
+
+      function buildCard(move) {
         const card = document.createElement('div');
         card.className = 'move-card' + (state.activePaletteMove?.moveId === move.id ? ' palette-active' : '');
         card.addEventListener('click', (e) => {
@@ -2100,8 +2104,25 @@
 
         actions.append(shell, starBtn, del);
         card.append(chip, meta, actions);
-        paletteListEl.appendChild(card);
-      });
+        return card;
+      }
+
+      // ① 즐겨찾기 섹션
+      if (favs.length > 0) {
+        const favHeader = document.createElement('div');
+        favHeader.style.cssText = 'font-size:10px;font-weight:800;color:#facc15;padding:4px 2px 2px;letter-spacing:0.04em;';
+        favHeader.textContent = '★ 즐겨찾기';
+        paletteListEl.appendChild(favHeader);
+        favs.forEach(m => paletteListEl.appendChild(buildCard(m)));
+        if (others.length > 0) {
+          const divEl = document.createElement('div');
+          divEl.style.cssText = 'height:1px;background:var(--line);margin:6px 0 4px;';
+          paletteListEl.appendChild(divEl);
+        }
+      }
+
+      // ② 일반 동작 섹션
+      others.forEach(m => paletteListEl.appendChild(buildCard(m)));
     }
 
     function renameMove(moveId) {
