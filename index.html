@@ -559,6 +559,25 @@
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
       }
+      /* ── 태블릿: 루틴 편집기 풀스크린 오버레이 ── */
+      .routine-editor-panel {
+        position: fixed !important;
+        top: 0; left: 0; right: 0; bottom: 0;
+        z-index: 5000;
+        flex: none !important;
+        max-width: none !important;
+        width: 100% !important;
+        height: 100% !important;
+        border-left: none !important;
+        border-radius: 0;
+        background: var(--bg) !important;
+      }
+      .routine-editor-panel .board-wrap {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+      }
     }
 
     @media (max-width: 720px) {
@@ -674,6 +693,37 @@
       .placement .resize-handle {
         width: 14px;
         min-width: 14px;
+      }
+      /* ── 모바일: 루틴 편집기 풀스크린 오버레이 ── */
+      .routine-editor-panel {
+        position: fixed !important;
+        top: 0; left: 0; right: 0; bottom: 0;
+        z-index: 5000;
+        flex: none !important;
+        max-width: none !important;
+        width: 100% !important;
+        height: 100% !important;
+        border-left: none !important;
+        border-radius: 0;
+        background: var(--bg) !important;
+      }
+      .routine-editor-panel .board-wrap {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .routine-editor-panel .re-toolbar {
+        padding: 10px 12px;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(15,23,42,0.96);
+        backdrop-filter: blur(8px);
+      }
+      .routine-editor-panel .re-close-btn {
+        font-size: 14px;
+        padding: 8px 14px;
       }
     }
 
@@ -3816,6 +3866,10 @@
       if (!keepPreview) clearPreview(reCtx);
     }
 
+    function isRoutineOverlayMode() {
+      return window.matchMedia('(max-width: 1040px)').matches;
+    }
+
     function openRoutineEditor(routineId) {
       const routine = state.routines.find(r => r.id === routineId);
       if (!routine) return;
@@ -3823,6 +3877,7 @@
       // 이미 같은 루틴이 열려있으면 포커스
       if (reState.routineId === routineId) {
         routineEditorPanel.style.display = 'flex';
+        if (isRoutineOverlayMode()) document.body.style.overflow = 'hidden';
         return;
       }
 
@@ -3842,6 +3897,7 @@
 
       // 패널 표시
       routineEditorPanel.style.display = 'flex';
+      if (isRoutineOverlayMode()) document.body.style.overflow = 'hidden';
       syncReBoardSizeUI();
 
       // 보드 빌드 & 이벤트 바인딩
@@ -3914,6 +3970,7 @@
       syncCurrentRoutine();
       closeReQuickPicker();
       routineEditorPanel.style.display = 'none';
+      document.body.style.overflow = '';
       reState.routineId = null;
       renderRoutineList();
     }
