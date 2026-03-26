@@ -2031,7 +2031,11 @@
           placeMove(ctx.drag.moveId, row, startIndex, DEFAULT_COUNT, ctx);
           _saveHistory();
         } else if (ctx.drag?.type === 'placement-move') {
-          movePlacementGroup(ctx.drag.groupId, row, startIndex, ctx);
+          if (ctx.drag.copyMode) {
+            copyPlacementGroup(ctx.drag.groupId, row, startIndex, ctx);
+          } else {
+            movePlacementGroup(ctx.drag.groupId, row, startIndex, ctx);
+          }
           _saveHistory();
         } else if (ctx.drag?.type === 'routine' && ctx === mainCtx) {
           placeRoutineOnBoard(ctx.drag.routineId, row, startIndex);
@@ -2066,10 +2070,11 @@
         const placementEl = moveHandle.closest('.placement');
         if (!placementEl) return;
         const groupId = placementEl.dataset.groupId;
-        ctx.drag = { type: 'placement-move', groupId };
-        e.dataTransfer.effectAllowed = 'move';
+        const copyMode = e.altKey;
+        ctx.drag = { type: 'placement-move', groupId, copyMode };
+        e.dataTransfer.effectAllowed = copyMode ? 'copy' : 'move';
         e.dataTransfer.setData('text/plain', groupId);
-        markDraggingGroup(groupId, ctx);
+        if (!copyMode) markDraggingGroup(groupId, ctx);
       });
 
       el.addEventListener('dragend', (e) => {
@@ -3178,6 +3183,36 @@
       })));
       // 이동 후 전체 행을 다시 렌더링하여 spacer 높이·DOM 일관성 보장
       unmarkDraggingGroups(ctx);
+      renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
+    }
+
+    function copyPlacementGroup(groupId, targetRow, targetStartIndex, ctx = mainCtx) {
+      const group = getGroup(groupId, ctx);
+      if (!group.length) return;
+      const count = Math.min(groupCount(groupId, ctx), totalCellsFrom(targetRow, targetStartIndex, ctx));
+      const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
+      const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
+      // 충돌 없는 가장 낮은 subRow 탐색
+      let targetSubRow = 0;
+      while (true) {
+        const hasConflict = segments.some(seg => {
+          const segEnd = seg.startIndex + seg.length - 1;
+          return ctx.placements.some(ex =>
+            ex.row === seg.row && (ex.subRow || 0) === targetSubRow &&
+            !(segEnd < ex.startIndex || ex.startIndex + ex.length - 1 < seg.startIndex)
+          );
+        });
+        if (!hasConflict) break;
+        targetSubRow++;
+      }
+      const newGroupId = uid();
+      ctx.placements.push(...segments.map(seg => ({
+        id: uid(), groupId: newGroupId,
+        name: meta.name, category: meta.category,
+        ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: targetSubRow
+      })));
       renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
     }
 
