@@ -2031,7 +2031,11 @@
           placeMove(ctx.drag.moveId, row, startIndex, DEFAULT_COUNT, ctx);
           _saveHistory();
         } else if (ctx.drag?.type === 'placement-move') {
-          movePlacementGroup(ctx.drag.groupId, row, startIndex, ctx);
+          if (ctx.drag.copyMode) {
+            copyPlacementGroup(ctx.drag.groupId, row, startIndex, ctx);
+          } else {
+            movePlacementGroup(ctx.drag.groupId, row, startIndex, ctx);
+          }
           _saveHistory();
         } else if (ctx.drag?.type === 'routine' && ctx === mainCtx) {
           placeRoutineOnBoard(ctx.drag.routineId, row, startIndex);
@@ -2066,10 +2070,11 @@
         const placementEl = moveHandle.closest('.placement');
         if (!placementEl) return;
         const groupId = placementEl.dataset.groupId;
-        ctx.drag = { type: 'placement-move', groupId };
-        e.dataTransfer.effectAllowed = 'move';
+        const copyMode = e.altKey;
+        ctx.drag = { type: 'placement-move', groupId, copyMode };
+        e.dataTransfer.effectAllowed = copyMode ? 'copy' : 'move';
         e.dataTransfer.setData('text/plain', groupId);
-        markDraggingGroup(groupId, ctx);
+        if (!copyMode) markDraggingGroup(groupId, ctx);
       });
 
       el.addEventListener('dragend', (e) => {
@@ -3178,7 +3183,43 @@
       })));
       // 이동 후 전체 행을 다시 렌더링하여 spacer 높이·DOM 일관성 보장
       unmarkDraggingGroups(ctx);
-      renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
+      const allRows = ctx === mainCtx
+        ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
+        : Array.from({ length: ctx.rows }, (_, i) => i + 1);
+      renderRows(allRows, ctx);
+    }
+
+    function copyPlacementGroup(groupId, targetRow, targetStartIndex, ctx = mainCtx) {
+      const group = getGroup(groupId, ctx);
+      if (!group.length) return;
+      const count = Math.min(groupCount(groupId, ctx), totalCellsFrom(targetRow, targetStartIndex, ctx));
+      const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
+      const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
+      // 충돌 없는 가장 낮은 subRow 탐색
+      let targetSubRow = 0;
+      while (true) {
+        const hasConflict = segments.some(seg => {
+          const segEnd = seg.startIndex + seg.length - 1;
+          return ctx.placements.some(ex =>
+            ex.row === seg.row && (ex.subRow || 0) === targetSubRow &&
+            !(segEnd < ex.startIndex || ex.startIndex + ex.length - 1 < seg.startIndex)
+          );
+        });
+        if (!hasConflict) break;
+        targetSubRow++;
+      }
+      const newGroupId = uid();
+      ctx.placements.push(...segments.map(seg => ({
+        id: uid(), groupId: newGroupId,
+        name: meta.name, category: meta.category,
+        ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: targetSubRow
+      })));
+      const allRows = ctx === mainCtx
+        ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
+        : Array.from({ length: ctx.rows }, (_, i) => i + 1);
+      renderRows(allRows, ctx);
     }
 
     function rebuildGroup(groupId, newCount, ctx = mainCtx) {
@@ -3329,7 +3370,10 @@
       }
       ctx.drag = null;
       unmarkDraggingGroups(ctx);
-      renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
+      const allRows = ctx === mainCtx
+        ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
+        : Array.from({ length: ctx.rows }, (_, i) => i + 1);
+      renderRows(allRows, ctx);
     }
 
     function markDraggingGroup(groupId, ctx = mainCtx) {
@@ -3568,7 +3612,7 @@
           groupId: groupIdRemap.get(origGid),
           name: String(p.name),
           category: state.categories[p.category] ? p.category : fallback,
-          row: Math.max(1, Number(p.row) || 1),
+          row: Math.max(0, p.row != null ? Number(p.row) : 1),
           startIndex: Math.max(0, Number(p.startIndex) || 0),
           length: Math.max(1, Number(p.length) || 1),
           subRow: 0,
@@ -3576,7 +3620,7 @@
           ...(p.routineId ? { routineId: p.routineId } : {})
         };
       }).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }))
-         .filter(p => p.row <= state.rows && p.startIndex < state.cols && p.length > 0);
+         .filter(p => p.row >= 0 && p.row <= state.rows && p.startIndex < state.cols && p.length > 0);
 
       // groupId 별로 묶기 (루틴처럼 여러 행에 걸친 배치를 하나의 그룹으로)
       const groupMap = new Map();
@@ -3777,14 +3821,14 @@
         groupId: p.groupId || uid(),
         name: String(p.name),
         category: state.categories[p.category] ? p.category : fallback,
-        row: Math.max(1, Number(p.row) || 1),
+        row: Math.max(0, p.row != null ? Number(p.row) : 1),
         startIndex: Math.max(0, Number(p.startIndex) || 0),
         length: Math.max(1, Number(p.length) || 1),
         subRow: Number(p.subRow) || 0,
         // 루틴 배치 필드 보존
         ...(p.type     ? { type: p.type }         : {}),
         ...(p.routineId ? { routineId: p.routineId } : {})
-      })).filter(p => p.row <= state.rows && p.startIndex < state.cols).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }));
+      })).filter(p => p.row >= 0 && p.row <= state.rows && p.startIndex < state.cols).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }));
       if (Array.isArray(data.routines)) {
         state.routines = data.routines.map(r => ({
           id: r.id || uid(), name: String(r.name || '루틴'),
