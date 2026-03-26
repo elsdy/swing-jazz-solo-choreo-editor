@@ -560,6 +560,12 @@
       .sidebar-scroll[data-locked="1"] {
         touch-action: none;
       }
+      /* 모바일: 빠른 배치 팝업을 사이드바 영역(상단)에 넓게 표시 */
+      .quick-popup {
+        min-width: 280px;
+        max-width: calc(100vw - 24px);
+        width: calc(100vw - 24px);
+      }
       .app {
         grid-template-columns: 1fr;
         grid-template-rows: min(42vh, 420px) minmax(0, 1fr);
@@ -1549,12 +1555,23 @@
       requestAnimationFrame(() => {
         const rect = popup.getBoundingClientRect();
         const W = window.innerWidth, H = window.innerHeight;
-        let left = clientX + 12;
-        let top  = clientY + 12;
-        if (left + rect.width  > W - 12) left = clientX - rect.width  - 12;
-        if (top  + rect.height > H - 12) top  = clientY - rect.height - 12;
-        popup.style.left = `${Math.max(8, left)}px`;
-        popup.style.top  = `${Math.max(8, top)}px`;
+        const isMobile = W <= 1040;
+
+        if (isMobile) {
+          // 모바일: 사이드바 영역(상단) 중앙에 표시
+          const popW = Math.min(rect.width, W - 24);
+          const left = Math.max(12, (W - popW) / 2);
+          popup.style.left = `${left}px`;
+          popup.style.top = '12px';
+          popup.style.maxHeight = `${Math.min(H * 0.55, 420)}px`;
+        } else {
+          let left = clientX + 12;
+          let top  = clientY + 12;
+          if (left + rect.width  > W - 12) left = clientX - rect.width  - 12;
+          if (top  + rect.height > H - 12) top  = clientY - rect.height - 12;
+          popup.style.left = `${Math.max(8, left)}px`;
+          popup.style.top  = `${Math.max(8, top)}px`;
+        }
       });
     }
 
