@@ -277,6 +277,30 @@
       touch-action: none;
     }
     .placement.is-dragging { opacity: 1; }
+    .placement.is-resizing {
+      outline: 2px solid rgba(96,165,250,0.85);
+      outline-offset: -1px;
+      box-shadow: 0 0 12px rgba(96,165,250,0.45), 0 8px 18px rgba(0,0,0,0.2);
+    }
+    .placement.is-resizing .resize-handle {
+      background: rgba(96,165,250,0.55) !important;
+      border-color: rgba(96,165,250,0.8);
+    }
+    .resize-count-badge {
+      position: fixed;
+      z-index: 2000;
+      pointer-events: none;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,.3);
+      transform: translate(-50%, -100%);
+      display: none;
+    }
     .placement .tooltip {
       display: none;
     }
@@ -2122,7 +2146,7 @@
           e.preventDefault();
           const placementEl = resizeHandle.closest('.placement');
           if (!placementEl) return;
-          showFloatingTooltip(placementEl);
+          hideFloatingTooltip();
           startResize(placementEl.dataset.groupId, e.touches[0].clientX, ctx);
           return;
         }
@@ -2351,6 +2375,22 @@
     floatingTip.style.cssText = 'display:none;position:fixed;background:rgba(0,0,0,.85);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.3);';
     document.body.appendChild(floatingTip);
     let _tooltipTarget = null;
+
+    // ── 리사이즈 카운트 뱃지 ──
+    const resizeCountBadge = document.createElement('div');
+    resizeCountBadge.className = 'resize-count-badge';
+    document.body.appendChild(resizeCountBadge);
+
+    function showResizeCountBadge(placementEl, count) {
+      resizeCountBadge.textContent = `${count}c`;
+      resizeCountBadge.style.display = 'block';
+      const rect = placementEl.getBoundingClientRect();
+      resizeCountBadge.style.left = Math.round(rect.left + rect.width / 2) + 'px';
+      resizeCountBadge.style.top = Math.round(rect.top - 8) + 'px';
+    }
+    function hideResizeCountBadge() {
+      resizeCountBadge.style.display = 'none';
+    }
     function showFloatingTooltip(placementEl) {
       const tip = placementEl.querySelector('.tooltip');
       floatingTip.textContent = tip ? tip.textContent : (placementEl.dataset.name || '');
@@ -3276,7 +3316,11 @@
         liveEl: placementEl || null
       };
       activeResizeCtx = ctx;
-      if (ctx.resize.liveEl) ctx.resize.liveEl.classList.add('is-dragging');
+      if (ctx.resize.liveEl) {
+        ctx.resize.liveEl.classList.add('is-dragging');
+        ctx.resize.liveEl.classList.add('is-resizing');
+        showResizeCountBadge(ctx.resize.liveEl, ctx.resize.originalCount);
+      }
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', stopMouseResize);
       document.addEventListener('touchmove', onTouchMoveResize, { passive: false });
@@ -3306,7 +3350,12 @@
       document.removeEventListener('touchmove', onTouchMoveResize);
       document.removeEventListener('touchend', stopTouchResize);
       document.removeEventListener('touchcancel', stopTouchResize);
-      if (ctx) { ctx.resize = null; unmarkDraggingGroups(ctx); }
+      if (ctx) {
+        ctx.el.querySelectorAll('.placement.is-resizing').forEach(el => el.classList.remove('is-resizing'));
+        ctx.resize = null;
+        unmarkDraggingGroups(ctx);
+      }
+      hideResizeCountBadge();
       activeResizeCtx = null;
     }
 
@@ -3330,6 +3379,13 @@
       }
       r.previewCount = previewCount;
       rebuildGroup(r.groupId, previewCount, ctx);
+      // rebuildGroup recreates DOM elements, so re-find the live element and update badge
+      const newEl = ctx.el.querySelector(`.placement[data-group-id="${CSS.escape(r.groupId)}"]`);
+      if (newEl) {
+        r.liveEl = newEl;
+        newEl.classList.add('is-dragging', 'is-resizing');
+        showResizeCountBadge(newEl, previewCount);
+      }
     }
 
     function finalizeResize(ctx = mainCtx) {
