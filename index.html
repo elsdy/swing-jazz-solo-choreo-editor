@@ -3612,7 +3612,7 @@
           groupId: groupIdRemap.get(origGid),
           name: String(p.name),
           category: state.categories[p.category] ? p.category : fallback,
-          row: Math.max(1, Number(p.row) || 1),
+          row: Math.max(0, p.row != null ? Number(p.row) : 1),
           startIndex: Math.max(0, Number(p.startIndex) || 0),
           length: Math.max(1, Number(p.length) || 1),
           subRow: 0,
@@ -3620,7 +3620,7 @@
           ...(p.routineId ? { routineId: p.routineId } : {})
         };
       }).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }))
-         .filter(p => p.row <= state.rows && p.startIndex < state.cols && p.length > 0);
+         .filter(p => p.row >= 0 && p.row <= state.rows && p.startIndex < state.cols && p.length > 0);
 
       // groupId 별로 묶기 (루틴처럼 여러 행에 걸친 배치를 하나의 그룹으로)
       const groupMap = new Map();
@@ -3821,14 +3821,14 @@
         groupId: p.groupId || uid(),
         name: String(p.name),
         category: state.categories[p.category] ? p.category : fallback,
-        row: Math.max(1, Number(p.row) || 1),
+        row: Math.max(0, p.row != null ? Number(p.row) : 1),
         startIndex: Math.max(0, Number(p.startIndex) || 0),
         length: Math.max(1, Number(p.length) || 1),
         subRow: Number(p.subRow) || 0,
         // 루틴 배치 필드 보존
         ...(p.type     ? { type: p.type }         : {}),
         ...(p.routineId ? { routineId: p.routineId } : {})
-      })).filter(p => p.row <= state.rows && p.startIndex < state.cols).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }));
+      })).filter(p => p.row >= 0 && p.row <= state.rows && p.startIndex < state.cols).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }));
       if (Array.isArray(data.routines)) {
         state.routines = data.routines.map(r => ({
           id: r.id || uid(), name: String(r.name || '루틴'),
