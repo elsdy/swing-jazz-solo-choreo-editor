@@ -2913,7 +2913,8 @@
       const spacer = ref.track.querySelector('.track-spacer');
       if (spacer) spacer.style.height = `${(maxVisualSubRow + 1) * cellHPx}px`;
       // 레이어 구분선 표시 (충돌 행에만)
-      ref.track.dataset.layers = maxVisualSubRow > 0 ? String(maxVisualSubRow + 1) : '';
+      if (maxVisualSubRow > 0) ref.track.dataset.layers = String(maxVisualSubRow + 1);
+      else delete ref.track.dataset.layers;
 
       [...ref.track.querySelectorAll('.placement')].forEach(el => el.remove());
       placements.forEach(p => ref.track.appendChild(createPlacementEl(p, visualSubRows.get(p.id) || 0, ctx)));
