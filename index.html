@@ -3330,7 +3330,8 @@
         originalCount: groupCount(groupId, ctx),
         previewCount: groupCount(groupId, ctx),
         liveEl: placementEl || null,
-        originTrack
+        originTrack,
+        name: first.name
       };
       activeResizeCtx = ctx;
       // 그룹의 모든 세그먼트에 리사이즈 상태 표시
@@ -3383,7 +3384,6 @@
         const endCol = pointerToCellIndex(endTrack, clientX, ctx);
         previewCount = clamp(calcCrossRowCount(r.originRow, r.originStartIndex, endRow, endCol, ctx), 1, maxTotal);
       } else if (r.originTrack) {
-        // 터치가 placement 위나 보드 밖에 있을 때 원래 트랙 기준으로 계산
         const endCol = pointerToCellIndex(r.originTrack, clientX, ctx);
         previewCount = clamp(endCol - r.originStartIndex + 1, 1, maxTotal);
       } else {
@@ -3391,14 +3391,15 @@
         previewCount = clamp(r.originalCount + Math.round((clientX - r.startX) / stepWidth), 1, maxTotal);
       }
       r.previewCount = previewCount;
-      rebuildGroup(r.groupId, previewCount, ctx);
-      // rebuildGroup recreates DOM elements, so re-find and mark all segments
-      const newEls = ctx.el.querySelectorAll(`.placement[data-group-id="${CSS.escape(r.groupId)}"]`);
-      newEls.forEach(el => el.classList.add('is-dragging', 'is-resizing'));
-      const firstEl = newEls[0] || null;
-      if (firstEl) {
-        r.liveEl = firstEl;
-        showResizeCountBadge(firstEl, previewCount);
+      // DOM을 재생성하지 않고 기존 요소의 width만 직접 변경 (터치 타겟 유지)
+      const liveEl = r.liveEl;
+      if (liveEl) {
+        const rowRemain = ctx.cols - r.originStartIndex;
+        const visualLen = Math.min(previewCount, rowRemain);
+        liveEl.style.width = `calc(${visualLen} * var(--cellW) - 8px)`;
+        const label = liveEl.querySelector('.label');
+        if (label) label.innerHTML = `${escapeHtml(r.name)} <span style="opacity:.72; font-size:11px;">${previewCount}c</span>`;
+        showResizeCountBadge(liveEl, previewCount);
       }
     }
 
