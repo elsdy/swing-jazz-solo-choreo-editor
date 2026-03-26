@@ -2161,6 +2161,13 @@
       }, { passive: false });
 
       el.addEventListener('touchmove', (e) => {
+        // 리사이즈 처리 (보드 레벨에서 preventDefault 보장)
+        if (activeResizeCtx === ctx && ctx.resize) {
+          e.preventDefault();
+          const touch = e.touches[0];
+          applyResizePreview(touch.clientX, touch.clientY, ctx);
+          return;
+        }
         if (ctx.drag?.type !== 'placement-move' || !ctx.drag.isTouchDragging) return;
         e.preventDefault();
         const touch = e.touches[0];
@@ -2169,12 +2176,20 @@
 
       el.addEventListener('touchend', () => {
         hideFloatingTooltip();
+        if (activeResizeCtx === ctx && ctx.resize) {
+          stopTouchResize();
+          return;
+        }
         if (ctx.drag?.type !== 'placement-move' || !ctx.drag.isTouchDragging) return;
         finishTouchPlacementMove(false, ctx);
       });
 
       el.addEventListener('touchcancel', () => {
         hideFloatingTooltip();
+        if (activeResizeCtx === ctx && ctx.resize) {
+          stopTouchResize();
+          return;
+        }
         if (ctx.drag?.type !== 'placement-move' || !ctx.drag.isTouchDragging) return;
         finishTouchPlacementMove(true, ctx);
       });
@@ -3325,22 +3340,14 @@
       if (ctx.resize.liveEl) {
         showResizeCountBadge(ctx.resize.liveEl, ctx.resize.originalCount);
       }
+      // PC: document 레벨 mouse 이벤트 (터치는 보드 레벨에서 처리)
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', stopMouseResize);
-      document.addEventListener('touchmove', onTouchMoveResize, { passive: false });
-      document.addEventListener('touchend', stopTouchResize);
-      document.addEventListener('touchcancel', stopTouchResize);
     }
 
     function onMouseMove(e) {
       if (!activeResizeCtx?.resize) return;
       applyResizePreview(e.clientX, e.clientY, activeResizeCtx);
-    }
-
-    function onTouchMoveResize(e) {
-      if (!activeResizeCtx?.resize) return;
-      e.preventDefault();
-      applyResizePreview(e.touches[0].clientX, e.touches[0].clientY, activeResizeCtx);
     }
 
     function stopMouseResize() {
@@ -3351,9 +3358,6 @@
       }
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', stopMouseResize);
-      document.removeEventListener('touchmove', onTouchMoveResize);
-      document.removeEventListener('touchend', stopTouchResize);
-      document.removeEventListener('touchcancel', stopTouchResize);
       if (ctx) {
         ctx.el.querySelectorAll('.placement.is-resizing').forEach(el => el.classList.remove('is-resizing'));
         ctx.resize = null;
