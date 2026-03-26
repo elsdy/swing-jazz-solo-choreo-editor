@@ -281,6 +281,7 @@
       outline: 2px solid rgba(96,165,250,0.85);
       outline-offset: -1px;
       box-shadow: 0 0 12px rgba(96,165,250,0.45), 0 8px 18px rgba(0,0,0,0.2);
+      pointer-events: none;
     }
     .placement.is-resizing .resize-handle {
       background: rgba(96,165,250,0.55) !important;
@@ -3308,17 +3309,21 @@
       const first = getGroup(groupId, ctx)[0];
       if (!first) return;
       const placementEl = ctx.el.querySelector(`.placement[data-group-id="${CSS.escape(groupId)}"]`);
+      const originTrack = placementEl?.closest('.track') || null;
       ctx.resize = {
         groupId, startX: clientX,
         originRow: first.row, originStartIndex: first.startIndex,
         originalCount: groupCount(groupId, ctx),
         previewCount: groupCount(groupId, ctx),
-        liveEl: placementEl || null
+        liveEl: placementEl || null,
+        originTrack
       };
       activeResizeCtx = ctx;
+      // 그룹의 모든 세그먼트에 리사이즈 상태 표시
+      ctx.el.querySelectorAll(`.placement[data-group-id="${CSS.escape(groupId)}"]`).forEach(el => {
+        el.classList.add('is-dragging', 'is-resizing');
+      });
       if (ctx.resize.liveEl) {
-        ctx.resize.liveEl.classList.add('is-dragging');
-        ctx.resize.liveEl.classList.add('is-resizing');
         showResizeCountBadge(ctx.resize.liveEl, ctx.resize.originalCount);
       }
       document.addEventListener('mousemove', onMouseMove);
@@ -3368,23 +3373,29 @@
       if (!r) return;
       const maxTotal = totalCellsFrom(r.originRow, r.originStartIndex, ctx);
       let previewCount;
-      const endTrack = document.elementFromPoint(clientX, clientY)?.closest('.track');
+      const hitEl = document.elementFromPoint(clientX, clientY);
+      const endTrack = hitEl?.closest('.track');
       if (endTrack && ctx.el.contains(endTrack)) {
         const endRow = Number(endTrack.dataset.row);
         const endCol = pointerToCellIndex(endTrack, clientX, ctx);
         previewCount = clamp(calcCrossRowCount(r.originRow, r.originStartIndex, endRow, endCol, ctx), 1, maxTotal);
+      } else if (r.originTrack) {
+        // 터치가 placement 위나 보드 밖에 있을 때 원래 트랙 기준으로 계산
+        const endCol = pointerToCellIndex(r.originTrack, clientX, ctx);
+        previewCount = clamp(endCol - r.originStartIndex + 1, 1, maxTotal);
       } else {
         const stepWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cellW')) || 68;
         previewCount = clamp(r.originalCount + Math.round((clientX - r.startX) / stepWidth), 1, maxTotal);
       }
       r.previewCount = previewCount;
       rebuildGroup(r.groupId, previewCount, ctx);
-      // rebuildGroup recreates DOM elements, so re-find the live element and update badge
-      const newEl = ctx.el.querySelector(`.placement[data-group-id="${CSS.escape(r.groupId)}"]`);
-      if (newEl) {
-        r.liveEl = newEl;
-        newEl.classList.add('is-dragging', 'is-resizing');
-        showResizeCountBadge(newEl, previewCount);
+      // rebuildGroup recreates DOM elements, so re-find and mark all segments
+      const newEls = ctx.el.querySelectorAll(`.placement[data-group-id="${CSS.escape(r.groupId)}"]`);
+      newEls.forEach(el => el.classList.add('is-dragging', 'is-resizing'));
+      const firstEl = newEls[0] || null;
+      if (firstEl) {
+        r.liveEl = firstEl;
+        showResizeCountBadge(firstEl, previewCount);
       }
     }
 
