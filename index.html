@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>안무 편집기</title>
   <style>
     :root {
@@ -549,6 +549,17 @@
     .scroll-lock-btn:not(.locked) .lock-icon::after { content: '🔓'; }
 
     @media (max-width: 1040px) {
+      /* 모바일 입력 포커스 시 자동 줌 방지 (iOS 16px 이상 필요) */
+      input, select, textarea {
+        font-size: 16px !important;
+      }
+      /* 워크스페이스 락 시 터치 줌/스크롤 완전 차단 */
+      .board-wrap[data-locked="1"] {
+        touch-action: none;
+      }
+      .sidebar-scroll[data-locked="1"] {
+        touch-action: none;
+      }
       .app {
         grid-template-columns: 1fr;
         grid-template-rows: min(42vh, 420px) minmax(0, 1fr);
@@ -1393,6 +1404,38 @@
           boardWrapEl.dataset.locked = '1';
           boardWrapEl.style.overflow = 'hidden';
           boardLockBtn.classList.add('locked');
+        }
+      });
+
+      // 워크스페이스 락 시 핀치 줌 완전 차단
+      function isAnyLockActive() {
+        return sidebarScrollEl.dataset.locked === '1' || boardWrapEl.dataset.locked === '1';
+      }
+      document.addEventListener('touchmove', (e) => {
+        if (isAnyLockActive() && e.touches.length >= 2) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+      // iOS Safari gesturestart 이벤트로 줌 차단
+      document.addEventListener('gesturestart', (e) => {
+        if (isAnyLockActive()) e.preventDefault();
+      }, { passive: false });
+      document.addEventListener('gesturechange', (e) => {
+        if (isAnyLockActive()) e.preventDefault();
+      }, { passive: false });
+
+      // 입력 완료 후 뷰포트 줌 리셋 (모바일 포커스 줌 복구)
+      document.addEventListener('focusout', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+          // 약간의 딜레이 후 뷰포트를 강제 리셋
+          setTimeout(() => {
+            const vp = document.querySelector('meta[name="viewport"]');
+            if (vp) {
+              vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+            }
+            // 스크롤 위치 보정으로 줌 리셋 유도
+            window.scrollTo(0, 0);
+          }, 100);
         }
       });
 
