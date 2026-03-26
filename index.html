@@ -2140,6 +2140,10 @@
         }
       });
 
+      // 모바일 더블탭 삭제를 위한 상태
+      let lastTapTime = 0;
+      let lastTapGroupId = null;
+
       el.addEventListener('touchstart', (e) => {
         const resizeHandle = e.target.closest('.resize-handle');
         if (resizeHandle) {
@@ -2157,6 +2161,24 @@
           if (!placementEl) return;
           showFloatingTooltip(placementEl);
           startTouchPlacementMove(placementEl.dataset.groupId, e.touches[0].clientX, e.touches[0].clientY, ctx);
+          return;
+        }
+        // 더블탭으로 배치 삭제 (move-handle, resize-handle 외 영역 터치 시)
+        const placementEl = e.target.closest('.placement');
+        if (placementEl) {
+          const groupId = placementEl.dataset.groupId;
+          const now = Date.now();
+          if (now - lastTapTime < 300 && lastTapGroupId === groupId) {
+            e.preventDefault();
+            if (placementEl.classList.contains('is-routine') && ctx === mainCtx) return; // 루틴은 팝업으로 처리
+            removePlacementGroup(groupId, ctx);
+            _saveHistory();
+            lastTapTime = 0;
+            lastTapGroupId = null;
+          } else {
+            lastTapTime = now;
+            lastTapGroupId = groupId;
+          }
         }
       }, { passive: false });
 
