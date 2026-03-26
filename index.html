@@ -1623,33 +1623,62 @@
       header.appendChild(closeBtn);
       popup.appendChild(header);
 
-      // 동작 검색 버튼
-      const searchBtn = document.createElement('button');
-      searchBtn.type = 'button';
-      searchBtn.className = 'quick-popup-item new-action';
-      searchBtn.innerHTML = '<span>🔍</span><span>동작 검색</span>';
-      searchBtn.addEventListener('click', () => showMoveSearchScreen(popup, row, cellIndex, count));
-      popup.appendChild(searchBtn);
+      // 검색 입력 + [+] 버튼 (기본 활성화)
+      const inputRow = document.createElement('div');
+      inputRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.placeholder = '동작 이름 검색...';
+      nameInput.style.flex = '1';
+      const addBtn = makeAddBtn();
+      addBtn.title = '새 동작으로 추가';
+      inputRow.append(nameInput, addBtn);
+      popup.appendChild(inputRow);
 
-      // 즐겨찾기 동작 목록
-      const favMoves = state.moveLibrary.filter(m => state.favoriteMoveNames.has(m.name));
-      if (favMoves.length > 0) {
-        popup.appendChild(qDivider());
-        popup.appendChild(qLabel('즐겨찾기 동작'));
-        favMoves.forEach(move => {
-          popup.appendChild(makeQuickMoveItem(move, () => {
-            placeMove(move.id, row, cellIndex, count);
-            saveHistory();
-            closeQuickPicker();
-          }));
-        });
-      } else {
-        popup.appendChild(qDivider());
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
-        hint.textContent = '팔레트에서 ★ 로 즐겨찾기를 추가하세요.';
-        popup.appendChild(hint);
+      const resultList = document.createElement('div');
+      resultList.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:45vh;overflow-y:auto;';
+      popup.appendChild(resultList);
+
+      function render() {
+        const q = nameInput.value.trim();
+        const ql = q.toLowerCase();
+        resultList.innerHTML = '';
+
+        if (!ql) {
+          addBtn.style.display = 'none';
+          const favs = state.moveLibrary.filter(m => state.favoriteMoveNames.has(m.name));
+          const others = state.moveLibrary.filter(m => !state.favoriteMoveNames.has(m.name));
+          if (favs.length) {
+            resultList.appendChild(qLabel('즐겨찾기'));
+            favs.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
+            if (others.length) resultList.appendChild(qDivider());
+          }
+          others.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
+          return;
+        }
+
+        const matches = state.moveLibrary.filter(m => m.name.toLowerCase().includes(ql));
+        if (matches.length === 0) {
+          addBtn.style.display = '';
+          const hint = document.createElement('div');
+          hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+          hint.textContent = `"${q}" 와 일치하는 동작이 없습니다.`;
+          resultList.appendChild(hint);
+        } else {
+          addBtn.style.display = 'none';
+          matches.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
+        }
       }
+
+      nameInput.addEventListener('input', render);
+      addBtn.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        if (!name) return;
+        showCategoryScreen(popup, name, row, cellIndex, count);
+      });
+
+      render();
+      setTimeout(() => nameInput.focus(), 50);
 
       positionPopup(popup, clientX, clientY);
     }
@@ -1726,8 +1755,8 @@
       return btn;
     }
 
-    // ── Screen 2: 동작 검색 ─────────────────────────────────────────────────
-    function showMoveSearchScreen(popup, row, cellIndex, count = DEFAULT_COUNT) {
+    // ── Screen 2: 카테고리 선택 ─────────────────────────────────────────────
+    function showCategoryScreen(popup, moveName, row, cellIndex, count = DEFAULT_COUNT) {
       popup.innerHTML = '';
 
       const header = document.createElement('div');
@@ -1740,85 +1769,6 @@
         const rect = popup.getBoundingClientRect();
         showMovePickerScreen(popup, row, cellIndex, rect.left, rect.top, count);
       });
-      header.appendChild(backBtn);
-      header.appendChild(qLabel('동작 검색'));
-      const closeBtn = document.createElement('button');
-      closeBtn.type = 'button';
-      closeBtn.className = 'icon-btn';
-      closeBtn.textContent = '×';
-      closeBtn.addEventListener('click', closeQuickPicker);
-      header.appendChild(closeBtn);
-      popup.appendChild(header);
-
-      // 입력 + [+] 버튼
-      const inputRow = document.createElement('div');
-      inputRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
-      const nameInput = document.createElement('input');
-      nameInput.type = 'text';
-      nameInput.placeholder = '동작 이름 검색...';
-      nameInput.style.flex = '1';
-      const addBtn = makeAddBtn();
-      addBtn.title = '새 동작으로 추가';
-      inputRow.append(nameInput, addBtn);
-      popup.appendChild(inputRow);
-
-      const resultList = document.createElement('div');
-      resultList.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:45vh;overflow-y:auto;';
-      popup.appendChild(resultList);
-
-      function render() {
-        const q = nameInput.value.trim();
-        const ql = q.toLowerCase();
-        resultList.innerHTML = '';
-
-        if (!ql) {
-          addBtn.style.display = 'none';
-          const favs = state.moveLibrary.filter(m => state.favoriteMoveNames.has(m.name));
-          const others = state.moveLibrary.filter(m => !state.favoriteMoveNames.has(m.name));
-          if (favs.length) {
-            resultList.appendChild(qLabel('즐겨찾기'));
-            favs.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
-            if (others.length) resultList.appendChild(qDivider());
-          }
-          others.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
-          return;
-        }
-
-        const matches = state.moveLibrary.filter(m => m.name.toLowerCase().includes(ql));
-        if (matches.length === 0) {
-          addBtn.style.display = '';
-          const hint = document.createElement('div');
-          hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
-          hint.textContent = `"${q}" 와 일치하는 동작이 없습니다.`;
-          resultList.appendChild(hint);
-        } else {
-          addBtn.style.display = 'none';
-          matches.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
-        }
-      }
-
-      nameInput.addEventListener('input', render);
-      addBtn.addEventListener('click', () => {
-        const name = nameInput.value.trim();
-        if (!name) return;
-        showCategoryScreen(popup, name, row, cellIndex, count);
-      });
-
-      render();
-      nameInput.focus();
-    }
-
-    // ── Screen 3: 카테고리 선택 ─────────────────────────────────────────────
-    function showCategoryScreen(popup, moveName, row, cellIndex, count = DEFAULT_COUNT) {
-      popup.innerHTML = '';
-
-      const header = document.createElement('div');
-      header.className = 'quick-popup-header';
-      const backBtn = document.createElement('button');
-      backBtn.type = 'button';
-      backBtn.className = 'icon-btn';
-      backBtn.textContent = '←';
-      backBtn.addEventListener('click', () => showMoveSearchScreen(popup, row, cellIndex, count));
       header.appendChild(backBtn);
       header.appendChild(qLabel('카테고리 선택'));
       const closeBtn = document.createElement('button');
@@ -4292,45 +4242,7 @@
       header.appendChild(closeBtn);
       popup.appendChild(header);
 
-      const searchBtn = document.createElement('button');
-      searchBtn.type = 'button'; searchBtn.className = 'quick-popup-item new-action';
-      searchBtn.innerHTML = '<span>🔍</span><span>동작 검색</span>';
-      searchBtn.addEventListener('click', () => showReMoveSearchScreen(popup, row, cellIndex, count));
-      popup.appendChild(searchBtn);
-
-      const favMoves = state.moveLibrary.filter(m => state.favoriteMoveNames.has(m.name));
-      if (favMoves.length > 0) {
-        popup.appendChild(qDivider()); popup.appendChild(qLabel('즐겨찾기 동작'));
-        favMoves.forEach(move => {
-          popup.appendChild(makeQuickMoveItem(move, () => {
-            placeMove(move.id, row, cellIndex, count, reCtx);
-            saveHistoryRe(); closeReQuickPicker();
-          }));
-        });
-      } else {
-        popup.appendChild(qDivider());
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
-        hint.textContent = '팔레트에서 ★ 로 즐겨찾기를 추가하세요.';
-        popup.appendChild(hint);
-      }
-      positionPopup(popup, clientX, clientY);
-    }
-
-    function showReMoveSearchScreen(popup, row, cellIndex, count) {
-      popup.innerHTML = '';
-      const header = document.createElement('div');
-      header.className = 'quick-popup-header';
-      const backBtn = document.createElement('button');
-      backBtn.type = 'button'; backBtn.className = 'icon-btn'; backBtn.textContent = '←';
-      backBtn.addEventListener('click', () => { const rect = popup.getBoundingClientRect(); showReMovePickerScreen(popup, row, cellIndex, rect.left, rect.top, count); });
-      header.appendChild(backBtn); header.appendChild(qLabel('동작 검색'));
-      const closeBtn = document.createElement('button');
-      closeBtn.type = 'button'; closeBtn.className = 'icon-btn'; closeBtn.textContent = '×';
-      closeBtn.addEventListener('click', closeReQuickPicker);
-      header.appendChild(closeBtn);
-      popup.appendChild(header);
-
+      // 검색 입력 + [+] 버튼 (기본 활성화)
       const inputRow = document.createElement('div');
       inputRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
       const nameInput = document.createElement('input');
@@ -4372,7 +4284,9 @@
         if (!name) return;
         showReCategoryScreen(popup, name, row, cellIndex, count);
       });
-      render(); nameInput.focus();
+      render();
+      setTimeout(() => nameInput.focus(), 50);
+      positionPopup(popup, clientX, clientY);
     }
 
     function showReCategoryScreen(popup, moveName, row, cellIndex, count) {
@@ -4381,7 +4295,7 @@
       header.className = 'quick-popup-header';
       const backBtn = document.createElement('button');
       backBtn.type = 'button'; backBtn.className = 'icon-btn'; backBtn.textContent = '←';
-      backBtn.addEventListener('click', () => showReMoveSearchScreen(popup, row, cellIndex, count));
+      backBtn.addEventListener('click', () => { const rect = popup.getBoundingClientRect(); showReMovePickerScreen(popup, row, cellIndex, rect.left, rect.top, count); });
       header.appendChild(backBtn); header.appendChild(qLabel('카테고리 선택'));
       const closeBtn = document.createElement('button');
       closeBtn.type = 'button'; closeBtn.className = 'icon-btn'; closeBtn.textContent = '×';
