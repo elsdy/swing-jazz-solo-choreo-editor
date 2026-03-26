@@ -2258,7 +2258,7 @@
         drawState = null;
       });
 
-      // 빠른 배치 모드: 빈 트랙 탭 → quickPicker
+      // 빠른 배치 모드: 빈 트랙 터치 드래그 → quickPicker (드래그로 카운트 선택)
       let quickTouchAnchor = null;
 
       el.addEventListener('touchstart', (e) => {
@@ -2267,23 +2267,48 @@
         const touch = e.touches[0];
         const track = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
         if (!track || !el.contains(track)) return;
-        quickTouchAnchor = { x: touch.clientX, y: touch.clientY, track };
+        const row = Number(track.dataset.row);
+        const startIndex = pointerToCellIndex(track, touch.clientX, ctx);
+        quickTouchAnchor = { x: touch.clientX, y: touch.clientY, track, row, startIndex, count: DEFAULT_COUNT, isDrag: false };
+        updatePreview(row, startIndex, DEFAULT_COUNT, ctx);
+      }, { passive: true });
+
+      el.addEventListener('touchmove', (e) => {
+        if (!ctx.quickPlaceMode || !quickTouchAnchor) return;
+        const touch = e.touches[0];
+        const dx = Math.abs(touch.clientX - quickTouchAnchor.x);
+        const dy = Math.abs(touch.clientY - quickTouchAnchor.y);
+        if (dx > 12 || dy > 12) quickTouchAnchor.isDrag = true;
+        if (!quickTouchAnchor.isDrag) return;
+        const endTrack = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.track');
+        const inBoard = endTrack && el.contains(endTrack);
+        const endRow = inBoard ? Number(endTrack.dataset.row) : quickTouchAnchor.row;
+        const endTrackEl = (inBoard ? endTrack : null) || quickTouchAnchor.track;
+        const endCol = pointerToCellIndex(endTrackEl, touch.clientX, ctx);
+        const count = Math.max(1, Math.min(
+          calcCrossRowCount(quickTouchAnchor.row, quickTouchAnchor.startIndex, endRow, endCol, ctx),
+          totalCellsFrom(quickTouchAnchor.row, quickTouchAnchor.startIndex, ctx)
+        ));
+        quickTouchAnchor.count = count;
+        quickTouchAnchor.clientX = touch.clientX;
+        quickTouchAnchor.clientY = touch.clientY;
+        updatePreview(quickTouchAnchor.row, quickTouchAnchor.startIndex, count, ctx);
       }, { passive: true });
 
       el.addEventListener('touchend', (e) => {
         if (!ctx.quickPlaceMode || !quickTouchAnchor) return;
         const touch = (e.changedTouches || e.touches)[0];
-        const dx = Math.abs(touch.clientX - quickTouchAnchor.x);
-        const dy = Math.abs(touch.clientY - quickTouchAnchor.y);
-        const track = quickTouchAnchor.track;
+        const { row, startIndex, isDrag } = quickTouchAnchor;
+        const count = isDrag ? quickTouchAnchor.count : DEFAULT_COUNT;
+        const cx = isDrag ? (quickTouchAnchor.clientX || touch.clientX) : touch.clientX;
+        const cy = isDrag ? (quickTouchAnchor.clientY || touch.clientY) : touch.clientY;
+        const cellIdx = isDrag ? startIndex : pointerToCellIndex(quickTouchAnchor.track, touch.clientX, ctx);
         quickTouchAnchor = null;
-        if (dx > 12 || dy > 12) return;
-        const row = Number(track.dataset.row);
-        const cellIndex = pointerToCellIndex(track, touch.clientX, ctx);
-        _openQuickPicker(row, cellIndex, touch.clientX, touch.clientY, DEFAULT_COUNT);
+        clearPreview(ctx);
+        _openQuickPicker(row, cellIdx, cx, cy, count);
       });
 
-      el.addEventListener('touchcancel', () => { quickTouchAnchor = null; });
+      el.addEventListener('touchcancel', () => { if (quickTouchAnchor) { quickTouchAnchor = null; clearPreview(ctx); } });
     }
 
     // ── PC/Mobile hover tooltip (모듈 레벨) ────────────────────────────────
