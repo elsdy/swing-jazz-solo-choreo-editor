@@ -200,14 +200,30 @@
       font-size: 13px;
       color: #cbd5e1;
     }
+    .track-spacer {
+      display: block;
+      width: 0;
+      height: var(--cellH);
+      pointer-events: none;
+      visibility: hidden;
+    }
     .track {
       position: relative;
-      min-height: var(--cellH);
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid rgba(148,163,184,0.16);
       background: linear-gradient(90deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) calc(var(--cellW) - 1px), rgba(255,255,255,0.08) calc(var(--cellW) - 1px), rgba(255,255,255,0.08) var(--cellW));
       background-size: var(--cellW) 100%;
+    }
+    /* 병합 충돌로 레이어가 2개 이상인 행: 레이어 경계선 표시 */
+    .track[data-layers]::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0;
+      top: var(--cellH);
+      height: 1px;
+      background: rgba(148,163,184,0.35);
+      pointer-events: none;
     }
     .track.drop-hover {
       outline: 3px dashed rgba(96,165,250,0.7);
@@ -645,7 +661,8 @@
       .corner, .row-label { font-size: 11px; padding: 4px; min-height: 40px; border-radius: 10px; }
       .header-cells > div { font-size: 10px; min-height: 40px; }
       .header-cells { border-radius: 10px; }
-      .track { border-radius: 10px; min-height: 40px; }
+      .track { border-radius: 10px; }
+      .track-spacer { height: var(--cellH); }
       .board-wrap { padding: 8px; }
       .app { padding: 10px; gap: 10px; }
       .compact-grid { grid-template-columns: 1fr; }
@@ -2781,44 +2798,28 @@
       header.innerHTML = `<div class="corner">마디</div><div class="header-cells" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${Array.from({ length: ctx.cols }, (_, i) => `<div>${i + 1}</div>`).join('')}</div><div class="note-header">비고</div>`;
       ctx.el.appendChild(header);
 
-      // intro row (row 0) — main board only
-      if (ctx === mainCtx) {
+      function buildRow(row, labelText) {
         const rowEl = document.createElement('div');
         rowEl.className = 'board-row';
         rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${ctx.cols}) var(--noteW)`;
         const label = document.createElement('div');
         label.className = 'row-label';
-        label.textContent = 'intro';
-        const track = document.createElement('div');
-        track.className = 'track';
-        track.dataset.row = 0;
-        track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
-        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
-        const note = document.createElement('div');
-        note.className = 'note-cell';
-        rowEl.append(label, track, note);
-        ctx.el.appendChild(rowEl);
-        ctx.rowRefs.set(0, { rowEl, label, track, note });
-      }
-
-      for (let row = 1; row <= ctx.rows; row++) {
-        const rowEl = document.createElement('div');
-        rowEl.className = 'board-row';
-        rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${ctx.cols}) var(--noteW)`;
-        const label = document.createElement('div');
-        label.className = 'row-label';
-        label.textContent = `${ctx.cols}x${row}`;
+        label.textContent = labelText;
         const track = document.createElement('div');
         track.className = 'track';
         track.dataset.row = row;
         track.style.width = `calc(var(--cellW) * ${ctx.cols})`;
-        track.innerHTML = `<div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
+        track.innerHTML = `<div class="track-spacer"></div><div class="cell-overlay" style="grid-template-columns:repeat(${ctx.cols}, var(--cellW));">${'<div></div>'.repeat(ctx.cols)}</div>`;
         const note = document.createElement('div');
         note.className = 'note-cell';
         rowEl.append(label, track, note);
         ctx.el.appendChild(rowEl);
         ctx.rowRefs.set(row, { rowEl, label, track, note });
       }
+
+      // intro row (row 0) — main board only
+      if (ctx === mainCtx) buildRow(0, 'intro');
+      for (let row = 1; row <= ctx.rows; row++) buildRow(row, `${ctx.cols}x${row}`);
       ctx.boardSig = boardSignature(ctx);
     }
 
@@ -2831,6 +2832,10 @@
         ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
         : Array.from({ length: ctx.rows }, (_, i) => i + 1);
       renderRows(rows, ctx);
+    }
+
+    function getCellHPx() {
+      return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cellH')) || 52;
     }
 
     function renderRows(rows, ctx = mainCtx) {
@@ -2855,8 +2860,23 @@
       if (!ref) return;
       ref.label.textContent = row === 0 ? 'intro' : `${ctx.cols}x${row}`;
       ref.note.innerHTML = renderRowNotes(row, ctx) || '<span class="muted">-</span>';
+
+      const placements = ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols);
+
+      // 시각적 subRow = DATA subRow 그대로 사용 (압축 없음)
+      // → 하위 레이어 배치는 혼자 있어도 항상 하단에 위치 (레이어 정체성 보존)
+      const visualSubRows = new Map(placements.map(p => [p.id, p.subRow || 0]));
+      const maxVisualSubRow = placements.reduce((m, p) => Math.max(m, p.subRow || 0), 0);
+
+      // spacer로 트랙 높이를 강제 확장 (absolute 자식은 grid 높이에 미기여하므로 in-flow spacer 사용)
+      const cellHPx = getCellHPx();
+      const spacer = ref.track.querySelector('.track-spacer');
+      if (spacer) spacer.style.height = `${(maxVisualSubRow + 1) * cellHPx}px`;
+      // 레이어 구분선 표시 (충돌 행에만)
+      ref.track.dataset.layers = maxVisualSubRow > 0 ? String(maxVisualSubRow + 1) : '';
+
       [...ref.track.querySelectorAll('.placement')].forEach(el => el.remove());
-      ctx.placements.filter(p => p.row === row && p.startIndex < ctx.cols).forEach(p => ref.track.appendChild(createPlacementEl(p, ctx)));
+      placements.forEach(p => ref.track.appendChild(createPlacementEl(p, visualSubRows.get(p.id) || 0, ctx)));
     }
 
     function getAffectedRowsByGroup(groupId, ctx = mainCtx) {
@@ -2890,7 +2910,7 @@
         .join(', ');
     }
 
-    function createPlacementEl(placement, ctx = mainCtx) {
+    function createPlacementEl(placement, visualSubRow, ctx = mainCtx) {
       const el = document.createElement('div');
       el.className = 'placement';
       if (placement.type === 'routine') el.classList.add('is-routine');
@@ -2900,6 +2920,8 @@
       if (placement.routineId) el.dataset.routineId = placement.routineId;
       el.style.left = `calc(${placement.startIndex} * var(--cellW) + 4px)`;
       el.style.width = `calc(${placement.length} * var(--cellW) - 8px)`;
+      // 시각적 subRow로 레이어 위치를 px로 직접 지정
+      el.style.top = `${visualSubRow * getCellHPx() + 6}px`;
       if (placement.type !== 'routine') el.style.background = categoryColor(placement.category);
       const cnt = groupCount(placement.groupId, ctx);
       el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${cnt}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
@@ -2946,10 +2968,12 @@
       return ctx.placements.filter(p => p.groupId === groupId).sort((a, b) => a.row - b.row || a.startIndex - b.startIndex);
     }
 
-    function clearSegmentsArea(segments, ignoreGroupId = null, ctx = mainCtx) {
+    function clearSegmentsArea(segments, ignoreGroupId = null, ctx = mainCtx, subRow = null) {
       const removeIds = new Set();
       ctx.placements.forEach(p => {
         if (ignoreGroupId && p.groupId === ignoreGroupId) return;
+        // subRow 지정 시 같은 레이어만 제거 (다른 레이어는 보존)
+        if (subRow !== null && (p.subRow || 0) !== subRow) return;
         if (segments.some(seg => seg.row === p.row && !(seg.startIndex + seg.length - 1 < p.startIndex || p.startIndex + p.length - 1 < seg.startIndex))) {
           removeIds.add(p.groupId);
         }
@@ -2961,9 +2985,73 @@
       return affectedRows;
     }
 
+    // 지정 행들의 subRow를 재정렬: 갭 없이 0부터 촘촘하게 재배정
+    // 배치 이동/삭제 후 "빈 상단 레이어" 현상을 방지
+    function repackSubRows(rows, ctx = mainCtx) {
+      const uniqueRows = [...new Set(rows)];
+      // Phase 1: 행별 탐욕 배정 (기존 로직)
+      uniqueRows.forEach(row => {
+        const rp = ctx.placements.filter(p => p.row === row);
+        if (!rp.length) return;
+        // 현재 subRow → startIndex 순으로 정렬 (stable sort: 동점 시 기존 순서 유지)
+        rp.sort((a, b) => (a.subRow || 0) - (b.subRow || 0) || a.startIndex - b.startIndex);
+        // 각 배치에 충돌 없는 최소 subRow 재배정
+        const layers = []; // layers[s] = 이미 배정된 배치 목록
+        rp.forEach(p => {
+          let s = 0;
+          while (true) {
+            const layer = layers[s] || [];
+            const conflict = layer.some(ex =>
+              !(p.startIndex + p.length - 1 < ex.startIndex || ex.startIndex + ex.length - 1 < p.startIndex)
+            );
+            if (!conflict) break;
+            s++;
+          }
+          p.subRow = s;
+          if (!layers[s]) layers[s] = [];
+          layers[s].push(p);
+        });
+      });
+
+      // Phase 2: 그룹 일관성 보장 — 여러 행에 걸친 그룹의 subRow를 통일
+      // (스케일링으로 새 행에 세그먼트가 생기면 행별 배정에서 subRow가 달라질 수 있음)
+      const rowSet = new Set(uniqueRows);
+      const groupsInScope = new Set();
+      ctx.placements.forEach(p => { if (rowSet.has(p.row)) groupsInScope.add(p.groupId); });
+
+      const groupAllSegs = new Map();
+      ctx.placements.forEach(p => {
+        if (!groupsInScope.has(p.groupId)) return;
+        if (!groupAllSegs.has(p.groupId)) groupAllSegs.set(p.groupId, []);
+        groupAllSegs.get(p.groupId).push(p);
+      });
+
+      groupAllSegs.forEach((segs, gid) => {
+        if (segs.length <= 1) return;
+        const maxSub = Math.max(...segs.map(p => p.subRow || 0));
+        if (segs.every(p => (p.subRow || 0) === maxSub)) return;
+
+        // 그룹 전체가 들어갈 수 있는 충돌 없는 subRow 탐색 (maxSub부터)
+        let targetSub = maxSub;
+        while (true) {
+          const hasConflict = segs.some(seg =>
+            ctx.placements.some(p =>
+              p.groupId !== gid &&
+              p.row === seg.row && (p.subRow || 0) === targetSub &&
+              !(seg.startIndex + seg.length - 1 < p.startIndex || p.startIndex + p.length - 1 < seg.startIndex)
+            )
+          );
+          if (!hasConflict) break;
+          targetSub++;
+        }
+        segs.forEach(p => p.subRow = targetSub);
+      });
+    }
+
     function removePlacementGroup(groupId, ctx = mainCtx) {
       const affectedRows = getAffectedRowsByGroup(groupId, ctx);
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
+      repackSubRows(affectedRows, ctx);
       renderRows(affectedRows, ctx);
     }
 
@@ -2973,14 +3061,27 @@
       const count = Math.min(totalCount, totalCellsFrom(startRow, startIndex, ctx));
       if (count <= 0) return;
       const segments = buildSegments(startRow, startIndex, count, ctx);
-      const removedRows = clearSegmentsArea(segments, null, ctx);
+      // 충돌 없는 가장 낮은 subRow 탐색 (이미 배치된 동작 위에 스택)
+      let targetSubRow = 0;
+      while (true) {
+        const hasConflict = segments.some(seg => {
+          const segEnd = seg.startIndex + seg.length - 1;
+          return ctx.placements.some(ex =>
+            ex.row === seg.row && (ex.subRow || 0) === targetSubRow &&
+            !(segEnd < ex.startIndex || ex.startIndex + ex.length - 1 < seg.startIndex)
+          );
+        });
+        if (!hasConflict) break;
+        targetSubRow++;
+      }
       const groupId = uid();
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: move.name, category: move.category,
-        row: seg.row, startIndex: seg.startIndex, length: seg.length
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: targetSubRow
       })));
-      renderRows([...segments.map(s => s.row), ...removedRows], ctx);
+      renderRows(segments.map(s => s.row), ctx);
     }
 
     function placeRoutineOnBoard(routineId, startRow, startIndex) {
@@ -2988,16 +3089,28 @@
       if (!routine) return;
       const totalCount = routine.rows * routine.cols;
       const groupId = uid();
-      // buildSegments로 메인 보드 열 수에 맞게 여러 행에 분산
       const segments = buildSegments(startRow, startIndex, totalCount, mainCtx);
-      const removedRows = clearSegmentsArea(segments, null, mainCtx);
+      // 충돌 없는 가장 낮은 subRow 탐색
+      let targetSubRow = 0;
+      while (true) {
+        const hasConflict = segments.some(seg => {
+          const segEnd = seg.startIndex + seg.length - 1;
+          return mainCtx.placements.some(ex =>
+            ex.row === seg.row && (ex.subRow || 0) === targetSubRow &&
+            !(segEnd < ex.startIndex || ex.startIndex + ex.length - 1 < seg.startIndex)
+          );
+        });
+        if (!hasConflict) break;
+        targetSubRow++;
+      }
       mainCtx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: routine.name, category: 'routine',
         type: 'routine', routineId,
-        row: seg.row, startIndex: seg.startIndex, length: seg.length
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: targetSubRow
       })));
-      renderRows([...new Set([...segments.map(s => s.row), ...removedRows])], mainCtx);
+      renderRows([...new Set(segments.map(s => s.row))], mainCtx);
     }
 
     function movePlacementGroup(groupId, targetRow, targetStartIndex, ctx = mainCtx) {
@@ -3007,15 +3120,30 @@
       const count = Math.min(groupCount(groupId, ctx), totalCellsFrom(targetRow, targetStartIndex, ctx));
       const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
       const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
+      const originalSubRow = group[0].subRow || 0;
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
+      // 원래 subRow부터 탐색 — 레이어 정체성 유지 (충돌 시 그 이상으로)
+      let targetSubRow = originalSubRow;
+      outer: for (;;) {
+        for (const seg of segments) {
+          const conflict = ctx.placements.some(p =>
+            p.row === seg.row && (p.subRow || 0) === targetSubRow &&
+            !(seg.startIndex + seg.length - 1 < p.startIndex || p.startIndex + p.length - 1 < seg.startIndex)
+          );
+          if (conflict) { targetSubRow++; continue outer; }
+        }
+        break;
+      }
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: meta.name, category: meta.category,
         ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
-        row: seg.row, startIndex: seg.startIndex, length: seg.length
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: targetSubRow
       })));
+      // 이동 후 전체 행을 다시 렌더링하여 spacer 높이·DOM 일관성 보장
       unmarkDraggingGroups(ctx);
-      renderRows([...previousRows, ...segments.map(s => s.row)], ctx);
+      renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
     }
 
     function rebuildGroup(groupId, newCount, ctx = mainCtx) {
@@ -3023,16 +3151,21 @@
       if (!group.length) return;
       const previousRows = group.map(p => p.row);
       const first = group[0];
+      const originalSubRow = first.subRow || 0;
       const meta = { name: first.name, category: first.category, type: first.type, routineId: first.routineId };
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
       const segments = buildSegments(first.row, first.startIndex, newCount, ctx);
+      const removedRows = clearSegmentsArea(segments, groupId, ctx, originalSubRow);
       ctx.placements.push(...segments.map(seg => ({
         id: uid(), groupId,
         name: meta.name, category: meta.category,
         ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
-        row: seg.row, startIndex: seg.startIndex, length: seg.length
+        row: seg.row, startIndex: seg.startIndex, length: seg.length,
+        subRow: originalSubRow
       })));
-      renderRows([...previousRows, ...segments.map(s => s.row)], ctx);
+      const affectedRows = [...new Set([...previousRows, ...segments.map(s => s.row), ...removedRows])];
+      repackSubRows(affectedRows, ctx);
+      renderRows(affectedRows, ctx);
     }
 
     function startResize(groupId, clientX, ctx = mainCtx) {
@@ -3353,47 +3486,105 @@
       const newMoves = normalizeMoveList(data.moveLibrary || []).filter(m => !existingNames.has(m.name));
       state.moveLibrary = [...state.moveLibrary, ...newMoves];
 
-      // 루틴 병합 (id 기준, 이미 있는 것은 건너뜀)
+      // 루틴 병합: id가 다른 루틴은 추가, 같은 id는 건너뜀
+      // 이름이 겹치면 "(2)" 등 붙여 구분
       if (Array.isArray(data.routines)) {
-        const existingIds = new Set(state.routines.map(r => r.id));
-        const newRoutines = data.routines.filter(r => r.id && !existingIds.has(r.id)).map(r => ({
-          id: r.id, name: String(r.name || '루틴'),
-          rows: Math.max(1, Number(r.rows) || 4),
-          cols: Math.max(1, Number(r.cols) || 8),
-          placements: Array.isArray(r.placements) ? r.placements : [],
-          color: r.color || '#6366f1',
-          isFavorite: false
-        }));
-        state.routines = [...state.routines, ...newRoutines];
+        const existingIds  = new Set(state.routines.map(r => r.id));
+        const existingNames = () => new Set(state.routines.map(r => r.name));
+        const newRoutines = [];
+        data.routines.forEach(r => {
+          if (!r.id || existingIds.has(r.id)) return; // 같은 id → 건너뜀
+          let name = String(r.name || '루틴');
+          // 이름 중복 시 번호 붙이기
+          const names = existingNames();
+          if (names.has(name)) {
+            let n = 2;
+            while (names.has(`${name} (${n})`)) n++;
+            name = `${name} (${n})`;
+          }
+          const merged = {
+            id: r.id, name,
+            rows: Math.max(1, Number(r.rows) || 4),
+            cols: Math.max(1, Number(r.cols) || 8),
+            placements: Array.isArray(r.placements) ? r.placements : [],
+            color: r.color || '#6366f1',
+            isFavorite: false
+          };
+          newRoutines.push(merged);
+          state.routines.push(merged); // 즉시 추가해야 existingNames()가 갱신됨
+          existingIds.add(r.id);
+        });
       }
 
       const fallback = categoryNames()[0];
-      let added = 0, skipped = 0;
-      (data.placements || []).filter(p => p && p.name).forEach(p => {
-        const norm = {
-          id: uid(), groupId: p.groupId || uid(),
+      let added = 0, stacked = 0;
+
+      // 병합 전 기존 배치를 subRow=0으로 초기화 (아직 없는 경우)
+      state.placements.forEach(p => { if (p.subRow === undefined) p.subRow = 0; });
+
+      // 들어오는 배치 정규화 — groupId를 새로 생성하여 기존 배치와 충돌 방지
+      // (같은 프로젝트를 부분 채우기하면 원래 groupId가 겹쳐 이동/삭제 시 합쳐짐)
+      const groupIdRemap = new Map();  // 원본 groupId → 새 groupId
+      const rawIncoming = (data.placements || []).filter(p => p && p.name).map(p => {
+        const origGid = p.groupId || uid();
+        if (!groupIdRemap.has(origGid)) groupIdRemap.set(origGid, uid());
+        return {
+          id: uid(),
+          groupId: groupIdRemap.get(origGid),
           name: String(p.name),
           category: state.categories[p.category] ? p.category : fallback,
           row: Math.max(1, Number(p.row) || 1),
           startIndex: Math.max(0, Number(p.startIndex) || 0),
           length: Math.max(1, Number(p.length) || 1),
-          // 루틴 배치 필드 보존
+          subRow: 0,
           ...(p.type      ? { type: p.type }           : {}),
           ...(p.routineId ? { routineId: p.routineId } : {})
         };
-        norm.length = Math.min(norm.length, state.cols - norm.startIndex);
-        if (norm.row > state.rows || norm.startIndex >= state.cols) { skipped++; return; }
-        const conflict = state.placements.some(ex =>
-          ex.row === norm.row &&
-          !(norm.startIndex + norm.length - 1 < ex.startIndex ||
-            ex.startIndex + ex.length - 1 < norm.startIndex)
-        );
-        if (conflict) { skipped++; } else { state.placements.push(norm); added++; }
+      }).map(p => ({ ...p, length: Math.min(p.length, state.cols - p.startIndex) }))
+         .filter(p => p.row <= state.rows && p.startIndex < state.cols && p.length > 0);
+
+      // groupId 별로 묶기 (루틴처럼 여러 행에 걸친 배치를 하나의 그룹으로)
+      const groupMap = new Map();
+      rawIncoming.forEach(p => {
+        if (!groupMap.has(p.groupId)) groupMap.set(p.groupId, []);
+        groupMap.get(p.groupId).push(p);
+      });
+
+      // 그룹의 시작 위치(row→startIndex)로 정렬: 카운트상 먼저 나오는 것이 위(subRow=0)
+      const sortedGroups = [...groupMap.values()].sort((a, b) => {
+        const aFirst = a.reduce((m, p) => (p.row < m.row || (p.row === m.row && p.startIndex < m.startIndex)) ? p : m, a[0]);
+        const bFirst = b.reduce((m, p) => (p.row < m.row || (p.row === m.row && p.startIndex < m.startIndex)) ? p : m, b[0]);
+        return aFirst.row - bFirst.row || aFirst.startIndex - bFirst.startIndex;
+      });
+
+      // 그룹 단위로 충돌 검사: 그룹의 모든 세그먼트가 들어갈 수 있는 가장 낮은 subRow 탐색
+      sortedGroups.forEach(group => {
+        let targetSubRow = 0;
+        while (true) {
+          const hasConflict = group.some(norm => {
+            const normEnd = norm.startIndex + norm.length - 1;
+            return state.placements.some(ex =>
+              ex.row === norm.row && (ex.subRow || 0) === targetSubRow &&
+              !(normEnd < ex.startIndex || ex.startIndex + ex.length - 1 < norm.startIndex)
+            );
+          });
+          if (!hasConflict) break;
+          targetSubRow++;
+        }
+        // 그룹 전체를 같은 subRow에 배치 (루틴 세그먼트가 레이어 분리되지 않도록)
+        group.forEach(norm => {
+          norm.subRow = targetSubRow;
+          state.placements.push(norm);
+        });
+        if (targetSubRow > 0) stacked++; else added++;
       });
 
       renderCategoryOptions(); renderLegend(); renderPalette(); renderBoard(true);
       renderRoutineList(); saveHistory();
-      alert(`병합 완료: ${added}개 배치됨${skipped ? `, ${skipped}개 충돌/범위 초과로 건너뜀` : ''}`);
+      const total = added + stacked;
+      const msg = `병합 완료: ${total}개 그룹 배치됨` +
+        (stacked ? ` (${stacked}개 충돌 → 아래 레이어)` : '');
+      alert(msg);
     }
 
     function downloadJson(payload, filename) {
@@ -3554,6 +3745,7 @@
         row: Math.max(1, Number(p.row) || 1),
         startIndex: Math.max(0, Number(p.startIndex) || 0),
         length: Math.max(1, Number(p.length) || 1),
+        subRow: Number(p.subRow) || 0,
         // 루틴 배치 필드 보존
         ...(p.type     ? { type: p.type }         : {}),
         ...(p.routineId ? { routineId: p.routineId } : {})
