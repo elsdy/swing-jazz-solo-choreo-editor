@@ -3183,7 +3183,10 @@
       })));
       // 이동 후 전체 행을 다시 렌더링하여 spacer 높이·DOM 일관성 보장
       unmarkDraggingGroups(ctx);
-      renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
+      const allRows = ctx === mainCtx
+        ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
+        : Array.from({ length: ctx.rows }, (_, i) => i + 1);
+      renderRows(allRows, ctx);
     }
 
     function copyPlacementGroup(groupId, targetRow, targetStartIndex, ctx = mainCtx) {
@@ -3213,7 +3216,10 @@
         row: seg.row, startIndex: seg.startIndex, length: seg.length,
         subRow: targetSubRow
       })));
-      renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
+      const allRows = ctx === mainCtx
+        ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
+        : Array.from({ length: ctx.rows }, (_, i) => i + 1);
+      renderRows(allRows, ctx);
     }
 
     function rebuildGroup(groupId, newCount, ctx = mainCtx) {
@@ -3364,7 +3370,10 @@
       }
       ctx.drag = null;
       unmarkDraggingGroups(ctx);
-      renderRows(Array.from({ length: ctx.rows }, (_, i) => i + 1), ctx);
+      const allRows = ctx === mainCtx
+        ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
+        : Array.from({ length: ctx.rows }, (_, i) => i + 1);
+      renderRows(allRows, ctx);
     }
 
     function markDraggingGroup(groupId, ctx = mainCtx) {
