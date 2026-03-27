@@ -252,6 +252,11 @@
       font-weight: 800;
       color: white;
     }
+    .resize-preview-block {
+      z-index: 8;
+      border: 2px dashed rgba(255,255,255,0.85);
+      background: rgba(96,165,250,0.22);
+    }
     .snap-indicator {
       position: absolute;
       top: 0;
@@ -3353,7 +3358,8 @@
         previewCount: groupCount(groupId, ctx),
         liveEl: placementEl || null,
         originTrack,
-        name: first.name
+        name: first.name,
+        originalWidth: placementEl ? placementEl.style.width : null
       };
       activeResizeCtx = ctx;
       // 그룹의 모든 세그먼트에 리사이즈 상태 표시
@@ -3376,6 +3382,7 @@
     function stopMouseResize() {
       const ctx = activeResizeCtx;
       if (ctx?.resize) {
+        clearResizePreview(ctx);
         finalizeResize(ctx);
         if (ctx === mainCtx) saveHistory(); else saveHistoryRe();
       }
@@ -3413,16 +3420,30 @@
         previewCount = clamp(r.originalCount + Math.round((clientX - r.startX) / stepWidth), 1, maxTotal);
       }
       r.previewCount = previewCount;
-      // DOM을 재생성하지 않고 기존 요소의 width만 직접 변경 (터치 타겟 유지)
-      const liveEl = r.liveEl;
-      if (liveEl) {
-        const rowRemain = ctx.cols - r.originStartIndex;
-        const visualLen = Math.min(previewCount, rowRemain);
-        liveEl.style.width = `calc(${visualLen} * var(--cellW) - 8px)`;
-        const label = liveEl.querySelector('.label');
-        if (label) label.innerHTML = `${escapeHtml(r.name)} <span style="opacity:.72; font-size:11px;">${previewCount}c</span>`;
-        showResizeCountBadge(liveEl, previewCount);
+      // 점선 프리뷰 블록 표시 (리사이즈 결과 미리보기)
+      clearResizePreview(ctx);
+      const segments = buildSegments(r.originRow, r.originStartIndex, previewCount, ctx);
+      let firstBlock = null;
+      segments.forEach((seg, index) => {
+        const ref = ctx.rowRefs.get(seg.row);
+        if (!ref) return;
+        const block = document.createElement('div');
+        block.className = 'preview-block resize-preview-block';
+        block.dataset.resizePreview = '1';
+        block.style.left = `calc(${seg.startIndex} * var(--cellW) + 4px)`;
+        block.style.width = `calc(${seg.length} * var(--cellW) - 8px)`;
+        block.textContent = index === 0 ? `${previewCount}c` : '';
+        ref.track.appendChild(block);
+        if (index === 0) firstBlock = block;
+      });
+      // 카운트 배지를 프리뷰 블록 위에 표시
+      if (firstBlock) {
+        showResizeCountBadge(firstBlock, previewCount);
       }
+    }
+
+    function clearResizePreview(ctx = mainCtx) {
+      ctx.el.querySelectorAll('[data-resize-preview="1"]').forEach(el => el.remove());
     }
 
     function finalizeResize(ctx = mainCtx) {
