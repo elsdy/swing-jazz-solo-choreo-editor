@@ -578,7 +578,42 @@
     .scroll-lock-btn.locked .lock-icon::after { content: '🔒'; }
     .scroll-lock-btn:not(.locked) .lock-icon::after { content: '🔓'; }
 
+    /* ── 리사이즈 디바이더 (모바일/태블릿 전용) ── */
+    .resize-divider {
+      display: none;
+    }
+
     @media (max-width: 1040px) {
+      .resize-divider {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 14px;
+        cursor: row-resize;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        z-index: 10;
+        position: relative;
+        flex-shrink: 0;
+      }
+      .resize-divider::before {
+        content: '';
+        display: block;
+        width: 48px;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(148, 163, 184, 0.35);
+        transition: background 0.15s, width 0.15s;
+      }
+      .resize-divider:hover::before,
+      .resize-divider.active::before {
+        background: rgba(148, 163, 184, 0.7);
+        width: 64px;
+      }
+      .resize-divider.active {
+        background: rgba(148, 163, 184, 0.08);
+      }
       /* viewport maximum-scale=1 로 iOS 줌 방지 처리됨 — 별도 font-size 강제 불필요 */
       /* 워크스페이스 락 시 터치 줌/스크롤 완전 차단 */
       .board-wrap[data-locked="1"] {
@@ -595,7 +630,7 @@
       }
       .app {
         grid-template-columns: 1fr;
-        grid-template-rows: min(42vh, 420px) minmax(0, 1fr);
+        grid-template-rows: var(--sidebar-h, min(42vh, 420px)) auto minmax(0, 1fr);
         height: 100vh;
         min-height: 100vh;
         overflow: hidden;
@@ -645,7 +680,7 @@
         padding: 8px;
         gap: 8px;
         grid-template-columns: 1fr;
-        grid-template-rows: minmax(220px, 34vh) minmax(0, 1fr);
+        grid-template-rows: var(--sidebar-h, minmax(220px, 34vh)) auto minmax(0, 1fr);
         height: 100vh;
         min-height: 100vh;
         overflow: hidden;
@@ -1240,6 +1275,8 @@
       </div>
     </aside>
 
+    <div class="resize-divider" id="resizeDivider"></div>
+
     <main class="panel workspace">
       <div class="boards-container" id="boardsContainer">
         <div class="main-board-area">
@@ -1507,6 +1544,72 @@
       document.addEventListener('gesturechange', (e) => {
         if (isAnyLockActive()) e.preventDefault();
       }, { passive: false });
+
+      // ── 리사이즈 디바이더: 사이드바↔워크스페이스 비율 조정 ──
+      (function initResizeDivider() {
+        const divider = document.getElementById('resizeDivider');
+        const appEl = document.querySelector('.app');
+        const sidebarEl = document.querySelector('.sidebar');
+        let dragging = false;
+        let startY = 0;
+        let startH = 0;
+
+        function isMobileLayout() {
+          return window.innerWidth <= 1040;
+        }
+
+        function getPointerY(e) {
+          return e.touches ? e.touches[0].clientY : e.clientY;
+        }
+
+        function onStart(e) {
+          if (!isMobileLayout()) return;
+          e.preventDefault();
+          dragging = true;
+          startY = getPointerY(e);
+          startH = sidebarEl.getBoundingClientRect().height;
+          divider.classList.add('active');
+          document.body.style.cursor = 'row-resize';
+          document.body.style.userSelect = 'none';
+          document.body.style.webkitUserSelect = 'none';
+        }
+
+        function onMove(e) {
+          if (!dragging) return;
+          e.preventDefault();
+          const dy = getPointerY(e) - startY;
+          const vh = window.innerHeight;
+          const padding = window.innerWidth <= 720 ? 8 : 10;
+          const minH = 120;
+          const maxH = vh - padding * 2 - 14 - 120; // divider height + min workspace
+          const newH = Math.max(minH, Math.min(maxH, startH + dy));
+          appEl.style.setProperty('--sidebar-h', newH + 'px');
+          updateMobileCellSize();
+        }
+
+        function onEnd() {
+          if (!dragging) return;
+          dragging = false;
+          divider.classList.remove('active');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.body.style.webkitUserSelect = '';
+        }
+
+        divider.addEventListener('mousedown', onStart);
+        divider.addEventListener('touchstart', onStart, { passive: false });
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchend', onEnd);
+
+        // 데스크톱 전환 시 커스텀 높이 초기화
+        window.addEventListener('resize', () => {
+          if (!isMobileLayout()) {
+            appEl.style.removeProperty('--sidebar-h');
+          }
+        });
+      })();
 
       // 입력 완료 후 뷰포트 줌 리셋 (모바일 포커스 줌 복구)
       document.addEventListener('focusout', (e) => {
