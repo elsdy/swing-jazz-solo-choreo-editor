@@ -1516,14 +1516,17 @@
       });
 
       boardLockBtn.addEventListener('click', () => {
+        const reBoardWrapEl = document.getElementById('reBoardWrap');
         const locked = boardWrapEl.dataset.locked === '1';
         if (locked) {
           boardWrapEl.dataset.locked = '0';
           boardWrapEl.style.overflow = '';
+          if (reBoardWrapEl) { reBoardWrapEl.dataset.locked = '0'; reBoardWrapEl.style.overflow = ''; }
           boardLockBtn.classList.remove('locked');
         } else {
           boardWrapEl.dataset.locked = '1';
           boardWrapEl.style.overflow = 'hidden';
+          if (reBoardWrapEl) { reBoardWrapEl.dataset.locked = '1'; reBoardWrapEl.style.overflow = 'hidden'; }
           boardLockBtn.classList.add('locked');
         }
       });
