@@ -1034,8 +1034,9 @@
       border-bottom: 1px solid rgba(99,102,241,0.2);
       background: rgba(99,102,241,0.06);
     }
-    .re-toolbar h2 { margin:0; font-size:13px; color:rgba(165,180,252,0.95); }
-    .re-toolbar p  { margin:0; font-size:11px; color:var(--muted); }
+    .re-toolbar h2 { margin:0; font-size:13px; color:rgba(165,180,252,0.95); white-space:nowrap; }
+    .re-toolbar p  { margin:0; font-size:11px; color:var(--muted); white-space:nowrap; }
+    .re-toolbar > div:first-child { flex-shrink:0; min-width:0; }
     .re-close-btn {
       background: rgba(99,102,241,0.15);
       border: 1px solid rgba(99,102,241,0.4);
@@ -2765,10 +2766,8 @@
       document.getElementById('reColsInput').value = reState.cols;
       document.getElementById('reRowsInput').value = reState.rows;
       const routine = state.routines.find(r => r.id === reState.routineId);
-      if (routine) {
-        document.getElementById('reTitle').textContent = routine.name;
-        document.getElementById('reSubtitle').textContent = `${reState.cols}박자 × ${reState.rows}행`;
-      }
+      document.getElementById('reTitle').textContent = routine ? routine.name : '루틴 편집';
+      document.getElementById('reSubtitle').textContent = `${reState.cols}박자 × ${reState.rows}행`;
     }
 
     function applyBoardSizeFromInput() {
