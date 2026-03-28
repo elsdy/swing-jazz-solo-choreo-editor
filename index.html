@@ -1594,8 +1594,8 @@
           const dy = getPointerY(e) - startY;
           const vh = window.innerHeight;
           const padding = window.innerWidth <= 720 ? 8 : 10;
-          const minH = 120;
-          const maxH = vh - padding * 2 - 14 - 120; // divider height + min workspace
+          const minH = 60;
+          const maxH = vh - padding * 2 - 14 - 60; // divider height + min workspace
           const newH = Math.max(minH, Math.min(maxH, startH + dy));
           appEl.style.setProperty('--sidebar-h', newH + 'px');
           updateMobileCellSize();
