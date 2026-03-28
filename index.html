@@ -4623,15 +4623,85 @@
       badge.style.cssText = 'font-size:11px;color:var(--muted);padding:2px 4px 4px;';
       badge.textContent = `동작: "${moveName}"`; popup.appendChild(badge);
 
+      // 검색 입력 + [+] 버튼
+      const inputRow = document.createElement('div');
+      inputRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
+      const catInput = document.createElement('input');
+      catInput.type = 'text'; catInput.placeholder = '카테고리 검색...'; catInput.style.flex = '1';
+      const addBtn = makeAddBtn(); addBtn.title = '새 카테고리로 추가';
+      inputRow.append(catInput, addBtn); popup.appendChild(inputRow);
+
+      // 새 카테고리 색상 폼 (초기 숨김)
+      const newCatForm = document.createElement('div');
+      newCatForm.style.cssText = 'display:none;align-items:center;gap:6px;padding:4px 0;';
+      const catColorInput = document.createElement('input');
+      catColorInput.type = 'color'; catColorInput.value = '#22c55e';
+      catColorInput.style.cssText = 'width:28px;height:28px;padding:0;border:1px solid rgba(148,163,184,0.2);border-radius:6px;cursor:pointer;background:none;flex:0 0 auto;';
+      const confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button'; confirmBtn.className = 'primary'; confirmBtn.textContent = '추가 & 배치'; confirmBtn.style.flex = '1';
+      newCatForm.append(catColorInput, confirmBtn); popup.appendChild(newCatForm);
+
+      confirmBtn.addEventListener('click', () => {
+        const catLabel = catInput.value.trim();
+        if (!catLabel) { catInput.focus(); return; }
+        const base = catLabel.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        const catKey = base || uid().slice(0, 6);
+        const catKeyFinal = state.categories[catKey] ? catKey + '_' + uid().slice(0, 4) : catKey;
+        state.categories[catKeyFinal] = { label: catLabel, color: catColorInput.value };
+        renderCategoryOptions(); renderLegend();
+        let move = state.moveLibrary.find(m => m.name === moveName);
+        if (!move) { move = { id: uid(), name: moveName, category: catKeyFinal }; state.moveLibrary.push(move); renderPalette(); }
+        placeMove(move.id, row, cellIndex, count, reCtx);
+        saveHistoryRe(); closeReQuickPicker();
+      });
+
       const resultList = document.createElement('div');
       resultList.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:40vh;overflow-y:auto;';
       popup.appendChild(resultList);
-      categoryNames().forEach(k => resultList.appendChild(makeQuickCatItem(k, () => {
+
+      function placeWithCat(k) {
         let move = state.moveLibrary.find(m => m.name === moveName);
         if (!move) { move = { id: uid(), name: moveName, category: k }; state.moveLibrary.push(move); renderPalette(); }
         placeMove(move.id, row, cellIndex, count, reCtx);
         saveHistoryRe(); closeReQuickPicker();
-      })));
+      }
+
+      function render() {
+        const q = catInput.value.trim(); const ql = q.toLowerCase();
+        resultList.innerHTML = '';
+        newCatForm.style.display = 'none';
+
+        if (!ql) {
+          addBtn.style.display = 'none';
+          const favKeys = categoryNames().filter(k => state.favoriteCategories.has(k));
+          const otherKeys = categoryNames().filter(k => !state.favoriteCategories.has(k));
+          if (favKeys.length) {
+            resultList.appendChild(qLabel('즐겨찾기'));
+            favKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => placeWithCat(k))));
+            if (otherKeys.length) resultList.appendChild(qDivider());
+          }
+          otherKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => placeWithCat(k))));
+          return;
+        }
+
+        const matches = categoryNames().filter(k => state.categories[k].label.toLowerCase().includes(ql));
+        if (matches.length === 0) {
+          addBtn.style.display = '';
+          newCatForm.style.display = 'flex';
+          const hint = document.createElement('div');
+          hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+          hint.textContent = `"${q}" 와 일치하는 카테고리가 없습니다.`;
+          resultList.appendChild(hint);
+        } else {
+          addBtn.style.display = 'none';
+          matches.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => placeWithCat(k))));
+        }
+      }
+
+      catInput.addEventListener('input', render);
+      addBtn.addEventListener('click', () => { newCatForm.style.display = 'flex'; newCatForm.style.alignItems = 'center'; });
+      render();
+      catInput.focus();
     }
 
     // ── 프로젝트 저장/불러오기 routines 반영 ─────────────────────────────────
