@@ -4585,7 +4585,8 @@
           hint.textContent = `"${q}" 와 일치하는 동작이 없습니다.`;
           resultList.appendChild(hint);
         } else {
-          addBtn.style.display = 'none';
+          const exactExists = matches.some(m => m.name.toLowerCase() === ql);
+          addBtn.style.display = exactExists ? 'none' : '';
           matches.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count, reCtx); saveHistoryRe(); closeReQuickPicker(); })));
         }
       }
