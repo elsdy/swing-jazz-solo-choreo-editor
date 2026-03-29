@@ -286,7 +286,7 @@
       align-items: center;
       gap: 8px;
       padding: 8px;
-      color: #08111f;
+      color: #fff;
       font-weight: 900;
       box-shadow: 0 8px 18px rgba(0,0,0,0.2);
       overflow: visible;
@@ -1114,9 +1114,8 @@
     /* ── 루틴 배치 블록 ── */
     .placement.is-routine {
       background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
-      color: white !important;
     }
-    .placement.is-routine .label { color: white; }
+    .placement.is-routine .label { color: inherit; }
     .placement.is-routine .move-handle,
     .placement.is-routine .resize-handle {
       background: rgba(255,255,255,0.25);
@@ -2130,6 +2129,15 @@
 
     function categoryColor(name) {
       return state.categories[name]?.color || '#cbd5e1';
+    }
+
+    function isLightColor(hex) {
+      if (!hex) return false;
+      const c = hex.replace('#', '');
+      const r = parseInt(c.substring(0, 2), 16);
+      const g = parseInt(c.substring(2, 4), 16);
+      const b = parseInt(c.substring(4, 6), 16);
+      return (r * 299 + g * 587 + b * 114) / 1000 > 180;
     }
 
     function categoryNames() {
@@ -3247,7 +3255,15 @@
       el.style.width = `calc(${placement.length} * var(--cellW) - 8px)`;
       // 시각적 subRow로 레이어 위치를 px로 직접 지정
       el.style.top = `${visualSubRow * getCellHPx() + 6}px`;
-      if (placement.type !== 'routine') el.style.background = categoryColor(placement.category);
+      let bgColor;
+      if (placement.type === 'routine') {
+        const routine = state.routines.find(r => r.id === placement.routineId);
+        bgColor = routine?.color || '#6366f1';
+      } else {
+        bgColor = categoryColor(placement.category);
+        el.style.background = bgColor;
+      }
+      el.style.color = isLightColor(bgColor) ? '#08111f' : '#fff';
       const cnt = groupCount(placement.groupId, ctx);
       el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${cnt}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
       return el;
