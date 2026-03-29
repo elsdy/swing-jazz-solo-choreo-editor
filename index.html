@@ -2812,7 +2812,8 @@
           state.categories[name] = { ...state.categories[name], color: colorInput.value };
           renderLegend();
           renderPalette();
-          renderRows(Array.from({ length: state.rows }, (_, i) => i + 1));
+          renderRows([0, ...Array.from({ length: state.rows }, (_, i) => i + 1)]);
+          if (reState.routineId) renderRows(Array.from({ length: reState.rows }, (_, i) => i + 1), reCtx);
         });
         colorInput.addEventListener('change', () => {
           saveHistory();
