@@ -1502,6 +1502,8 @@
     const newMoveCategory = document.getElementById('newMoveCategory');
     const categoryManager = document.getElementById('categoryManager');
 
+    let savedSortMode = 'recent'; // 'recent' | 'alpha'
+
     init();
 
     function init() {
@@ -4091,8 +4093,6 @@
       }
       return arr;
     }
-
-    let savedSortMode = 'recent'; // 'recent' | 'alpha'
 
     function renderSavedList() {
       savedListEl.innerHTML = '';
