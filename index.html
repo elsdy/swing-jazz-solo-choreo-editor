@@ -286,7 +286,7 @@
       align-items: center;
       gap: 8px;
       padding: 8px;
-      color: #fff;
+      color: #08111f;
       font-weight: 900;
       box-shadow: 0 8px 18px rgba(0,0,0,0.2);
       overflow: visible;
@@ -3263,7 +3263,7 @@
         bgColor = categoryColor(placement.category);
         el.style.background = bgColor;
       }
-      el.style.color = isLightColor(bgColor) ? '#08111f' : '#fff';
+      if (!isLightColor(bgColor)) el.style.color = '#fff';
       const cnt = groupCount(placement.groupId, ctx);
       el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${cnt}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
       return el;
