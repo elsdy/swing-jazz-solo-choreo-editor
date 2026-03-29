@@ -943,6 +943,7 @@
       transition: background 0.12s;
     }
     .quick-popup-item:hover { background: rgba(148,163,184,0.1); }
+    .quick-popup-item.kb-active { background: rgba(96,165,250,0.18); border-color: rgba(96,165,250,0.4); }
     .quick-popup-item.new-action {
       border-color: rgba(34,197,94,0.35);
       color: var(--accent);
@@ -1863,10 +1864,26 @@
       resultList.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:45vh;overflow-y:auto;';
       popup.appendChild(resultList);
 
+      let kbIndex = -1;           // keyboard highlight index (-1 = none)
+      let selectableItems = [];   // current selectable DOM items
+      let selectableCallbacks = []; // corresponding click callbacks
+      let lastMatches = [];       // last search matches (moves)
+
+      function updateKbHighlight() {
+        selectableItems.forEach((el, i) => el.classList.toggle('kb-active', i === kbIndex));
+        if (kbIndex >= 0 && selectableItems[kbIndex]) {
+          selectableItems[kbIndex].scrollIntoView({ block: 'nearest' });
+        }
+      }
+
       function render() {
         const q = nameInput.value.trim();
         const ql = q.toLowerCase();
         resultList.innerHTML = '';
+        selectableItems = [];
+        selectableCallbacks = [];
+        lastMatches = [];
+        kbIndex = -1;
 
         if (!ql) {
           addBtn.style.display = 'none';
@@ -1874,28 +1891,75 @@
           const others = state.moveLibrary.filter(m => !state.favoriteMoveNames.has(m.name));
           if (favs.length) {
             resultList.appendChild(qLabel('즐겨찾기'));
-            favs.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
+            favs.forEach(m => {
+              const cb = () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); };
+              const el = makeQuickMoveItem(m, cb);
+              resultList.appendChild(el);
+              selectableItems.push(el);
+              selectableCallbacks.push(cb);
+            });
             if (others.length) resultList.appendChild(qDivider());
           }
-          others.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
+          others.forEach(m => {
+            const cb = () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); };
+            const el = makeQuickMoveItem(m, cb);
+            resultList.appendChild(el);
+            selectableItems.push(el);
+            selectableCallbacks.push(cb);
+          });
           return;
         }
 
         const matches = state.moveLibrary.filter(m => m.name.toLowerCase().includes(ql));
+        lastMatches = matches;
         if (matches.length === 0) {
           addBtn.style.display = '';
           const hint = document.createElement('div');
           hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
-          hint.textContent = `"${q}" 와 일치하는 동작이 없습니다.`;
+          hint.textContent = `"${q}" 와 일치하는 동작이 없습니다. Enter를 눌러 새 동작으로 추가`;
           resultList.appendChild(hint);
         } else {
           const exactExists = matches.some(m => m.name.toLowerCase() === ql);
           addBtn.style.display = exactExists ? 'none' : '';
-          matches.forEach(m => resultList.appendChild(makeQuickMoveItem(m, () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); })));
+          matches.forEach(m => {
+            const cb = () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); };
+            const el = makeQuickMoveItem(m, cb);
+            resultList.appendChild(el);
+            selectableItems.push(el);
+            selectableCallbacks.push(cb);
+          });
+          kbIndex = 0;
+          updateKbHighlight();
         }
       }
 
       nameInput.addEventListener('input', render);
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (selectableItems.length === 0) return;
+          kbIndex = kbIndex < selectableItems.length - 1 ? kbIndex + 1 : 0;
+          updateKbHighlight();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (selectableItems.length === 0) return;
+          kbIndex = kbIndex > 0 ? kbIndex - 1 : selectableItems.length - 1;
+          updateKbHighlight();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (kbIndex >= 0 && kbIndex < selectableCallbacks.length) {
+            selectableCallbacks[kbIndex]();
+          } else {
+            // 일치하는 동작이 없으면 → 새 동작 추가 (카테고리 선택 화면)
+            const name = nameInput.value.trim();
+            if (!name) return;
+            showCategoryScreen(popup, name, row, cellIndex, count);
+          }
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeQuickPicker();
+        }
+      });
       addBtn.addEventListener('click', () => {
         const name = nameInput.value.trim();
         if (!name) return;
@@ -2053,11 +2117,25 @@
       resultList.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:40vh;overflow-y:auto;';
       popup.appendChild(resultList);
 
+      let kbIndex = -1;
+      let selectableItems = [];
+      let selectableCallbacks = [];
+
+      function updateKbHighlight() {
+        selectableItems.forEach((el, i) => el.classList.toggle('kb-active', i === kbIndex));
+        if (kbIndex >= 0 && selectableItems[kbIndex]) {
+          selectableItems[kbIndex].scrollIntoView({ block: 'nearest' });
+        }
+      }
+
       function render() {
         const q = catInput.value.trim();
         const ql = q.toLowerCase();
         resultList.innerHTML = '';
         newCatForm.style.display = 'none';
+        selectableItems = [];
+        selectableCallbacks = [];
+        kbIndex = -1;
 
         if (!ql) {
           addBtn.style.display = 'none';
@@ -2065,10 +2143,22 @@
           const otherKeys = categoryNames().filter(k => !state.favoriteCategories.has(k));
           if (favKeys.length) {
             resultList.appendChild(qLabel('즐겨찾기'));
-            favKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex, count); closeQuickPicker(); })));
+            favKeys.forEach(k => {
+              const cb = () => { createAndPlaceQuickMove(moveName, k, row, cellIndex, count); closeQuickPicker(); };
+              const el = makeQuickCatItem(k, cb);
+              resultList.appendChild(el);
+              selectableItems.push(el);
+              selectableCallbacks.push(cb);
+            });
             if (otherKeys.length) resultList.appendChild(qDivider());
           }
-          otherKeys.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex, count); closeQuickPicker(); })));
+          otherKeys.forEach(k => {
+            const cb = () => { createAndPlaceQuickMove(moveName, k, row, cellIndex, count); closeQuickPicker(); };
+            const el = makeQuickCatItem(k, cb);
+            resultList.appendChild(el);
+            selectableItems.push(el);
+            selectableCallbacks.push(cb);
+          });
           return;
         }
 
@@ -2082,11 +2172,42 @@
           resultList.appendChild(hint);
         } else {
           addBtn.style.display = 'none';
-          matches.forEach(k => resultList.appendChild(makeQuickCatItem(k, () => { createAndPlaceQuickMove(moveName, k, row, cellIndex, count); closeQuickPicker(); })));
+          matches.forEach(k => {
+            const cb = () => { createAndPlaceQuickMove(moveName, k, row, cellIndex, count); closeQuickPicker(); };
+            const el = makeQuickCatItem(k, cb);
+            resultList.appendChild(el);
+            selectableItems.push(el);
+            selectableCallbacks.push(cb);
+          });
+          kbIndex = 0;
+          updateKbHighlight();
         }
       }
 
       catInput.addEventListener('input', render);
+      catInput.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (selectableItems.length === 0) return;
+          kbIndex = kbIndex < selectableItems.length - 1 ? kbIndex + 1 : 0;
+          updateKbHighlight();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (selectableItems.length === 0) return;
+          kbIndex = kbIndex > 0 ? kbIndex - 1 : selectableItems.length - 1;
+          updateKbHighlight();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (kbIndex >= 0 && kbIndex < selectableCallbacks.length) {
+            selectableCallbacks[kbIndex]();
+          } else if (newCatForm.style.display === 'flex') {
+            confirmBtn.click();
+          }
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeQuickPicker();
+        }
+      });
       addBtn.addEventListener('click', () => {
         newCatForm.style.display = 'flex';
         newCatForm.style.alignItems = 'center';
