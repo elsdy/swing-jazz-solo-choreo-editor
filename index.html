@@ -294,6 +294,12 @@
       touch-action: none;
     }
     .placement.is-dragging { opacity: 1; }
+    .placement.is-selected {
+      outline: 2.5px solid rgba(250,204,21,0.9);
+      outline-offset: -1px;
+      box-shadow: 0 0 10px rgba(250,204,21,0.4), 0 8px 18px rgba(0,0,0,0.2);
+      z-index: 4;
+    }
     .placement.is-resizing {
       outline: 2px solid rgba(96,165,250,0.85);
       outline-offset: -1px;
@@ -503,6 +509,10 @@
       gap: 4px;
       max-height: 140px;
       overflow: auto;
+    }
+    #savedList {
+      max-height: none;
+      overflow: visible;
     }
     .saved-item {
       display: flex;
@@ -1028,8 +1038,9 @@
       border-bottom: 1px solid rgba(99,102,241,0.2);
       background: rgba(99,102,241,0.06);
     }
-    .re-toolbar h2 { margin:0; font-size:13px; color:rgba(165,180,252,0.95); }
-    .re-toolbar p  { margin:0; font-size:11px; color:var(--muted); }
+    .re-toolbar h2 { margin:0; font-size:13px; color:rgba(165,180,252,0.95); white-space:nowrap; }
+    .re-toolbar p  { margin:0; font-size:11px; color:var(--muted); white-space:nowrap; }
+    .re-toolbar > div:first-child { flex-shrink:0; min-width:0; }
     .re-close-btn {
       background: rgba(99,102,241,0.15);
       border: 1px solid rgba(99,102,241,0.4);
@@ -1107,9 +1118,8 @@
     /* ── 루틴 배치 블록 ── */
     .placement.is-routine {
       background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
-      color: white !important;
     }
-    .placement.is-routine .label { color: white; }
+    .placement.is-routine .label { color: inherit; }
     .placement.is-routine .move-handle,
     .placement.is-routine .resize-handle {
       background: rgba(255,255,255,0.25);
@@ -1152,8 +1162,10 @@
     .link-badge {
       font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
       white-space: nowrap; flex-shrink: 0; letter-spacing: .3px;
+      width: 96px; text-align: center; box-sizing: border-box;
     }
     .link-badge.yt { background: #ff0000; color: #fff; }
+    .link-badge.clickup { background: #7b68ee; color: #fff; }
     .link-badge.custom { background: rgba(99,102,241,0.22); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
     .link-row input[type="url"], .link-row input[type="text"] {
       flex: 1; min-width: 0;
@@ -1217,6 +1229,10 @@
             <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
           </div>
           <div class="helper">프로젝트 저장에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다.</div>
+          <div class="row" style="gap:4px;">
+            <button id="savedSortRecentBtn" class="sort-mode-btn active" title="최근 작업순">최근순</button>
+            <button id="savedSortAlphaBtn" class="sort-mode-btn" title="이름순">이름순</button>
+          </div>
           <div class="saved-list" id="savedList"></div>
         </div>
 
@@ -1243,6 +1259,15 @@
           </div>
         </div>
 
+      </section>
+
+      <section class="section stack" style="min-height:0; flex:1;">
+        <div class="row wrap" style="justify-content:space-between; align-items:center;">
+          <h3 style="margin:0; font-size:12px;">루틴 목록</h3>
+          <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;">+ 새 루틴</button>
+        </div>
+        <div class="helper">루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.</div>
+        <div class="palette-list" id="routineList"></div>
       </section>
 
       <section class="section stack">
@@ -1274,15 +1299,6 @@
         </div>
         <div class="palette-list" id="paletteList"></div>
       </section>
-
-      <section class="section stack" style="min-height:0; flex:1;">
-        <div class="row wrap" style="justify-content:space-between; align-items:center;">
-          <h3 style="margin:0; font-size:12px;">루틴 목록</h3>
-          <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;">+ 새 루틴</button>
-        </div>
-        <div class="helper">루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.</div>
-        <div class="palette-list" id="routineList"></div>
-      </section>
       </div>
     </aside>
 
@@ -1300,6 +1316,7 @@
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <button id="quickPlaceBtn" class="ghost">+ 빠른 배치</button>
+              <button id="createRoutineFromSelectionBtn" class="primary special" style="font-size:10px;padding:4px 8px;display:none;">루틴으로 편성</button>
               <button id="undoBtn" class="ghost">Undo</button>
               <button id="redoBtn" class="ghost">Redo</button>
               <button id="clearBtn" class="danger">전체 초기화</button>
@@ -1311,6 +1328,10 @@
               <div class="yt-url-group" id="ytUrlGroup">
                 <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
               </div>
+            </div>
+            <div class="link-row" id="clickupLinkRow">
+              <span class="link-badge clickup">☑ ClickUp</span>
+              <input type="url" id="clickupUrlInput" placeholder="ClickUp 태스크 URL 입력..." autocomplete="off" spellcheck="false" />
             </div>
             <div id="customLinksContainer"></div>
             <div><button id="addCustomLinkBtn" class="ghost link-add-btn">+ 링크 추가</button></div>
@@ -1388,8 +1409,10 @@
       paletteSortDir: 'asc',     // 'asc' | 'desc'
       routines: [],              // 루틴 목록
       favoriteRoutineIds: new Set(), // 루틴 즐겨찾기
+      selectedGroupIds: new Set(),   // 안무표에서 선택된 배치 groupId
       youtubeUrl: '',       // YouTube URL
       youtubeTitle: '',     // oEmbed로 캐시된 제목
+      clickupUrl: '',       // ClickUp 태스크 URL
       customLinks: [],      // [{id, label, url}]
     };
 
@@ -1486,6 +1509,8 @@
     const newMoveCategory = document.getElementById('newMoveCategory');
     const categoryManager = document.getElementById('categoryManager');
 
+    let savedSortMode = 'recent'; // 'recent' | 'alpha'
+
     init();
 
     function init() {
@@ -1493,6 +1518,10 @@
       loadLocalMeta();
       bindControls();
       bindBoardDelegatedEvents(mainCtx);
+      // 안무표 빈 영역 클릭 시 선택 해제
+      mainCtx.el.addEventListener('click', (e) => {
+        if (!e.target.closest('.placement')) clearSelection();
+      });
       syncBoardSizeUI();
       renderCategoryOptions();
       renderLegend();
@@ -2119,6 +2148,15 @@
       return state.categories[name]?.color || '#cbd5e1';
     }
 
+    function isLightColor(hex) {
+      if (!hex) return false;
+      const c = hex.replace('#', '');
+      const r = parseInt(c.substring(0, 2), 16);
+      const g = parseInt(c.substring(2, 4), 16);
+      const b = parseInt(c.substring(4, 6), 16);
+      return (r * 299 + g * 587 + b * 114) / 1000 > 90;
+    }
+
     function categoryNames() {
       return Object.keys(state.categories);
     }
@@ -2161,6 +2199,21 @@
       document.getElementById('saveBtn').addEventListener('click', saveProjectFile);
       document.getElementById('loadFileBtn').addEventListener('click', () => fileLoader.click());
       document.getElementById('mergeFileBtn').addEventListener('click', () => mergeFileLoader.click());
+
+      const savedSortRecentBtn = document.getElementById('savedSortRecentBtn');
+      const savedSortAlphaBtn = document.getElementById('savedSortAlphaBtn');
+      savedSortRecentBtn.addEventListener('click', () => {
+        savedSortMode = 'recent';
+        savedSortRecentBtn.classList.add('active');
+        savedSortAlphaBtn.classList.remove('active');
+        renderSavedList();
+      });
+      savedSortAlphaBtn.addEventListener('click', () => {
+        savedSortMode = 'alpha';
+        savedSortAlphaBtn.classList.add('active');
+        savedSortRecentBtn.classList.remove('active');
+        renderSavedList();
+      });
       document.getElementById('saveMoveListBtn').addEventListener('click', saveMoveListFile);
       document.getElementById('loadMoveListBtn').addEventListener('click', () => moveListLoader.click());
       document.getElementById('saveCategoriesBtn').addEventListener('click', saveCategoriesFile);
@@ -2188,6 +2241,7 @@
       document.addEventListener('keydown', onHotkey);
       updateHistoryButtons();
       document.getElementById('addRoutineBtn').addEventListener('click', createRoutine);
+      document.getElementById('createRoutineFromSelectionBtn').addEventListener('click', createRoutineFromSelection);
     }
 
     // ── 범용 보드 이벤트 바인딩 (mainCtx 및 reCtx 모두 사용) ─────────────────
@@ -2241,14 +2295,34 @@
       });
 
       el.addEventListener('click', (e) => {
+        // 핸들 클릭은 무시 (드래그/리사이즈 용도)
+        if (e.target.closest('.move-handle') || e.target.closest('.resize-handle')) return;
         const placementEl = e.target.closest('.placement');
-        if (!placementEl || !placementEl.classList.contains('is-routine') || ctx !== mainCtx) return;
-        // 루틴 배치 단일 클릭 → 편집/삭제 팝업
+        if (!placementEl) return;
+        if (ctx !== mainCtx) return;
+
         const groupId = placementEl.dataset.groupId;
-        const placement = ctx.placements.find(p => p.groupId === groupId);
-        if (!placement) return;
+
+        // 루틴 배치 단일 클릭 → 편집/삭제 팝업
+        if (placementEl.classList.contains('is-routine')) {
+          const placement = ctx.placements.find(p => p.groupId === groupId);
+          if (!placement) return;
+          e.stopPropagation();
+          showRoutineActionPopup(placement, e.clientX, e.clientY);
+          return;
+        }
+
+        // 일반 배치 클릭 → 선택 토글
         e.stopPropagation();
-        showRoutineActionPopup(placement, e.clientX, e.clientY);
+        if (state.selectedGroupIds.has(groupId)) {
+          state.selectedGroupIds.delete(groupId);
+        } else {
+          state.selectedGroupIds.add(groupId);
+        }
+        // 선택 상태 시각적 반영
+        const allEls = ctx.el.querySelectorAll(`.placement[data-group-id="${groupId}"]`);
+        allEls.forEach(el => el.classList.toggle('is-selected', state.selectedGroupIds.has(groupId)));
+        updateCreateRoutineFromSelectionBtn();
       });
 
       el.addEventListener('dblclick', (e) => {
@@ -2636,6 +2710,8 @@
       state.moveLibrary = data.moveLibrary || [];
       state.categories = normalizeCategories(data.categories || DEFAULT_CATEGORIES);
       if (Array.isArray(data.routines)) state.routines = data.routines;
+      state.selectedGroupIds.clear();
+      updateCreateRoutineFromSelectionBtn();
       syncBoardSizeUI();
       renderCategoryOptions();
       renderLegend();
@@ -2730,10 +2806,8 @@
       document.getElementById('reColsInput').value = reState.cols;
       document.getElementById('reRowsInput').value = reState.rows;
       const routine = state.routines.find(r => r.id === reState.routineId);
-      if (routine) {
-        document.getElementById('reTitle').textContent = routine.name;
-        document.getElementById('reSubtitle').textContent = `${reState.cols}박자 × ${reState.rows}행`;
-      }
+      document.getElementById('reTitle').textContent = routine ? routine.name : '루틴 편집';
+      document.getElementById('reSubtitle').textContent = `${reState.cols}박자 × ${reState.rows}행`;
     }
 
     function applyBoardSizeFromInput() {
@@ -2770,7 +2844,8 @@
           state.categories[name] = { ...state.categories[name], color: colorInput.value };
           renderLegend();
           renderPalette();
-          renderRows(Array.from({ length: state.rows }, (_, i) => i + 1));
+          renderRows([0, ...Array.from({ length: state.rows }, (_, i) => i + 1)]);
+          if (reState.routineId) renderRows(Array.from({ length: reState.rows }, (_, i) => i + 1), reCtx);
         });
         colorInput.addEventListener('change', () => {
           saveHistory();
@@ -3204,6 +3279,7 @@
       const el = document.createElement('div');
       el.className = 'placement';
       if (placement.type === 'routine') el.classList.add('is-routine');
+      if (ctx === mainCtx && state.selectedGroupIds.has(placement.groupId)) el.classList.add('is-selected');
       if (ctx.drag?.type === 'placement-move' && ctx.drag.groupId === placement.groupId) el.classList.add('is-dragging');
       el.dataset.groupId = placement.groupId;
       el.dataset.name = placement.name;
@@ -3212,7 +3288,15 @@
       el.style.width = `calc(${placement.length} * var(--cellW) - 8px)`;
       // 시각적 subRow로 레이어 위치를 px로 직접 지정
       el.style.top = `${visualSubRow * getCellHPx() + 6}px`;
-      if (placement.type !== 'routine') el.style.background = categoryColor(placement.category);
+      let bgColor;
+      if (placement.type === 'routine') {
+        const routine = state.routines.find(r => r.id === placement.routineId);
+        bgColor = routine?.color || '#6366f1';
+      } else {
+        bgColor = categoryColor(placement.category);
+        el.style.background = bgColor;
+      }
+      if (!isLightColor(bgColor)) el.style.color = '#fff';
       const cnt = groupCount(placement.groupId, ctx);
       el.innerHTML = `<div class="tooltip">${escapeHtml(placement.name)} ${cnt}c</div><div class="move-handle" draggable="true" title="위치 이동"></div><div class="label">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div><div class="resize-handle" title="길이 조절"></div>`;
       return el;
@@ -3341,6 +3425,10 @@
     function removePlacementGroup(groupId, ctx = mainCtx) {
       const affectedRows = getAffectedRowsByGroup(groupId, ctx);
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
+      if (ctx === mainCtx) {
+        state.selectedGroupIds.delete(groupId);
+        updateCreateRoutineFromSelectionBtn();
+      }
       repackSubRows(affectedRows, ctx);
       renderRows(affectedRows, ctx);
     }
@@ -3808,7 +3896,7 @@
       const fileName = (fileNameInput.value.trim() || `project_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
       const payload = projectPayloadWithRoutines(fileName);
       downloadJson(payload, `${fileName}-project.json`);
-      state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
+      state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 10);
       localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
       renderSavedList();
     }
@@ -4019,7 +4107,11 @@
         savedListEl.innerHTML = '<div class="helper">저장된 프로젝트 목록이 없습니다.</div>';
         return;
       }
-      state.savedFiles.forEach(item => {
+      const sorted = [...state.savedFiles];
+      if (savedSortMode === 'alpha') {
+        sorted.sort((a, b) => a.fileName.localeCompare(b.fileName, 'ko'));
+      }
+      sorted.forEach(item => {
         const row = document.createElement('div');
         row.className = 'saved-item';
         row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost">불러오기</button><button class="danger">삭제</button></div>`;
@@ -4147,7 +4239,7 @@
           applyProjectData(data);
           const fileName = file.name.replace(/\.[^.]+$/, '');
           const savedAt = data.savedAt || new Date().toISOString();
-          state.savedFiles = [{ fileName, savedAt, data }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
+          state.savedFiles = [{ fileName, savedAt, data }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 10);
           localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
           renderSavedList();
         } catch {
@@ -4252,6 +4344,104 @@
         color: nextRoutineColor()
       };
       state.routines.push(routine);
+      renderRoutineList();
+      saveHistory();
+      openRoutineEditor(routine.id);
+    }
+
+    function updateCreateRoutineFromSelectionBtn() {
+      const btn = document.getElementById('createRoutineFromSelectionBtn');
+      if (!btn) return;
+      const count = state.selectedGroupIds.size;
+      if (count >= 1) {
+        btn.style.display = '';
+        btn.textContent = `루틴으로 편성 (${count})`;
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+
+    function clearSelection() {
+      if (!state.selectedGroupIds.size) return;
+      const groupIds = [...state.selectedGroupIds];
+      state.selectedGroupIds.clear();
+      groupIds.forEach(gid => {
+        mainCtx.el.querySelectorAll(`.placement[data-group-id="${gid}"]`).forEach(el => el.classList.remove('is-selected'));
+      });
+      updateCreateRoutineFromSelectionBtn();
+    }
+
+    function createRoutineFromSelection() {
+      if (!state.selectedGroupIds.size) return;
+
+      // 선택된 그룹들을 안무표 배치 순서(행→열)대로 정렬
+      const selectedGroups = [];
+      state.selectedGroupIds.forEach(gid => {
+        const segs = getGroup(gid, mainCtx);
+        if (!segs.length) return;
+        const cnt = segs.reduce((sum, p) => sum + p.length, 0);
+        selectedGroups.push({
+          groupId: gid,
+          name: segs[0].name,
+          category: segs[0].category,
+          count: cnt,
+          sortRow: segs[0].row,
+          sortCol: segs[0].startIndex,
+        });
+      });
+      selectedGroups.sort((a, b) => a.sortRow - b.sortRow || a.sortCol - b.sortCol);
+
+      if (!selectedGroups.length) return;
+
+      // 총 카운트 합산 → 루틴 크기 결정
+      const totalCount = selectedGroups.reduce((sum, g) => sum + g.count, 0);
+      const cols = mainCtx.cols; // 안무표와 동일한 열 수
+      const rows = Math.max(1, Math.ceil(totalCount / cols));
+
+      // 루틴 배치 생성: 동작들을 순서대로 루틴 보드에 나란히 배치
+      const routinePlacements = [];
+      let currentRow = 1;
+      let currentCol = 0;
+
+      selectedGroups.forEach(g => {
+        const segs = buildSegments(currentRow, currentCol, g.count, { rows, cols });
+        const gid = uid();
+        segs.forEach(seg => {
+          routinePlacements.push({
+            id: uid(),
+            groupId: gid,
+            name: g.name,
+            category: g.category,
+            row: seg.row,
+            startIndex: seg.startIndex,
+            length: seg.length,
+            subRow: 0,
+          });
+        });
+        // 다음 배치 위치 계산
+        const lastSeg = segs[segs.length - 1];
+        currentRow = lastSeg.row;
+        currentCol = lastSeg.startIndex + lastSeg.length;
+        if (currentCol >= cols) {
+          currentRow += 1;
+          currentCol = 0;
+        }
+      });
+
+      // 루틴 생성
+      const name = `루틴 ${state.routines.length + 1}`;
+      const routine = {
+        id: uid(), name,
+        rows, cols,
+        placements: routinePlacements,
+        isFavorite: false,
+        color: nextRoutineColor()
+      };
+      state.routines.push(routine);
+
+      // 선택 해제
+      clearSelection();
+
       renderRoutineList();
       saveHistory();
       openRoutineEditor(routine.id);
@@ -4743,6 +4933,7 @@
     function saveLinks() {
       localStorage.setItem('choreo_links', JSON.stringify({
         youtubeUrl: state.youtubeUrl, youtubeTitle: state.youtubeTitle,
+        clickupUrl: state.clickupUrl,
         customLinks: state.customLinks
       }));
     }
@@ -4752,13 +4943,15 @@
         const d = JSON.parse(localStorage.getItem('choreo_links') || '{}');
         state.youtubeUrl = d.youtubeUrl || '';
         state.youtubeTitle = d.youtubeTitle || '';
+        state.clickupUrl = d.clickupUrl || '';
         state.customLinks = Array.isArray(d.customLinks) ? d.customLinks : [];
-      } catch { state.youtubeUrl = ''; state.youtubeTitle = ''; state.customLinks = []; }
+      } catch { state.youtubeUrl = ''; state.youtubeTitle = ''; state.clickupUrl = ''; state.customLinks = []; }
     }
 
     function applyLinksData(data) {
       state.youtubeUrl = data.youtubeUrl || '';
       state.youtubeTitle = data.youtubeTitle || '';
+      state.clickupUrl = data.clickupUrl || '';
       state.customLinks = Array.isArray(data.customLinks)
         ? data.customLinks.map(l => ({ id: l.id || uid(), label: String(l.label || ''), url: String(l.url || '') }))
         : [];
@@ -4789,6 +4982,18 @@
       openBtn.textContent = '↗';
       openBtn.addEventListener('click', () => window.open(normalizeYoutubeUrl(state.youtubeUrl), '_blank', 'noopener'));
       row.appendChild(openBtn); // ↗ 버튼은 group 바깥 row에
+    }
+
+    function renderClickupExtras() {
+      const row = document.getElementById('clickupLinkRow');
+      if (!row) return;
+      row.querySelectorAll('.link-open-btn').forEach(el => el.remove());
+      if (!state.clickupUrl) return;
+      const openBtn = document.createElement('button');
+      openBtn.className = 'ghost link-open-btn'; openBtn.type = 'button'; openBtn.title = '새 창에서 열기';
+      openBtn.textContent = '↗';
+      openBtn.addEventListener('click', () => window.open(state.clickupUrl, '_blank', 'noopener'));
+      row.appendChild(openBtn);
     }
 
     function renderCustomLinks() {
@@ -4835,7 +5040,10 @@
     function renderLinksBar() {
       const ytInput = document.getElementById('youtubeUrlInput');
       if (ytInput) ytInput.value = state.youtubeUrl;
+      const cuInput = document.getElementById('clickupUrlInput');
+      if (cuInput) cuInput.value = state.clickupUrl;
       renderYoutubeExtras();
+      renderClickupExtras();
       renderCustomLinks();
     }
 
@@ -4867,6 +5075,13 @@
         }, 700);
       });
 
+      const cuInput = document.getElementById('clickupUrlInput');
+      cuInput.addEventListener('input', () => {
+        state.clickupUrl = cuInput.value.trim();
+        renderClickupExtras();
+        saveLinks();
+      });
+
       document.getElementById('addCustomLinkBtn').addEventListener('click', () => {
         state.customLinks.push({ id: uid(), label: '', url: '' });
         saveLinks(); renderCustomLinks();
@@ -4882,6 +5097,7 @@
         // isFavorite을 favoriteRoutineIds 기준으로 동기화해서 저장
         routines: state.routines.map(r => ({ ...r, isFavorite: state.favoriteRoutineIds.has(r.id) })),
         youtubeUrl: state.youtubeUrl, youtubeTitle: state.youtubeTitle,
+        clickupUrl: state.clickupUrl,
         customLinks: state.customLinks
       };
     }
