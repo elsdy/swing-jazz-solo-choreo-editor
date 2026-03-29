@@ -3847,7 +3847,7 @@
       const fileName = (fileNameInput.value.trim() || `project_${new Date().toISOString().slice(0,10)}`).replace(/\.+$/g, '');
       const payload = projectPayloadWithRoutines(fileName);
       downloadJson(payload, `${fileName}-project.json`);
-      state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
+      state.savedFiles = [{ fileName, savedAt: payload.savedAt, data: payload }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 10);
       localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
       renderSavedList();
     }
@@ -4186,7 +4186,7 @@
           applyProjectData(data);
           const fileName = file.name.replace(/\.[^.]+$/, '');
           const savedAt = data.savedAt || new Date().toISOString();
-          state.savedFiles = [{ fileName, savedAt, data }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 3);
+          state.savedFiles = [{ fileName, savedAt, data }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 10);
           localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
           renderSavedList();
         } catch {
