@@ -1164,6 +1164,7 @@
       white-space: nowrap; flex-shrink: 0; letter-spacing: .3px;
     }
     .link-badge.yt { background: #ff0000; color: #fff; }
+    .link-badge.clickup { background: #7b68ee; color: #fff; }
     .link-badge.custom { background: rgba(99,102,241,0.22); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
     .link-row input[type="url"], .link-row input[type="text"] {
       flex: 1; min-width: 0;
@@ -1327,6 +1328,10 @@
                 <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
               </div>
             </div>
+            <div class="link-row" id="clickupLinkRow">
+              <span class="link-badge clickup">☑ ClickUp</span>
+              <input type="url" id="clickupUrlInput" placeholder="ClickUp 태스크 URL 입력..." autocomplete="off" spellcheck="false" />
+            </div>
             <div id="customLinksContainer"></div>
             <div><button id="addCustomLinkBtn" class="ghost link-add-btn">+ 링크 추가</button></div>
           </div>
@@ -1406,6 +1411,7 @@
       selectedGroupIds: new Set(),   // 안무표에서 선택된 배치 groupId
       youtubeUrl: '',       // YouTube URL
       youtubeTitle: '',     // oEmbed로 캐시된 제목
+      clickupUrl: '',       // ClickUp 태스크 URL
       customLinks: [],      // [{id, label, url}]
     };
 
@@ -4926,6 +4932,7 @@
     function saveLinks() {
       localStorage.setItem('choreo_links', JSON.stringify({
         youtubeUrl: state.youtubeUrl, youtubeTitle: state.youtubeTitle,
+        clickupUrl: state.clickupUrl,
         customLinks: state.customLinks
       }));
     }
@@ -4935,13 +4942,15 @@
         const d = JSON.parse(localStorage.getItem('choreo_links') || '{}');
         state.youtubeUrl = d.youtubeUrl || '';
         state.youtubeTitle = d.youtubeTitle || '';
+        state.clickupUrl = d.clickupUrl || '';
         state.customLinks = Array.isArray(d.customLinks) ? d.customLinks : [];
-      } catch { state.youtubeUrl = ''; state.youtubeTitle = ''; state.customLinks = []; }
+      } catch { state.youtubeUrl = ''; state.youtubeTitle = ''; state.clickupUrl = ''; state.customLinks = []; }
     }
 
     function applyLinksData(data) {
       state.youtubeUrl = data.youtubeUrl || '';
       state.youtubeTitle = data.youtubeTitle || '';
+      state.clickupUrl = data.clickupUrl || '';
       state.customLinks = Array.isArray(data.customLinks)
         ? data.customLinks.map(l => ({ id: l.id || uid(), label: String(l.label || ''), url: String(l.url || '') }))
         : [];
@@ -4972,6 +4981,18 @@
       openBtn.textContent = '↗';
       openBtn.addEventListener('click', () => window.open(normalizeYoutubeUrl(state.youtubeUrl), '_blank', 'noopener'));
       row.appendChild(openBtn); // ↗ 버튼은 group 바깥 row에
+    }
+
+    function renderClickupExtras() {
+      const row = document.getElementById('clickupLinkRow');
+      if (!row) return;
+      row.querySelectorAll('.link-open-btn').forEach(el => el.remove());
+      if (!state.clickupUrl) return;
+      const openBtn = document.createElement('button');
+      openBtn.className = 'ghost link-open-btn'; openBtn.type = 'button'; openBtn.title = '새 창에서 열기';
+      openBtn.textContent = '↗';
+      openBtn.addEventListener('click', () => window.open(state.clickupUrl, '_blank', 'noopener'));
+      row.appendChild(openBtn);
     }
 
     function renderCustomLinks() {
@@ -5018,7 +5039,10 @@
     function renderLinksBar() {
       const ytInput = document.getElementById('youtubeUrlInput');
       if (ytInput) ytInput.value = state.youtubeUrl;
+      const cuInput = document.getElementById('clickupUrlInput');
+      if (cuInput) cuInput.value = state.clickupUrl;
       renderYoutubeExtras();
+      renderClickupExtras();
       renderCustomLinks();
     }
 
@@ -5050,6 +5074,13 @@
         }, 700);
       });
 
+      const cuInput = document.getElementById('clickupUrlInput');
+      cuInput.addEventListener('input', () => {
+        state.clickupUrl = cuInput.value.trim();
+        renderClickupExtras();
+        saveLinks();
+      });
+
       document.getElementById('addCustomLinkBtn').addEventListener('click', () => {
         state.customLinks.push({ id: uid(), label: '', url: '' });
         saveLinks(); renderCustomLinks();
@@ -5065,6 +5096,7 @@
         // isFavorite을 favoriteRoutineIds 기준으로 동기화해서 저장
         routines: state.routines.map(r => ({ ...r, isFavorite: state.favoriteRoutineIds.has(r.id) })),
         youtubeUrl: state.youtubeUrl, youtubeTitle: state.youtubeTitle,
+        clickupUrl: state.clickupUrl,
         customLinks: state.customLinks
       };
     }
