@@ -1227,6 +1227,10 @@
             <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
           </div>
           <div class="helper">프로젝트 저장에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다.</div>
+          <div class="row" style="gap:4px;">
+            <button id="savedSortRecentBtn" class="sort-mode-btn active" title="최근 작업순">최근순</button>
+            <button id="savedSortAlphaBtn" class="sort-mode-btn" title="이름순">이름순</button>
+          </div>
           <div class="saved-list" id="savedList"></div>
         </div>
 
@@ -2186,6 +2190,21 @@
       document.getElementById('saveBtn').addEventListener('click', saveProjectFile);
       document.getElementById('loadFileBtn').addEventListener('click', () => fileLoader.click());
       document.getElementById('mergeFileBtn').addEventListener('click', () => mergeFileLoader.click());
+
+      const savedSortRecentBtn = document.getElementById('savedSortRecentBtn');
+      const savedSortAlphaBtn = document.getElementById('savedSortAlphaBtn');
+      savedSortRecentBtn.addEventListener('click', () => {
+        savedSortMode = 'recent';
+        savedSortRecentBtn.classList.add('active');
+        savedSortAlphaBtn.classList.remove('active');
+        renderSavedList();
+      });
+      savedSortAlphaBtn.addEventListener('click', () => {
+        savedSortMode = 'alpha';
+        savedSortAlphaBtn.classList.add('active');
+        savedSortRecentBtn.classList.remove('active');
+        renderSavedList();
+      });
       document.getElementById('saveMoveListBtn').addEventListener('click', saveMoveListFile);
       document.getElementById('loadMoveListBtn').addEventListener('click', () => moveListLoader.click());
       document.getElementById('saveCategoriesBtn').addEventListener('click', saveCategoriesFile);
@@ -4073,13 +4092,19 @@
       return arr;
     }
 
+    let savedSortMode = 'recent'; // 'recent' | 'alpha'
+
     function renderSavedList() {
       savedListEl.innerHTML = '';
       if (!state.savedFiles.length) {
         savedListEl.innerHTML = '<div class="helper">저장된 프로젝트 목록이 없습니다.</div>';
         return;
       }
-      state.savedFiles.forEach(item => {
+      const sorted = [...state.savedFiles];
+      if (savedSortMode === 'alpha') {
+        sorted.sort((a, b) => a.fileName.localeCompare(b.fileName, 'ko'));
+      }
+      sorted.forEach(item => {
         const row = document.createElement('div');
         row.className = 'saved-item';
         row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost">불러오기</button><button class="danger">삭제</button></div>`;
