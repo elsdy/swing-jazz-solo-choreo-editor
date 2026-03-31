@@ -4239,8 +4239,9 @@
       sorted.forEach(item => {
         const row = document.createElement('div');
         row.className = 'saved-item';
-        row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost">불러오기</button><button class="danger">삭제</button></div>`;
-        const [loadBtn, delBtn] = row.querySelectorAll('button');
+        row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost accent">부분 채우기</button><button class="ghost">불러오기</button><button class="danger">삭제</button></div>`;
+        const [mergeBtn, loadBtn, delBtn] = row.querySelectorAll('button');
+        mergeBtn.addEventListener('click', () => mergeProjectData(item.data));
         loadBtn.addEventListener('click', () => applyProjectData(item.data));
         delBtn.addEventListener('click', () => {
           confirmOnce(delBtn, '삭제', () => {
@@ -4381,6 +4382,11 @@
         try {
           const data = JSON.parse(text);
           mergeProjectData(data);
+          const fileName = file.name.replace(/\.[^.]+$/, '');
+          const savedAt = data.savedAt || new Date().toISOString();
+          state.savedFiles = [{ fileName, savedAt, data }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 10);
+          localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
+          renderSavedList();
         } catch {
           alert('올바른 프로젝트 파일이 아닙니다.');
         }
