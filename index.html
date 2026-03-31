@@ -1224,8 +1224,8 @@
           <div class="row wrap">
             <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
             <button id="saveBtn" class="primary">프로젝트 저장</button>
-            <button id="loadFileBtn" class="ghost">프로젝트 열기</button>
-            <button id="mergeFileBtn" class="ghost accent">부분 채우기</button>
+            <button id="loadFileBtn" class="ghost">전체 불러오기</button>
+            <button id="mergeFileBtn" class="ghost accent">부분 불러오기</button>
             <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
             <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
           </div>
@@ -4239,8 +4239,9 @@
       sorted.forEach(item => {
         const row = document.createElement('div');
         row.className = 'saved-item';
-        row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost accent">부분 채우기</button><button class="ghost">불러오기</button><button class="danger">삭제</button></div>`;
-        const [mergeBtn, loadBtn, delBtn] = row.querySelectorAll('button');
+        row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost" title="프로젝트 이름을 입력창에 복사">이름 복사</button><button class="ghost accent">부분 불러오기</button><button class="ghost">전체 불러오기</button><button class="danger">삭제</button></div>`;
+        const [copyBtn, mergeBtn, loadBtn, delBtn] = row.querySelectorAll('button');
+        copyBtn.addEventListener('click', () => { fileNameInput.value = item.fileName; });
         mergeBtn.addEventListener('click', () => mergeProjectData(item.data));
         loadBtn.addEventListener('click', () => applyProjectData(item.data));
         delBtn.addEventListener('click', () => {
