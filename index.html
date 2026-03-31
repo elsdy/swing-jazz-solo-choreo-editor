@@ -1884,6 +1884,7 @@
         selectableCallbacks = [];
         lastMatches = [];
         kbIndex = -1;
+        addBtn.classList.remove('kb-active');
 
         if (!ql) {
           addBtn.style.display = 'none';
@@ -1914,6 +1915,7 @@
         lastMatches = matches;
         if (matches.length === 0) {
           addBtn.style.display = '';
+          addBtn.classList.add('kb-active');
           const hint = document.createElement('div');
           hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
           hint.textContent = `"${q}" 와 일치하는 동작이 없습니다. Enter를 눌러 새 동작으로 추가`;
@@ -1921,6 +1923,7 @@
         } else {
           const exactExists = matches.some(m => m.name.toLowerCase() === ql);
           addBtn.style.display = exactExists ? 'none' : '';
+          addBtn.classList.toggle('kb-active', !exactExists);
           matches.forEach(m => {
             const cb = () => { placeMove(m.id, row, cellIndex, count); saveHistory(); closeQuickPicker(); };
             const el = makeQuickMoveItem(m, cb);
@@ -1928,8 +1931,7 @@
             selectableItems.push(el);
             selectableCallbacks.push(cb);
           });
-          kbIndex = 0;
-          updateKbHighlight();
+          // kbIndex stays -1: Enter defaults to "add new action"
         }
       }
 
@@ -1939,11 +1941,13 @@
           e.preventDefault();
           if (selectableItems.length === 0) return;
           kbIndex = kbIndex < selectableItems.length - 1 ? kbIndex + 1 : 0;
+          addBtn.classList.remove('kb-active');
           updateKbHighlight();
         } else if (e.key === 'ArrowUp') {
           e.preventDefault();
           if (selectableItems.length === 0) return;
           kbIndex = kbIndex > 0 ? kbIndex - 1 : selectableItems.length - 1;
+          addBtn.classList.remove('kb-active');
           updateKbHighlight();
         } else if (e.key === 'Enter') {
           e.preventDefault();
