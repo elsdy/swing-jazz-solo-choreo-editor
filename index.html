@@ -1224,8 +1224,8 @@
           <div class="row wrap">
             <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
             <button id="saveBtn" class="primary">프로젝트 저장</button>
-            <button id="loadFileBtn" class="ghost">프로젝트 열기</button>
-            <button id="mergeFileBtn" class="ghost accent">부분 채우기</button>
+            <button id="loadFileBtn" class="ghost">전체 불러오기</button>
+            <button id="mergeFileBtn" class="ghost accent">부분 불러오기</button>
             <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
             <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
           </div>
@@ -3623,10 +3623,9 @@
       const count = Math.min(groupCount(groupId, ctx), totalCellsFrom(targetRow, targetStartIndex, ctx));
       const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
       const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
-      const originalSubRow = group[0].subRow || 0;
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
-      // 원래 subRow부터 탐색 — 레이어 정체성 유지 (충돌 시 그 이상으로)
-      let targetSubRow = originalSubRow;
+      // 충돌 없는 가장 낮은 subRow부터 탐색
+      let targetSubRow = 0;
       outer: for (;;) {
         for (const seg of segments) {
           const conflict = ctx.placements.some(p =>
@@ -3644,7 +3643,9 @@
         row: seg.row, startIndex: seg.startIndex, length: seg.length,
         subRow: targetSubRow
       })));
-      // 이동 후 전체 행을 다시 렌더링하여 spacer 높이·DOM 일관성 보장
+      // 이동 후 이전 행과 새 행 모두 subRow 재정렬하여 병합 보장
+      const affectedRows = [...new Set([...previousRows, ...segments.map(s => s.row)])];
+      repackSubRows(affectedRows, ctx);
       unmarkDraggingGroups(ctx);
       const allRows = ctx === mainCtx
         ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
@@ -4239,8 +4240,10 @@
       sorted.forEach(item => {
         const row = document.createElement('div');
         row.className = 'saved-item';
-        row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost">불러오기</button><button class="danger">삭제</button></div>`;
-        const [loadBtn, delBtn] = row.querySelectorAll('button');
+        row.innerHTML = `<div><div style="font-weight:800;">${escapeHtml(item.fileName)}</div><div class="helper">${new Date(item.savedAt).toLocaleString()}</div></div><div class="row"><button class="ghost" title="프로젝트 이름을 입력창에 복사">이름 복사</button><button class="ghost accent">부분 불러오기</button><button class="ghost">전체 불러오기</button><button class="danger">삭제</button></div>`;
+        const [copyBtn, mergeBtn, loadBtn, delBtn] = row.querySelectorAll('button');
+        copyBtn.addEventListener('click', () => { fileNameInput.value = item.fileName; });
+        mergeBtn.addEventListener('click', () => mergeProjectData(item.data));
         loadBtn.addEventListener('click', () => applyProjectData(item.data));
         delBtn.addEventListener('click', () => {
           confirmOnce(delBtn, '삭제', () => {
@@ -4381,6 +4384,11 @@
         try {
           const data = JSON.parse(text);
           mergeProjectData(data);
+          const fileName = file.name.replace(/\.[^.]+$/, '');
+          const savedAt = data.savedAt || new Date().toISOString();
+          state.savedFiles = [{ fileName, savedAt, data }, ...state.savedFiles.filter(f => f.fileName !== fileName)].slice(0, 10);
+          localStorage.setItem('choreo_saved_files', JSON.stringify(state.savedFiles));
+          renderSavedList();
         } catch {
           alert('올바른 프로젝트 파일이 아닙니다.');
         }
