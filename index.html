@@ -3623,10 +3623,9 @@
       const count = Math.min(groupCount(groupId, ctx), totalCellsFrom(targetRow, targetStartIndex, ctx));
       const segments = buildSegments(targetRow, targetStartIndex, count, ctx);
       const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId };
-      const originalSubRow = group[0].subRow || 0;
       ctx.placements = ctx.placements.filter(p => p.groupId !== groupId);
-      // 원래 subRow부터 탐색 — 레이어 정체성 유지 (충돌 시 그 이상으로)
-      let targetSubRow = originalSubRow;
+      // 충돌 없는 가장 낮은 subRow부터 탐색
+      let targetSubRow = 0;
       outer: for (;;) {
         for (const seg of segments) {
           const conflict = ctx.placements.some(p =>
@@ -3644,7 +3643,9 @@
         row: seg.row, startIndex: seg.startIndex, length: seg.length,
         subRow: targetSubRow
       })));
-      // 이동 후 전체 행을 다시 렌더링하여 spacer 높이·DOM 일관성 보장
+      // 이동 후 이전 행과 새 행 모두 subRow 재정렬하여 병합 보장
+      const affectedRows = [...new Set([...previousRows, ...segments.map(s => s.row)])];
+      repackSubRows(affectedRows, ctx);
       unmarkDraggingGroups(ctx);
       const allRows = ctx === mainCtx
         ? [0, ...Array.from({ length: ctx.rows }, (_, i) => i + 1)]
