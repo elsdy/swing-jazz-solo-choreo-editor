@@ -3405,7 +3405,7 @@
         .map(seg => {
           const s = seg.startIndex + 1;
           const e = seg.startIndex + seg.length;
-          return `${ctx.cols}x${seg.row} : ${s}${s === e ? '' : `~${e}`}`;
+          return `${ctx.cols}x${seg.row} : ${s} [${seg.length}]`;
         })
         .join(', ');
     }
