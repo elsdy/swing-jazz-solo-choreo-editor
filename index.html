@@ -3390,6 +3390,11 @@
     function renderRowNotes(row, ctx = mainCtx) {
       return ctx.placements
         .filter(p => p.row === row)
+        .filter(p => {
+          // 여러 행에 걸친 동작은 첫 번째 행의 비고란에만 표시
+          const firstRow = Math.min(...ctx.placements.filter(s => s.groupId === p.groupId).map(s => s.row));
+          return p.row === firstRow;
+        })
         .sort((a, b) => a.startIndex - b.startIndex)
         .map(p => {
           if (p.type === 'routine') return escapeHtml(`▶ ${p.name}`);
