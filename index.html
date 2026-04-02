@@ -1296,6 +1296,7 @@
         <div class="row" style="gap:4px;">
           <button id="sortAlphaBtn" class="sort-mode-btn active" title="가나다 순">가나다</button>
           <button id="sortAddedBtn" class="sort-mode-btn" title="추가된 순">추가순</button>
+          <button id="sortCategoryBtn" class="sort-mode-btn" title="카테고리별 정렬">카테고리</button>
           <button id="sortDirBtn" class="sort-dir-btn" title="정렬 방향">↑</button>
         </div>
         <div class="palette-list" id="paletteList"></div>
@@ -1406,7 +1407,7 @@
       favoriteMoveNames: new Set(),
       favoriteCategories: new Set(),
       quickPlaceMode: false,
-      paletteSortMode: 'alpha',  // 'alpha' | 'added'
+      paletteSortMode: 'alpha',  // 'alpha' | 'added' | 'category'
       paletteSortDir: 'asc',     // 'asc' | 'desc'
       routines: [],              // 루틴 목록
       favoriteRoutineIds: new Set(), // 루틴 즐겨찾기
@@ -2303,16 +2304,25 @@
       const sortAlphaBtn = document.getElementById('sortAlphaBtn');
       const sortAddedBtn = document.getElementById('sortAddedBtn');
       const sortDirBtn   = document.getElementById('sortDirBtn');
+      const sortCategoryBtn = document.getElementById('sortCategoryBtn');
+      const sortModeBtns = [sortAlphaBtn, sortAddedBtn, sortCategoryBtn];
+      function setActiveSortBtn(activeBtn) {
+        sortModeBtns.forEach(btn => btn.classList.remove('active'));
+        activeBtn.classList.add('active');
+      }
       sortAlphaBtn.addEventListener('click', () => {
         state.paletteSortMode = 'alpha';
-        sortAlphaBtn.classList.add('active');
-        sortAddedBtn.classList.remove('active');
+        setActiveSortBtn(sortAlphaBtn);
         renderPalette();
       });
       sortAddedBtn.addEventListener('click', () => {
         state.paletteSortMode = 'added';
-        sortAddedBtn.classList.add('active');
-        sortAlphaBtn.classList.remove('active');
+        setActiveSortBtn(sortAddedBtn);
+        renderPalette();
+      });
+      sortCategoryBtn.addEventListener('click', () => {
+        state.paletteSortMode = 'category';
+        setActiveSortBtn(sortCategoryBtn);
         renderPalette();
       });
       sortDirBtn.addEventListener('click', () => {
@@ -4218,6 +4228,17 @@
         arr.sort((a, b) => {
           const cmp = a.name.localeCompare(b.name, 'ko');
           return state.paletteSortDir === 'asc' ? cmp : -cmp;
+        });
+      } else if (state.paletteSortMode === 'category') {
+        // 카테고리별 정렬: 카테고리 이름순으로 그룹화 후, 그룹 내에서 가나다순
+        const catKeys = categoryNames();
+        arr.sort((a, b) => {
+          const catA = catKeys.indexOf(a.category);
+          const catB = catKeys.indexOf(b.category);
+          const catCmp = catA - catB;
+          if (catCmp !== 0) return state.paletteSortDir === 'asc' ? catCmp : -catCmp;
+          const nameCmp = a.name.localeCompare(b.name, 'ko');
+          return state.paletteSortDir === 'asc' ? nameCmp : -nameCmp;
         });
       } else {
         // 'added': 배열 삽입 순서 기준
