@@ -3404,15 +3404,13 @@
     }
 
     function placementRangeLabel(groupId, ctx = mainCtx) {
-      return ctx.placements
+      const segs = ctx.placements
         .filter(p => p.groupId === groupId)
-        .sort((a, b) => a.row - b.row || a.startIndex - b.startIndex)
-        .map(seg => {
-          const s = seg.startIndex + 1;
-          const e = seg.startIndex + seg.length;
-          return `${ctx.cols}x${seg.row} : ${s} [${seg.length}]`;
-        })
-        .join(', ');
+        .sort((a, b) => a.row - b.row || a.startIndex - b.startIndex);
+      if (!segs.length) return '';
+      const first = segs[0];
+      const totalLength = segs.reduce((sum, s) => sum + s.length, 0);
+      return `${ctx.cols}x${first.row} : ${first.startIndex + 1} [${totalLength}]`;
     }
 
     function createPlacementEl(placement, visualSubRow, ctx = mainCtx) {
