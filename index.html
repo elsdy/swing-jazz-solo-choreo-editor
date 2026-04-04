@@ -4481,6 +4481,12 @@
     function clearBoard() {
       const rows = state.placements.map(p => p.row);
       state.placements = [];
+      state.youtubeUrl = '';
+      state.youtubeTitle = '';
+      state.clickupUrl = '';
+      state.customLinks = [];
+      renderLinksBar();
+      saveLinks();
       renderRows(rows);
       saveHistory();
     }
