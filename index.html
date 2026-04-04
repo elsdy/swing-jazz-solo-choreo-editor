@@ -1200,6 +1200,8 @@
     .link-title-chip:hover { background: rgba(99,102,241,0.28); }
     .link-title-fetching { font-size: 11px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
     .link-open-btn { padding: 2px 7px !important; font-size: 13px !important; flex-shrink: 0; }
+    .link-reset-btn { padding: 2px 6px !important; font-size: 12px !important; flex-shrink: 0; color: rgba(255,255,255,0.35) !important; }
+    .link-reset-btn:hover { color: #ef4444 !important; }
     .link-del-btn {
       padding: 2px 6px; font-size: 13px; background: transparent; border: none;
       cursor: pointer; color: rgba(255,255,255,0.3); border-radius: 4px; flex-shrink: 0;
@@ -1330,10 +1332,12 @@
               <div class="yt-url-group" id="ytUrlGroup">
                 <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
               </div>
+              <button id="ytResetBtn" class="ghost link-reset-btn" type="button" title="초기화">✕</button>
             </div>
             <div class="link-row" id="clickupLinkRow">
               <span class="link-badge clickup">☑ ClickUp</span>
               <input type="url" id="clickupUrlInput" placeholder="ClickUp 태스크 URL 입력..." autocomplete="off" spellcheck="false" />
+              <button id="clickupResetBtn" class="ghost link-reset-btn" type="button" title="초기화">✕</button>
             </div>
             <div id="customLinksContainer"></div>
             <div><button id="addCustomLinkBtn" class="ghost link-add-btn">+ 링크 추가</button></div>
@@ -5235,6 +5239,21 @@
       const cuInput = document.getElementById('clickupUrlInput');
       cuInput.addEventListener('input', () => {
         state.clickupUrl = cuInput.value.trim();
+        renderClickupExtras();
+        saveLinks();
+      });
+
+      document.getElementById('ytResetBtn').addEventListener('click', () => {
+        state.youtubeUrl = '';
+        state.youtubeTitle = '';
+        document.getElementById('youtubeUrlInput').value = '';
+        renderYoutubeExtras();
+        saveLinks();
+      });
+
+      document.getElementById('clickupResetBtn').addEventListener('click', () => {
+        state.clickupUrl = '';
+        document.getElementById('clickupUrlInput').value = '';
         renderClickupExtras();
         saveLinks();
       });
