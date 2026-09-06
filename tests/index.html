@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>골든 회귀 검사 — 배치 알고리즘</title>
+<style>
+  :root {
+    --bg: #0b1220; --panel: rgba(17,24,39,0.94); --line: rgba(148,163,184,0.16);
+    --text: #e5e7eb; --muted: #94a3b8; --ok: #22c55e; --bad: #ef4444; --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 20px 60px;
+    font-family: Inter, Pretendard, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: linear-gradient(180deg, #0b1220, #111827); color: var(--text); min-height: 100vh;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; line-height: 1.6; }
+  .sub code { background: rgba(148,163,184,0.12); padding: 1px 5px; border-radius: 5px; }
+  .bar {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px;
+  }
+  .tally { font-weight: 800; font-size: 15px; letter-spacing: 0.2px; }
+  .tally .n { padding: 2px 8px; border-radius: 999px; margin-right: 6px; }
+  .n.pass { background: rgba(34,197,94,0.16); color: var(--ok); }
+  .n.fail { background: rgba(239,68,68,0.16); color: var(--bad); }
+  .n.skip { background: rgba(245,158,11,0.16); color: var(--warn); }
+  input[type=search], button {
+    font: inherit; background: #0b1220; color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+  }
+  input[type=search] { min-width: 220px; flex: 1 1 220px; }
+  button { cursor: pointer; font-weight: 700; }
+  button:hover { border-color: rgba(148,163,184,0.4); }
+  .note {
+    background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.3); color: #fde68a;
+    border-radius: 12px; padding: 14px 16px; font-size: 13px; line-height: 1.7; margin-bottom: 16px;
+  }
+  .note pre { margin: 8px 0 0; white-space: pre-wrap; color: var(--muted); font-size: 12px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px;
+    background: rgba(17,24,39,0.6); overflow: hidden;
+  }
+  li.fail { border-color: rgba(239,68,68,0.45); }
+  li.skip { border-color: rgba(245,158,11,0.4); }
+  .row { display: flex; gap: 10px; align-items: baseline; padding: 9px 12px; cursor: pointer; }
+  .badge { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
+  .badge.pass { background: rgba(34,197,94,0.16); color: var(--ok); }
+  .badge.fail { background: rgba(239,68,68,0.18); color: var(--bad); }
+  .badge.skip, .badge.error { background: rgba(245,158,11,0.18); color: var(--warn); }
+  .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; flex: 0 0 auto; }
+  .desc { color: var(--muted); font-size: 12.5px; flex: 1 1 auto; min-width: 0; }
+  pre.diff {
+    margin: 0; padding: 10px 14px 14px; border-top: 1px solid var(--line);
+    background: rgba(2,6,23,0.6); overflow-x: auto; font-size: 12px; line-height: 1.55;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #fecaca;
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>골든 회귀 검사 — 배치 알고리즘</h1>
+  <p class="sub">
+    <code>tests/golden/placement-algorithms.json</code> 에 굳어 있는 <b>리팩터링 이전 index.html 의 동작</b>을
+    현재 도메인 코드가 그대로 재현하는지 검사한다.<br>
+    <code>file://</code> 로는 못 연다 — 저장소 루트에서 <code>python3 -m http.server</code> 를 띄우고
+    <code>/tests/</code> 로 접속할 것. 같은 검사를 터미널에서 하려면 <code>node tests/run.mjs</code>.
+  </p>
+
+  <div id="pending" class="note" hidden></div>
+
+  <div class="bar" id="bar" hidden>
+    <span class="tally" id="tally"></span>
+    <input type="search" id="filter" placeholder="id · 설명으로 거르기">
+    <button id="onlyBad" type="button">실패만</button>
+    <button id="expandAll" type="button">모두 펼치기</button>
+  </div>
+
+  <ul id="list"></ul>
+</div>
+
+<script type="module">
+import { runAll, lintGolden } from './replay.mjs';
+
+const $ = (id) => document.getElementById(id);
+const listEl = $('list');
+
+function panic(html, detail) {
+  const el = $('pending');
+  el.hidden = false;
+  el.innerHTML = html + (detail ? `<pre>${detail.replace(/[<&]/g, c => ({ '<': '&lt;', '&': '&amp;' }[c]))}</pre>` : '');
+}
+
+let golden;
+try {
+  const res = await fetch('./golden/placement-algorithms.json', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  golden = await res.json();
+} catch (err) {
+  panic('<b>골든 파일을 읽지 못했다.</b> HTTP 서버로 열었는지 확인하라.', String(err));
+  throw err;
+}
+
+const lint = lintGolden(golden);
+if (lint.length) { panic('<b>골든 파일 자체가 깨졌다.</b>', lint.join('\n')); throw new Error('lint'); }
+
+let all = [];
+
+// 리팩터링이 만들어야 할 유일한 접점.
+let createAdapter = null, loadErr = null;
+try {
+  ({ createAdapter } = await import('../src/testing/golden-adapter.mjs'));
+} catch (err) { loadErr = err; }
+
+if (typeof createAdapter !== 'function') {
+  panic(
+    `<b>대기 중 — <code>src/testing/golden-adapter.mjs</code> 가 아직 없다.</b><br>` +
+    `골든 ${golden.scenarios.length}개가 기다리고 있다. 이 파일 하나가 <code>createAdapter()</code> 를 export 하고 ` +
+    `<code>tests/replay.mjs</code> 상단의 adapter 계약을 새 도메인 모듈 위에 구현하면 검사가 시작된다.`,
+    loadErr ? String(loadErr) : ''
+  );
+} else {
+  render(runAll(golden, createAdapter()));
+}
+
+function render({ results, tally }) {
+  all = results;
+  $('bar').hidden = false;
+  $('tally').innerHTML =
+    `<span class="n pass">${tally.pass}</span>통과 ` +
+    `<span class="n fail">${tally.fail + tally.error}</span>실패 ` +
+    (tally.skip ? `<span class="n skip">${tally.skip}</span>미구현` : '');
+  document.title = `${tally.fail + tally.error ? '✗' : '✓'} 골든 ${tally.pass}/${results.length}`;
+  paint();
+}
+
+function paint() {
+  const q = $('filter').value.trim().toLowerCase();
+  const badOnly = $('onlyBad').dataset.on === '1';
+  listEl.replaceChildren(...all
+    .filter(r => !badOnly || r.status !== 'pass')
+    .filter(r => !q || r.id.toLowerCase().includes(q) || (r.desc || '').toLowerCase().includes(q))
+    .map(item));
+}
+
+function item(r) {
+  const li = document.createElement('li');
+  li.className = r.status;
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML =
+    `<span class="badge ${r.status}">${{ pass: 'PASS', fail: 'FAIL', skip: 'SKIP', error: 'ERR' }[r.status]}</span>` +
+    `<span class="id"></span><span class="desc"></span>`;
+  row.querySelector('.id').textContent = r.id;
+  row.querySelector('.desc').textContent = r.desc || '';
+  li.appendChild(row);
+  if (r.diffs && r.diffs.length) {
+    const pre = document.createElement('pre');
+    pre.className = 'diff';
+    pre.textContent = r.diffs.join('\n\n');
+    pre.hidden = r.status === 'pass';
+    li.appendChild(pre);
+    row.addEventListener('click', () => { pre.hidden = !pre.hidden; });
+  }
+  return li;
+}
+
+$('filter').addEventListener('input', paint);
+$('onlyBad').addEventListener('click', (e) => {
+  const on = e.target.dataset.on === '1';
+  e.target.dataset.on = on ? '0' : '1';
+  e.target.textContent = on ? '실패만' : '전체 보기';
+  paint();
+});
+$('expandAll').addEventListener('click', () => {
+  listEl.querySelectorAll('pre.diff').forEach(p => { p.hidden = false; });
+});
+</script>
+</body>
+</html>
