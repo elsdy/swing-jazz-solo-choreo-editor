@@ -1200,6 +1200,8 @@
     .link-title-chip:hover { background: rgba(99,102,241,0.28); }
     .link-title-fetching { font-size: 11px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
     .link-open-btn { padding: 2px 7px !important; font-size: 13px !important; flex-shrink: 0; }
+    .link-reset-btn { padding: 2px 6px !important; font-size: 12px !important; flex-shrink: 0; color: rgba(255,255,255,0.35) !important; }
+    .link-reset-btn:hover { color: #ef4444 !important; }
     .link-del-btn {
       padding: 2px 6px; font-size: 13px; background: transparent; border: none;
       cursor: pointer; color: rgba(255,255,255,0.3); border-radius: 4px; flex-shrink: 0;
@@ -1276,6 +1278,10 @@
           <div style="font-size:11px; font-weight:800; color:#dbe4ef;">카테고리 관리</div>
           <div id="categoryManager" class="stack"></div>
         </div>
+        <div class="helper">동작 카테고리는 팔레트에서 바로 수정되고, 카테고리 이름을 바꾸면 전체 UI에 반영됩니다.</div>
+      </section>
+
+      <section class="section stack" style="min-height:0;">
         <div class="soft-card stack">
           <div style="font-size:11px; font-weight:800; color:#dbe4ef;">솔로 동작 추가</div>
           <div class="compact-grid" style="grid-template-columns: 1.4fr 1fr auto;">
@@ -1284,18 +1290,15 @@
             <button id="addMoveBtn" class="warn">추가</button>
           </div>
         </div>
-        <div class="helper">동작 카테고리는 팔레트에서 바로 수정되고, 카테고리 이름을 바꾸면 전체 UI에 반영됩니다.</div>
-      </section>
-
-      <section class="section stack" style="min-height:0;">
         <div class="row wrap" style="justify-content:space-between;">
-          <h3 style="margin:0; font-size:12px;">동작 팔레트</h3>
+          <h3 style="margin:0; font-size:12px;">동작 목록</h3>
           <div class="legend" id="legend"></div>
         </div>
         <input id="paletteSearch" type="text" placeholder="동작 검색..." style="width:100%;box-sizing:border-box;" />
         <div class="row" style="gap:4px;">
           <button id="sortAlphaBtn" class="sort-mode-btn active" title="가나다 순">가나다</button>
           <button id="sortAddedBtn" class="sort-mode-btn" title="추가된 순">추가순</button>
+          <button id="sortCategoryBtn" class="sort-mode-btn" title="카테고리별 정렬">카테고리</button>
           <button id="sortDirBtn" class="sort-dir-btn" title="정렬 방향">↑</button>
         </div>
         <div class="palette-list" id="paletteList"></div>
@@ -1329,10 +1332,12 @@
               <div class="yt-url-group" id="ytUrlGroup">
                 <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
               </div>
+              <button id="ytResetBtn" class="ghost link-reset-btn" type="button" title="초기화">✕</button>
             </div>
             <div class="link-row" id="clickupLinkRow">
               <span class="link-badge clickup">☑ ClickUp</span>
               <input type="url" id="clickupUrlInput" placeholder="ClickUp 태스크 URL 입력..." autocomplete="off" spellcheck="false" />
+              <button id="clickupResetBtn" class="ghost link-reset-btn" type="button" title="초기화">✕</button>
             </div>
             <div id="customLinksContainer"></div>
             <div><button id="addCustomLinkBtn" class="ghost link-add-btn">+ 링크 추가</button></div>
@@ -1406,7 +1411,7 @@
       favoriteMoveNames: new Set(),
       favoriteCategories: new Set(),
       quickPlaceMode: false,
-      paletteSortMode: 'alpha',  // 'alpha' | 'added'
+      paletteSortMode: 'alpha',  // 'alpha' | 'added' | 'category'
       paletteSortDir: 'asc',     // 'asc' | 'desc'
       routines: [],              // 루틴 목록
       favoriteRoutineIds: new Set(), // 루틴 즐겨찾기
@@ -2303,16 +2308,25 @@
       const sortAlphaBtn = document.getElementById('sortAlphaBtn');
       const sortAddedBtn = document.getElementById('sortAddedBtn');
       const sortDirBtn   = document.getElementById('sortDirBtn');
+      const sortCategoryBtn = document.getElementById('sortCategoryBtn');
+      const sortModeBtns = [sortAlphaBtn, sortAddedBtn, sortCategoryBtn];
+      function setActiveSortBtn(activeBtn) {
+        sortModeBtns.forEach(btn => btn.classList.remove('active'));
+        activeBtn.classList.add('active');
+      }
       sortAlphaBtn.addEventListener('click', () => {
         state.paletteSortMode = 'alpha';
-        sortAlphaBtn.classList.add('active');
-        sortAddedBtn.classList.remove('active');
+        setActiveSortBtn(sortAlphaBtn);
         renderPalette();
       });
       sortAddedBtn.addEventListener('click', () => {
         state.paletteSortMode = 'added';
-        sortAddedBtn.classList.add('active');
-        sortAlphaBtn.classList.remove('active');
+        setActiveSortBtn(sortAddedBtn);
+        renderPalette();
+      });
+      sortCategoryBtn.addEventListener('click', () => {
+        state.paletteSortMode = 'category';
+        setActiveSortBtn(sortCategoryBtn);
         renderPalette();
       });
       sortDirBtn.addEventListener('click', () => {
@@ -3380,6 +3394,11 @@
     function renderRowNotes(row, ctx = mainCtx) {
       return ctx.placements
         .filter(p => p.row === row)
+        .filter(p => {
+          // 여러 행에 걸친 동작은 첫 번째 행의 비고란에만 표시
+          const firstRow = Math.min(...ctx.placements.filter(s => s.groupId === p.groupId).map(s => s.row));
+          return p.row === firstRow;
+        })
         .sort((a, b) => a.startIndex - b.startIndex)
         .map(p => {
           if (p.type === 'routine') return escapeHtml(`▶ ${p.name}`);
@@ -3389,15 +3408,13 @@
     }
 
     function placementRangeLabel(groupId, ctx = mainCtx) {
-      return ctx.placements
+      const segs = ctx.placements
         .filter(p => p.groupId === groupId)
-        .sort((a, b) => a.row - b.row || a.startIndex - b.startIndex)
-        .map(seg => {
-          const s = seg.startIndex + 1;
-          const e = seg.startIndex + seg.length;
-          return `${ctx.cols}x${seg.row} : ${s}${s === e ? '' : `~${e}`}`;
-        })
-        .join(', ');
+        .sort((a, b) => a.row - b.row || a.startIndex - b.startIndex);
+      if (!segs.length) return '';
+      const first = segs[0];
+      const totalLength = segs.reduce((sum, s) => sum + s.length, 0);
+      return `${ctx.cols}x${first.row} : ${first.startIndex + 1} [${totalLength}]`;
     }
 
     function createPlacementEl(placement, visualSubRow, ctx = mainCtx) {
@@ -4219,6 +4236,17 @@
           const cmp = a.name.localeCompare(b.name, 'ko');
           return state.paletteSortDir === 'asc' ? cmp : -cmp;
         });
+      } else if (state.paletteSortMode === 'category') {
+        // 카테고리별 정렬: 카테고리 이름순으로 그룹화 후, 그룹 내에서 가나다순
+        const catKeys = categoryNames();
+        arr.sort((a, b) => {
+          const catA = catKeys.indexOf(a.category);
+          const catB = catKeys.indexOf(b.category);
+          const catCmp = catA - catB;
+          if (catCmp !== 0) return state.paletteSortDir === 'asc' ? catCmp : -catCmp;
+          const nameCmp = a.name.localeCompare(b.name, 'ko');
+          return state.paletteSortDir === 'asc' ? nameCmp : -nameCmp;
+        });
       } else {
         // 'added': 배열 삽입 순서 기준
         // asc = 최신이 위 (reverse), desc = 오래된 게 위 (원래 순서)
@@ -4453,6 +4481,12 @@
     function clearBoard() {
       const rows = state.placements.map(p => p.row);
       state.placements = [];
+      state.youtubeUrl = '';
+      state.youtubeTitle = '';
+      state.clickupUrl = '';
+      state.customLinks = [];
+      renderLinksBar();
+      saveLinks();
       renderRows(rows);
       saveHistory();
     }
@@ -5211,6 +5245,21 @@
       const cuInput = document.getElementById('clickupUrlInput');
       cuInput.addEventListener('input', () => {
         state.clickupUrl = cuInput.value.trim();
+        renderClickupExtras();
+        saveLinks();
+      });
+
+      document.getElementById('ytResetBtn').addEventListener('click', () => {
+        state.youtubeUrl = '';
+        state.youtubeTitle = '';
+        document.getElementById('youtubeUrlInput').value = '';
+        renderYoutubeExtras();
+        saveLinks();
+      });
+
+      document.getElementById('clickupResetBtn').addEventListener('click', () => {
+        state.clickupUrl = '';
+        document.getElementById('clickupUrlInput').value = '';
         renderClickupExtras();
         saveLinks();
       });
