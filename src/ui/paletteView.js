@@ -280,7 +280,11 @@ export function createPaletteView(deps) {
     const { favs, others } = selectPaletteMoves(store.library, {
       query: store.palette.searchQuery,
       favorites: store.favorites.moveNames,
-      sort: store.palette,
+      // ⚠ store 는 원본 필드명(paletteSortMode/paletteSortDir → sortMode/sortDir)을 쓰고
+      //   domain 의 PaletteSort 계약은 {mode, dir} 이다. 여기서 이름을 갈아 끼운다.
+      //   store.palette 를 그대로 넘기면 mode/dir 이 undefined 가 되어 'added' 분기로 떨어지고
+      //   기본 정렬('alpha'/'asc')이 삽입 순서로 보인다.
+      sort: { mode: store.palette.sortMode, dir: store.palette.sortDir },
       categories: store.categories,
     });
 
