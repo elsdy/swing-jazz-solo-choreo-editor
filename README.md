@@ -49,13 +49,13 @@ src/testing/    골든 러너가 쓰는 어댑터 (앱은 쓰지 않는다)
 ## 고칠 때
 
 ```
-node --test 'tests/**/*.test.mjs' # 도메인 단위 테스트 25개 (색 대비·템포·마이그레이션)
+node --test 'tests/**/*.test.mjs' # 도메인 단위 테스트 45개 (색 대비·템포·마이그레이션·충돌 규칙)
 node tests/run.mjs                # 격자 알고리즘 골든 150개
 node tools/check-arch.mjs         # 계층 방향과 순수성
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
 ```
 
-넷 다 의존성이 0이다. 나머지 규칙은 [개발 지침](CLAUDE.md)에 있다.
+넷 다 의존성이 0이다. 골든은 **현재 동작의 기록이지 옳은 동작의 정의가 아니고**, 결함을 고쳐 의도적으로 바꾼 기대값이 섞여 있다 — 어느 시나리오가 그런지와 그 이유는 골든 파일의 `meta.intentionalChanges` 에 있다. 나머지 규칙은 [개발 지침](CLAUDE.md)에 있다.
 
 ## 문서
 
