@@ -188,7 +188,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `lanes.js` | `subRow`(레인) 규칙 전담. `overlaps` `findFreeLane` `clearSegmentsArea` `repackLanes` |
 | `placements.js` | placement 질의와 생성. `makeSegmentPlacements` 가 키 순서를 고정하는 유일한 팩토리 |
 | `boardOps.js` | 배치 전이 6개(놓기·루틴 블록·이동·복사·리사이즈·삭제)와 그 정책 상수 |
-| `categories.js` | 카테고리 사전 트랜잭션과 색 판정. `deriveKey` `isLightColor` |
+| `categories.js` | 카테고리 사전 트랜잭션과 색 판정. `deriveKey` `resolvePlacementColor` `textColorOn` `contrastRatio` `darken` |
 | `moves.js` | 동작 라이브러리 트랜잭션과 팔레트 검색·정렬 파이프라인 |
 | `routines.js` | 루틴 값 객체와 변환. `buildFromSelection` `redistributeBlocks` |
 | `gestureMath.js` | 제스처 판정의 순수 부분. `resolveDragCount` 의 `lowerBound` 가 곳마다 다른 하한을 담는다 |
