@@ -22,6 +22,14 @@ import { SEL } from '../ui/domContract.js';
 const changed = (dirty) => !!dirty && Object.keys(dirty).length > 0;
 
 /**
+ * `전체 초기화` 버튼의 라벨. index.html 의 `#clearBtn` 글자와 **한 글자도 다르면 안 된다** —
+ * confirmOnce 가 확인 뒤 이 문자열로 버튼을 되돌리기 때문이다.
+ * ⚠ 원본은 '전체 초기화' 였다. 이 버튼이 링크바까지 비운다는 것(4484-4490)이 어디에도 적혀
+ *   있지 않아 괄호를 달았다 — 확인 문구('정말요?')는 confirmOnce 가 고정으로 쓴다.
+ */
+export const CLEAR_BTN_LABEL = '전체 초기화(링크 포함)';
+
+/**
  * 사이드바·툴바 바인딩 일체.
  *
  * ⚠ 이 함수가 마지막에 bindHotkeys(deps) 를 부른다(원본 2380). app/main 은 bindHotkeys 를
@@ -96,10 +104,14 @@ export function bindControls(deps) {
 
   // ── 전체 초기화 (2360-2362) ────────────────────────────────────────────────
   // ⚠ 첫 인자가 e.currentTarget 이다(2361). 1차 클릭에서는 아무 일도 일어나면 안 된다.
+  // ⚠ label 은 confirmOnce 가 **되돌릴 라벨**이자 버튼이 평소에 달고 있는 글자다. 이 버튼은
+  //   배치뿐 아니라 링크바 4필드까지 비우므로(4484-4490) 무엇이 함께 지워지는지를 라벨이 말한다 —
+  //   index.html 의 #clearBtn 글자와 **같아야 한다**(다르면 확인 뒤 버튼 이름이 바뀐다).
+  //   버튼이 좁아 짧게 적는다. 2026-09 이후로는 Undo 로 링크까지 되돌아온다(UNDO_FIELDS).
   els.clearBtn.addEventListener('click', (e) => {
-    confirmOnce(e.currentTarget, '전체 초기화', () => {
+    confirmOnce(e.currentTarget, CLEAR_BTN_LABEL, () => {
       apply(commands.clearBoard());              // 4482-4490 (링크 초기화 포함)
-      apply(commands.commitHistory('main'));     // 4491
+      apply(commands.commitHistory('main'));     // 4491 — 링크까지 한 스냅샷에 담긴다
     });
   });
 

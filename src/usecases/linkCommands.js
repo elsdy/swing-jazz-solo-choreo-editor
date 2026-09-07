@@ -5,6 +5,16 @@
 // 삭제(5181·5186·5197-5200), applyLinksData 절차부(5118-5127), clearBoard 의 링크 초기화(4484-4490)를 옮겼다.
 // fetch·setTimeout·localStorage 는 여기 없다 — 디바운스는 input/adapters, 조회는 adapters/youtubeOembed,
 // 쓰기는 주입받은 storage 포트가 한다.
+//
+// ⚠ 히스토리(2026-09): 링크는 이제 undo 스냅샷 필드다(schema.UNDO_FIELDS). 그래도 **이 파일은
+//   히스토리를 쌓지 않는다** — Dirty 에 history 를 켜지도 않는다. 커밋은 호출부의 몫이라는 것이
+//   이 저장소의 규약이고(input/controls.js 상단 STAGE2 계약), 링크의 커밋 지점은 아래로 한정된다:
+//     · YouTube·ClickUp 입력창의 change(blur/Enter) — ui/linksBarView
+//     · ✕ 초기화 버튼 둘 · 커스텀 링크 추가/삭제/레이블 change/URL change — ui/linksBarView
+//     · `전체 초기화` — input/controls.js 가 clearBoard 뒤에 commitHistory('main')(4491)
+//     · 프로젝트 불러오기 — projectCommands 가 applyProjectData 끝에서 커밋(4386)
+//   `input` 에는 걸지 않는다(키를 누를 때마다 undo 단계가 쌓인다). resolveYoutubeTitle 에도
+//   걸지 않는다 — 사용자의 조작이 아니라 네트워크 응답이다.
 
 import { NONE } from './store.js';
 import * as Links from '../domain/links.js';
@@ -68,6 +78,7 @@ function setTitleFetch(ctx, value) {
  * (ClickUp·커스텀 링크는 전부 즉시 저장).
  *
  * ⚠ 제목을 **먼저 비운다**(5228). 그래서 URL 을 고치는 순간 이전 제목 칩이 사라진다.
+ * ⚠ 커밋 지점이 아니다 — 히스토리는 같은 입력창의 change(blur/Enter)에서 한 번만 쌓인다.
  * ⚠ 디바운스 타이머와 조회는 호출부 몫이다: 700ms 뒤 adapters/youtubeOembed.fetchTitle(url) 을 부르고
  *   그 결과로 resolveYoutubeTitle(ctx, url, result) 를 부를 것. 새 입력이 오면 이전 타이머를 취소한다(5232).
  * @see index.html:5224
@@ -90,6 +101,8 @@ export function setYoutubeUrl(ctx, rawUrl) {
 /**
  * 디바운스된 제목 조회의 착지점(5235-5240).
  *
+ * ⚠ **커밋 지점이 아니다.** 사용자의 조작이 아니라 네트워크 응답이라 여기서 히스토리를 쌓으면
+ *   가만히 있어도 undo 단계가 생긴다. 제목은 다음 커밋 때 함께 스냅샷에 들어간다.
  * ⚠ **가드는 URL 동등 비교 하나뿐이다**(5236). 요청 당시의 URL 과 지금 store 의 URL 이 다르면
  *   아무 일도 하지 않는다 — 저장도, 렌더도 없다(NONE).
  * ⚠ 원본 fetchYoutubeTitle(5090-5097)은 실패를 `''` 로 삼킨다. 그래서 문자열을 받으면 언제나
@@ -221,10 +234,11 @@ export function removeCustomLink(ctx, id) {
 /**
  * 프로젝트 파일을 열 때 링크 4필드를 통째로 갈아끼운다. applyLinksData(5118-5127).
  *
+ * ⚠ 커밋은 여기서 하지 않는다 — 불러오기 절차의 마지막(4386)에서 한 번 쌓는다. 그때 링크가
+ *   이미 store 에 들어와 있어야 스냅샷에 실린다(이 함수가 그 앞에 불린다).
  * ⚠ 이 경로만 커스텀 링크 **항목을 정규화한다**(id 없으면 uid 부여, label/url String 강제 — 5122).
  *   localStorage 경로(loadLinks 5113)는 항목을 손대지 않는다. 둘을 같게 만들면 저장된 링크의 id 가
  *   새로 생겨 동작이 바뀐다.
- * ⚠ 링크는 undo 스냅샷 밖이다 — 여기서 히스토리를 쌓지 않는다.
  * @see index.html:5118
  * @param {LinkCtx} ctx
  * @param {object} data 프로젝트 파일(평평한 youtubeUrl/youtubeTitle/clickupUrl/customLinks)
@@ -244,8 +258,10 @@ export function applyLinksFromProject(ctx, data) {
  * ⚠ 이 커맨드는 boardCommands 가 아니라 여기에 둔다. boardCommands.clearBoard 는 배치를 비운 뒤
  *   이 함수를 부르고 두 Dirty 를 mergeDirty 로 합쳐라(원본은 renderLinksBar 를 renderRows 보다
  *   **먼저** 부르지만 presenter 의 고정 순서가 boards → links 라 화면 결과는 같다).
- * ⚠ **보존 대상 결함**: 링크는 undo 스냅샷(UNDO_FIELDS) 밖인데 여기서 지워지고 즉시 저장되므로
- *   Undo 로 되돌아오지 않는다(4484-4490). 고치지 말 것 — 고치려면 UNDO_INCLUDES_LINKS 플래그.
+ * ⚠ 2026-09 이전에는 여기가 보존 대상 결함이었다 — 링크가 undo 스냅샷 밖인데 지워지고 즉시
+ *   저장돼 Undo 로 돌아오지 않았다. 지우는 동작(PR #17)은 그대로 두고, schema.UNDO_FIELDS 에
+ *   links 를 더해 되돌릴 수 있게 했다. **이 함수는 그대로다** — 되돌리기는 호출부의 커밋
+ *   (controls.js 의 clearBoard → commitHistory('main') 4491)과 historyCommands 의 복원이 맡는다.
  * ⚠ 비우는 값은 손으로 4필드를 쓰지 않고 `normalizeLinks({})` 가 만드는 것을 쓴다(STAGE1 계약).
  * @see index.html:4481
  * @param {LinkCtx} ctx

@@ -87,8 +87,6 @@ const meta = loadLocalMeta();
 store.patch('recents', meta.recents);
 store.patch('favorites', meta.favorites);
 
-const hist = History.createHistory(store);
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. 어댑터 + storage 파사드
 //
@@ -115,6 +113,12 @@ const storage = {
   saveLinks: (serialized) => saveLinksRaw(serialized),                            // 5100-5106
   saveFavorites
 };
+
+// ⚠ 히스토리는 storage **뒤에** 만든다 — 메인 undo/redo 가 링크를 되돌린 뒤 saveLinks 로 되쓰기
+//   때문이다(2026-09). linkCommands·projectCommands 와 **같은 storage 인스턴스**여야 `전체 초기화`가
+//   쓴 값과 undo 가 되쓰는 값이 같은 키(choreo_links)에 간다. 만드는 시점은 순서 규칙 ①과 무관하다
+//   (createHistory 는 uid 를 소비하지 않는다).
+const hist = History.createHistory(store, { storage });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. presenter — views 는 아래에서 채우는 **가변 객체**다(뷰 ↔ render 순환을 여기서 끊는다)
@@ -388,6 +392,9 @@ views.linksBar = createLinksBarView({
   store,
   render,
   titleFetchState: () => LinkCmd.titleFetchState(store),  // 안 넘기면 스피너가 영영 안 뜬다
+  // 2026-09 — 링크 편집의 커밋 지점(change·✕·추가·삭제)은 뷰가 소유한다. 커맨드는 히스토리를
+  // 쌓지 않는다(usecases 규약). Dirty.history 는 Undo/Redo 버튼만 건드리므로 입력 중에도 안전하다.
+  commitHistory: () => render(commitHistory(BOARD_MAIN)),
   debounce,
   fetchTitle,
   commands: {

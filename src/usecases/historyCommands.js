@@ -2,13 +2,17 @@
 //
 // 원본 index.html 의 snapshotState·restoreSnapshot·saveHistory·undo·redo(2833-2886)와
 // 그 루틴 편집기 복제본 snapshotStateRe·saveHistoryRe·undoRe·redoRe(2900-2936)를 HistoryStack
-// 한 벌로 합쳤다. 두 벌의 유일한 차이인 **스냅샷 필드 집합**(메인 6필드 / 루틴 3필드)만
+// 한 벌로 합쳤다. 두 벌의 유일한 차이인 **스냅샷 필드 집합**(메인 7필드 / 루틴 3필드)만
 // SNAPSHOT_SPEC[boardId] 로 갈린다. 렌더 호출 7종이 있던 자리에는 Dirty 를 돌려준다.
+//
+// ⚠ 메인 스냅샷의 7번째 필드가 links 다(2026-09). 링크는 상태 말고 localStorage 에도 살기 때문에
+//   이 모듈이 유일하게 어댑터를 **주입받는다** — createHistory(store, { storage }) 의 saveLinks.
 
 import { UNDO_FIELDS, ROUTINE_UNDO_FIELDS } from '../domain/project/schema.js';
 import { snapshotMain, snapshotRoutine, applySnapshot } from '../domain/project/snapshot.js';
 import { normalize as normalizeCategories } from '../domain/categories.js';
 import { DEFAULT_CATEGORIES } from '../domain/defaults.js';
+import { serializeLinks } from '../domain/links.js';
 import { BOARD_MAIN, BOARD_ROUTINE, BOARD_IDS, boardOf, NONE } from './store.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,7 +26,7 @@ import { BOARD_MAIN, BOARD_ROUTINE, BOARD_IDS, boardOf, NONE } from './store.js'
 export const SNAPSHOT_SPEC = Object.freeze({
   [BOARD_MAIN]: Object.freeze({
     kind: 'main',            // applySnapshot 의 kind 인자 (= BOARD_POLICY.snapshotKind)
-    fields: UNDO_FIELDS,     // ['rows','cols','placements','moveLibrary','categories','routines']
+    fields: UNDO_FIELDS,     // ['rows','cols','placements','moveLibrary','categories','routines','links']
     limit: 100               // 2869
   }),
   [BOARD_ROUTINE]: Object.freeze({
@@ -39,7 +43,10 @@ export const SNAPSHOT_SPEC = Object.freeze({
 // state 처럼 평평한 객체를 기대한다. 그 사이를 잇는 유일한 자리가 여기다(STAGE1 계약).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** snapshotState(2834-2839)가 보던 그대로의 평평한 뷰. 키 순서는 snapshotMain 이 UNDO_FIELDS 로 고정한다. */
+/**
+ * snapshotState(2834-2839)가 보던 그대로의 평평한 뷰. 키 순서는 snapshotMain 이 UNDO_FIELDS 로 고정한다.
+ * ⚠ links 는 원본에 없던 필드다(2026-09). 복제는 snapshot.pickUndoFields 가 한다 — 여기서는 참조만 넘긴다.
+ */
 function mainSnapshotView(state) {
   const board = boardOf(state, BOARD_MAIN);
   return {
@@ -48,7 +55,8 @@ function mainSnapshotView(state) {
     placements: board.placements,
     moveLibrary: state.library,
     categories: state.categories,
-    routines: state.routines
+    routines: state.routines,
+    links: state.links
   };
 }
 
@@ -69,11 +77,17 @@ function takeSnapshot(state, boardId) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 메인 스냅샷을 store 에 되돌린다. restoreSnapshot(2845-2851).
+ * 메인 스냅샷을 store 에 되돌린다. restoreSnapshot(2845-2851) + 링크 복원(2026-09 신설).
  * ⚠ applySnapshot 에 categories.normalize 와 DEFAULT_CATEGORIES 를 반드시 넘긴다(1단계 요구).
  * ⚠ 패치에 'routines' 키가 없으면 기존 routines 를 **건드리지 않는다**(2850, 보존 대상 결함).
+ * ⚠ links 는 언제나 통째로 갈아끼운다(patch 가 아니라 update — 4필드 전부가 스냅샷에 있다).
+ *   그리고 **localStorage 에도 되쓴다**: `전체 초기화`(clearLinks)가 saveLinks 로 즉시 썼기 때문에
+ *   상태만 되돌리면 새로고침에서 지워진 값이 되살아난다. saveLinks 는 주입이며, 없으면 건너뛴다
+ *   (골든 어댑터·단위 테스트는 주입하지 않는다 — usecases 는 어댑터를 import 하지 않는다).
+ * ⚠ 제목 조회 상태(session.youtubeTitleFetch)도 함께 맞춘다. 안 맞추면 조회 중에 Undo 했을 때
+ *   '제목 불러오는 중…' 스피너가 남는다(응답은 URL 동등 비교에서 걸러져 영영 안 온다).
  */
-function restoreMain(store, snapshot) {
+function restoreMain(store, snapshot, storage) {
   const patch = applySnapshot(snapshot, {
     kind: SNAPSHOT_SPEC[BOARD_MAIN].kind,
     normalizeCategories,
@@ -87,10 +101,15 @@ function restoreMain(store, snapshot) {
   const top = {
     library: patch.moveLibrary,   // state.moveLibrary (2848)
     categories: patch.categories, // 2849
+    links: patch.links,           // 2026-09 — UNDO_FIELDS 에 links 가 들어온 자리
     selection: new Set()          // state.selectedGroupIds.clear() (2851)
   };
   if ('routines' in patch) top.routines = patch.routines; // 2850
   store.update(top);
+  store.patch('session', {
+    youtubeTitleFetch: { status: 'idle', title: patch.links.youtubeTitle }
+  });
+  storage?.saveLinks?.(serializeLinks(patch.links));   // 5100-5104 와 같은 저장 경로
 }
 
 /**
@@ -119,6 +138,8 @@ function restoreRoutine(store, snapshot) {
  *   renderBoard(true)(2857)                   → boards.main { skeleton, rows:'all' }
  *   renderRoutineList(2858)                   → routineList
  *   updateHistoryButtons(2859)                → history
+ * ⚠ links 는 원본에 없던 항목이다(2026-09). 켜지 않으면 상태만 바뀌고 입력창은 옛 값을 그대로
+ *   보여 준다 — renderLinksBar(5207-5215)가 #youtubeUrlInput.value 를 store 값으로 덮는 자리다.
  */
 function mainRestoreDirty() {
   return {
@@ -129,6 +150,7 @@ function mainRestoreDirty() {
     legend: true,
     categorySelect: true,
     routineList: true,
+    links: true,
     toolbar: true,
     history: true
   };
@@ -215,15 +237,22 @@ class HistoryStack {
 
 /**
  * 히스토리 한 벌(메인·루틴 두 스택)을 만든다.
+ *
  * @param {object} store  usecases/store.js 의 createStore(...) 결과
- * @returns {{ store: object, stacks: Record<string, HistoryStack>, stack: (boardId:string)=>HistoryStack }}
+ * @param {{ storage?: { saveLinks?: (payload: object) => unknown } }} [deps]
+ *   ⚠ saveLinks 는 메인 undo/redo 가 링크를 되돌린 뒤 localStorage 에 되쓰는 데 쓴다.
+ *   app/main 은 linkCommands·projectCommands 에 넘기는 것과 **같은 storage 파사드**를 넘겨라 —
+ *   `전체 초기화`가 쓴 값과 undo 가 되쓰는 값이 같은 키(choreo_links)여야 한다.
+ *   주입이 없으면 저장을 조용히 건너뛴다(골든 어댑터는 주입하지 않는다).
+ * @returns {{ store: object, storage: object|null, stacks: Record<string, HistoryStack>, stack: (boardId:string)=>HistoryStack }}
  */
-export function createHistory(store) {
+export function createHistory(store, deps = {}) {
   if (!store) throw new TypeError('createHistory(store): store 가 필요하다');
   const stacks = {};
   for (const boardId of BOARD_IDS) stacks[boardId] = new HistoryStack(boardId);
   return {
     store,
+    storage: deps.storage || null,
     stacks,
     stack(boardId) {
       const found = stacks[boardId];
@@ -261,7 +290,7 @@ export function undo(hist, boardId) {
   const stack = hist.stack(boardId);
   const snapshot = stack.stepBack();
   if (snapshot === null) return NONE;
-  return applyRestore(hist.store, boardId, snapshot);
+  return applyRestore(hist, boardId, snapshot);
 }
 
 /**
@@ -272,16 +301,19 @@ export function redo(hist, boardId) {
   const stack = hist.stack(boardId);
   const snapshot = stack.stepForward();
   if (snapshot === null) return NONE;
-  return applyRestore(hist.store, boardId, snapshot);
+  return applyRestore(hist, boardId, snapshot);
 }
 
-/** undo/redo 가 공유하는 복원부. */
-function applyRestore(store, boardId, snapshot) {
+/**
+ * undo/redo 가 공유하는 복원부.
+ * ⚠ store 가 아니라 hist 를 받는다 — 메인 복원이 hist.storage.saveLinks 를 써야 하기 때문이다.
+ */
+function applyRestore(hist, boardId, snapshot) {
   if (boardId === BOARD_MAIN) {
-    restoreMain(store, snapshot);
+    restoreMain(hist.store, snapshot, hist.storage);
     return mainRestoreDirty();
   }
-  restoreRoutine(store, snapshot);
+  restoreRoutine(hist.store, snapshot);
   return routineRestoreDirty();
 }
 
