@@ -5,8 +5,30 @@
   "generatedFrom": "index.html (인라인 JS 원문 슬라이스)",
   "sourceSha": "ddc2d9bfce236ec4",
   "extractSha": "ddc2d9bfce236ec4",
-  "note": "기대값은 index.html 의 현재 동작을 기록한 것이다. 여기 적힌 것이 \"옳은\" 동작이라는 뜻은 아니다 — 알려진 결함도 그대로 굳어 있다(desc 참고).",
-  "scenarioCount": 150
+  "note": "기대값은 index.html 의 현재 동작을 기록한 것이다. 여기 적힌 것이 \"옳은\" 동작이라는 뜻은 아니다 — 알려진 결함도 그대로 굳어 있다(desc 참고). 예외는 meta.intentionalChanges 에 적힌 시나리오들이다: 그것만은 원본 동작이 아니라 의도적으로 바꾼 동작을 실제 실행 결과로 다시 기록한 것이다.",
+  "scenarioCount": 150,
+  "intentionalChanges": [
+   {
+    "scenario": "resize-05-stacks-instead-of-overwrite",
+    "previousId": "resize-05-overwrite-same-lane",
+    "date": "2026-09-07",
+    "why": "RESIZE_POLICY 의 keepLane·overwriteSameLane 을 false 로 뒤집어, 리사이즈도 배치·이동·복사와 같은 충돌 규칙(빈 레인을 찾아 아래층으로 쌓기)을 쓰게 했다. 기대값은 손으로 적지 않고 tests/replay.mjs 로 재생한 실제 결과를 기록한 것이다. 이전 기대값: 겹친 턴(row2 s3 len4)이 통째로 삭제되고 스텝만 레인 0 에 남았다. 지금은 턴이 레인 0 에 그대로 살아남고 확대한 스텝이 레인 1 로 내려간다.",
+    "pr": "claude/resize-stacks-instead-of-deleting (#18→#19→#20 위에 쌓은 브랜치)"
+   },
+   {
+    "scenario": "resize-12-routine-board",
+    "date": "2026-09-07",
+    "why": "RESIZE_POLICY 의 keepLane·overwriteSameLane 을 false 로 뒤집어, 리사이즈도 배치·이동·복사와 같은 충돌 규칙(빈 레인을 찾아 아래층으로 쌓기)을 쓰게 했다. 기대값은 손으로 적지 않고 tests/replay.mjs 로 재생한 실제 결과를 기록한 것이다. 이전 기대값: 다음 행으로 넘어간 세그먼트가 겹친 턴을 지우고 두 세그먼트 모두 레인 0 에 남았다. 지금은 턴이 살아남고 스텝 그룹 전체가 레인 1 로 내려간다(그룹은 모든 행에서 같은 레인을 쓴다).",
+    "pr": "claude/resize-stacks-instead-of-deleting (#18→#19→#20 위에 쌓은 브랜치)"
+   },
+   {
+    "scenario": "resize-13-grow-then-repack-scope",
+    "previousDesc": "확대로 삭제된 그룹의 행까지 repack 범위에 들어간다",
+    "date": "2026-09-07",
+    "why": "RESIZE_POLICY 의 keepLane·overwriteSameLane 을 false 로 뒤집어, 리사이즈도 배치·이동·복사와 같은 충돌 규칙(빈 레인을 찾아 아래층으로 쌓기)을 쓰게 했다. 기대값은 손으로 적지 않고 tests/replay.mjs 로 재생한 실제 결과를 기록한 것이다. 이전 기대값: 확대한 스텝이 레인 0 을 지키며 겹친 턴을 삭제했다. 지금은 턴·점프·폴이 모두 살아남고 스텝이 비어 있는 레인 2 로 내려가며, repack 이 폴을 레인 2 에서 레인 0 으로 당긴다.",
+    "pr": "claude/resize-stacks-instead-of-deleting (#18→#19→#20 위에 쌓은 브랜치)"
+   }
+  ]
  },
  "scenarios": [
   {
@@ -5768,8 +5790,8 @@
    }
   },
   {
-   "id": "resize-05-overwrite-same-lane",
-   "desc": "같은 레인에서 겹치는 그룹은 통째로 삭제된다(부분 트림 아님)",
+   "id": "resize-05-stacks-instead-of-overwrite",
+   "desc": "같은 레인에서 겹치면 지우지 않고 아래층으로 쌓는다",
    "setup": {
     "rows": 8,
     "cols": 8,
@@ -5849,12 +5871,21 @@
     "main": [
      {
       "g": "G1",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 3,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
       "name": "스텝",
       "category": "step",
       "row": 2,
       "startIndex": 0,
       "length": 5,
-      "subRow": 0
+      "subRow": 1
      }
     ],
     "re": [],
@@ -6441,7 +6472,7 @@
   },
   {
    "id": "resize-12-routine-board",
-   "desc": "루틴 보드 리사이즈",
+   "desc": "루틴 보드 리사이즈 — 다음 행에서 겹치면 그룹 전체가 한 레인 아래로 내려간다",
    "setup": {
     "rows": 8,
     "cols": 8,
@@ -6528,6 +6559,15 @@
       "row": 2,
       "startIndex": 2,
       "length": 6,
+      "subRow": 1
+     },
+     {
+      "g": "G2",
+      "name": "턴",
+      "category": "turn",
+      "row": 3,
+      "startIndex": 0,
+      "length": 4,
       "subRow": 0
      },
      {
@@ -6537,7 +6577,7 @@
       "row": 3,
       "startIndex": 0,
       "length": 4,
-      "subRow": 0
+      "subRow": 1
      }
     ],
     "values": [],
@@ -6550,7 +6590,7 @@
   },
   {
    "id": "resize-13-grow-then-repack-scope",
-   "desc": "확대로 삭제된 그룹의 행까지 repack 범위에 들어간다",
+   "desc": "확대한 그룹이 겹친 두 레인 아래로 내려가고, 남은 배치는 repack 으로 위 레인으로 당겨진다",
    "setup": {
     "rows": 8,
     "cols": 8,
@@ -6648,11 +6688,11 @@
     "main": [
      {
       "g": "G1",
-      "name": "스텝",
-      "category": "step",
+      "name": "턴",
+      "category": "turn",
       "row": 2,
-      "startIndex": 0,
-      "length": 6,
+      "startIndex": 4,
+      "length": 2,
       "subRow": 0
      },
      {
@@ -6672,6 +6712,15 @@
       "startIndex": 4,
       "length": 2,
       "subRow": 1
+     },
+     {
+      "g": "G4",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 6,
+      "subRow": 2
      }
     ],
     "re": [],
