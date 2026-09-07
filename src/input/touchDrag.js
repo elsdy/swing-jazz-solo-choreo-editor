@@ -12,7 +12,7 @@
 
 import { CLS } from '../ui/domContract.js';
 import { getGroup, groupCount } from '../domain/placements.js';
-import { categoryColor } from '../domain/categories.js';
+import { resolvePlacementColor } from '../domain/categories.js';
 
 /**
  * 보드 하나의 터치 이동 세션을 만든다. boardController 가 touchstart/touchmove/touchend 에서 부른다.
@@ -69,11 +69,14 @@ export function createPlacementTouchDrag(deps) {
     if (!group.length) return;
     dragSession.begin('placement-move', { groupId, isTouchDragging: true, lastX: x, lastY: y }, { boards: [boardId] });
     overlays.markDraggingGroup(boardId, groupId);
-    // ⚠ 루틴 블록의 고스트 색은 루틴 자기 색이 아니라 **고정 '#6366f1'** 이다(3844).
-    //   domain/categories.resolvePlacementColor 를 쓰면 routine.color 가 나와 색이 달라진다 — 쓰지 마라.
-    const background = group[0].type === 'routine'
-      ? '#6366f1'
-      : categoryColor(store.categories, group[0].category);
+    // 고스트 색은 **끌고 있는 블록과 같은 색**이어야 한다. 원본은 루틴일 때 고정 '#6366f1' 을
+    // 썼는데, 그때는 안무표의 루틴 블록도 전부 같은 남보라라 우연히 맞았다. 2026-09-07 에
+    // 블록이 루틴 색으로 그려지게 되면서 그 상수는 손을 대는 순간 색이 바뀌는 원인이 됐다.
+    // resolvePlacementColor 의 `base`(그러데이션이 아닌 단색)를 쓰면 두 자리가 같은 값을 쓴다.
+    const background = resolvePlacementColor(group[0], {
+      categories: store.categories,
+      routines: store.routines || [],
+    }).base;
     overlays.showPlacementGhost({
       text: `${group[0].name} ${groupCount(board().placements, groupId)}c`,
       background

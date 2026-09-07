@@ -11,10 +11,11 @@
 //   ui/overlays 가 하는 일이므로 app/main 이 onDragEnd 로 감싸 넘긴다.
 
 import { CLS } from './domContract.js';
+import { DEFAULT_ROUTINE_COLOR } from '../domain/categories.js';
 import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
 
-/** 루틴 칩의 기본색. 원본 4715 의 `routine.color || '#6366f1'`. */
-const DEFAULT_ROUTINE_COLOR = '#6366f1';
+// 루틴 칩의 기본색은 domain/categories 가 갖는다 — 안무표 블록과 같은 값을 써야
+// 목록 칩과 블록 색이 갈리지 않는다(원본 4715 는 여기에 리터럴을 또 뒀다).
 
 /** 즐겨찾기 머리글의 인라인 스타일. 원본 4756. */
 const FAV_HEADER_STYLE = 'font-size:10px;font-weight:800;color:#facc15;padding:4px 2px 2px;letter-spacing:0.04em;';

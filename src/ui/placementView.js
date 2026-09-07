@@ -8,12 +8,12 @@
 //   `.placement` / `.move-handle` / `.resize-handle` 을 el 위임으로 되읽는다
 //   (그 암묵 계약이 ui/domContract.js 다).
 //
-// ⚠⚠ 보존 대상 결함 두 가지가 이 파일에 있다 — 고치지 마라:
-//   #5 루틴 배치는 routine.color 를 **읽기만** 하고 el.style.background 에 쓰지 않는다(3438이 else 안).
-//      CSS 의 `.placement.is-routine` 이 !important 그라디언트를 주기 때문에 오늘 화면은 그 색이다.
-//      균일하게 칠하도록 '고치면' 보드의 루틴 블록 색이 전부 바뀐다.
-//      → domain/categories.resolvePlacementColor 가 `apply:false` 로 이 사실을 값으로 돌려준다.
+// ⚠⚠ 보존 대상 결함 하나가 이 파일에 남아 있다 — 고치지 마라:
 //   #7 intro 행의 라벨은 'intro' 인데 비고의 범위 라벨은 `8x0` 이다(3364 vs 3417).
+//
+// 같은 자리에 있던 #5(루틴 배치가 routine.color 를 읽기만 하고 칠하지 않던 것)는 2026-09-07 에
+// 고쳐서 내보냈다. 지금은 domain/categories.resolvePlacementColor 가 돌려준 background 를
+// 그대로 칠한다. → docs/deviations.md 의 `고쳐서 내보낸 것`
 
 import { CLS, DATA } from './domContract.js';
 import { escapeHtml } from './widgets.js';
@@ -79,10 +79,11 @@ export function createPlacementEl(placement, visualSubRow, deps) {
   //   boardView 가 행마다 한 번 읽어 넘긴 cellH 를 쓰고, 없으면 원본과 똑같이 여기서 읽는다.
   const cellH = typeof deps.cellH === 'number' ? deps.cellH : readCellH();
   el.style.top = `${visualSubRow * cellH + 6}px`;
-  // ⚠⚠ 보존 결함 #5 — 루틴 배치는 apply:false 라 background 를 **쓰지 않는다**(원본 3438 이 else 안).
+  // 배경과 글자색은 domain 이 정한다. 루틴 배치는 루틴 색에서 만든 그러데이션이고(예전에는
+  // 색을 계산만 하고 칠하지 않아 CSS 의 보라 하나로만 보였다), 글자색은 대비비로 고른 값이다.
   const color = resolvePlacementColor(placement, { categories, routines: routines || [] });
-  if (color.apply) el.style.background = color.background;
-  if (color.textColor) el.style.color = color.textColor;
+  el.style.background = color.background;
+  el.style.color = color.textColor;
   const cnt = groupCount(board.placements, placement.groupId);
   el.innerHTML = `<div class="${CLS.tooltip}">${escapeHtml(placement.name)} ${cnt}c</div>`
     + `<div class="${CLS.moveHandle}" draggable="true" title="위치 이동"></div>`

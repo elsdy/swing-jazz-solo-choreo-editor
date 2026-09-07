@@ -12,6 +12,7 @@
 
 import { buildSegments } from './grid.js';
 import { getGroup, makeSegmentPlacements } from './placements.js';
+import { DEFAULT_ROUTINE_COLOR } from './categories.js';
 
 /**
  * @typedef {Object} Routine
@@ -30,7 +31,11 @@ const idsOf = (ids) => (typeof ids === 'function' ? ids : ids.uid);
  * 루틴 색 팔레트. 순서가 곧 배정 순서다.
  * @see index.html:4496
  */
-export const ROUTINE_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#06b6d4'];
+// ⚠ 이 여덟 색은 눈으로 고른 것이 아니라 대비비를 재서 정한 것이다. 전부 검은 글자로
+//   4.5:1 을 넘긴다(tests/unit/domain.test.mjs 가 단언한다). 색을 바꾸면 그 테스트를 먼저 돌려라.
+//   앞의 둘은 원래 indigo-500(#6366f1)·violet-500(#8b5cf6)이었는데 검정·흰색 어느 쪽으로도
+//   4.47 밖에 못 내서 같은 계열 400 단계로 올렸다. → docs/PRINCIPLES.md 의 U-4
+export const ROUTINE_COLORS = ['#818cf8', '#a78bfa', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#06b6d4'];
 
 /**
  * 다음 루틴 색과 다음 인덱스. 원본 nextRoutineColor(4498-4502) 를 무상태화한 것.
@@ -271,7 +276,7 @@ export function mergeRoutines(routines, incoming) {
       rows: Math.max(1, Number(r.rows) || 4),
       cols: Math.max(1, Number(r.cols) || 8),
       placements: Array.isArray(r.placements) ? r.placements : [],
-      color: r.color || '#6366f1',
+      color: r.color || DEFAULT_ROUTINE_COLOR,
       isFavorite: false
     };
     added.push(merged);
@@ -298,7 +303,7 @@ export function normalizeRoutine(r, ids) {
     rows: Math.max(1, Number(r.rows) || 4),
     cols: Math.max(1, Number(r.cols) || 8),
     placements: Array.isArray(r.placements) ? r.placements : [],
-    color: r.color || '#6366f1',
+    color: r.color || DEFAULT_ROUTINE_COLOR,
     isFavorite: !!r.isFavorite
   };
 }

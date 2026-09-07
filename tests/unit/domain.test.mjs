@@ -23,6 +23,12 @@ import {
 import {
   MEDIA_PLAYER_MEMBERS, assertMediaPlayer, isMediaPlayer, normalizeClipSegments
 } from '../../src/ports/media.js';
+import {
+  DEFAULT_ROUTINE_COLOR, MIN_CONTRAST, TEXT_DARK, TEXT_LIGHT, bestContrastOn,
+  categoryColor, contrastRatio, darken, parseHexColor, resolvePlacementColor, textColorOn
+} from '../../src/domain/categories.js';
+import { DEFAULT_CATEGORIES } from '../../src/domain/defaults.js';
+import { ROUTINE_COLORS } from '../../src/domain/routines.js';
 import { createNullMediaPlayer } from '../../src/adapters/nullMediaPlayer.js';
 import { NONE, mergeDirty } from '../../src/usecases/store.js';
 import { SCHEMA_VERSION } from '../../src/domain/project/schema.js';
@@ -344,4 +350,89 @@ test('migrations: version 이 없으면 v1, 미래 버전은 거부한다', () =
   const latest = migrateProjectFile({ version: SCHEMA_VERSION, doc: {} });
   assert.equal(latest.ok, true);
   assert.deepEqual(latest.applied, []);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// domain/categories — 색 대비. 눈으로 고른 임계값을 대신하는 자리다.
+//
+// 예전에는 YIQ 밝기 > 90 이면 검은 글자였는데, 그 임계값은 커밋 세 번 만에 남은 값이라
+// 기본 팔레트 14색이 전부 90 을 넘었다 — 흰 글자 분기가 죽은 코드였다.
+// 이제 두 후보의 대비비를 재서 큰 쪽을 쓰고, **팔레트 전체를 여기서 대입해 검증한다.**
+// 색을 새로 넣거나 바꾸면 이 테스트가 먼저 막는다. → docs/PRINCIPLES.md 의 U-4
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('parseHexColor 는 3자리·6자리를 받고 그 밖은 null 이다', () => {
+  assert.deepEqual(parseHexColor('#abc'), { r: 0xaa, g: 0xbb, b: 0xcc });
+  assert.deepEqual(parseHexColor('22c55e'), { r: 0x22, g: 0xc5, b: 0x5e });
+  assert.deepEqual(parseHexColor('#22C55E'), { r: 0x22, g: 0xc5, b: 0x5e });
+  for (const bad of ['', '#ggg', '#12345', 'rgb(1,2,3)', null, undefined, 42]) {
+    assert.equal(parseHexColor(bad), null, `${String(bad)} 는 해석되면 안 된다`);
+  }
+});
+
+test('contrastRatio 는 흑백에서 21, 같은 색에서 1 이다', () => {
+  assert.equal(Math.round(contrastRatio('#000000', '#ffffff')), 21);
+  assert.equal(contrastRatio('#22c55e', '#22c55e'), 1);
+  assert.equal(contrastRatio('#zzz', '#fff'), null);
+});
+
+test('textColorOn 은 더 잘 읽히는 쪽을 고른다', () => {
+  assert.equal(textColorOn('#ffffff'), TEXT_DARK);
+  assert.equal(textColorOn('#000000'), TEXT_LIGHT);
+  // 해석할 수 없는 색은 CSS 기본값과 같은 어두운 글자로 떨어진다
+  assert.equal(textColorOn('nope'), TEXT_DARK);
+  // 고른 색이 실제로 더 나은 쪽임을 정의대로 확인한다
+  for (const bg of ['#22c55e', '#6366f1', '#0f172a', '#facc15']) {
+    const chosen = contrastRatio(bg, textColorOn(bg));
+    const other = contrastRatio(bg, textColorOn(bg) === TEXT_DARK ? TEXT_LIGHT : TEXT_DARK);
+    assert.ok(chosen >= other, `${bg}: 고른 글자색이 더 나쁘다 (${chosen} < ${other})`);
+  }
+});
+
+test('기본 팔레트 전 색이 MIN_CONTRAST 를 넘는다', () => {
+  const palette = [
+    ...Object.entries(DEFAULT_CATEGORIES).map(([key, v]) => [`카테고리 ${key}`, v.color]),
+    ...ROUTINE_COLORS.map((c, i) => [`루틴 ${i + 1}`, c]),
+    ['카테고리 폴백', categoryColor({}, '없는키')],
+    ['루틴 폴백', DEFAULT_ROUTINE_COLOR],
+  ];
+  for (const [name, color] of palette) {
+    const ratio = bestContrastOn(color);
+    assert.ok(
+      ratio !== null && ratio >= MIN_CONTRAST,
+      `${name} ${color} 의 대비비가 ${ratio?.toFixed(2)} 로 ${MIN_CONTRAST} 미만이다. ` +
+      `색을 바꾸거나 글자색 후보를 늘려라 — 눈으로 넘기지 마라.`
+    );
+  }
+});
+
+test('darken 은 검정 쪽으로 섞고 범위를 벗어난 값을 클램프한다', () => {
+  assert.equal(darken('#ffffff', 0), '#ffffff');
+  assert.equal(darken('#ffffff', 1), '#000000');
+  assert.equal(darken('#808080', 0.5), '#404040');
+  assert.equal(darken('#ffffff', -1), '#ffffff');   // 클램프
+  assert.equal(darken('nope', 0.5), 'nope');        // 해석 못 하면 그대로
+});
+
+test('resolvePlacementColor 는 루틴 색을 실제로 칠하고 글자색을 함께 준다', () => {
+  const routines = [{ id: 'r1', color: '#ec4899' }];
+  const categories = { step: { label: 'step', color: '#22c55e' } };
+
+  const move = resolvePlacementColor({ category: 'step' }, { categories, routines });
+  assert.equal(move.background, '#22c55e');
+  assert.equal(move.base, '#22c55e');
+  assert.equal(move.apply, true);
+  assert.equal(move.textColor, textColorOn('#22c55e'));
+
+  const routine = resolvePlacementColor({ type: 'routine', routineId: 'r1' }, { categories, routines });
+  assert.ok(routine.background.includes('#ec4899'), '루틴 색이 배경에 들어가야 한다');
+  assert.ok(routine.background.startsWith('linear-gradient'), '루틴은 그러데이션이다');
+  assert.equal(routine.base, '#ec4899');
+  assert.equal(routine.apply, true, '예전에는 apply:false 라 색이 묻혔다 — 되돌아가면 안 된다');
+  assert.equal(routine.textColor, textColorOn('#ec4899'));
+
+  // 루틴을 못 찾으면 기본색으로 떨어지되 여전히 칠한다
+  const missing = resolvePlacementColor({ type: 'routine', routineId: '없음' }, { categories, routines });
+  assert.equal(missing.base, DEFAULT_ROUTINE_COLOR);
+  assert.equal(missing.apply, true);
 });
