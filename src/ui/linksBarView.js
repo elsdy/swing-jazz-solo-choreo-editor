@@ -24,6 +24,14 @@
 //
 // ⚠ 커스텀 링크의 비대칭(2단계 계약): 레이블 change 는 **다시 그리지 않고**(5181), URL change 만 다시 그린다(5186).
 //   레이블을 다시 그리면 입력 중 행이 재생성돼 포커스가 날아간다.
+//
+// ⚠ 히스토리 커밋(2026-09 신설, 원본에 없다): 링크가 undo 스냅샷 필드가 되면서
+//   **이 뷰가 링크의 커밋 지점을 전부 소유한다**(deps.commitHistory 주입). 지점은 여섯이다 —
+//     ① #youtubeUrlInput 의 change  ② #clickupUrlInput 의 change  ③ #ytResetBtn  ④ #clickupResetBtn
+//     ⑤ 커스텀 링크 추가·삭제       ⑥ 커스텀 링크 레이블 change · URL change
+//   ⚠⚠ `input` 에는 **절대** 걸지 마라 — 키를 누를 때마다 undo 단계가 쌓인다. change 는 blur/Enter 다.
+//   ⚠ scheduleTitleFetch 의 착지(resolveYoutubeTitle)에도 걸지 마라 — 사용자의 조작이 아니다.
+//   값이 그대로인 change 는 히스토리 스택이 JSON 문자열 비교로 걸러 내므로 스택이 늘지 않는다.
 
 import { CLS, SEL } from './domContract.js';
 import { normalizeYoutubeUrl } from '../domain/links.js';
@@ -53,6 +61,9 @@ const IDLE_FETCH = { status: 'idle', title: '' };
  *   updateCustomLink: (id: string, fields: { label?: string, url?: string }) => any,
  *   removeCustomLink: (id: string) => any
  * }} commands app/main 이 linkCommands 를 묶어 넘긴다.
+ * @property {() => void} [commitHistory] 링크 편집 뒤 undo 스냅샷을 쌓는다. app/main 이
+ *   `() => render(commitHistory('main'))` 로 넘긴다(Dirty.history 는 Undo/Redo 버튼만 건드리므로
+ *   입력 중에 링크바를 다시 그리지 않는다). 없으면 커밋을 건너뛴다(테스트용).
  * @property {(dirty: any) => void} [render] presenter 의 apply. ⚠ 이 뷰는 **쓰지 않는다**(위 경고 참조) —
  *   받아도 무해하도록 자리만 남겨 두었다. 링크바의 입력 경로는 전부 자기 부분 렌더다.
  * @property {(fn: Function, waitMs: number) => (Function & { cancel(): void, pending(): boolean })} debounce
@@ -79,6 +90,7 @@ export function createLinksBarView(deps) {
     store,
     titleFetchState = () => IDLE_FETCH,
     commands,
+    commitHistory = () => {},
     debounce,
     fetchTitle,
     elements = {}
@@ -176,7 +188,10 @@ export function createLinksBarView(deps) {
       labelInput.value = link.label;
       // ⚠ 5181 — 저장만 하고 **다시 그리지 않는다**. 여기서 재렌더하면 입력 중 행이 재생성된다.
       //   커맨드는 NONE 을 돌려주므로 반환값을 버린다(presenter 를 부르지 않는다).
-      labelInput.addEventListener('change', () => { commands.updateCustomLink(link.id, { label: labelInput.value }); });
+      labelInput.addEventListener('change', () => {
+        commands.updateCustomLink(link.id, { label: labelInput.value });
+        commitHistory();                                             // 2026-09 — change 에서만 커밋
+      });
       row.appendChild(labelInput);
 
       const urlInput = document.createElement('input');
@@ -187,6 +202,7 @@ export function createLinksBarView(deps) {
       urlInput.addEventListener('change', () => {
         commands.updateCustomLink(link.id, { url: urlInput.value });
         renderCustomLinks();
+        commitHistory();                                             // 2026-09
       });
       row.appendChild(urlInput);
 
@@ -202,6 +218,7 @@ export function createLinksBarView(deps) {
       delBtn.addEventListener('click', () => {
         commands.removeCustomLink(link.id);
         renderCustomLinks();
+        commitHistory();                                             // 2026-09
       });
       row.appendChild(delBtn);
 
@@ -252,6 +269,9 @@ export function createLinksBarView(deps) {
       // ③ 스피너는 status:'loading' 으로 위 renderYoutubeExtras 가 이미 붙였다. ④ 700ms 예약.
       scheduleTitleFetch(url);
     });
+    // 2026-09 — 커밋은 blur/Enter 한 번뿐이다. 위 'input' 에 걸면 글자마다 undo 단계가 쌓인다.
+    // ⚠ 이 시점의 제목은 아직 조회 전(빈 문자열)일 수 있다. 제목은 다음 커밋에 실린다.
+    ytInput.addEventListener('change', () => commitHistory());
   }
 
   const cuInput = byId('clickupUrlInput');
@@ -260,6 +280,7 @@ export function createLinksBarView(deps) {
       commands.setClickupUrl(cuInput.value);                         // 5247 + 즉시 저장(5249)
       renderClickupExtras();                                         // 5248
     });
+    cuInput.addEventListener('change', () => commitHistory());       // 2026-09 — blur/Enter 한 번
   }
 
   const ytResetBtn = byId('ytResetBtn');
@@ -268,6 +289,7 @@ export function createLinksBarView(deps) {
       commands.resetYoutube();                                       // 5253-5254 + 저장(5257)
       if (ytInput) ytInput.value = '';                               // 5255
       renderYoutubeExtras();                                         // 5256
+      commitHistory();                                               // 2026-09
     });
   }
 
@@ -277,6 +299,7 @@ export function createLinksBarView(deps) {
       commands.resetClickup();                                       // 5261 + 저장(5264)
       if (cuInput) cuInput.value = '';                               // 5262
       renderClickupExtras();                                         // 5263
+      commitHistory();                                               // 2026-09
     });
   }
 
@@ -285,6 +308,7 @@ export function createLinksBarView(deps) {
     addCustomLinkBtn.addEventListener('click', () => {               // 5267
       commands.addCustomLink();                                      // 5268 + 저장(5269)
       renderCustomLinks();                                           // 5269
+      commitHistory();                                               // 2026-09
     });
   }
 

@@ -195,12 +195,12 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `links.js` | YouTube URL 정규화와 커스텀 링크 목록 규칙 |
 | `defaults.js` | 초기값만. `makeDefaultMoves(ids)` 가 uid 소비 순서를 결정적으로 만든다 |
 | `tempo.js` | 카운트 ↔ 초 변환. 카운트 축에 얹는 곱셈 한 겹 |
-| `project/schema.js` | 저장 포맷 상수와 필드 목록. 로직이 없고 import 도 0개 |
+| `project/schema.js` | 저장 포맷 상수와 필드 목록. 로직이 없고 import 도 0개. `UNDO_FIELDS` 와 `DOC_FIELDS` 는 같은 집합이다(`rows` `cols` `placements` `moveLibrary` `categories` `routines` `links`, 순서만 다르다) — 파일과 undo 가 같은 것을 상태로 본다 |
 | `project/serialize.js` | 파일로 내보낼 페이로드 조립 |
 | `project/normalize.js` | 불러온 데이터의 정규화·클리핑 |
 | `project/merge.js` | `부분 불러오기` 의 전 알고리즘 |
 | `project/migrations.js` | 저장 포맷 마이그레이션 |
-| `project/snapshot.js` | undo 스냅샷과 문서 복제. `snapshotMain` `snapshotRoutine` `applySnapshot` |
+| `project/snapshot.js` | undo 스냅샷과 문서 복제. `snapshotMain` `snapshotRoutine` `applySnapshot` `toLinkBundle`. 링크만 값 복제다 — 스냅샷이 store 와 `customLinks` 배열을 공유하면 안 된다 |
 
 ### `src/ports/` — 계약
 
@@ -230,7 +230,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `routineCommands.js` | 루틴 CRUD 와 편집기 세션(`openEditor` `syncFromEditor` `setRoutineSize`) |
 | `projectCommands.js` | 저장·불러오기·`부분 불러오기`·최근 목록 |
 | `linkCommands.js` | 링크바 상태 전이와 제목 조회 상태머신 |
-| `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개 |
+| `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 7필드(링크 포함), 루틴은 3필드. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
 
 ### `src/ui/` — DOM 렌더
 

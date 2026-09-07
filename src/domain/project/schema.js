@@ -2,8 +2,12 @@
 //
 // 오늘 index.html 은 "상태"를 네 군데에서 서로 다르게 정의한다:
 // snapshotState(2833) 6필드 · projectPayloadWithRoutines(5273) 12필드 · restoreSnapshot(2845)의 기본값 ·
-// mergeProjectData(4068)의 암묵 shape. 이 파일은 그 넷을 ChoreoDoc 한 타입 위로 모으되,
-// **이번 PR 에서 값의 내용은 오늘 그대로**다(UNDO_FIELDS 는 현행 6필드, 파일은 여전히 version 1 로 쓴다).
+// mergeProjectData(4068)의 암묵 shape. 이 파일은 그 넷을 ChoreoDoc 한 타입 위로 모은다.
+// 파일은 여전히 version 1 로 쓴다(LEGACY_FILE_VERSION).
+//
+// ⚠ 2026-09 변경: UNDO_FIELDS 에 links 를 더해 **undo 스냅샷과 파일 포맷의 필드 집합이 같아졌다**.
+//   그 전에는 undo 6필드 / 파일 12필드로 "상태의 정의"가 갈려 있었고, 그 틈에서
+//   `전체 초기화` 가 지운 링크가 Undo 로 돌아오지 않는 결함이 나왔다(docs/PRINCIPLES.md D-4).
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 버전
@@ -28,23 +32,33 @@ export const LEGACY_FILE_VERSION = 1;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * undo/redo 스냅샷에 들어가는 필드. snapshotState(2833-2841)의 리터럴 키 순서 그대로다.
- * ⚠ links 는 일부러 빠져 있다 — 오늘 링크는 undo 밖이고(clearBoard 가 지운 링크는 복구 불가),
- * 여기에 넣으면 동작이 바뀐다. 넓히는 것은 다음 PR 의 일이다.
+ * undo/redo 스냅샷에 들어가는 필드. 앞 6개는 snapshotState(2833-2841)의 리터럴 키 순서 그대로고,
+ * `links` 는 **맨 뒤에** 더했다(DOC_FIELDS 도 links 가 맨 뒤다 — 두 목록의 꼬리를 맞춘다).
+ *
+ * ⚠ links 를 더한 이유: `전체 초기화`(clearBoard 4481-4492)가 링크 4필드를 비우고 즉시
+ *   localStorage 에 쓰는데 링크가 스냅샷 밖이라 Undo 로 돌아오지 않았다. 지우는 동작(PR #17)은
+ *   그대로 두고 "되돌릴 수 없다"만 없앤 것이다. 링크가 프로젝트 파일에는 원래 들어 있으므로
+ *   이 변경은 undo 스냅샷을 파일 포맷 쪽으로 맞추는 방향이기도 하다.
+ * ⚠ 키 순서를 바꾸면 스냅샷 문자열이 달라져 중복 판정(saveHistory 2864)이 흔들린다.
+ * ⚠ 스냅샷에 실리는 links 는 **값 복제**여야 한다(중첩 customLinks 배열 공유 금지) —
+ *   snapshot.js 의 pickUndoFields 가 그 책임을 진다.
  * @see index.html:2833
  */
-export const UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines']);
+export const UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links']);
 
 /**
  * 루틴 편집기 undo 스냅샷 필드. snapshotStateRe(2900-2902)의 리터럴 키 순서 그대로다.
  * 루틴 이름·색은 스냅샷에 없다(그래서 루틴 편집기 undo 로는 이름이 되돌아오지 않는다).
+ * ⚠ 여기에는 links 를 더하지 않는다 — 루틴 보드에는 링크바가 아예 없다.
  * @see index.html:2900
  */
 export const ROUTINE_UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements']);
 
 /**
  * ChoreoDoc 의 필드. 파일 본문 = 버전 스냅샷 = undo 스냅샷이 공유하는 단일 타입.
- * UNDO_FIELDS ⊂ DOC_FIELDS 이며, 여기서 links 만 더해진다(v1 의 평평한 4필드를 중첩한 것).
+ * ⚠ 이제 DOC_FIELDS 와 UNDO_FIELDS 는 **같은 집합**이다(순서만 다르다 — 각자 원본 리터럴 순서를
+ *   지킨다). 한쪽에 필드를 더할 때 다른 쪽을 함께 보라: 파일에만 있으면 Undo 로 안 돌아오고,
+ *   스냅샷에만 있으면 저장·불러오기에서 새어 나간다.
  */
 export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibrary', 'placements', 'routines', 'links']);
 
