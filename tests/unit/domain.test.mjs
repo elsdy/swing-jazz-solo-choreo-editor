@@ -9,6 +9,8 @@
 //   · usecases/store.mergeDirty — 원본에 없던 Dirty 대수(代數). 결합법칙이 깨지면 렌더가 조용히 샌다
 //   · domain/project/migrations — version 필드의 첫 독자. v1 파일이 오늘처럼 열려야 한다
 //   · domain/grid 의 카운트 축   — linearOf/cellOf 는 신설이고 tempo 가 그 위에 서 있다
+//   · domain/boardOps 의 충돌 규칙 — 2026-09-07 에 **의도적으로** 원본과 갈라졌다. 골든은 시나리오별
+//     결과만 못박지만, 여기서는 그 결과를 낳는 성질("네 조작이 하나의 규칙")을 직접 단언한다
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,6 +48,10 @@ import { CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
+import {
+  COPY_POLICY, MOVE_POLICY, PLACE_POLICY, RESIZE_POLICY,
+  copyGroup, moveGroup, place, resizeGroup
+} from '../../src/domain/boardOps.js';
 
 const COLS_CASES = [1, 8, 128];
 
@@ -767,4 +773,228 @@ test('controls: #clearBtn 의 마크업 글자와 CLEAR_BTN_LABEL 이 같다', (
   assert.equal(m[1], CLEAR_BTN_LABEL);
   // 링크까지 지운다는 사실이 라벨에 드러나야 한다(확인 문구 '정말요?' 만으로는 알 수 없다).
   assert.ok(CLEAR_BTN_LABEL.includes('링크'), '전체 초기화가 링크바까지 비운다는 안내가 사라졌다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 배치 충돌 규칙 — place · moveGroup · copyGroup · resizeGroup 이 하나의 규칙을 쓴다
+//
+// 2026-09-07 에 RESIZE_POLICY 의 keepLane·overwriteSameLane 을 false 로 뒤집었다. 그 전까지
+// 리사이즈만 원래 레인을 고수하고, 그 레인에서 겹친 그룹을 clearSegmentsArea 로 **통째로 지웠다**.
+// 배치·이동·복사는 처음부터 findFreeLane 으로 빈 레인을 찾아 쌓았으므로, 같은 겹침이 조작 종류에
+// 따라 다른 결과를 냈다 — 개발 원칙 D-2 위반이자 docs/deviations.md 의 "특히 걸리는 하나".
+//
+// 골든(resize-05/12/13)은 그 세 시나리오의 **결과**를 못박는다. 여기서 못박는 것은 그 결과를 낳는
+// **성질**이다: 네 조작의 레인 결정이 같은가, 겹친 그룹의 세그먼트가 하나도 사라지지 않는가,
+// 그리고 정책이 정말 데이터인가(플래그를 되돌리면 옛 동작이 그대로 재현되는가).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 결정적 uid. 조작 하나마다 새로 만든다(호출 횟수가 조작마다 달라 공유하면 id 가 어긋난다). */
+const conflictIds = () => counterEnv({ prefix: 'n' });
+
+/** 8칸 × 4행. 메인은 intro 행(row 0)이 있고 루틴 보드는 없다 — 충돌 규칙은 그 차이와 무관해야 한다. */
+const CONFLICT_MAIN = Object.freeze({ rows: 4, cols: 8, hasIntroRow: true });
+const CONFLICT_ROUTINE = Object.freeze({ rows: 4, cols: 8, hasIntroRow: false });
+
+/** 배치 리터럴 한 줄. groupId 를 name 으로도 쓴다(어느 그룹이 살아남았는지 이름만 봐도 알게). */
+function seg(groupId, row, startIndex, length, subRow) {
+  return { id: `${groupId}@${row}.${startIndex}`, groupId, name: groupId, category: 'step', row, startIndex, length, subRow };
+}
+
+/** 사람이 읽는 보드 형태. 정렬해 비교하므로 배열 순서에는 의존하지 않는다. */
+function shapeOf(placements) {
+  return placements
+    .map(p => `${p.groupId} r${p.row} s${p.startIndex} len${p.length} lane${p.subRow}`)
+    .sort();
+}
+
+/** 그룹의 레인. 세그먼트마다 레인이 다르면 그 자체가 결함이므로 여기서 먼저 걸러 낸다. */
+function laneOfGroup(placements, groupId) {
+  const segs = placements.filter(p => p.groupId === groupId);
+  assert.ok(segs.length, `그룹 ${groupId} 가 보드에서 사라졌다`);
+  const lanes = [...new Set(segs.map(p => p.subRow || 0))];
+  assert.deepEqual(lanes, [lanes[0]], `그룹 ${groupId} 의 세그먼트가 서로 다른 레인에 흩어졌다(repack Phase2 가 통일해야 한다)`);
+  return lanes[0];
+}
+
+/**
+ * 네 정책 전부가 "겹친 그룹을 보존한다"고 선언한다.
+ * keepLane/overwriteSameLane 가지는 resizeGroup 에만 있고 나머지 셋은 그 개념 자체가 없다 —
+ * 그래서 셋은 키가 없는 것으로(!== true), 리사이즈는 **명시적 false** 로 검사한다.
+ * 리사이즈에서 키가 사라지면 "누가 실수로 지웠나 / 일부러 되돌렸나"를 구분할 수 없으므로 존재도 함께 단언한다.
+ */
+test('boardOps: 네 조작의 정책이 모두 겹친 그룹을 보존한다(D-2)', () => {
+  const policies = [['PLACE', PLACE_POLICY], ['MOVE', MOVE_POLICY], ['COPY', COPY_POLICY], ['RESIZE', RESIZE_POLICY]];
+  for (const [name, policy] of policies) {
+    assert.notEqual(policy.overwriteSameLane, true, `${name}_POLICY 가 겹친 그룹을 지운다 — 네 조작이 다시 갈라졌다`);
+    assert.notEqual(policy.keepLane, true, `${name}_POLICY 가 레인을 고수한다 — 겹쳐도 아래로 내려가지 않는다`);
+  }
+  assert.equal(Object.hasOwn(RESIZE_POLICY, 'overwriteSameLane'), true,
+    'RESIZE_POLICY 에서 overwriteSameLane 키가 사라졌다 — 옛 동작을 되살릴 가지가 없어졌다면 lanes.clearSegmentsArea 의 주석부터 고쳐라');
+  assert.equal(Object.hasOwn(RESIZE_POLICY, 'keepLane'), true, 'RESIZE_POLICY 에서 keepLane 키가 사라졌다');
+});
+
+/**
+ * 같은 보드·같은 겹침을 네 조작으로 만들면 **같은 레인**이 나온다.
+ * 블로커 B 가 row1 [2..5] lane0 에 있고, 네 조작 모두 row1 [0..3] 을 차지하려 한다 — 2·3 에서 겹친다.
+ * 답은 넷 다 lane1 이어야 하고, B 는 넷 다 lane0 에 그대로 있어야 한다.
+ */
+test('boardOps: 같은 겹침에서 네 조작이 같은 레인을 고르고 상대를 살려 둔다', () => {
+  const blocker = () => seg('B', 1, 2, 4, 0);
+  const donor = () => seg('S', 3, 0, 4, 0);   // 이동·복사의 원본. 겹침과 무관한 자리에 둔다.
+
+  const results = {
+    place: place(
+      { ...CONFLICT_MAIN, placements: [blocker()] },
+      { move: { name: 'S', category: 'step' }, startRow: 1, startIndex: 0, totalCount: 4 },
+      conflictIds()
+    ),
+    move: moveGroup(
+      { ...CONFLICT_MAIN, placements: [blocker(), donor()] },
+      { groupId: 'S', targetRow: 1, targetStartIndex: 0 },
+      conflictIds()
+    ),
+    copy: copyGroup(
+      { ...CONFLICT_MAIN, placements: [blocker(), donor()] },
+      { groupId: 'S', targetRow: 1, targetStartIndex: 0 },
+      conflictIds()
+    ),
+    // 리사이즈는 목적지를 인자로 받지 않는다 — 같은 자리에서 2 → 4 로 늘리면 같은 [0..3] 을 덮는다.
+    resize: resizeGroup(
+      { ...CONFLICT_MAIN, placements: [blocker(), seg('S', 1, 0, 2, 0)] },
+      { groupId: 'S', newCount: 4 },
+      conflictIds()
+    )
+  };
+
+  for (const [op, result] of Object.entries(results)) {
+    const placed = result.placements.filter(p => p.row === 1 && p.startIndex === 0);
+    assert.equal(placed.length, 1, `${op}: row1 [0..3] 에 놓인 세그먼트가 정확히 하나여야 한다`);
+    assert.equal(placed[0].length, 4, `${op}: 길이가 4카운트가 아니다`);
+    assert.equal(placed[0].subRow, 1, `${op}: 겹친 B 위에 쌓이지 않았다(lane1 이어야 한다)`);
+    assert.equal(laneOfGroup(result.placements, 'B'), 0, `${op}: 블로커 B 가 밀려났거나 사라졌다`);
+    assert.equal(result.placements.filter(p => p.groupId === 'B').length, 1, `${op}: 블로커 B 의 세그먼트가 지워졌다`);
+  }
+});
+
+/**
+ * ⚠ 이번 변경의 **핵심 증상**. clearSegmentsArea 는 겹친 세그먼트가 아니라 그 groupId 전체를 지웠다.
+ * 그래서 여러 행에 걸친 그룹은 **한 칸만 겹쳐도 다른 행의 조각까지** 통째로 사라졌다.
+ * T 는 row2 [7..7] + row3 [0..2] 두 조각짜리 그룹이고, S 를 3카운트로 늘리면 row2 의 7 한 칸만 겹친다.
+ * row3 조각은 겹치는 것이 아무것도 없으므로 손대면 안 된다.
+ */
+test('boardOps: 리사이즈로 한 칸만 겹쳐도 상대 그룹의 다른 행 조각이 살아남는다', () => {
+  const board = {
+    ...CONFLICT_MAIN,
+    placements: [seg('T', 2, 7, 1, 0), seg('T', 3, 0, 3, 0), seg('S', 2, 5, 1, 0)]
+  };
+  const result = resizeGroup(board, { groupId: 'S', newCount: 3 }, conflictIds());
+
+  assert.deepEqual(shapeOf(result.placements), [
+    'S r2 s5 len3 lane1',   // 늘린 쪽이 아래층으로 내려간다
+    'T r2 s7 len1 lane0',   // 겹친 조각도 그대로
+    'T r3 s0 len3 lane0'    // ⚠ 겹치지도 않은 조각 — 옛 동작에서 여기가 사라졌다
+  ]);
+  assert.equal(result.placements.length, 3, '세그먼트 개수가 3이 아니다 — 무언가 지워졌거나 늘어났다');
+  // 아무것도 지우지 않았으니 row3 은 다시 그릴 이유가 없다. 옛 동작은 T 를 지우느라 [2,3] 을 그렸다.
+  assert.deepEqual(result.renderRows, [2], 'renderRows 에 손대지 않은 행이 섞였다');
+});
+
+/**
+ * 리사이즈한 쪽만 내려간다. 겹치지 않으면 레인이 그대로다.
+ * ⚠ "그대로"는 **충돌 규칙**의 이야기다. RESIZE_POLICY.repack:true 가 뒤따르므로,
+ *   혼자 lane2 에 떠 있던 그룹은 겹침과 무관하게 lane0 으로 당겨진다(레인 번호 정규화). 그것도 함께 못박는다.
+ */
+test('boardOps: 리사이즈는 겹칠 때만 아래층으로 내려간다', () => {
+  // (1) 같은 행·같은 레인이지만 겹치지 않는다 → lane0 유지
+  const apart = resizeGroup(
+    { ...CONFLICT_MAIN, placements: [seg('X', 1, 6, 2, 0), seg('S', 1, 0, 2, 0)] },
+    { groupId: 'S', newCount: 4 },   // [0..3] 은 X[6..7] 과 겹치지 않는다
+    conflictIds()
+  );
+  assert.deepEqual(shapeOf(apart.placements), ['S r1 s0 len4 lane0', 'X r1 s6 len2 lane0']);
+
+  // (2) 한 칸이라도 닿으면 내려간다
+  const touching = resizeGroup(
+    { ...CONFLICT_MAIN, placements: [seg('X', 1, 6, 2, 0), seg('S', 1, 0, 2, 0)] },
+    { groupId: 'S', newCount: 7 },   // [0..6] — X 의 6 한 칸과 닿는다
+    conflictIds()
+  );
+  assert.deepEqual(shapeOf(touching.placements), ['S r1 s0 len7 lane1', 'X r1 s6 len2 lane0']);
+
+  // (3) 겹치는 것이 없어도 repack 이 레인 번호를 0부터 다시 매긴다 — 충돌 규칙이 아니라 repack 의 일이다
+  const alone = resizeGroup(
+    { ...CONFLICT_MAIN, placements: [seg('S', 1, 0, 2, 2)] },
+    { groupId: 'S', newCount: 4 },
+    conflictIds()
+  );
+  assert.deepEqual(shapeOf(alone.placements), ['S r1 s0 len4 lane0'], 'repack 이 빈 레인 0·1 을 남겨 뒀다');
+});
+
+/**
+ * 축소는 아무도 지우지 않는다 — 옛 정책으로 돌려도 결과가 **글자 단위로 같다**.
+ * (축소는 덮는 칸이 줄기만 하므로 새 충돌을 만들 수 없다. 지우던 것은 언제나 확대 쪽 이야기였다.)
+ * T 는 row1 [6..7] + row2 [0..5] 두 조각이고 X 가 row2 [0..3] lane1 에 있다.
+ * T 를 2카운트로 줄이면 row2 조각이 사라지고, 비게 된 lane0 으로 X 가 당겨 올라간다.
+ */
+test('boardOps: 축소는 아무도 지우지 않는다(옛 정책과 결과가 같다)', () => {
+  const board = () => ({
+    ...CONFLICT_MAIN,
+    placements: [seg('T', 1, 6, 2, 0), seg('T', 2, 0, 6, 0), seg('X', 2, 0, 4, 1)]
+  });
+  const expected = [
+    'T r1 s6 len2 lane0',
+    'X r2 s0 len4 lane0'   // repack 이 빈 lane0 으로 끌어올린다
+  ];
+  const now = resizeGroup(board(), { groupId: 'T', newCount: 2 }, conflictIds());
+  assert.deepEqual(shapeOf(now.placements), expected);
+  assert.equal(now.placements.filter(p => p.groupId === 'X').length, 1, '축소가 남의 그룹을 지웠다');
+
+  const legacy = resizeGroup(board(), { groupId: 'T', newCount: 2 }, conflictIds(), { overwriteSameLane: true, keepLane: true });
+  assert.deepEqual(shapeOf(legacy.placements), expected, '축소 경로가 정책에 따라 갈라졌다 — 축소는 원래 두 정책이 같아야 한다');
+});
+
+/**
+ * 정책은 **데이터**다. 두 플래그를 옛 값으로 덮어쓰면 삭제 동작이 그대로 재현된다.
+ * 위 "한 칸만 겹쳐도 살아남는다" 와 같은 보드를 쓴다 — 같은 입력에서 정책만으로 결과가 갈린다는 것이 요점이다.
+ * 이 테스트가 깨졌다면 resizeGroup 본문에서 가지 하나가 사라진 것이고,
+ * 그러면 boardOps.RESIZE_POLICY · lanes.clearSegmentsArea 의 주석과 골든 meta.intentionalChanges 가 거짓이 된다.
+ */
+test('boardOps: RESIZE_POLICY 를 옛 값으로 덮어쓰면 삭제 동작이 재현된다', () => {
+  const board = {
+    ...CONFLICT_MAIN,
+    placements: [seg('T', 2, 7, 1, 0), seg('T', 3, 0, 3, 0), seg('S', 2, 5, 1, 0)]
+  };
+  const legacy = resizeGroup(board, { groupId: 'S', newCount: 3 }, conflictIds(), { overwriteSameLane: true, keepLane: true });
+
+  assert.deepEqual(shapeOf(legacy.placements), ['S r2 s5 len3 lane0'],
+    '옛 동작이 재현되지 않았다 — 그룹 통째 삭제 + 원래 레인 고수여야 한다');
+  assert.equal(legacy.placements.filter(p => p.groupId === 'T').length, 0, 'T 가 남아 있다면 옛 삭제 경로가 죽은 것이다');
+  // 겹치지도 않은 row3 까지 다시 그리게 되는 것이 옛 동작의 흔적이다(그 행의 조각이 사라졌으므로).
+  assert.deepEqual(legacy.renderRows, [2, 3]);
+
+  // 기본값과 정말로 다른가 — 같다면 위 단언들이 우연히 맞은 것이다.
+  const now = resizeGroup(board, { groupId: 'S', newCount: 3 }, conflictIds());
+  assert.notDeepEqual(shapeOf(now.placements), shapeOf(legacy.placements), '기본 정책과 옛 정책의 결과가 같아졌다');
+});
+
+/**
+ * 루틴 보드(hasIntroRow:false)도 같은 규칙이다. 골든 resize-12 와 같은 배치를 도메인에서 직접 돌린다.
+ * 스텝을 10카운트로 늘리면 row2 [2..7] + row3 [0..3] 두 조각이 되고 row3 조각이 턴과 정면으로 겹친다.
+ * ⚠ 겹치지 않는 row2 조각까지 lane1 로 내려간다 — findFreeLane 이 그룹의 세그먼트를 **함께** 보기 때문이고,
+ *   이동·복사가 이미 쓰는 규칙과 같다. 그룹의 레인은 조각마다 달라질 수 없다.
+ */
+test('boardOps: 루틴 보드에서도 겹치면 그룹 전체가 한 레인 아래로 내려간다', () => {
+  const board = {
+    ...CONFLICT_ROUTINE,
+    placements: [seg('STEP', 2, 2, 2, 0), seg('TURN', 3, 0, 4, 0)]
+  };
+  const result = resizeGroup(board, { groupId: 'STEP', newCount: 10 }, conflictIds());
+
+  assert.deepEqual(shapeOf(result.placements), [
+    'STEP r2 s2 len6 lane1',
+    'STEP r3 s0 len4 lane1',
+    'TURN r3 s0 len4 lane0'
+  ]);
+  assert.equal(laneOfGroup(result.placements, 'STEP'), 1, '두 행에 걸친 그룹의 레인이 조각마다 달라졌다');
+  assert.equal(laneOfGroup(result.placements, 'TURN'), 0, '겹친 턴이 지워졌거나 밀려났다');
 });

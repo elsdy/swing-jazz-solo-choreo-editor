@@ -185,7 +185,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | 파일 | 책임 |
 |---|---|
 | `grid.js` | 격자 기하와 카운트 축. `rowIndices` `totalCellsFrom` `buildSegments` `clampToGrid` |
-| `lanes.js` | `subRow`(레인) 규칙 전담. `overlaps` `findFreeLane` `clearSegmentsArea` `repackLanes` |
+| `lanes.js` | `subRow`(레인) 규칙 전담. `overlaps` `findFreeLane` `clearSegmentsArea` `repackLanes`. `clearSegmentsArea` 는 2026-09-07 이후 운영 경로에서 호출되지 않는다 — 정책 플래그로만 살아나는 가지이고 골든 `clear-*` 가 직접 검사한다 |
 | `placements.js` | placement 질의와 생성. `makeSegmentPlacements` 가 키 순서를 고정하는 유일한 팩토리 |
 | `boardOps.js` | 배치 전이 6개(놓기·루틴 블록·이동·복사·리사이즈·삭제)와 그 정책 상수 |
 | `categories.js` | 카테고리 사전 트랜잭션과 색 판정. `deriveKey` `resolvePlacementColor` `textColorOn` `contrastRatio` `darken` |
@@ -282,6 +282,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 
 **이 파일은 옳은 동작의 정의가 아니라 현재 동작의 기록이다.** 기대값은 리팩터링 전 `index.html` 원문에서 생성했고, 알려진 결함도 그대로 굳어 있다. `copy-05-no-repack` 은 복사만 레인 재정렬을 빠뜨리는 결함을 고정한 것이고, `routine-02-place-no-clamp` 는 루틴 블록이 보드 밖으로 나가면 조용히 사라지는 것을 고정한 것이다. 무엇이 왜 그대로인지는 [일부러 두고 온 것](deviations.md)에 있다.
 
+**예외는 `meta.intentionalChanges` 에 적힌 시나리오들이다.** 결함을 고쳐 동작이 달라지면 그 시나리오의 기대값은 더 이상 원본 기록이 아니므로, 무엇을 왜 바꿨는지와 **이전 기대값이 무엇이었는지**를 그 배열에 남긴다(이름을 바꾼 시나리오는 `previousId`, 설명만 고친 것은 `previousDesc` 도 함께 — 옛 이름으로 찾아도 걸리게 하려는 것이다). 지금 세 항목이 있고 전부 2026-09-07 의 리사이즈 충돌 규칙 변경이다. 새 기대값은 손으로 적지 않고 `tests/replay.mjs` 로 재생한 실제 결과를 기록한다.
+
 그래서 골든이 깨졌을 때 **먼저 물을 것은 "내가 동작을 바꿨나"** 다. 의도한 개선이면 골든을 손으로 고치지 말고, 무엇을 왜 바꿨는지 커밋 메시지에 남긴 뒤 새 코드 기준으로 다시 생성한다. 러너에 "다시 만들기" 기능을 일부러 넣지 않은 이유가 이것이다 — 러너가 골든을 갱신할 수 있으면 안전망이 아니다.
 
 ```
@@ -302,7 +304,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 하려는 일 | 손대는 곳 | 함께 할 것 |
 |---|---|---|
 | 격자 규칙(카운트 분할·클램프)을 바꾼다 | `src/domain/grid.js` | 골든 재생성. `grid-*` 20개가 먼저 깨진다 |
-| 겹침·쌓기 규칙을 바꾼다 | `src/domain/lanes.js` | `repack-*` `clear-*` 갱신. 리사이즈는 규칙이 다르니 `boardOps` 의 `RESIZE_POLICY` 도 본다 |
+| 겹침·쌓기 규칙을 바꾼다 | `src/domain/lanes.js` | `repack-*` `clear-*` 갱신. 네 조작(놓기·이동·복사·리사이즈)이 같은 규칙을 쓰므로 `boardOps` 의 네 정책 상수를 나란히 고친다 |
 | 놓기·이동·복사·리사이즈 동작을 바꾼다 | `src/domain/boardOps.js` 의 `*_POLICY` 상수 | 해당 골든 갱신. 반환값의 `renderRows` 와 `changedRows` 를 혼동하지 말 것 |
 | 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
 | 화면이 안 다시 그려진다 | 그 조작의 커맨드가 돌려주는 `Dirty` | `dev: true` 로 `assertDirtyCovers` 를 켜 본다 |

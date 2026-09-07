@@ -42,8 +42,9 @@ export function overlaps(a, b) {
  *  - ⚠ movePlacementGroup(3644-3653) 만 labeled `outer:` 루프를 쓴다. 세그먼트 하나라도 충돌하면
  *    targetSubRow++ 후 처음부터 다시 도는 구조라서, `some` 판정과 **결과가 동일**하다(부작용 없음).
  *    따라서 합쳤다. 차이는 순회 중단 시점뿐이다.
- *  - ⚠ rebuildGroup(3706-3728) 은 이 목록에 없다. 레인을 탐색하지 않고 **원래 레인(originalSubRow)을
- *    유지**하기 때문이다. 절대 이 함수로 대체하지 말 것.
+ *  - rebuildGroup(3706-3728) 은 원본에서 이 목록에 없었다. 레인을 탐색하지 않고 **원래 레인
+ *    (originalSubRow)을 유지**했기 때문이다. 2026-09-07 에 RESIZE_POLICY.keepLane 을 false 로 뒤집어
+ *    리사이즈도 이 함수를 쓰게 했다(배치 충돌 규칙을 조작 종류와 무관하게 하나로 — 개발 원칙 D-2).
  *  - startLane/ignoreGroupId 는 repackLanes Phase 2(3549-3562)가 쓴다: maxSub 부터 시작하고 자기 그룹은 제외.
  *
  * @see index.html:3583
@@ -91,6 +92,11 @@ export function lanesOfRow(placements, row) {
 
 /**
  * segments 가 덮는 영역과 겹치는 배치를 **그룹 단위로** 제거한다.
+ *
+ * ⚠ 2026-09-07 부터 **운영 경로에서 호출되지 않는다.** 마지막 호출자였던 boardOps.resizeGroup 이
+ *   RESIZE_POLICY.overwriteSameLane:false 로 바뀌어 겹친 그룹을 지우는 대신 아래층으로 쌓기 때문이다.
+ *   그래도 지우지 않는다 — 그 정책 플래그를 true 로 되돌리면 그대로 되살아나는 가지이고,
+ *   골든 clear-01~clear-06 이 이 함수를 clearArea op 으로 직접 검사한다.
  *
  * ⚠ 보존해야 하는 결함 두 가지(FINAL-architecture.md §5 #3):
  *  1) 겹친 세그먼트 하나만 지우는 게 아니라 그 groupId 전체를 지운다.

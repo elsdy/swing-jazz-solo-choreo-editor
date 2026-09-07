@@ -68,18 +68,26 @@ export const COPY_POLICY = Object.freeze({
 });
 
 /**
- * rebuildGroup(3706-3726)의 규칙 — 이 파일에서 유일하게 레인을 탐색하지 않는 전이.
- * ⚠ keepLane:true  — 원래 레인(first.subRow||0)을 그대로 유지한다. lanes.findFreeLane 을 쓰면 안 된다.
- * ⚠ overwriteSameLane:true — 같은 레인에서 겹치는 그룹을 **통째로** 지운다
- *   (clearSegmentsArea 의 그룹 단위 삭제. FINAL-architecture.md §5 #3, 골든 resize-05/resize-06).
- * ⚠ clamp:false — newCount 를 자르지 않는다. buildSegments 가 board.rows 에서 조용히 끊는다.
+ * rebuildGroup(3706-3726)의 규칙.
+ *
+ * 2026-09-07 에 두 플래그를 뒤집어 **원본과 다른 동작**이 됐다(로직은 그대로, 플래그만 바뀌었다).
+ *  · keepLane:false        — 원본은 원래 레인(first.subRow||0)을 고수했다. 이제 배치·이동·복사와 같이
+ *    findFreeLane 으로 빈 레인을 찾아 내려간다.
+ *  · overwriteSameLane:false — 원본은 같은 레인에서 겹치는 그룹을 clearSegmentsArea 로 **통째로** 지웠다
+ *    (FINAL-architecture.md §5 #3). 이제 아무것도 지우지 않고 아래층으로 쌓는다.
+ * 둘 다 true 로 되돌리면 원본 동작이 그대로 살아난다 — 그때 깨지는 골든이
+ * resize-05-stacks-instead-of-overwrite · resize-12-routine-board · resize-13-grow-then-repack-scope 이고,
+ * 그 셋의 기대값 내력은 골든 meta.intentionalChanges 에 적혀 있다.
+ * 근거: 개발 원칙 D-2(배치 충돌은 조작 종류와 무관하게 같은 규칙),
+ * docs/deviations.md "고쳐서 내보낸 것 — 리사이즈만 겹친 동작을 확인 없이 지웠다".
+ * ⚠ clamp:false — newCount 를 자르지 않는다. buildSegments 가 board.rows 에서 조용히 끊는다(원본 그대로).
  * @see index.html:3706
  */
 export const RESIZE_POLICY = Object.freeze({
   clamp: false,
   repack: true,             // 3724
-  keepLane: true,
-  overwriteSameLane: true,
+  keepLane: false,          // ← 이동·복사와 같은 규칙: 겹치면 빈 레인을 찾아 내려간다
+  overwriteSameLane: false, // ← 겹친 그룹을 지우지 않는다
   renderAllRows: false      // 3725: affectedRows 만
 });
 
@@ -293,10 +301,11 @@ export function copyGroup(board, args, ids, opt) {
 /**
  * 그룹의 길이를 newCount 로 다시 만든다. rebuildGroup(3706-3726) — 리사이즈 확정 경로.
  *
- * ⚠ 이 파일에서 유일하게 레인을 **탐색하지 않는다.** 원래 레인(originalSubRow)을 유지하고,
- *   그 레인에서 겹치는 다른 그룹을 clearSegmentsArea 로 통째로 지운다(RESIZE_POLICY 참조).
- * ⚠ 삭제 판정은 **자기 그룹을 이미 제거한 배열** 위에서 한다(3714 다음 3716). ignoreGroupId 를 넘기는 것은
- *   원문 그대로이지만 이 시점에는 이미 중복 가드다.
+ * ⚠ 오늘의 기본 정책(RESIZE_POLICY)은 이동·복사와 같다 — findFreeLane 으로 빈 레인을 찾아 내려가고
+ *   겹친 그룹은 지우지 않는다. 아래 두 분기는 원본 동작(keepLane·overwriteSameLane)을 되살릴 수 있게
+ *   남겨 둔 것이며, 기본값에서는 clearSegmentsArea 쪽 가지가 타지 않는다.
+ * ⚠ (원본 경로) 삭제 판정은 **자기 그룹을 이미 제거한 배열** 위에서 한다(3714 다음 3716). ignoreGroupId 를
+ *   넘기는 것은 원문 그대로이지만 이 시점에는 이미 중복 가드다.
  *
  * @see index.html:3706
  * @param {object} board
