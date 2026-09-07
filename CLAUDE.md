@@ -19,12 +19,13 @@ python3 -m http.server 8000
 ## 고치기 전에 돌리는 것
 
 ```
-node tests/run.mjs        # 격자 알고리즘 골든 150개
-node tools/check-arch.mjs # 계층 방향과 순수성
-node tools/check-docs.mjs # 문서 등록 누락과 깨진 앵커
+node --test 'tests/**/*.test.mjs' # 도메인 단위 테스트 25개 (색 대비·템포·마이그레이션)
+node tests/run.mjs                # 격자 알고리즘 골든 150개
+node tools/check-arch.mjs         # 계층 방향과 순수성
+node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
 ```
 
-셋 다 의존성이 0이고 몇 초 안에 끝난다. 고친 뒤에도 돌린다.
+넷 다 의존성이 0이고 몇 초 안에 끝난다. 고친 뒤에도 돌린다.
 
 ## 계층 규칙
 

@@ -38,48 +38,128 @@ export function categoryColor(categories, name) {
   return categories[name]?.color || '#cbd5e1';
 }
 
+/** 블록 글자에 쓸 수 있는 두 색. 어두운 쪽은 `.placement` 의 CSS 기본값과 같은 값이다. */
+export const TEXT_DARK = '#08111f';
+export const TEXT_LIGHT = '#ffffff';
+
+/** 읽을 수 있다고 보는 최소 대비비. WCAG 2.1 의 본문 기준. */
+export const MIN_CONTRAST = 4.5;
+
 /**
- * 밝은 색인가? (YIQ 밝기 > 90)
- * ⚠ 임계값 90 은 원본 그대로다. 통상 쓰는 128/150 이 아니라 90이라 어두운 색도 '밝다'고 나오는
- *   구간이 넓다 — 흰 글씨가 붙는 조건을 바꾸므로 절대 손대지 말 것.
- * ⚠ '#abc' 같은 3자리 표기는 parseInt 가 NaN 을 내서 항상 false 가 된다(원본 동작 그대로).
- * @see index.html:2281
+ * `#rgb` · `#rrggbb` 를 0-255 삼원색으로. 해석할 수 없으면 null.
+ * ⚠ 3자리 표기를 받는 것은 원본과 다르다 — 원본 isLightColor 는 `#abc` 에서 NaN 을 냈다.
  * @param {string} hex
- * @returns {boolean}
+ * @returns {{ r:number, g:number, b:number }|null}
  */
-export function isLightColor(hex) {
-  if (!hex) return false;
-  const c = hex.replace('#', '');
-  const r = parseInt(c.substring(0, 2), 16);
-  const g = parseInt(c.substring(2, 4), 16);
-  const b = parseInt(c.substring(4, 6), 16);
-  return (r * 299 + g * 587 + b * 114) / 1000 > 90;
+export function parseHexColor(hex) {
+  if (typeof hex !== 'string') return null;
+  let c = hex.trim().replace(/^#/, '');
+  if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
+  if (!/^[0-9a-fA-F]{6}$/.test(c)) return null;
+  return {
+    r: parseInt(c.slice(0, 2), 16),
+    g: parseInt(c.slice(2, 4), 16),
+    b: parseInt(c.slice(4, 6), 16),
+  };
+}
+
+/** WCAG 상대 휘도(0~1). */
+export function relativeLuminance(hex) {
+  const rgb = parseHexColor(hex);
+  if (!rgb) return null;
+  const ch = (v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * ch(rgb.r) + 0.7152 * ch(rgb.g) + 0.0722 * ch(rgb.b);
+}
+
+/** 두 색의 대비비(1~21). 해석할 수 없는 색이 있으면 null. */
+export function contrastRatio(a, b) {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  if (la === null || lb === null) return null;
+  const [hi, lo] = la >= lb ? [la, lb] : [lb, la];
+  return (hi + 0.05) / (lo + 0.05);
 }
 
 /**
- * 배치 하나의 색을 결정한다. createPlacementEl(3433-3440) 의 분기를 값으로 옮긴 것.
+ * 이 배경 위에 올릴 글자색. **더 잘 읽히는 쪽**을 고른다.
  *
- * ⚠ 보존해야 하는 결함(#5): 루틴 배치일 때 원본은 `el.style.background` 를 **설정하지 않는다**
- *   (3439가 else 블록 안에 있다). 색만 계산하고 칠하지 않으므로 루틴 블록은 CSS 의 .is-routine
- *   배경을 쓴다. 그 사실을 `apply:false` 로 그대로 돌려준다.
- * @see index.html:3433
+ * 원본은 YIQ 밝기 > 90 이면 어두운 글자였는데, 임계값 90 은 눈으로 세 번 뒤집은 끝에 남은
+ * 값이라 기본 카테고리 6색과 루틴 8색이 **전부** 90 을 넘었다 — 흰 글자 분기가 한 번도 실행되지
+ * 않는 죽은 코드였고, `#6366f1` 같은 어두운 인디고 위에 검은 글자가 올라갔다.
+ * 이제 임계값 대신 두 후보의 대비비를 실제로 재서 큰 쪽을 쓴다. 값을 손으로 고를 자리가 없어졌다.
+ * → docs/PRINCIPLES.md 의 U-4
+ *
+ * @param {string} background `#rgb` 또는 `#rrggbb`
+ * @returns {string} TEXT_DARK 또는 TEXT_LIGHT. 해석할 수 없는 색이면 TEXT_DARK
+ */
+export function textColorOn(background) {
+  const dark = contrastRatio(background, TEXT_DARK);
+  const light = contrastRatio(background, TEXT_LIGHT);
+  if (dark === null || light === null) return TEXT_DARK;
+  return light > dark ? TEXT_LIGHT : TEXT_DARK;
+}
+
+/**
+ * 그 배경에서 실제로 얻는 대비비. 팔레트를 검증할 때 쓴다(테스트가 이걸 단언한다).
+ * @param {string} background
+ * @returns {number|null}
+ */
+export function bestContrastOn(background) {
+  return contrastRatio(background, textColorOn(background));
+}
+
+/**
+ * hex 를 검정 쪽으로 `amount`(0~1) 만큼 섞는다. 루틴 블록의 그러데이션 끝색을 만드는 데 쓴다.
+ * @param {string} hex
+ * @param {number} amount
+ * @returns {string} `#rrggbb`
+ */
+export function darken(hex, amount) {
+  const rgb = parseHexColor(hex);
+  if (!rgb) return hex;
+  const k = Math.min(1, Math.max(0, amount));
+  const mix = (v) => Math.round(v * (1 - k)).toString(16).padStart(2, '0');
+  return `#${mix(rgb.r)}${mix(rgb.g)}${mix(rgb.b)}`;
+}
+
+/** 루틴 색이 없을 때 쓰는 기본색. 사이드바 칩(routineListView)과 같은 값이어야 한다. */
+export const DEFAULT_ROUTINE_COLOR = '#818cf8';
+
+/** 루틴 블록 그러데이션의 끝색을 만들 때 섞는 양. */
+const ROUTINE_GRADIENT_SHADE = 0.28;
+
+/**
+ * 배치 하나의 색을 결정한다.
+ *
+ * 루틴 배치는 예전에 색을 **계산만 하고 칠하지 않아서**, 사이드바 목록의 칩은 루틴 색인데
+ * 안무표 블록은 CSS 에 박힌 보라 그러데이션 하나로만 그려졌다(색을 여덟 개 돌려 써도 전부 같은 색).
+ * 이제 루틴 색에서 그러데이션을 만들어 실제로 칠한다 — 두 자리가 같은 색을 쓴다.
+ *
+ * 글자색은 배경의 **대비비로** 고른다(textColorOn). 카테고리 배치와 루틴 배치가 같은 규칙을 쓴다.
+ *
  * @param {{ type?: string, routineId?: string, category?: string }} placement
  * @param {{ categories: CategoryMap, routines: { id: string, color?: string }[] }} lookup
- * @returns {{ background: string, apply: boolean, textColor: '#fff'|null }}
+ * @returns {{ background: string, base: string, apply: boolean, textColor: string }}
+ *   `background` 는 CSS 에 그대로 넣을 값(루틴은 그러데이션), `base` 는 대비 판정에 쓴 단색.
  */
 export function resolvePlacementColor(placement, lookup) {
   const { categories, routines } = lookup;
-  let background;
-  let apply;
   if (placement.type === 'routine') {
-    const routine = routines.find(r => r.id === placement.routineId);
-    background = routine?.color || '#6366f1';
-    apply = false;   // ⚠ 원본은 여기서 background 를 칠하지 않는다 (보존)
-  } else {
-    background = categoryColor(categories, placement.category);
-    apply = true;
+    const routine = (routines || []).find(r => r.id === placement.routineId);
+    const base = routine?.color || DEFAULT_ROUTINE_COLOR;
+    const end = darken(base, ROUTINE_GRADIENT_SHADE);
+    return {
+      background: `linear-gradient(135deg, ${base} 0%, ${end} 100%)`,
+      base,
+      apply: true,
+      textColor: textColorOn(base),
+    };
   }
-  return { background, apply, textColor: isLightColor(background) ? null : '#fff' };
+  const base = categoryColor(categories, placement.category);
+  return { background: base, base, apply: true, textColor: textColorOn(base) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

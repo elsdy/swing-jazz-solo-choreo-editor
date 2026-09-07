@@ -1117,8 +1117,10 @@
     .edit-btn:hover { background: rgba(99,102,241,0.25); }
 
     /* ── 루틴 배치 블록 ── */
+    /* 실제 색은 JS 가 루틴 색에서 만들어 인라인으로 칠한다. 여기 값은 그 전 한 프레임의 폴백이다.
+       !important 를 쓰면 안 된다 — 인라인 스타일을 이겨 루틴 색이 다시 묻힌다. */
     .placement.is-routine {
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+      background: linear-gradient(135deg, #818cf8 0%, #5d65b2 100%);
     }
     .placement.is-routine .label { color: inherit; }
     .placement.is-routine .move-handle,

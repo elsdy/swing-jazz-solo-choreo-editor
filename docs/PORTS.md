@@ -501,6 +501,7 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 | `src/domain/project/schema.js` | `ChoreoDoc` / `ChoreoVersion` / `PracticeLog` / `MediaRef` / `CountRef` 타입, `SCHEMA_VERSION`, `LEGACY_FILE_VERSION` |
 | `src/domain/project/migrations.js` | v1 → v2 마이그레이션. **실제로 배선되어 돈다** |
 | `tools/check-arch.mjs` | 계층 방향과 순수성의 기계 검사. `node tools/check-arch.mjs` 로 돌린다 |
+| `tests/unit/domain.test.mjs` | Tempo 를 포함한 도메인 단위 테스트 25개. `countToTime` ↔ `timeToCount` 왕복, `timeToCell` 의 fraction 범위, `tempoFromTwoPoints` 의 거부 조건을 검사한다. `node --test 'tests/**/*.test.mjs'` 로 돌린다 |
 
 | 비워 둔 것 | 상태 |
 |---|---|
@@ -512,4 +513,3 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 | 버전·연습 기록 리포지토리 구현 | 없다. 인메모리 참조 구현도 만들지 않았다. `VersionRepository` 등은 typedef 뿐이다 |
 | 저장 포맷의 `media` 블록 | 없다. 파일은 오늘과 같은 필드에 `version: 1` 로 나간다. Tempo 를 저장하는 코드가 아직 없다 |
 | `StorageError` 를 던지는 경로 | 정의만 있다 |
-| Tempo 단위 테스트 | 없다. `tests/` 에는 기존 동작을 고정하는 골든 리플레이만 있다 |

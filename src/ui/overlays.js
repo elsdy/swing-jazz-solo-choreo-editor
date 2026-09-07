@@ -391,7 +391,7 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
 
   /**
    * 보드 위 배치를 터치로 들었을 때의 고스트. 원본 3841-3852.
-   * ⚠ background 결정(루틴이면 '#6366f1', 아니면 categoryColor)은 **호출부가 한다** —
+   * ⚠ background 결정(domain/categories.resolvePlacementColor 의 `base`)은 **호출부가 한다** —
    *   여기는 domain/categories 를 import 하지 않는다.
    * ⚠ 만든 뒤 곧바로 movePlacementGhost(x, y) 로 좌표를 잡는다(3852).
    * @see index.html:3841
