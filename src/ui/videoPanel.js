@@ -142,7 +142,9 @@ function formatBpm(bpm) {
  *   setBeatsPerCount: (args: {beatsPerCount:number}) => any,
  *   reanchorTo: (args: {count:number, sec:number}) => any,
  *   clearTempo: () => any,
- *   clearFileSource?: () => any
+ *   clearFileSource?: () => any,
+ *   addTempoPoint?: (args: {count:number, sec:number}) => any,
+ *   clearTempoMap?: () => any
  * }} commands app/main 이 videoCommands 를 store 에 묶어 넘긴다
  * @property {() => boolean} [isStacked] 좁은 화면인가. 기본값은 ui/layout.isStacked
  * @property {Record<string, HTMLElement|null>} [elements] 테스트용 요소 주입
@@ -153,7 +155,7 @@ function formatBpm(bpm) {
  * 한 번 바인딩한다 — routineEditorView·linksBarView 와 같은 규약이다.
  *
  * @param {VideoPanelDeps} deps
- * @returns {{ render(): void, renderStatus(): void, playerHost(): HTMLElement|null }}
+ * @returns {{ render(): void, renderStatus(): void, syncSelection(): void, playerHost(): HTMLElement|null }}
  */
 export function createVideoPanel(deps) {
   const {
@@ -201,11 +203,17 @@ export function createVideoPanel(deps) {
   const bpcInput = byId('videoBeatsPerCount');
   const reanchorBtn = byId('videoReanchorBtn');
   const tempoClearBtn = byId('videoTempoClearBtn');
+  const pointBtn = byId('videoPointBtn');
+  const pointSelBtn = byId('videoPointSelBtn');
+  const pointClearBtn = byId('videoPointClearBtn');
+  const pointHelp = byId('videoPointHelp');
 
   /** 마지막으로 세운 행 선택지의 `${cols}x${rows}`. 같으면 다시 만들지 않는다(선택·포커스 보존). */
   let rowOptionsSig = null;
   /** 이 세션에서 패널을 한 번이라도 열었는가. 좁은 화면의 '첫 열기는 접힌 채로' 판정에 쓴다. */
   let openedOnce = false;
+  /** 마지막 보정점 추가가 거부됐는가(앞뒤 점과 순서가 맞지 않음). 다음 성공이나 지우기가 지운다. */
+  let pointRejected = false;
 
   // ── store 읽기 (얇은 접근자) ──────────────────────────────────────────────
 
@@ -229,6 +237,25 @@ export function createVideoPanel(deps) {
     const safeRow = Number.isFinite(row) ? row : 1;
     const index = clamp(Number.isFinite(count) ? count : 1, 1, board.cols) - 1;
     return linearOf(safeRow, index, board.cols);
+  }
+
+  /**
+   * 안무표에서 **정확히 한 그룹**이 선택돼 있으면 그 그룹의 시작 선형 카운트, 아니면 null.
+   * 루틴처럼 여러 세그먼트로 된 그룹은 가장 앞 세그먼트의 시작이다(domain/tempo.groupToSpan 과 같은 규칙).
+   * @returns {number|null}
+   */
+  function selectedStartCount() {
+    const sel = store.selection;
+    if (!sel || sel.size !== 1) return null;
+    const [groupId] = [...sel];
+    const board = mainBoard();
+    let min = null;
+    for (const p of board.placements) {
+      if (p.groupId !== groupId) continue;
+      const start = linearOf(p.row, p.startIndex, board.cols);
+      if (min === null || start < min) min = start;
+    }
+    return min;
   }
 
   /** 첫 점을 찍은 뒤 두 번째 후보를 멀리 민다. 마지막 행을 넘지 않는다. */
@@ -361,6 +388,25 @@ export function createVideoPanel(deps) {
     if (bpcInput && document.activeElement !== bpcInput) bpcInput.value = String(t.beatsPerCount);
     if (reanchorBtn) reanchorBtn.disabled = !ready;
     if (tempoClearBtn) tempoClearBtn.disabled = !ready;
+
+    // 보정점. "지금 몇 개가 어디에 찍혀 있는지"를 화면이 말한다 — 안 보이는 보정은 없는 보정이다.
+    const pts = t.points || [];
+    const selStart = selectedStartCount();
+    if (pointBtn) pointBtn.disabled = !ready;
+    if (pointSelBtn) pointSelBtn.disabled = !ready || selStart === null;
+    if (pointClearBtn) pointClearBtn.disabled = pts.length === 0;
+    if (pointHelp) {
+      if (pointRejected) {
+        pointHelp.textContent = '앞뒤 보정점과 순서가 맞지 않아 넣지 않았습니다 — 앞 카운트는 앞 시각에, 뒤 카운트는 뒤 시각에 와야 합니다.';
+      } else if (!ready) {
+        pointHelp.textContent = 'BPM 을 먼저 정한 뒤, 템포가 흔들리는 대목마다 보정점을 찍으면 그 사이가 저절로 맞습니다.';
+      } else if (pts.length === 0) {
+        pointHelp.textContent = '보정점 없음 — 세로선이 실제 동작보다 앞서거나 뒤처지는 대목에서 그 카운트(또는 선택한 블록)가 시작하는 순간에 누르세요.';
+      } else {
+        const shown = pts.slice(0, 6).map(pt => `${formatCell(pt.count, board.cols)} = ${formatClock(pt.sec)}`).join(' · ');
+        pointHelp.textContent = `보정점 ${pts.length}개: ${shown}${pts.length > 6 ? ' · …' : ''}`;
+      }
+    }
   }
 
   /** Dirty.video 의 적용점. store 만 보고 패널의 모든 표시를 재도출한다. */
@@ -441,6 +487,33 @@ export function createVideoPanel(deps) {
   }
   if (markCancelBtn) markCancelBtn.onclick = () => render(commands.clearTempoPoints());
 
+  /**
+   * 보정점 하나를 넣고 결과를 화면에 알린다. 거부되면(`rejected`) 안내만 바꾸고 아무것도 바꾸지 않는다.
+   * @param {number} count
+   */
+  function addPoint(count) {
+    if (!commands.addTempoPoint) return;
+    const { rejected, ...dirty } = commands.addTempoPoint({ count, sec: getCurrentSec() }) || {};
+    pointRejected = !!rejected;
+    if (rejected) { renderTempo(); return; }
+    render(dirty);
+    commitHistory();
+  }
+  if (pointBtn) pointBtn.onclick = () => addPoint(readAnchorLinear());
+  if (pointSelBtn) {
+    pointSelBtn.onclick = () => {
+      const start = selectedStartCount();
+      if (start !== null) addPoint(start);
+    };
+  }
+  if (pointClearBtn && commands.clearTempoMap) {
+    pointClearBtn.onclick = () => {
+      pointRejected = false;
+      render(commands.clearTempoMap());
+      commitHistory();
+    };
+  }
+
   // ⚠ 탭의 시각은 **미디어 시각**이다. bpm 은 "미디어 1분에 몇 박"이라 배속을 걸어도 값이 맞고,
   //   markTempoPoint 와 같은 시계를 써야 두 경로가 어긋나지 않는다.
   if (tapBtn) tapBtn.onclick = () => render(commands.tapTempo({ atSec: getCurrentSec() }));
@@ -482,6 +555,8 @@ export function createVideoPanel(deps) {
   return {
     render: renderPanel,
     renderStatus,
+    /** 선택이 바뀌었다 — `선택한 블록이 여기서 시작` 의 활성 여부만 다시 잰다(패널이 닫혀 있으면 값만 바뀌고 안 보인다). */
+    syncSelection: renderTempo,
     /** YT.Player 가 iframe 으로 갈아치울 자리. app/main 이 여기에 컨테이너를 만든다. */
     playerHost: () => frame
   };

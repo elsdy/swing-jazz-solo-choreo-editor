@@ -20,6 +20,10 @@ import { cellOf, clamp, linearOf } from './grid.js';
  * @property {number} beatsPerCount 카운트 1칸 = 몇 박 (기본 1, 하프타임 2, 더블타임 0.5)
  * @property {number} anchorSec     anchorCount 가 재생되는 영상 시각(초)
  * @property {number} anchorCount   anchorSec 에 대응하는 선형 카운트 (0 = 8x1 의 1카운트)
+ * @property {TempoPoint[]} points  보정점. 카운트·초 모두 **오름차순**이고 카운트가 겹치지 않는다.
+ *   비어 있으면 bpm·앵커만의 선형 변환이다. 있으면 앵커와 보정점을 합친 점열 사이를 구간별 선형으로
+ *   잇고, 양 끝 밖은 bpm 의 기울기로 뻗는다 — 템포가 흔들리는 실황 영상에서 동작마다 시작 시각을
+ *   찍어 두면 그 사이가 저절로 맞는다
  */
 
 /**
@@ -38,7 +42,7 @@ import { cellOf, clamp, linearOf } from './grid.js';
 // "지금 여기가 이 카운트" 로 재앵커할 수 있고 bpm 은 건드리지 않는다.
 // 시작 오프셋은 anchorCount === 0 인 특수한 앵커일 뿐이다.
 /** @type {Readonly<Tempo>} */
-export const DEFAULT_TEMPO = Object.freeze({ bpm: 0, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 });
+export const DEFAULT_TEMPO = Object.freeze({ bpm: 0, beatsPerCount: 1, anchorSec: 0, anchorCount: 0, points: Object.freeze([]) });
 
 const BPM_MIN = 20;
 const BPM_MAX = 400;
@@ -76,8 +80,36 @@ export function normalizeTempo(raw) {
     bpm: bpmRaw > 0 ? clamp(bpmRaw, BPM_MIN, BPM_MAX) : 0,
     beatsPerCount: clamp(finiteOr(src.beatsPerCount, DEFAULT_TEMPO.beatsPerCount), BPC_MIN, BPC_MAX),
     anchorSec: finiteOr(src.anchorSec, DEFAULT_TEMPO.anchorSec),
-    anchorCount: finiteOr(src.anchorCount, DEFAULT_TEMPO.anchorCount)
+    anchorCount: finiteOr(src.anchorCount, DEFAULT_TEMPO.anchorCount),
+    points: normalizeTempoPoints(src.points)
   };
+}
+
+/**
+ * 손상된 보정점 배열을 **카운트·초 모두 오름차순이고 카운트가 겹치지 않는** 배열로 만든다.
+ * 규칙: 유한하지 않은 점은 버린다 → 카운트로 정렬한다(같은 카운트는 뒤의 것이 이긴다) →
+ * 앞 점보다 초가 크지 않은 점은 버린다(시간이 되감기는 지도는 역함수가 없다).
+ * ⚠ 앵커와의 관계는 여기서 보지 않는다 — 그건 tempoPoints 가 합칠 때 처리한다.
+ * @param {unknown} raw
+ * @returns {TempoPoint[]}
+ */
+export function normalizeTempoPoints(raw) {
+  if (!Array.isArray(raw)) return [];
+  const byCount = new Map();
+  for (const p of raw) {
+    if (!p || typeof p !== 'object') continue;
+    const count = finiteOr(p.count, NaN);
+    const sec = finiteOr(p.sec, NaN);
+    if (!Number.isFinite(count) || !Number.isFinite(sec)) continue;
+    byCount.set(count, { count, sec });
+  }
+  const sorted = [...byCount.values()].sort((a, b) => a.count - b.count);
+  const out = [];
+  for (const p of sorted) {
+    if (out.length && !(p.sec > out[out.length - 1].sec)) continue;
+    out.push(p);
+  }
+  return out;
 }
 
 /**
@@ -108,23 +140,68 @@ export function secondsPerCount(tempo) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 선형 카운트 → 시각(초). 앵커 이전(음수 카운트, intro 행)도 그대로 음수 방향으로 나간다.
+ * 변환에 실제로 쓰는 점열: 앵커 + 보정점을 카운트 순으로 합친 것. **길이 ≥ 1** 이 보장된다.
+ * 앵커와 같은 카운트의 보정점이 있으면 보정점이 이긴다. 앵커를 넣었더니 초가 되감기는 보정점
+ * (앵커보다 앞 카운트인데 초는 뒤, 또는 그 반대)은 그 점을 버린다 — 앵커가 기준이다.
+ * ⚠ 보정점이 없으면 `[앵커]` 하나라 아래 두 함수가 정확히 옛 선형식으로 떨어진다.
+ * @param {Tempo} tempo
+ * @returns {TempoPoint[]}
+ */
+export function tempoPoints(tempo) {
+  const anchor = { count: tempo.anchorCount, sec: tempo.anchorSec };
+  const pts = Array.isArray(tempo.points) ? tempo.points : [];
+  if (pts.length === 0) return [anchor];
+  if (pts.some(p => p.count === anchor.count)) return pts;
+  // 점열은 이미 카운트·초 모두 오름차순이다(normalizeTempoPoints). 앵커 앞쪽에서는 앵커보다 초가 늦은 점,
+  // 뒤쪽에서는 앵커보다 초가 이른 점이 되감기다 — 그 점들만 버리면 나머지는 그대로 오름차순이다.
+  const before = pts.filter(p => p.count < anchor.count && p.sec < anchor.sec);
+  const after = pts.filter(p => p.count > anchor.count && p.sec > anchor.sec);
+  return [...before, anchor, ...after];
+}
+
+/**
+ * 선형 카운트 → 시각(초). 점열 사이는 구간별 선형, 양 끝 밖은 bpm 의 기울기로 뻗는다.
+ * 보정점이 없으면 `anchorSec + (count - anchorCount) * spc` 그대로다. 앵커 이전(음수 카운트, intro 행)도
+ * 그대로 음수 방향으로 나간다.
  * @param {number} count
  * @param {Tempo} tempo
  * @returns {number}
  */
 export function countToTime(count, tempo) {
-  return tempo.anchorSec + (count - tempo.anchorCount) * secondsPerCount(tempo);
+  const pts = tempoPoints(tempo);
+  const spc = secondsPerCount(tempo);
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  if (count <= first.count) return first.sec + (count - first.count) * spc;
+  if (count >= last.count) return last.sec + (count - last.count) * spc;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    if (count <= b.count) return a.sec + (count - a.count) * ((b.sec - a.sec) / (b.count - a.count));
+  }
+  return last.sec;   // 도달하지 않는다(위 분기가 전부 덮는다)
 }
 
 /**
- * 시각(초) → 선형 카운트(실수). 칸 경계에 딱 떨어지지 않으므로 정수가 아니다.
+ * 시각(초) → 선형 카운트(실수). countToTime 의 정확한 역함수다(점열이 초·카운트 모두 오름차순이라 가능하다).
+ * 칸 경계에 딱 떨어지지 않으므로 정수가 아니다.
  * @param {number} sec
  * @param {Tempo} tempo
  * @returns {number}
  */
 export function timeToCount(sec, tempo) {
-  return tempo.anchorCount + (sec - tempo.anchorSec) / secondsPerCount(tempo);
+  const pts = tempoPoints(tempo);
+  const spc = secondsPerCount(tempo);
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  if (sec <= first.sec) return first.count + (sec - first.sec) / spc;
+  if (sec >= last.sec) return last.count + (sec - last.sec) / spc;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    if (sec <= b.sec) return a.count + (sec - a.sec) * ((b.count - a.count) / (b.sec - a.sec));
+  }
+  return last.count;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,6 +294,7 @@ export function spanToCountRange(startSec, endSec, cols, tempo) {
 /**
  * "여기가 8x1의 1", "여기가 8x5의 1" 두 점 → bpm 과 앵커를 동시에 얻는다.
  * 멀리 떨어진 두 점을 쓸수록 클릭 오차가 bpm 에 미치는 영향이 카운트 차이만큼 나눠진다.
+ * ⚠ 보정점 없이 새 Tempo 를 만든다 — bpm 을 새로 잰 것이므로 옛 보정점은 그 bpm 과 어긋난 값이다.
  * @param {TempoPoint} a 앞선 점(앵커가 된다)
  * @param {TempoPoint} b 뒤따르는 점
  * @param {number} [beatsPerCount=1]
@@ -236,17 +314,69 @@ export function tempoFromTwoPoints(a, b, beatsPerCount = 1) {
 
 /**
  * bpm 은 그대로 두고 앵커만 옮긴다 — 곡 중간에서 어긋난 싱크를 한 번의 클릭으로 다시 맞추는 경로.
+ * ⚠ 보정점이 있으면 지도 전체를 **같은 만큼 민다**(각 점의 초에 같은 차이를 더한다). 점을 그대로 두면
+ *   앵커만 옮겨져 되감기는 점이 생기고, 지우면 애써 찍은 것이 날아간다. "싱크가 통째로 어긋났다"가
+ *   이 조작의 뜻이므로 밀어 두는 것이 맞다.
  * @param {Tempo} tempo
  * @param {TempoPoint} point
  * @returns {Tempo}
  */
 export function reanchor(tempo, point) {
+  const shift = point.sec - countToTime(point.count, tempo);
+  const had = tempo.points || [];
+  // 옛 앵커도 지도의 한 점이었다 — 보정점이 있을 때는 그것을 보정점으로 남겨야 지도의 모양이 그대로 밀린다.
+  const carried = had.length ? [...had, { count: tempo.anchorCount, sec: tempo.anchorSec }] : [];
   return normalizeTempo({
     bpm: tempo.bpm,
     beatsPerCount: tempo.beatsPerCount,
     anchorSec: point.sec,
-    anchorCount: point.count
+    anchorCount: point.count,
+    points: carried.filter(p => p.count !== point.count).map(p => ({ count: p.count, sec: p.sec + shift }))
   });
+}
+
+/**
+ * 보정점 하나를 넣는다(같은 카운트가 있으면 갈아 끼운다). 앵커와 같은 카운트면 보정점으로 앵커를 덮는다.
+ * ⚠ 넣은 결과가 되감기면(앞 카운트인데 초가 뒤이거나 그 반대) **null** — 넣지 않는다. 조용히 다른 점을
+ *   버리면 사용자는 무엇이 사라졌는지 모른다. 뷰가 null 을 보고 "앞뒤 점과 순서가 맞지 않는다"고 말한다.
+ * @param {Tempo} tempo
+ * @param {TempoPoint} point
+ * @returns {Tempo|null}
+ */
+export function addTempoPoint(tempo, point) {
+  const count = finiteOr(point && point.count, NaN);
+  const sec = finiteOr(point && point.sec, NaN);
+  if (!Number.isFinite(count) || !Number.isFinite(sec)) return null;
+  const kept = (tempo.points || []).filter(p => p.count !== count);
+  const merged = [...kept, { count, sec }].sort((a, b) => a.count - b.count);
+  for (let i = 1; i < merged.length; i++) {
+    if (!(merged[i].sec > merged[i - 1].sec)) return null;
+  }
+  // 앵커와도 되감기면 안 된다(앵커와 같은 카운트는 덮는 것이라 예외).
+  if (count !== tempo.anchorCount) {
+    const before = count < tempo.anchorCount;
+    if (before ? !(sec < tempo.anchorSec) : !(sec > tempo.anchorSec)) return null;
+  }
+  return normalizeTempo({ ...tempo, points: merged });
+}
+
+/**
+ * 그 카운트의 보정점을 뺀다. 없으면 그대로 돌려준다(새 객체).
+ * @param {Tempo} tempo
+ * @param {number} count
+ * @returns {Tempo}
+ */
+export function removeTempoPoint(tempo, count) {
+  return normalizeTempo({ ...tempo, points: (tempo.points || []).filter(p => p.count !== count) });
+}
+
+/**
+ * 보정점을 전부 뺀다. bpm·앵커는 그대로다.
+ * @param {Tempo} tempo
+ * @returns {Tempo}
+ */
+export function clearTempoPointsOf(tempo) {
+  return normalizeTempo({ ...tempo, points: [] });
 }
 
 /**

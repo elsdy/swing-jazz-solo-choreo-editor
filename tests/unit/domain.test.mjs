@@ -23,7 +23,8 @@ import {
 } from '../../src/domain/grid.js';
 import {
   DEFAULT_TEMPO, cellToTime, countToTime, isTempoUsable, normalizeTempo,
-  placementToSpan, secondsPerCount, tempoFromTwoPoints, timeToCell, timeToCount
+  placementToSpan, secondsPerCount, tempoFromTwoPoints, timeToCell, timeToCount,
+  tempoPoints, addTempoPoint, removeTempoPoint, clearTempoPointsOf, reanchor, normalizeTempoPoints
 } from '../../src/domain/tempo.js';
 import {
   MEDIA_PLAYER_MEMBERS, assertMediaPlayer, isMediaPlayer, normalizeClipSegments
@@ -1572,6 +1573,143 @@ test('videoCommands: 파일 소스는 유튜브보다 우선하고, 놓으면 �
   assert.deepEqual(serializeMedia(store.get().media).source, { kind: 'file', name: 'd.mp4' });
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 템포 지도(2026-09-09) — 보정점이 있으면 구간별 선형, 없으면 옛 선형식 그대로
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('tempo: 보정점이 없으면 countToTime 은 옛 선형식과 한 자리도 다르지 않다', () => {
+  for (const tempo of TEMPOS) {
+    const spc = secondsPerCount(tempo);
+    for (let count = -100; count <= 100; count += 3) {
+      const expected = tempo.anchorSec + (count - tempo.anchorCount) * spc;
+      assert.equal(countToTime(count, tempo), expected);
+    }
+    assert.deepEqual(tempoPoints(tempo), [{ count: tempo.anchorCount, sec: tempo.anchorSec }]);
+  }
+});
+
+test('tempo: 보정점 사이는 구간별 선형이고 양 끝 밖은 bpm 기울기로 뻗으며 왕복이 성립한다', () => {
+  const base = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 10, anchorCount: 0 });   // spc 0.5
+  // 8카운트가 4초가 아니라 5초 걸리는(느려진) 구간, 그 다음 8카운트는 3초(빨라진) 구간.
+  const t = addTempoPoint(addTempoPoint(base, { count: 8, sec: 15 }), { count: 16, sec: 18 });
+  assert.ok(t);
+  assert.deepEqual(t.points, [{ count: 8, sec: 15 }, { count: 16, sec: 18 }]);
+  assert.deepEqual(tempoPoints(t), [{ count: 0, sec: 10 }, { count: 8, sec: 15 }, { count: 16, sec: 18 }]);
+
+  assert.equal(countToTime(0, t), 10);
+  assert.equal(countToTime(4, t), 12.5, '느려진 구간의 중간');
+  assert.equal(countToTime(8, t), 15);
+  assert.equal(countToTime(12, t), 16.5, '빨라진 구간의 중간');
+  assert.equal(countToTime(16, t), 18);
+  assert.equal(countToTime(24, t), 22, '마지막 점 뒤는 bpm 기울기(0.5s/카운트)');
+  assert.equal(countToTime(-8, t), 6, '첫 점 앞도 bpm 기울기');
+
+  for (let count = -40; count <= 40; count += 0.25) {
+    const back = timeToCount(countToTime(count, t), t);
+    assert.ok(Math.abs(back - count) < 1e-9, `count=${count} 왕복 실패: ${back}`);
+  }
+  // 격자 변환도 그대로 따라온다.
+  const cell = timeToCell(16.5, 8, t);
+  assert.equal(linearOf(cell.row, cell.index, 8), 12);
+  assert.ok(cell.fraction < 1e-9);
+});
+
+test('tempo: 되감기는 보정점은 null 로 거부하고, 같은 카운트는 갈아 끼우며, 앵커와 같은 카운트는 앵커를 덮는다', () => {
+  const base = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 10, anchorCount: 0 });
+  const t = addTempoPoint(base, { count: 8, sec: 15 });
+  assert.equal(addTempoPoint(t, { count: 12, sec: 14 }), null, '뒤 카운트인데 앞 시각');
+  assert.equal(addTempoPoint(t, { count: 4, sec: 16 }), null, '앞 카운트인데 뒤 시각');
+  assert.equal(addTempoPoint(t, { count: -4, sec: 11 }), null, '앵커보다 앞 카운트인데 앵커보다 뒤 시각');
+  assert.equal(addTempoPoint(t, { count: 8, sec: 15 }).points.length, 1, '같은 카운트는 개수가 늘지 않는다');
+  assert.equal(addTempoPoint(t, { count: 8, sec: 14 }).points[0].sec, 14, '같은 카운트는 갈아 끼운다');
+  assert.equal(addTempoPoint(t, { count: 8, sec: NaN }), null);
+
+  const overridden = addTempoPoint(t, { count: 0, sec: 9 });
+  assert.deepEqual(tempoPoints(overridden), [{ count: 0, sec: 9 }, { count: 8, sec: 15 }], '앵커 카운트의 보정점이 앵커를 덮는다');
+  assert.equal(countToTime(0, overridden), 9);
+
+  assert.deepEqual(removeTempoPoint(t, 8).points, []);
+  assert.deepEqual(removeTempoPoint(t, 99).points, t.points, '없는 점을 빼도 그대로다');
+  assert.deepEqual(clearTempoPointsOf(overridden).points, []);
+  assert.equal(clearTempoPointsOf(overridden).bpm, 120);
+});
+
+test('tempo: reanchor 는 보정점을 지우지 않고 지도 전체를 같은 만큼 민다', () => {
+  const base = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 10, anchorCount: 0 });
+  const t = addTempoPoint(base, { count: 8, sec: 15 });
+  // 카운트 8 이 실제로는 17초였다 — 2초 늦게 시작한 것이다. 전체가 2초 밀린다.
+  const moved = reanchor(t, { count: 8, sec: 17 });
+  assert.equal(moved.anchorSec, 17);
+  assert.equal(moved.anchorCount, 8);
+  assert.deepEqual(moved.points, [{ count: 0, sec: 12 }], '옛 앵커는 보정점으로 남고 새 앵커 자리의 점은 앵커가 대신한다');
+  assert.deepEqual(reanchor(base, { count: 8, sec: 17 }).points, [], '보정점이 없었으면 여전히 없다');
+  assert.equal(countToTime(0, moved), 12, '앵커 앞 구간도 같이 밀렸다');
+  assert.equal(countToTime(4, moved), 14.5, '느려진 구간의 모양이 그대로다');
+});
+
+test('tempo: normalizeTempoPoints 는 손상된 입력을 오름차순 무겹침 배열로 만든다', () => {
+  assert.deepEqual(normalizeTempoPoints(undefined), []);
+  assert.deepEqual(normalizeTempoPoints('x'), []);
+  assert.deepEqual(normalizeTempoPoints([{ count: 8, sec: 15 }, { count: 0, sec: 10 }, null, { count: 'a', sec: 1 }, { count: 4, sec: 20 }, { count: 8, sec: 16 }]),
+    [{ count: 0, sec: 10 }, { count: 4, sec: 20 }], '정렬하고, 같은 카운트는 뒤가 이기고, 앞 점보다 되감기는 뒤 점은 버린다');
+  // 앵커보다 앞 카운트인데 초는 뒤인 점은 tempoPoints 가 합칠 때 버린다.
+  const t = normalizeTempo({ bpm: 120, anchorSec: 10, anchorCount: 0, points: [{ count: -8, sec: 12 }, { count: 8, sec: 15 }] });
+  assert.deepEqual(tempoPoints(t), [{ count: 0, sec: 10 }, { count: 8, sec: 15 }]);
+  const tail = normalizeTempo({ bpm: 120, anchorSec: 10, anchorCount: 16, points: [{ count: 0, sec: 5 }, { count: 8, sec: 12 }] });
+  assert.deepEqual(tempoPoints(tail), [{ count: 0, sec: 5 }, { count: 16, sec: 10 }], '앵커가 맨 뒤면 되감기는 앞 점을 버린다');
+});
+
+test('media: 빈 보정점은 파일에 쓰이지 않고, 있는 보정점은 왕복한다', () => {
+  const plain = serializeMedia({ tempo: { bpm: 180, beatsPerCount: 1, anchorSec: 2, anchorCount: 0 }, source: null });
+  assert.equal('points' in plain.tempo, false, '보정점을 안 쓴 파일에 points 키가 생기면 바이트가 는다');
+  const withPts = serializeMedia({ tempo: { bpm: 180, anchorSec: 2, anchorCount: 0, points: [{ count: 8, sec: 5 }] }, source: null });
+  assert.deepEqual(withPts.tempo.points, [{ count: 8, sec: 5 }]);
+  assert.deepEqual(normalizeMedia(withPts).tempo.points, [{ count: 8, sec: 5 }]);
+});
+
+test('videoCommands: 보정점은 undo 를 타고, 거부는 rejected 로 알리며, 두 점 찍기는 보정점을 새로 시작한다', () => {
+  const store = createStore();
+  assert.deepEqual(VideoCmd.addTempoPoint(store, { count: 8, sec: 5 }), NONE, 'bpm 미설정이면 넣지 않는다');
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });     // 192bpm, spc 0.3125
+
+  assert.deepEqual(VideoCmd.addTempoPoint(store, { count: 8, sec: 5 }), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, [{ count: 8, sec: 5 }]);
+  const rejected = VideoCmd.addTempoPoint(store, { count: 16, sec: 4 });
+  assert.equal(rejected.rejected, true);
+  assert.equal(rejected.video, undefined, '거부는 Dirty 가 아니다');
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, [{ count: 8, sec: 5 }], '거부되면 아무것도 바뀌지 않는다');
+  assert.deepEqual(VideoCmd.addTempoPoint(store, { count: NaN, sec: 1 }), NONE);
+
+  assert.deepEqual(VideoCmd.removeTempoPoint(store, { count: 99 }), NONE);
+  VideoCmd.addTempoPoint(store, { count: 16, sec: 8 });
+  assert.deepEqual(VideoCmd.removeTempoPoint(store, { count: 8 }), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, [{ count: 16, sec: 8 }]);
+
+  // undo: media 는 UNDO_FIELDS 안이다.
+  const hist = History.createHistory(store);
+  History.commit(hist, BOARD_MAIN);
+  VideoCmd.addTempoPoint(store, { count: 24, sec: 11 });
+  History.commit(hist, BOARD_MAIN);
+  assert.equal(VideoCmd.mediaState(store).tempo.points.length, 2);
+  History.undo(hist, BOARD_MAIN);
+  assert.equal(VideoCmd.mediaState(store).tempo.points.length, 1, '보정점이 Undo 로 되돌아오지 않았다');
+  History.redo(hist, BOARD_MAIN);
+  assert.equal(VideoCmd.mediaState(store).tempo.points.length, 2);
+  History.undo(hist, BOARD_MAIN);
+
+  assert.deepEqual(VideoCmd.clearTempoMap(store), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, []);
+  assert.deepEqual(VideoCmd.clearTempoMap(store), NONE);
+
+  // 두 점으로 bpm 을 새로 재면 옛 보정점은 그 bpm 과 어긋난 값이라 비운다.
+  VideoCmd.addTempoPoint(store, { count: 8, sec: 5 });
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 1 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 21 });
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, []);
+});
+
 test('videoCommands: 템포가 undo 스냅샷을 타고 되돌아온다', () => {
   const store = createStore();
   const hist = History.createHistory(store);
@@ -1707,7 +1845,9 @@ test('media: 우리가 쓴 media 블록은 v1→v2 왕복에서 살아남는다'
 
   // readProjectData 의 되펼치기에서는 doc 쪽이 이긴다 — 우리가 읽고 싶은 값이 나온다.
   const flat = { ...res.value, ...res.value.doc };
-  assert.deepEqual(normalizeProject(flat, { ids: counterEnv() }).media, withMedia.media);
+  // 메모리 안의 Tempo 는 언제나 points 를 가진다(비어 있으면 []). 파일에는 빈 points 가 쓰이지 않는다(아래 테스트).
+  assert.deepEqual(normalizeProject(flat, { ids: counterEnv() }).media,
+    { ...withMedia.media, tempo: { ...withMedia.media.tempo, points: [] } });
 });
 
 test('snapshot: applySnapshot(main) 은 media 가 없는 옛 스냅샷도 미설정으로 되돌린다', () => {

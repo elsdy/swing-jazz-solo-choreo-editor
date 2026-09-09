@@ -775,7 +775,9 @@ views.video = createVideoPanel({
     setBeatsPerCount: (args) => VideoCmd.setBeatsPerCount(store, args),
     reanchorTo: (args) => VideoCmd.reanchorTo(store, args),
     clearTempo: () => VideoCmd.clearTempo(store),
-    clearFileSource: () => VideoCmd.clearFileSource(store)
+    clearFileSource: () => VideoCmd.clearFileSource(store),
+    addTempoPoint: (args) => VideoCmd.addTempoPoint(store, args),
+    clearTempoMap: () => VideoCmd.clearTempoMap(store)
   }
 });
 

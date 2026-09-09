@@ -202,15 +202,21 @@ linearOf(row, index, cols) = (row - 1) * cols + index
 | `groupToSpan(segments, cols, tempo)` | 같은 그룹의 세그먼트 배열 → 초 구간 | 세그먼트 사이의 빈틈은 메우지 않고 포함한다. 빈 배열이면 `null` |
 | `spanToCountRange(startSec, endSec, cols, tempo)` | 엔진의 초 구간 → `{from, to}` 격자 범위 | 양끝 포함. 뒤집힌/영길이 구간은 한 칸으로 접는다 |
 | `tempoFromTwoPoints(a, b, beatsPerCount?)` | 두 점 → `Tempo` | 순서가 뒤집혔거나 간격이 0 이면 `null` |
-| `reanchor(tempo, point)` | bpm 유지, 앵커만 이동 | |
+| `reanchor(tempo, point)` | bpm 유지, 앵커만 이동 | 보정점이 있으면 지우지 않고 지도 전체를 같은 만큼 민다(옛 앵커는 보정점으로 남는다) |
+| `tempoPoints(tempo)` | 변환에 실제로 쓰는 점열(앵커 + 보정점, 카운트순) | 길이 ≥ 1. 앵커와 같은 카운트의 보정점이 앵커를 덮고, 앵커와 되감기는 보정점은 버린다 |
+| `addTempoPoint(tempo, point)` | 보정점 하나 추가(같은 카운트는 교체) | 되감기는 점이면 **`null`** — 넣지 않는다. 다른 점을 몰래 버리지 않는다 |
+| `removeTempoPoint(tempo, count)` · `clearTempoPointsOf(tempo)` | 보정점 제거 | bpm·앵커는 그대로 |
+| `normalizeTempoPoints(raw)` | 손상된 보정점 배열 정리 | 카운트순 정렬, 같은 카운트는 뒤가 이김, 앞 점보다 되감기는 점은 버림 |
 | `bpmFromTaps(tapSecs, beatsPerTap?)` | 탭 템포 → bpm | 클램프하지 않은 날 값이다. 탭 2개 미만이거나 오름차순이 아니면 `null` |
 
-핵심은 두 줄이고 나머지는 전부 이 둘의 조합이다.
+핵심은 두 줄이고 나머지는 전부 이 둘의 조합이다. 보정점이 없을 때(대부분의 파일)는 정확히 아래 식이다.
 
 ```js
 countToTime(count, t) = t.anchorSec + (count - t.anchorCount) * secondsPerCount(t)
 timeToCount(sec, t)   = t.anchorCount + (sec - t.anchorSec) / secondsPerCount(t)
 ```
+
+보정점(`t.points`, 2026-09-09)이 있으면 `tempoPoints(t)` 가 앵커와 보정점을 합친 점열을 만들고, 두 함수는 **점열 사이를 구간별 선형으로 잇고 양 끝 밖은 위 식의 기울기로 뻗는다.** 점열이 카운트·초 모두 오름차순이라 두 함수는 서로의 정확한 역함수다. 앵커는 여전히 점 하나일 뿐이라 이 절의 다른 함수(`timeToCell` · `placementToSpan` · `spanToCountRange`)는 한 글자도 바뀌지 않았다.
 
 경계에서는 `1e-9` 카운트의 허용 오차를 흡수해서 내림한다. 이게 없으면 `countToTime` 을 거쳐 돌아온 정확히 8인 카운트가 `7.999999999999998` 로 나오고, 재생 헤드가 한 칸 뒤 칸을 `fraction 0.99999` 로 가리킨다. 400bpm·`beatsPerCount 0.125` 에서도 `1e-9` 카운트는 2e-11 초라 무해하다.
 
@@ -526,14 +532,14 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 | `src/domain/project/schema.js` | `ChoreoDoc` / `ChoreoVersion` / `PracticeLog` / `MediaRef` / `CountRef` 타입, `SCHEMA_VERSION`, `LEGACY_FILE_VERSION` |
 | `src/domain/project/migrations.js` | v1 → v2 마이그레이션. **실제로 배선되어 돈다** |
 | `tools/check-arch.mjs` | 계층 방향과 순수성의 기계 검사. `node tools/check-arch.mjs` 로 돌린다 |
-| `tests/unit/domain.test.mjs` | 도메인·어댑터·유스케이스 단위 테스트 **74개**. `countToTime` ↔ `timeToCount` 왕복, `timeToCell` 의 fraction 범위, `tempoFromTwoPoints` 의 거부 조건에 더해 YouTube 어댑터의 계약 충족·스크립트 로드 실패·`onTime` 3보장, `<video>` 어댑터의 계약 충족·디코드 실패·자동재생 차단·착지 시각, 파일 소스가 이름만 남기는 것, 재생 위치가 store 에 없다는 것, 빈 `media` 가 저장 바이트를 안 늘린다는 것을 검사한다. `node --test 'tests/**/*.test.mjs'` 로 돌린다 |
+| `tests/unit/domain.test.mjs` | 도메인·어댑터·유스케이스 단위 테스트 **81개**. `countToTime` ↔ `timeToCount` 왕복(보정점 있을 때 포함), `timeToCell` 의 fraction 범위, `tempoFromTwoPoints` 의 거부 조건, 보정점의 되감기 거부·교체·`reanchor` 밀기·빈 보정점 미저장에 더해 YouTube 어댑터의 계약 충족·스크립트 로드 실패·`onTime` 3보장, `<video>` 어댑터의 계약 충족·디코드 실패·자동재생 차단·착지 시각, 파일 소스가 이름만 남기는 것, 재생 위치가 store 에 없다는 것, 빈 `media` 가 저장 바이트를 안 늘린다는 것을 검사한다. `node --test 'tests/**/*.test.mjs'` 로 돌린다 |
 | `src/adapters/media/youtubePlayer.js` | **2026-09-09.** IFrame API 를 MediaPlayer 계약으로 감싼 실물. 마지막 줄이 `assertMediaPlayer` 다. 생성만으로는 DOM·네트워크를 안 건드리고 첫 `load()` 에서 `<script>` 가 붙는다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가지 않는다 |
 | `src/adapters/media/pickPlayer.js` | **2026-09-09.** URL 또는 MediaSource → `'youtube'` \| `'file'` \| `'null'`. `domain/links.parseYoutubeUrl` 을 재사용하고 정규식을 한 글자도 쓰지 않는다. 언제나 완전한 MediaPlayer 를 돌려주므로 호출부에 `player?.` 가 생기지 않는다 |
 | `src/adapters/media/filePlayer.js` | **2026-09-09.** `<video>` 를 MediaPlayer 계약으로 감싼 실물. `seekToleranceSec` 0.05, 재생 중 100ms 표본 + `timeupdate`. `MediaError.code` 를 포트의 5종 코드로 접고 한국어 문구는 만들지 않는다. blob URL 을 만들지도 놓지도 않는다(그건 `app/main` 의 몫) |
 | `src/usecases/videoCommands.js` | **2026-09-09.** 패널 상태 · 두 점 앵커 · 탭 템포 · 소스 확정 · `clearMedia`. DOM 도 플레이어도 시계도 모른다(시각은 전부 인자로 들어온다) |
 | `src/ui/videoPanel.js` · `src/ui/playhead.js` | **2026-09-09.** 패널 뷰(채널 A)와 재생 헤드(채널 B). 헤드는 rAF 루프가 자기 엘리먼트의 `transform` 만 쓴다 |
 | `src/domain/project/media.js` | **2026-09-09.** `media` 블록의 정규화·직렬화. 비어 있으면 `null` 을 돌려 `buildProjectFile` 이 키째로 뺀다 |
-| 저장 포맷의 `media` 블록 | **2026-09-09.** `{tempo, source}` 가 `customLinks` 뒤에 붙는다. `UNDO_FIELDS` 와 `DOC_FIELDS` 양쪽에 있다 |
+| 저장 포맷의 `media` 블록 | **2026-09-09.** `{tempo, source}` 가 `customLinks` 뒤에 붙는다. `UNDO_FIELDS` 와 `DOC_FIELDS` 양쪽에 있다. `tempo.points`(보정점)는 있을 때만 쓰인다 — 빈 배열은 키째로 뺀다 |
 | `index.html` 의 영상 패널 마크업·CSS | **2026-09-09.** `#boardsContainer` 의 세 번째 flex 자식. 기존 규칙은 한 줄도 고치지 않고 `</style>` 앞에 165줄을 더하기만 했다 |
 
 | 비워 둔 것 | 상태 |

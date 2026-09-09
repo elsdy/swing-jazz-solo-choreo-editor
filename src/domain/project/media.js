@@ -91,5 +91,10 @@ export function serializeMedia(media) {
   const m = normalizeMedia(media);
   const out = {};
   for (const key of MEDIA_FIELDS) out[key] = m[key];
+  // ⚠ 빈 보정점은 키째로 뺀다 — 보정점을 한 번도 안 쓴 사람의 파일은 이 필드가 생기기 전과 바이트가 같아야 한다.
+  if (out.tempo && Array.isArray(out.tempo.points) && out.tempo.points.length === 0) {
+    const { points: _omit, ...rest } = out.tempo;
+    out.tempo = rest;
+  }
   return out;
 }

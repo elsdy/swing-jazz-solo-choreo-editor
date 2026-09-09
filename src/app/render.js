@@ -91,6 +91,8 @@ export function createRenderer(store, views, options = {}) {
     if (d.selection) {
       views.board?.main?.setSelected(store.selection);
       views.toolbar?.syncSelection();
+      // 영상 패널의 `선택한 블록이 여기서 시작` 은 선택에 따라 켜지고 꺼진다. 패널 전체가 아니라 템포 구획만 다시 그린다.
+      views.video?.syncSelection();
     }
 
     // ── ④ 패널 ────────────────────────────────────────────────────────────

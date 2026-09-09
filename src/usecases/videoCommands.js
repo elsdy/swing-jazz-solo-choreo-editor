@@ -24,7 +24,7 @@
 import { NONE } from './store.js';
 import { isEmptyMedia, normalizeMedia, normalizeMediaSource } from '../domain/project/media.js';
 import {
-  bpmFromTaps, isTempoUsable, normalizeTempo, reanchor, tempoFromTwoPoints
+  bpmFromTaps, isTempoUsable, normalizeTempo, reanchor, tempoFromTwoPoints, addTempoPoint as addTempoPointOf, removeTempoPoint as removeTempoPointOf, clearTempoPointsOf
 } from '../domain/tempo.js';
 
 /** 패널·템포 보정이 다시 그려져야 한다는 뜻. 재생 헤드와는 무관하다(위 경계 ①). */
@@ -242,6 +242,53 @@ export function setTempo(store, args = {}) {
  */
 export function setBeatsPerCount(store, args = {}) {
   return setTempo(store, { tempo: { beatsPerCount: args.beatsPerCount } });
+}
+
+/**
+ * 보정점을 하나 넣는다 — "이 카운트가 지금 여기서 시작한다". 템포가 흔들리는 실황 영상에서 동작마다
+ * 시작 시각을 찍어 두면 그 사이가 구간별 선형으로 저절로 맞는다(domain/tempo.js 의 tempoPoints).
+ *
+ * ⚠ 되감기는 점(앞뒤 점과 순서가 맞지 않는 점)은 **거부**한다 — 반환값의 `rejected` 가 그 신호다.
+ *   조용히 다른 점을 버리면 사용자는 무엇이 사라졌는지 모른다. 뷰가 이 신호를 보고 안내한다.
+ * ⚠ bpm 이 아직 미설정이면 넣지 않는다 — 양 끝 밖을 뻗을 기울기가 없다.
+ * @param {object} store
+ * @param {{count?: number, sec?: number}} point 선형 카운트와 그때의 영상 시각(초)
+ * @returns {import('./store.js').Dirty & {rejected?: boolean}}
+ */
+export function addTempoPoint(store, point = {}) {
+  const count = Number(point.count);
+  const sec = Number(point.sec);
+  if (!Number.isFinite(count) || !Number.isFinite(sec)) return NONE;
+  const cur = mediaState(store);
+  if (!isTempoUsable(cur.tempo)) return NONE;
+  const next = addTempoPointOf(cur.tempo, { count, sec });
+  if (!next) return { ...NONE, rejected: true };
+  return setMedia(store, { tempo: next, source: cur.source });
+}
+
+/**
+ * 그 카운트의 보정점을 뺀다.
+ * @param {object} store
+ * @param {{count?: number}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function removeTempoPoint(store, args = {}) {
+  const count = Number(args.count);
+  if (!Number.isFinite(count)) return NONE;
+  const cur = mediaState(store);
+  if (!(cur.tempo.points || []).some(p => p.count === count)) return NONE;
+  return setMedia(store, { tempo: removeTempoPointOf(cur.tempo, count), source: cur.source });
+}
+
+/**
+ * 보정점을 전부 뺀다. bpm·앵커는 그대로다.
+ * @param {object} store
+ * @returns {import('./store.js').Dirty}
+ */
+export function clearTempoMap(store) {
+  const cur = mediaState(store);
+  if ((cur.tempo.points || []).length === 0) return NONE;
+  return setMedia(store, { tempo: clearTempoPointsOf(cur.tempo), source: cur.source });
 }
 
 /**
