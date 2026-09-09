@@ -57,6 +57,7 @@ import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createDocsHub } from '../ui/docsHub.js';
 import { createSettingsView } from '../ui/settingsView.js';
 import { createClipLibrary } from '../adapters/clipLibrary.js';
+import { createClipServer } from '../adapters/clipServer.js';
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
 import { clipDirParts } from '../domain/clips.js';
 import { createVideoPanel } from '../ui/videoPanel.js';
@@ -648,6 +649,13 @@ function localFileLoaded() {
   return !!(source && source.kind === 'file' && localFile && localFile.name === source.name);
 }
 
+/** 파일 소스가 실제로 재생 가능한가 — 이 세션에서 고른 파일이거나, 서버가 그 경로를 가지고 있거나. */
+function fileSourceReady() {
+  const source = VideoCmd.mediaState(store).source;
+  if (!source || source.kind !== 'file') return false;
+  return localFileLoaded() || !!(clipServerConfig && source.path && serverClipOk === source.path);
+}
+
 /**
  * 재생기에 실을 MediaSource. store 의 소스 참조(파일명/URL)를 이 세션의 실물(blob URL/videoId)로 바꾼다.
  * 파일 소스인데 아직 안 골랐으면 null — 소스 없음과 같이 널 재생기로 간다(패널은 "다시 골라 달라"고 안내한다).
@@ -656,7 +664,12 @@ function localFileLoaded() {
 function currentMediaSource() {
   const source = VideoCmd.mediaState(store).source;
   if (source && source.kind === 'file') {
-    return localFileLoaded() ? { kind: 'file', url: localFile.url, name: localFile.name } : null;
+    if (localFileLoaded()) return { kind: 'file', url: localFile.url, name: localFile.name };
+    // 서버 모드: 보관 경로가 있으면 서버가 스트리밍한다(Range 지원). 파일을 다시 고를 필요가 없다.
+    if (clipServerConfig && source.path && serverClipOk === source.path) {
+      return { kind: 'file', url: clipServer.urlFor(source.path), name: source.name };
+    }
+    return null;
   }
   return mediaSourceFromUrl(videoSourceUrl());
 }
@@ -710,10 +723,20 @@ function ensurePlayer() {
 }
 
 /**
- * 영상 보관 폴더(설정에서 지정). 지원하지 않는 브라우저에서는 모든 호출이 "없음"으로 답한다.
- * 핸들은 IndexedDB 에, 표시 이름·하위 폴더는 localStorage 에 있다.
+ * 영상 보관 — 두 가지 길이 있고 시작할 때 서버를 한 번 찔러 보고 고른다.
+ *   서버 모드   `python3 server.py` 가 떠 있으면 업로드는 서버가 `<root>/<subdir>/<프로젝트>/` 에 저장하고
+ *              재생은 `/clips/<path>` 스트리밍이다. 설정의 폴더는 서버의 것이다.
+ *   브라우저 모드 정적 호스팅이면 File System Access API 로 사용자가 고른 폴더에 복사한다(크롬 계열).
+ * 두 길의 path 모양이 같아서 프로젝트 파일은 어느 쪽에서 열어도 통한다.
  */
 const clipLibrary = createClipLibrary();
+const clipServer = createClipServer();
+/** 서버가 있으면 그 설정, 없으면 null. probe 가 끝나기 전에는 null 이라 브라우저 모드처럼 군다. */
+let clipServerConfig = null;
+/** 서버에 있다고 확인한 경로. 소스가 바뀌면 다시 확인한다. */
+let serverClipOk = '';
+/** 서버에 없다고 확인한 경로. 패널이 "없다"고 말하는 근거다. */
+let serverClipMissing = '';
 /** 마지막 보관 폴더 읽기 시도의 결과. 패널이 "파일이 없다"와 "권한만 다시 받으면 된다"를 구분해 말한다. */
 let libraryState = 'idle';
 
@@ -740,7 +763,22 @@ function chooseLocalFile(file) {
   render(VideoCmd.setFileSource(store, { name: file.name }));
   views.video?.render();
 
-  // 보관 폴더로 복사. 권한은 조용히 확인만 한다(파일 선택 대화상자가 닫힌 뒤라 제스처가 끝났을 수 있다).
+  // 보관 — 서버가 있으면 서버로 올리고, 아니면 브라우저 폴더에 복사한다. 어느 쪽이든 끝나면 path 만 덧붙인다.
+  const stillCurrent = () => {
+    const cur = VideoCmd.mediaState(store).source;
+    return !!(cur && cur.kind === 'file' && cur.name === file.name && localFile && localFile.name === file.name);
+  };
+  const attachPath = (path) => {
+    if (!stillCurrent()) return;                 // 그 사이 사용자가 다른 소스로 바꿨으면 낡은 결과다
+    serverClipOk = clipServerConfig ? path : serverClipOk;
+    render(VideoCmd.setFileSource(store, { name: file.name, path }));
+    commitHistoryAndRender();
+  };
+  if (clipServerConfig) {
+    clipServer.upload(file, projectNameForClips(), file.name).then((saved) => { if (saved) attachPath(saved.path); });
+    return;
+  }
+  // 브라우저 모드. 권한은 조용히 확인만 한다(파일 선택 대화상자가 닫힌 뒤라 제스처가 끝났을 수 있다).
   clipLibrary.ensurePermission(false).then(async (ok) => {
     if (!ok) return;
     const { subdir } = loadClipSetting();
@@ -750,11 +788,7 @@ function chooseLocalFile(file) {
     } catch {
       return;                                    // 복사 실패는 조용히 — blob 으로는 이미 재생 중이다
     }
-    // 그 사이 사용자가 다른 소스로 바꿨으면 낡은 결과다.
-    const cur = VideoCmd.mediaState(store).source;
-    if (!cur || cur.kind !== 'file' || cur.name !== file.name || !localFile || localFile.name !== file.name) return;
-    render(VideoCmd.setFileSource(store, { name: file.name, path: saved.path }));
-    commitHistoryAndRender();
+    attachPath(saved.path);
   });
 }
 
@@ -770,7 +804,17 @@ function commitHistoryAndRender() {
 async function openFromLibrary(interactive) {
   const source = VideoCmd.mediaState(store).source;
   if (!source || source.kind !== 'file' || !source.path) return;
-  if (localFileLoaded()) return;
+  if (fileSourceReady()) return;
+  if (clipServerConfig) {
+    // 서버 모드: 있는지 물어보고, 있으면 URL 로 바로 싣는다(파일을 내려받지 않는다).
+    const ok = await clipServer.exists(source.path);
+    const now = VideoCmd.mediaState(store).source;
+    if (!now || now.kind !== 'file' || now.path !== source.path) return;
+    if (ok) { serverClipOk = source.path; serverClipMissing = ''; libraryState = 'idle'; }
+    else { serverClipMissing = source.path; libraryState = 'missing'; }
+    views.video?.render();
+    return;
+  }
   if (!(await clipLibrary.ensurePermission(interactive))) return;
   const file = await clipLibrary.openClip(source.path);
   // 그 사이 소스가 바뀌었으면 낡은 결과다.
@@ -791,10 +835,19 @@ let libraryAutoTriedFor = '';
 function tryLibraryQuietly() {
   const source = VideoCmd.mediaState(store).source;
   const key = source && source.kind === 'file' && source.path ? source.path : '';
-  if (!key || localFileLoaded() || key === libraryAutoTriedFor) return;
+  if (!key || fileSourceReady() || key === libraryAutoTriedFor) return;
   libraryAutoTriedFor = key;
   openFromLibrary(false);
 }
+
+// 서버가 있는지 한 번 본다. 있으면 설정과 패널이 서버 모드로 다시 그려진다(패널이 열려 있으면 경로도 확인한다).
+clipServer.probe().then((cfg) => {
+  clipServerConfig = cfg;
+  if (!cfg) return;
+  libraryAutoTriedFor = '';
+  views.settings?.render();
+  views.video?.render();
+});
 
 /** 보간된 현재 미디어 시각(초). 표본은 캐시된 값이라 매 프레임 불러도 iframe 경계를 넘지 않는다. */
 const currentVideoSec = () => projectTime(player.getTimeSample(), performance.now(), videoDurationSec);
@@ -821,7 +874,7 @@ views.video = createVideoPanel({
   commitHistory: () => render(commitHistory(BOARD_MAIN)),
   getSourceUrl: videoSourceUrl,
   getSource: () => VideoCmd.mediaState(store).source,
-  getFileLoaded: localFileLoaded,
+  getFileLoaded: fileSourceReady,
   onFileChosen: chooseLocalFile,
   onOpenFromLibrary: () => openFromLibrary(true),
   getLibraryState: () => libraryState,
@@ -913,13 +966,23 @@ createDocsHub({ container: document.querySelector('.top-actions') });
 // 18. 설정 — 영상 보관 폴더. 어댑터(clipLibrary·localStore)를 아는 자리는 여기다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-createSettingsView({
+views.settings = createSettingsView({
   container: document.querySelector('.top-actions'),
   getClipSetting: loadClipSetting,
   saveClipSetting,
   clips: clipLibrary,
+  // 서버 모드면 설정은 서버의 것이다 — 폴더 선택 대신 경로 입력이고, 서버의 .clipserver.json 에 남는다.
+  server: {
+    isActive: () => !!clipServerConfig,
+    getConfig: () => clipServer.getConfig(),
+    setConfig: async (next) => {
+      const cfg = await clipServer.setConfig(next);
+      if (cfg) clipServerConfig = cfg;
+      return cfg;
+    }
+  },
   getProjectName: projectNameForClips,
   previewDirParts: clipDirParts,
   // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
-  onChange: () => { libraryAutoTriedFor = ''; views.video?.render(); }
+  onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); }
 });

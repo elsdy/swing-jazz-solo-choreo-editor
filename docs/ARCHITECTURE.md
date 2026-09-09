@@ -7,10 +7,10 @@
 빌드 도구도 번들러도 npm 의존성도 없다. 브라우저가 그대로 읽는 ES 모듈이 전부다. 대신 `index.html` 을 더블클릭해서는 열리지 않는다 — `file://` 에서는 브라우저가 ES 모듈 로딩과 문서 뷰어의 `fetch` 를 모두 막는다.
 
 ```
-python3 -m http.server 8000
+python3 server.py
 ```
 
-그리고 `http://localhost:8000` 을 연다. `python3` 자리에는 정적 파일을 내주는 무엇을 써도 된다.
+그리고 `http://localhost:8000` 을 연다. `server.py` 는 저장소를 정적으로 내주면서 영상 클립 API 를 얹은 것이고, 앱 자체는 정적 파일을 내주는 무엇으로 열어도 된다(그때는 영상 보관이 브라우저 폴더 방식으로 떨어진다).
 
 고치기 전과 후에 이 넷을 돌린다. 넷 다 의존성이 0이고 몇 초 안에 끝난다.
 
@@ -250,7 +250,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `youtubeOembed.js` | YouTube oEmbed 제목 조회 |
 | `nullMediaPlayer.js` | 소스 없음을 정상 상태로 표현하는 재생기 |
 | `media/youtubePlayer.js` | YouTube IFrame API 를 `MediaPlayer` 계약으로 감싼다. **이 앱의 첫 외부 스크립트 의존**이라 실패를 예외가 아니라 상태로 다룬다 — 스크립트가 막히면 `getState().load === 'error'` 이고 한국어 문구는 뷰가 만든다. 생성만으로는 DOM 도 네트워크도 안 건드린다 |
-| `clipLibrary.js` | 영상 보관 폴더. File System Access API 의 폴더 핸들을 IndexedDB 에 남기고 `<subdir>/<프로젝트>/<파일>` 로 복사·재읽기한다. 경로 규칙은 `domain/clips.js` 가 정하고 여기서는 이름을 만들지 않는다. 지원하지 않는 브라우저에서는 "없음"으로 답한다 |
+| `clipServer.js` | `server.py` 의 클립 API 클라이언트. 서버가 있는지 `probe` 하고, 업로드(`PUT /api/clips`, 본문이 파일 바이트라 multipart 가 없다)·존재 확인·재생 URL(`/clips/<path>`)을 준다. 어떤 함수도 던지지 않는다 — 서버가 없으면 null 이고 `app/main` 이 브라우저 폴더 방식으로 떨어진다 |
+| `clipLibrary.js` | 영상 보관 폴더(브라우저 방식). File System Access API 의 폴더 핸들을 IndexedDB 에 남기고 `<subdir>/<프로젝트>/<파일>` 로 복사·재읽기한다. 경로 규칙은 `domain/clips.js` 가 정하고 여기서는 이름을 만들지 않는다. 지원하지 않는 브라우저에서는 "없음"으로 답한다 |
 | `media/filePlayer.js` | 로컬 영상 파일을 `<video>` 로 재생하는 `MediaPlayer`. blob URL 을 만들지 않는다 — 만든 쪽(`app/main`)이 revoke 까지 책임지므로 여기 들어오는 것은 이미 만들어진 `{kind:'file', url}` 뿐이다. 덕분에 node 에서 가짜 document 하나로 전 경로를 검사한다 |
 | `media/pickPlayer.js` | URL 또는 `MediaSource` → 재생기 종류(`youtube`/`file`/`null`). `domain/links.parseYoutubeUrl` 을 재사용하고 언제나 완전한 `MediaPlayer` 를 돌려준다(호출부에 `player?.` 가 생기지 않는다) |
 
@@ -361,3 +362,19 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 다른 재생기(로컬 파일 등)를 붙인다 | `src/adapters/media/` + `src/ports/media.js` | `assertMediaPlayer` 를 마지막 줄에 둔다. [포트 계약](PORTS.md)과 [로드맵](ROADMAP.md)의 미결정 사항 |
 
 규칙을 우회하고 싶어지면 대개 파일 위치가 틀린 것이다. 그리고 구조를 옮기는 커밋과 동작을 바꾸는 커밋은 섞지 않는다 — 섞으면 골든이 깨졌을 때 어느 쪽이 회귀인지 알 수 없다.
+
+## 두 번째 런타임: `server.py`
+
+2026-09-09 에 저장소 밖의 두 번째 런타임이 생겼다. 파이썬 표준 라이브러리만 쓰는 로컬 서버로, `python3 -m http.server` 가 하던 정적 서빙 위에 영상 클립 보관 API 를 얹는다.
+
+| 엔드포인트 | 하는 일 |
+|---|---|
+| `GET /api/health` | 서버가 있는지. `{ok, mode:'server', root, subdir, dir}` |
+| `GET` · `PUT /api/config` | 보관 루트·하위 폴더. 변경은 저장소의 `.clipserver.json` 에 남는다 |
+| `PUT /api/clips?project=&name=` | 본문 = 파일 바이트. `<root>/<subdir>/<프로젝트>/<파일>` 로 저장(겹치면 ` (2)`) |
+| `GET /api/clips?project=` · `GET /api/clips/<path>` | 목록 · 존재 확인 |
+| `GET /clips/<path>` | 파일 스트리밍. `Range` 를 지원한다 — `<video>` 탐색에 필수다 |
+
+경계는 HTTP 뿐이다. `server.py` 는 `src/` 를 모르고 `src/` 는 서버 코드를 모른다(`adapters/clipServer.js` 가 URL 만 안다). 하나 겹치는 것이 **경로 규칙**이다 — `<subdir>/<프로젝트>/<파일>`, 못 쓰는 글자는 `_`, 앞의 점 제거, 빈 조각은 대체 이름. `src/domain/clips.js` 와 `server.py` 상단에 같은 규칙이 두 번 적혀 있고, 그래서 프로젝트 파일의 `media.source.path` 가 서버 방식과 브라우저 폴더 방식 사이에서 그대로 통한다. 한쪽을 고치면 다른 쪽도 고친다.
+
+`tools/check-arch.mjs` 는 `src/` 만 본다. 서버는 `tests/server.test.mjs` 가 실제로 띄워 검사한다(업로드 → 번호 붙이기 → Range → 루트 탈출 거부 → 숨김 파일 거부).

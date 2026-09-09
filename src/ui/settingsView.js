@@ -47,6 +47,11 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  *   pickFolder: () => Promise<{name:string}|null>,
  *   forgetFolder: () => Promise<void>
  * }} clips 어댑터의 폴더 부분. ★ pickFolder 는 클릭 핸들러 안에서 불러야 한다(브라우저 제약)
+ * @property {{
+ *   isActive: () => boolean,
+ *   getConfig: () => Promise<{root:string, subdir:string, dir:string}|null>,
+ *   setConfig: (next: {root?: string, subdir?: string}) => Promise<{root:string, subdir:string, dir:string}|null>
+ * }} [server] 로컬 서버(server.py)의 보관 설정. isActive 가 참이면 폴더 선택 대신 경로 입력을 보여 준다
  * @property {() => string} [getProjectName] 경로 미리보기에 쓸 지금 프로젝트 이름
  * @property {(subdir: string, projectName: string) => string[]} [previewDirParts] 미리보기 경로 조각(domain/clips.clipDirParts)
  * @property {() => void} [onChange] 설정이 바뀌었다 — 호출부가 패널 문구 등을 다시 그린다
@@ -64,6 +69,7 @@ export function createSettingsView(deps) {
     getClipSetting,
     saveClipSetting,
     clips,
+    server = null,
     getProjectName = () => '',
     previewDirParts = (subdir, name) => [subdir || 'video-clip', name || '_미지정'],
     onChange = () => {},
@@ -98,11 +104,16 @@ export function createSettingsView(deps) {
         <section class="settings-section">
           <h3>영상 보관 폴더</h3>
           <div class="helper">영상 패널의 <code>📁 영상 파일 열기</code> 로 고른 영상을 이 폴더 아래에 복사해 둡니다. 그러면 저장한 안무표를 다시 열 때 같은 파일을 다시 고르지 않아도 됩니다. 폴더는 이 브라우저에만 기억되고, 어디로도 올라가지 않습니다.</div>
-          <div class="settings-row">
+          <div class="settings-row" data-role="browser-row">
             <span class="settings-label">폴더</span>
             <span class="settings-chip is-off" data-role="folder">미지정</span>
             <button class="ghost accent" data-act="pick" type="button">폴더 지정</button>
             <button class="ghost" data-act="forget" type="button">해제</button>
+          </div>
+          <div class="settings-row" data-role="server-row" hidden>
+            <span class="settings-label">서버 보관 루트</span>
+            <input class="settings-text" data-role="root" type="text" style="width: 22em; max-width: 100%;" placeholder="/절대/경로" />
+            <button class="ghost accent" data-act="apply-root" type="button">적용</button>
           </div>
           <div class="settings-row">
             <span class="settings-label">하위 폴더</span>
@@ -117,6 +128,9 @@ export function createSettingsView(deps) {
   doc.body.appendChild(overlay);
 
   const folderChip = overlay.querySelector('[data-role="folder"]');
+  const browserRow = overlay.querySelector('[data-role="browser-row"]');
+  const serverRow = overlay.querySelector('[data-role="server-row"]');
+  const rootInput = overlay.querySelector('[data-role="root"]');
   const subdirInput = overlay.querySelector('[data-role="subdir"]');
   const previewEl = overlay.querySelector('[data-role="preview"]');
   const noteEl = overlay.querySelector('[data-role="note"]');
@@ -127,6 +141,9 @@ export function createSettingsView(deps) {
 
   /** store 가 아니라 설정·어댑터에서 재도출한다(팝업이 열릴 때와 바뀔 때만). */
   async function render() {
+    if (server && server.isActive()) { await renderServer(); return; }
+    if (browserRow) browserRow.hidden = false;
+    if (serverRow) serverRow.hidden = true;
     const setting = getClipSetting();
     const supported = clips.isSupported();
     const folder = supported ? await clips.getFolder() : null;
@@ -152,6 +169,24 @@ export function createSettingsView(deps) {
         : (folder
           ? '브라우저가 세션마다 이 폴더의 사용 허가를 다시 물을 수 있습니다. 그때는 영상 패널의 `📂 보관 폴더에서 불러오기` 를 누르면 됩니다.'
           : '폴더를 지정하면 그 아래에 하위 폴더를 만들어 영상을 복사합니다. 이미 있는 파일은 건드리지 않고, 같은 이름이 있으면 `(2)` 를 붙입니다.');
+    }
+  }
+
+  /** 서버 모드. 폴더는 서버의 루트이고, 변경은 서버의 설정 파일에 남는다(브라우저 저장소는 쓰지 않는다). */
+  async function renderServer() {
+    if (browserRow) browserRow.hidden = true;
+    if (serverRow) serverRow.hidden = false;
+    const cfg = await server.getConfig();
+    if (rootInput && doc.activeElement !== rootInput) rootInput.value = cfg ? cfg.root : '';
+    if (subdirInput && doc.activeElement !== subdirInput) subdirInput.value = cfg ? cfg.subdir : '';
+    if (previewEl) {
+      const parts = previewDirParts(cfg ? cfg.subdir : '', getProjectName());
+      previewEl.textContent = `${cfg ? cfg.root : '<서버 루트>'}/${parts.join('/')}/<파일 이름>`;
+    }
+    if (noteEl) {
+      noteEl.textContent = cfg
+        ? `로컬 서버(server.py)가 영상을 보관합니다. 지금 보관 폴더는 ${cfg.dir} 이고, 서버를 다시 켜도 유지됩니다(저장소의 .clipserver.json). 서버는 이 컴퓨터에서만 접속됩니다.`
+        : '로컬 서버에서 설정을 읽지 못했습니다. 서버가 켜져 있는지 확인하세요.';
     }
   }
 
@@ -189,11 +224,23 @@ export function createSettingsView(deps) {
         render();
         onChange();
       });
+      return;
+    }
+    if (kind === 'apply-root' && server && rootInput) {
+      server.setConfig({ root: rootInput.value.trim() }).then((cfg) => {
+        if (!cfg && noteEl) noteEl.textContent = '서버가 그 경로를 만들지 못했습니다. 절대 경로인지, 쓸 수 있는 곳인지 확인하세요.';
+        else { render(); onChange(); }
+      });
     }
   });
   if (subdirInput) {
     subdirInput.onchange = () => {
-      saveClipSetting({ ...getClipSetting(), subdir: subdirInput.value.trim() });
+      const subdir = subdirInput.value.trim();
+      if (server && server.isActive()) {
+        server.setConfig({ subdir }).then(() => { render(); onChange(); });
+        return;
+      }
+      saveClipSetting({ ...getClipSetting(), subdir });
       render();
       onChange();
     };

@@ -4,10 +4,10 @@
 
 ## 붙이기 전에 — 실행 방법
 
-`src/` 가 ES 모듈로 나뉘어 있어 `index.html` 을 더블클릭해 `file://` 로 여는 방식은 더 이상 동작하지 않는다. 저장소 루트에서 정적 서버를 띄우고 `http://localhost:8000` 으로 연다.
+`src/` 가 ES 모듈로 나뉘어 있어 `index.html` 을 더블클릭해 `file://` 로 여는 방식은 더 이상 동작하지 않는다. 저장소 루트에서 `python3 server.py` 를 띄우고 `http://localhost:8000` 으로 연다(정적 서버로 열어도 앱은 뜨지만 영상 보관이 브라우저 폴더 방식이 된다).
 
 ```
-python3 -m http.server 8000
+python3 server.py
 ```
 
 이 제약은 영상 기능의 전제조건이기도 하다. YouTube IFrame API 는 `enablejsapi=1` 과 함께 `origin` 을 요구하는데 `file://` 문서의 origin 은 `null` 이라 API 가 애초에 붙지 않는다. 정적 서버 위에서 여는 지금 방식이 그대로 조건을 만족한다. 자세한 실행 절차는 [튜토리얼](TUTORIAL.md)에 있다.
@@ -532,10 +532,11 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 | `src/domain/project/schema.js` | `ChoreoDoc` / `ChoreoVersion` / `PracticeLog` / `MediaRef` / `CountRef` 타입, `SCHEMA_VERSION`, `LEGACY_FILE_VERSION` |
 | `src/domain/project/migrations.js` | v1 → v2 마이그레이션. **실제로 배선되어 돈다** |
 | `tools/check-arch.mjs` | 계층 방향과 순수성의 기계 검사. `node tools/check-arch.mjs` 로 돌린다 |
-| `tests/unit/domain.test.mjs` | 도메인·어댑터·유스케이스 단위 테스트 **85개**. `countToTime` ↔ `timeToCount` 왕복(보정점 있을 때 포함), `timeToCell` 의 fraction 범위, `tempoFromTwoPoints` 의 거부 조건, 보정점의 되감기 거부·교체·`reanchor` 밀기·빈 보정점 미저장에 더해 YouTube 어댑터의 계약 충족·스크립트 로드 실패·`onTime` 3보장, `<video>` 어댑터의 계약 충족·디코드 실패·자동재생 차단·착지 시각, 파일 소스가 이름만 남기는 것, 재생 위치가 store 에 없다는 것, 빈 `media` 가 저장 바이트를 안 늘린다는 것을 검사한다. `node --test 'tests/**/*.test.mjs'` 로 돌린다 |
+| `tests/unit/domain.test.mjs` | 도메인·어댑터·유스케이스 단위 테스트 **85개**(+ `tests/server.test.mjs` 의 서버 실물 2개). `countToTime` ↔ `timeToCount` 왕복(보정점 있을 때 포함), `timeToCell` 의 fraction 범위, `tempoFromTwoPoints` 의 거부 조건, 보정점의 되감기 거부·교체·`reanchor` 밀기·빈 보정점 미저장에 더해 YouTube 어댑터의 계약 충족·스크립트 로드 실패·`onTime` 3보장, `<video>` 어댑터의 계약 충족·디코드 실패·자동재생 차단·착지 시각, 파일 소스가 이름만 남기는 것, 재생 위치가 store 에 없다는 것, 빈 `media` 가 저장 바이트를 안 늘린다는 것을 검사한다. `node --test 'tests/**/*.test.mjs'` 로 돌린다 |
 | `src/adapters/media/youtubePlayer.js` | **2026-09-09.** IFrame API 를 MediaPlayer 계약으로 감싼 실물. 마지막 줄이 `assertMediaPlayer` 다. 생성만으로는 DOM·네트워크를 안 건드리고 첫 `load()` 에서 `<script>` 가 붙는다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가지 않는다 |
 | `src/adapters/media/pickPlayer.js` | **2026-09-09.** URL 또는 MediaSource → `'youtube'` \| `'file'` \| `'null'`. `domain/links.parseYoutubeUrl` 을 재사용하고 정규식을 한 글자도 쓰지 않는다. 언제나 완전한 MediaPlayer 를 돌려주므로 호출부에 `player?.` 가 생기지 않는다 |
-| `src/ports/clips.js` · `src/adapters/clipLibrary.js` · `src/domain/clips.js` | **2026-09-09.** 영상 보관 폴더. 계약(`ClipLibrary`: `isSupported` · `getFolder` · `pickFolder` · `forgetFolder` · `ensurePermission(interactive)` · `saveClip` · `openClip`), File System Access API + IndexedDB 구현, 그리고 `<subdir>/<프로젝트>/<파일>` 경로 규칙(순수). 폴더 핸들은 IndexedDB `choreo_clips` 에, 표시 이름·하위 폴더는 localStorage `choreo_clip_folder` 에 있다. 지원하지 않는 브라우저에서는 전부 "없음"으로 답하고 던지지 않는다 |
+| `server.py` · `src/adapters/clipServer.js` · `tests/server.test.mjs` | **2026-09-09.** 영상 보관 서버. 파이썬 표준 라이브러리만 쓰는 로컬 서버가 정적 파일 위에 `/api/health` · `/api/config` · `/api/clips` · `/clips/<path>`(Range) 를 얹는다. 클라이언트는 `probe` 로 서버가 있는지 보고 없으면 브라우저 폴더 방식으로 떨어진다. 보관 위치는 `--root`/`--subdir` 또는 앱 설정에서 바꾸고 `.clipserver.json` 에 남는다 |
+| `src/ports/clips.js` · `src/adapters/clipLibrary.js` · `src/domain/clips.js` | **2026-09-09.** 영상 보관 폴더(브라우저 방식, 서버가 없을 때). 계약(`ClipLibrary`: `isSupported` · `getFolder` · `pickFolder` · `forgetFolder` · `ensurePermission(interactive)` · `saveClip` · `openClip`), File System Access API + IndexedDB 구현, 그리고 `<subdir>/<프로젝트>/<파일>` 경로 규칙(순수). 폴더 핸들은 IndexedDB `choreo_clips` 에, 표시 이름·하위 폴더는 localStorage `choreo_clip_folder` 에 있다. 지원하지 않는 브라우저에서는 전부 "없음"으로 답하고 던지지 않는다 |
 | `src/adapters/media/filePlayer.js` | **2026-09-09.** `<video>` 를 MediaPlayer 계약으로 감싼 실물. `seekToleranceSec` 0.05, 재생 중 100ms 표본 + `timeupdate`. `MediaError.code` 를 포트의 5종 코드로 접고 한국어 문구는 만들지 않는다. blob URL 을 만들지도 놓지도 않는다(그건 `app/main` 의 몫) |
 | `src/usecases/videoCommands.js` | **2026-09-09.** 패널 상태 · 두 점 앵커 · 탭 템포 · 소스 확정 · `clearMedia`. DOM 도 플레이어도 시계도 모른다(시각은 전부 인자로 들어온다) |
 | `src/ui/videoPanel.js` · `src/ui/playhead.js` | **2026-09-09.** 패널 뷰(채널 A)와 재생 헤드(채널 B). 헤드는 rAF 루프가 자기 엘리먼트의 `transform` 만 쓴다 |
