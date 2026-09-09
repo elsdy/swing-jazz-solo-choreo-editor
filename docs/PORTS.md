@@ -508,7 +508,7 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 - ~~**버전마다 영상이 다른가.**~~ **지금은 프로젝트 공통이다.** `media` 블록이 `ChoreoDoc` 최상위에 있다. 나눌 때가 오면 블록 통째로 `ChoreoVersion.reference` 옆으로 내려가고 최상위에는 "기본 영상"만 남는다 — 그래서 `tempo` 와 `source` 를 state 에 평평하게 풀지 않고 블록 하나로 묶어 두었다(`domain/project/media.js`).
 - **`media` 최상위 키 이름이 겹친다.** v2 `ProjectFile` 에는 `MediaRef[]` 자리로 예약된 `media`(항상 `[]`)가 이미 있었고, 새 블록도 `media` 다. 지금은 마이그레이션이 `raw.media` 를 명시적으로 `doc.media` 로 내려 충돌을 피하지만, `MediaRef[]` 를 실제로 쓰기 시작할 때 둘 중 하나의 이름을 바꿔야 한다.
 - **루틴 편집 보드에도 카운트 ↔ 시간을 적용하는가.** 적용한다면 Tempo 가 보드마다 하나씩 두 벌이 된다. "루틴은 시간 매핑 없음"으로 못 박는 편이 단순하다.
-- **로컬 영상 파일을 어디까지 지원하는가.** `MediaSource` 의 `{kind:'file', url}` 은 blob URL 이라 저장할 수 없다. 파일명·크기만 힌트로 남기고 다음에 다시 고르게 할지, 더 갈지에 따라 저장 포맷이 달라진다.
+- ~~**로컬 영상 파일을 어디까지 지원하는가.**~~ **2026-09-09 에 파일명만 남기기로 정했다.** 저장 포맷의 `MediaSourceRef` 는 `{kind:'file', name}` 이고 url 이 없다. 실행 중의 blob URL 은 `app/main` 이 `URL.createObjectURL` 로 만들고 revoke 까지 책임지며, 재생기에는 `{kind:'file', url, name}` 으로 들어간다. 저장 참조(이름)와 실물(blob)의 연결은 이름 비교 하나다 — 다시 열면 이름만 있고 실물이 없으므로 패널이 "같은 파일을 다시 골라 달라"고 안내한다.
 - **엔진 상태 blob 의 크기 상한을 둘 것인가.** `EngineSession.getState()` 가 돌려주는 것을 우리는 파싱하지 않고 왕복만 시킨다. 그런데 프로젝트 JSON 은 파일과 최근 목록 10개에 동시에 들어가므로 blob 이 크면 쿼터를 때린다. 상한 초과 시 조용히 강등할지 알릴지 정해야 한다.
 - **저장 실패를 사용자에게 알릴 것인가.** `StorageError` 의 네 코드는 정의되어 있지만 아무도 던지지 않는다. 던지기 시작하면 새 한국어 문구가 생기고, 그건 동작 변경이다.
 
@@ -526,9 +526,10 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 | `src/domain/project/schema.js` | `ChoreoDoc` / `ChoreoVersion` / `PracticeLog` / `MediaRef` / `CountRef` 타입, `SCHEMA_VERSION`, `LEGACY_FILE_VERSION` |
 | `src/domain/project/migrations.js` | v1 → v2 마이그레이션. **실제로 배선되어 돈다** |
 | `tools/check-arch.mjs` | 계층 방향과 순수성의 기계 검사. `node tools/check-arch.mjs` 로 돌린다 |
-| `tests/unit/domain.test.mjs` | 도메인·어댑터·유스케이스 단위 테스트 **66개**. `countToTime` ↔ `timeToCount` 왕복, `timeToCell` 의 fraction 범위, `tempoFromTwoPoints` 의 거부 조건에 더해 YouTube 어댑터의 계약 충족·스크립트 로드 실패·`onTime` 3보장, 재생 위치가 store 에 없다는 것, 빈 `media` 가 저장 바이트를 안 늘린다는 것을 검사한다. `node --test 'tests/**/*.test.mjs'` 로 돌린다 |
+| `tests/unit/domain.test.mjs` | 도메인·어댑터·유스케이스 단위 테스트 **74개**. `countToTime` ↔ `timeToCount` 왕복, `timeToCell` 의 fraction 범위, `tempoFromTwoPoints` 의 거부 조건에 더해 YouTube 어댑터의 계약 충족·스크립트 로드 실패·`onTime` 3보장, `<video>` 어댑터의 계약 충족·디코드 실패·자동재생 차단·착지 시각, 파일 소스가 이름만 남기는 것, 재생 위치가 store 에 없다는 것, 빈 `media` 가 저장 바이트를 안 늘린다는 것을 검사한다. `node --test 'tests/**/*.test.mjs'` 로 돌린다 |
 | `src/adapters/media/youtubePlayer.js` | **2026-09-09.** IFrame API 를 MediaPlayer 계약으로 감싼 실물. 마지막 줄이 `assertMediaPlayer` 다. 생성만으로는 DOM·네트워크를 안 건드리고 첫 `load()` 에서 `<script>` 가 붙는다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가지 않는다 |
-| `src/adapters/media/pickPlayer.js` | **2026-09-09.** URL → `'youtube'` \| `'null'`. `domain/links.parseYoutubeUrl` 을 재사용하고 정규식을 한 글자도 쓰지 않는다. 언제나 완전한 MediaPlayer 를 돌려주므로 호출부에 `player?.` 가 생기지 않는다 |
+| `src/adapters/media/pickPlayer.js` | **2026-09-09.** URL 또는 MediaSource → `'youtube'` \| `'file'` \| `'null'`. `domain/links.parseYoutubeUrl` 을 재사용하고 정규식을 한 글자도 쓰지 않는다. 언제나 완전한 MediaPlayer 를 돌려주므로 호출부에 `player?.` 가 생기지 않는다 |
+| `src/adapters/media/filePlayer.js` | **2026-09-09.** `<video>` 를 MediaPlayer 계약으로 감싼 실물. `seekToleranceSec` 0.05, 재생 중 100ms 표본 + `timeupdate`. `MediaError.code` 를 포트의 5종 코드로 접고 한국어 문구는 만들지 않는다. blob URL 을 만들지도 놓지도 않는다(그건 `app/main` 의 몫) |
 | `src/usecases/videoCommands.js` | **2026-09-09.** 패널 상태 · 두 점 앵커 · 탭 템포 · 소스 확정 · `clearMedia`. DOM 도 플레이어도 시계도 모른다(시각은 전부 인자로 들어온다) |
 | `src/ui/videoPanel.js` · `src/ui/playhead.js` | **2026-09-09.** 패널 뷰(채널 A)와 재생 헤드(채널 B). 헤드는 rAF 루프가 자기 엘리먼트의 `transform` 만 쓴다 |
 | `src/domain/project/media.js` | **2026-09-09.** `media` 블록의 정규화·직렬화. 비어 있으면 `null` 을 돌려 `buildProjectFile` 이 키째로 뺀다 |
@@ -537,7 +538,6 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 
 | 비워 둔 것 | 상태 |
 |---|---|
-| 로컬 `<video>` 어댑터 | 없다. `MediaSource` 의 `{kind:'file', url}` 은 blob URL 이라 저장할 수 없어 저장 포맷이 먼저 정해져야 한다 |
 | 재생·정지 · 배속 · 구간 반복 조작 | 없다. 재생은 iframe 안의 유튜브 자체 UI 로 한다. 패널이 부르는 것은 배치 클릭의 `seek` + `play` 와 숨길 때의 `pause` 뿐이다 |
 | 시퀀스 엔진 진입점 | 없다. 엔진이 실제로 올 때 어댑터와 함께 만든다. [로드맵 3번](ROADMAP.md)이 그 조사 결과다 |
 | `nullSequenceEngine` | **일부러 만들지 않았다.** 위의 이유 참조 |

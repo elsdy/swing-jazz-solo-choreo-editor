@@ -1,7 +1,10 @@
-// src/adapters/media/pickPlayer.js — URL 을 보고 어떤 재생기를 쓸지 고른다 (adapters 계층)
+// src/adapters/media/pickPlayer.js — 소스를 보고 어떤 재생기를 쓸지 고른다 (adapters 계층)
 //
-// 신규 파일이다. 지금 고를 수 있는 것은 둘뿐이다: YouTube 어댑터와 널 재생기.
+// 신규 파일이다. 고를 수 있는 것은 셋이다: YouTube 어댑터, 로컬 파일(<video>) 어댑터, 널 재생기.
 // "어떤 어댑터인가"를 아는 유일한 자리이며, 뷰와 유스케이스는 MediaPlayer 하나만 본다.
+//
+// ⚠ 입력은 URL 문자열(링크바 원문)이거나 이미 만들어진 MediaSource 객체다. 로컬 파일은 URL 로
+//   표현할 수 없으므로(blob URL 은 app/main 이 만들고 revoke 한다) 객체로만 들어온다.
 //
 // ⚠ URL 파싱을 두 벌로 만들지 않는다. videoId 추출은 domain/links.js 의 parseYoutubeUrl 하나뿐이고
 //   (그 함수는 normalizeYoutubeUrl 옆에서 같은 규칙을 쓴다), 여기서는 정규식을 한 글자도 쓰지 않는다.
@@ -13,6 +16,7 @@
 import { parseYoutubeUrl } from '../../domain/links.js';
 import { createNullMediaPlayer } from '../nullMediaPlayer.js';
 import { createYouTubePlayer } from './youtubePlayer.js';
+import { createFilePlayer } from './filePlayer.js';
 
 /**
  * URL → MediaSource. 못 알아보면 **null**(= 소스 없음)이고, 그건 오류가 아니라 정상 상태다.
@@ -32,29 +36,45 @@ export function mediaSourceFromUrl(url) {
 }
 
 /**
- * 이 URL 을 어떤 어댑터가 맡는가. 뷰가 "왜 안 되는지"를 고를 때 쓴다(널이면 안내 문구가 다르다).
- * @param {string|null|undefined} url
- * @returns {'youtube'|'null'}
+ * URL 문자열이든 MediaSource 객체든 MediaSource|null 로 접는다. 여기 하나로 두 입력 형태를 흡수한다.
+ * @param {string|import('../../ports/media.js').MediaSource|null|undefined} sourceOrUrl
+ * @returns {import('../../ports/media.js').MediaSource|null}
  */
-export function pickPlayerKind(url) {
-  return mediaSourceFromUrl(url) ? 'youtube' : 'null';
+export function toMediaSource(sourceOrUrl) {
+  if (sourceOrUrl == null) return null;
+  if (typeof sourceOrUrl === 'string') return mediaSourceFromUrl(sourceOrUrl);
+  if (typeof sourceOrUrl !== 'object') return null;
+  if (sourceOrUrl.kind === 'file') return sourceOrUrl.url ? sourceOrUrl : null;
+  if (sourceOrUrl.kind === 'youtube') return sourceOrUrl.videoId ? sourceOrUrl : null;
+  return null;
 }
 
 /**
- * URL 에 맞는 재생기를 만든다. **호출부에 분기가 생기지 않는 것이 목적이다** —
+ * 이 소스를 어떤 어댑터가 맡는가. 뷰가 "왜 안 되는지"를 고를 때 쓴다(널이면 안내 문구가 다르다).
+ * @param {string|import('../../ports/media.js').MediaSource|null|undefined} sourceOrUrl
+ * @returns {'youtube'|'file'|'null'}
+ */
+export function pickPlayerKind(sourceOrUrl) {
+  const source = toMediaSource(sourceOrUrl);
+  return source ? source.kind : 'null';
+}
+
+/**
+ * 소스에 맞는 재생기를 만든다. **호출부에 분기가 생기지 않는 것이 목적이다** —
  * 알아볼 수 없는 URL 이어도 널 재생기가 나오므로 `player?.` 가 필요 없다
  * (docs/PORTS.md 'createNullMediaPlayer() 가 존재하는 이유').
  *
  * ⚠ 소스를 여기서 load() 하지 않는다. 만들기와 싣기를 나누는 이유는 계약이 "kind 가 같으면
  *   재생성 없이 소스만 바꾼다"이기 때문이다 — 호출부는 kind 가 그대로면 이 함수를 다시 부르지 말고
- *   `player.load(mediaSourceFromUrl(newUrl))` 만 불러야 iframe 이 다시 로드되지 않는다.
+ *   `player.load(toMediaSource(next))` 만 불러야 iframe 이 다시 로드되지 않는다.
  *
- * @param {string|null|undefined} url
- * @param {object} [options]  youtubePlayer 에 그대로 전달된다(container·win·doc·timers·loadApi 등)
+ * @param {string|import('../../ports/media.js').MediaSource|null|undefined} sourceOrUrl
+ * @param {object} [options]  어댑터에 그대로 전달된다(container·win·doc·timers·loadApi 등)
  * @returns {import('../../ports/media.js').MediaPlayer}
  */
-export function pickPlayer(url, options = {}) {
-  return pickPlayerKind(url) === 'youtube'
-    ? createYouTubePlayer(options)
-    : createNullMediaPlayer();
+export function pickPlayer(sourceOrUrl, options = {}) {
+  const kind = pickPlayerKind(sourceOrUrl);
+  if (kind === 'youtube') return createYouTubePlayer(options);
+  if (kind === 'file') return createFilePlayer(options);
+  return createNullMediaPlayer();
 }

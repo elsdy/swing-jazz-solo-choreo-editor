@@ -168,9 +168,54 @@ export function setSource(store, args = {}) {
   const url = args.url == null ? '' : String(args.url).trim();
   const cur = mediaState(store);
   const next = url ? normalizeMediaSource({ kind: 'youtube', url }) : null;
-  const same = (cur.source && next) ? cur.source.url === next.url : cur.source === next;
-  if (same) return NONE;
+  // ⚠ 파일 소스가 잡혀 있는데 링크바만 비운 경우는 건드리지 않는다 — 링크를 지운 것이지 영상 파일을
+  //   놓은 것이 아니다. 파일을 놓는 것은 clearFileSource 의 몫이다.
+  if (!next && cur.source && cur.source.kind === 'file') return NONE;
+  if (sameSource(cur.source, next)) return NONE;
   return setMedia(store, { tempo: cur.tempo, source: next });
+}
+
+/**
+ * 로컬 영상 파일을 소스로 확정한다. 저장되는 것은 **파일명뿐**이다 — blob URL 은 브라우저 것이고
+ * 이 계층은 그것을 모른다(app/main 이 만들고 revoke 한다).
+ * ⚠ 파일이 유튜브 주소보다 우선한다. 링크바의 주소는 그대로 남아 있으므로 파일을 놓으면(clearFileSource)
+ *   다시 유튜브로 돌아간다 — 사용자가 마지막에 고른 것이 소스다.
+ * @param {object} store
+ * @param {{name?: string|null}} [args]
+ * @returns {import('./store.js').Dirty}
+ */
+export function setFileSource(store, args = {}) {
+  const cur = mediaState(store);
+  const next = normalizeMediaSource({ kind: 'file', name: args.name });
+  if (!next) return NONE;
+  if (sameSource(cur.source, next)) return NONE;
+  return setMedia(store, { tempo: cur.tempo, source: next });
+}
+
+/**
+ * 파일 소스를 놓는다. 링크바에 유튜브 주소가 남아 있으면 그것이 다시 소스가 된다(없으면 소스 없음).
+ * 템포는 그대로 둔다 — 같은 곡의 다른 파일로 갈아 끼우는 흔한 경우에 애써 찍은 bpm 이 날아가면 안 된다.
+ * @param {object} store
+ * @returns {import('./store.js').Dirty}
+ */
+export function clearFileSource(store) {
+  const cur = mediaState(store);
+  if (!cur.source || cur.source.kind !== 'file') return NONE;
+  const url = String((store.get().links || {}).youtubeUrl || '').trim();
+  const next = url ? normalizeMediaSource({ kind: 'youtube', url }) : null;
+  return setMedia(store, { tempo: cur.tempo, source: next });
+}
+
+/**
+ * 두 소스 참조가 같은가. kind 가 같고 그 kind 의 식별 필드(url 또는 name)가 같으면 같다.
+ * @param {object|null} a
+ * @param {object|null} b
+ * @returns {boolean}
+ */
+function sameSource(a, b) {
+  if (!a || !b) return a === b;
+  if (a.kind !== b.kind) return false;
+  return a.kind === 'file' ? a.name === b.name : a.url === b.url;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

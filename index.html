@@ -1291,6 +1291,16 @@
 
     .video-status { font-size: 11px; color: var(--muted); line-height: 1.4; }
     .video-status.is-error { color: #fca5a5; }
+    /* 로컬 파일 줄. 파일명 칩은 제목 칩과 같은 톤이다(둘 다 "지금 무엇이 소스인가"를 말한다). */
+    .video-source { gap: 6px; }
+    .video-file-name {
+      font-size: 11px; color: #a7f3d0; min-width: 0; max-width: 100%;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.25);
+      border-radius: 999px; padding: 2px 8px;
+    }
+    /* <video> 도 iframe 과 같이 프레임을 꽉 채운다(.video-frame > * 규칙). 검은 레터박스는 영상 비율의 몫이다. */
+    .video-frame > video { object-fit: contain; background: #000; }
     .video-tempo { display: grid; gap: 6px; }
     .video-bpm { font-size: 12px; font-weight: 800; color: #dbe4ef; line-height: 1.4; }
     .video-field { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
@@ -1505,6 +1515,12 @@
           <div class="video-body" id="videoBody">
             <div class="video-frame" id="videoFrame"></div>
             <div class="video-status" id="videoStatus"></div>
+            <div class="video-field video-source">
+              <input id="videoFileInput" type="file" accept="video/*" hidden />
+              <button id="videoFileBtn" class="ghost" type="button" title="내 컴퓨터의 영상 파일을 안무표 옆에 띄웁니다">📁 영상 파일 열기</button>
+              <span class="video-file-name" id="videoFileName" hidden></span>
+              <button id="videoFileClearBtn" class="ghost" type="button" title="영상 파일을 놓고 링크바의 유튜브 주소로 돌아갑니다" hidden>✕ 파일 놓기</button>
+            </div>
             <div class="video-tempo">
               <div class="video-bpm" id="videoBpmText"></div>
 

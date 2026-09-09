@@ -619,40 +619,78 @@ views.routineEditor.sync();   // 패널은 마크업이 이미 display:none 이�
 const videoFrameEl = byId('videoFrame');
 
 /**
- * 지금 실제로 쓰는 영상 URL. 링크바가 원본이고 `media.source` 는 그 확정 사본이다.
+ * 지금 실제로 쓰는 영상 URL(유튜브). 링크바가 원본이고 `media.source` 는 그 확정 사본이다.
  * ⚠ 폴백이 있는 이유: 이 기능 이전에 저장한 프로젝트 파일에는 media 블록이 아예 없다.
  *   그런 파일을 열면 링크바에는 주소가 있는데 media.source 는 null 이므로, 그때는 링크바를 읽는다.
+ * ⚠ 파일 소스면 빈 문자열이다 — 파일에는 URL 이 없다(아래 localFile 이 그 실물이다).
  */
 function videoSourceUrl() {
   const source = VideoCmd.mediaState(store).source;
+  if (source && source.kind === 'file') return '';
   return source ? source.url : (store.links.youtubeUrl || '');
 }
 
+/**
+ * 이 세션에서 실제로 고른 로컬 영상 파일. **store 에 들어가지 않는다** — blob URL 은 이 실행에서만 살고,
+ * 파일 객체는 직렬화할 수 없다. store 에는 파일명만 남는다(usecases/videoCommands.setFileSource).
+ * ⚠ blob URL 은 만든 쪽이 revoke 한다. 갈아 끼울 때 앞의 것을 놓지 않으면 파일 크기만큼 메모리가 샌다.
+ * @type {{name: string, url: string}|null}
+ */
+let localFile = null;
+
+/** 저장된 파일 소스와 이 세션에서 고른 파일이 같은가. 다시 열었을 때는 이름만 있고 파일이 없다. */
+function localFileLoaded() {
+  const source = VideoCmd.mediaState(store).source;
+  return !!(source && source.kind === 'file' && localFile && localFile.name === source.name);
+}
+
+/**
+ * 재생기에 실을 MediaSource. store 의 소스 참조(파일명/URL)를 이 세션의 실물(blob URL/videoId)로 바꾼다.
+ * 파일 소스인데 아직 안 골랐으면 null — 소스 없음과 같이 널 재생기로 간다(패널은 "다시 골라 달라"고 안내한다).
+ * @returns {import('../ports/media.js').MediaSource|null}
+ */
+function currentMediaSource() {
+  const source = VideoCmd.mediaState(store).source;
+  if (source && source.kind === 'file') {
+    return localFileLoaded() ? { kind: 'file', url: localFile.url, name: localFile.name } : null;
+  }
+  return mediaSourceFromUrl(videoSourceUrl());
+}
+
+/** 재생기에 실을 것이 있는가. 재생 헤드는 이것이 거짓이면 그리지 않는다. */
+const hasMediaSource = () => currentMediaSource() != null;
+
 /** 소스 없음 = 널 재생기. 덕분에 아래 어느 줄에도 `player?.` 가 생기지 않는다. */
-let player = pickPlayer('', {});
+let player = pickPlayer(null, {});
 let playerKind = 'null';
-/** 마지막으로 load() 에 넘긴 URL. 같으면 다시 싣지 않는다(iframe 재로드 방지). */
-let loadedVideoUrl = '';
+/** 마지막으로 load() 에 넘긴 소스의 식별자(videoId 나 blob URL). 같으면 다시 싣지 않는다(iframe 재로드 방지). */
+let loadedVideoKey = '';
 /** 길이는 상태가 바뀔 때만 다시 읽는다 — getDuration 폴링은 iframe 경계를 넘는다. */
 let videoDurationSec = null;
 let unsubscribeVideoState = () => {};
 
-/** 지금 URL 에 맞는 재생기를 준비한다. 멱등이며, 바뀐 것이 없으면 아무 일도 하지 않는다. */
+/** 소스 하나를 "같은 것을 또 싣지 않기" 위한 문자열로 접는다. */
+function mediaSourceKey(source) {
+  if (!source) return '';
+  return source.kind === 'file' ? `file:${source.url}` : `yt:${source.videoId}:${source.startSec || 0}`;
+}
+
+/** 지금 소스에 맞는 재생기를 준비한다. 멱등이며, 바뀐 것이 없으면 아무 일도 하지 않는다. */
 function ensurePlayer() {
-  const url = videoSourceUrl();
-  const kind = pickPlayerKind(url);
+  const source = currentMediaSource();
+  const kind = pickPlayerKind(source);
 
   if (kind !== playerKind) {
     unsubscribeVideoState();
     player.destroy();
     // ⚠ YT.Player 는 넘겨받은 <div> 를 <iframe> 으로 **갈아치운다** — 새로 만들 때마다 빈 자리를
-    //   다시 마련해야 한다(먼젓번 컨테이너는 이미 사라졌다).
+    //   다시 마련해야 한다(먼젓번 컨테이너는 이미 사라졌다). 파일 재생기는 그 안에 <video> 를 넣는다.
     videoFrameEl.innerHTML = '';
     const host = document.createElement('div');
     videoFrameEl.appendChild(host);
-    player = pickPlayer(url, { container: host });
+    player = pickPlayer(source, { container: host });
     playerKind = kind;
-    loadedVideoUrl = '';
+    loadedVideoKey = '';
     // 재생 상태는 도메인이 아니라 store 를 거치지 않는다 — 문구만 직접 다시 그린다.
     unsubscribeVideoState = player.onState(() => {
       videoDurationSec = player.getDuration();
@@ -660,10 +698,25 @@ function ensurePlayer() {
     });
   }
 
-  if (url !== loadedVideoUrl) {
-    loadedVideoUrl = url;
-    player.load(mediaSourceFromUrl(url));
+  const key = mediaSourceKey(source);
+  if (key !== loadedVideoKey) {
+    loadedVideoKey = key;
+    player.load(source);
   }
+}
+
+/**
+ * 사용자가 영상 파일을 골랐다. blob URL 을 만들고(앞의 것은 놓고) 소스를 파일명으로 확정한다.
+ * ⚠ 여기가 URL.createObjectURL 을 부르는 유일한 자리다 — 만든 곳이 revoke 까지 책임진다.
+ * @param {File} file
+ */
+function chooseLocalFile(file) {
+  if (!file) return;
+  if (localFile) URL.revokeObjectURL(localFile.url);
+  localFile = { name: file.name, url: URL.createObjectURL(file) };
+  // 같은 이름을 다시 골라도(다시 열었을 때가 그렇다) 소스는 그대로라 NONE 이 온다 — 그래도 재생기는 새 blob 을 실어야 한다.
+  render(VideoCmd.setFileSource(store, { name: file.name }));
+  views.video?.render();
 }
 
 /** 보간된 현재 미디어 시각(초). 표본은 캐시된 값이라 매 프레임 불러도 iframe 경계를 넘지 않는다. */
@@ -675,7 +728,7 @@ const playhead = createPlayhead({
   getCols: () => store.board(BOARD_MAIN).cols,
   getTempo: () => VideoCmd.mediaState(store).tempo,
   // ⚠ 템포가 준비되지 않았으면 **아예 그리지 않는다**. bpm 0 에서 그리면 거짓 위치가 선다.
-  isActive: () => VideoCmd.isTempoReady(store) && !!videoSourceUrl(),
+  isActive: () => VideoCmd.isTempoReady(store) && hasMediaSource(),
   isFollowing: () => VideoCmd.panelState(store).follow,
   getCurrentSec: currentVideoSec,
   // 재생 위치가 지나가는 블록을 켠다. 칸이 바뀔 때만 불리므로 여기서 필터링해도 싸다.
@@ -690,6 +743,9 @@ views.video = createVideoPanel({
   render,
   commitHistory: () => render(commitHistory(BOARD_MAIN)),
   getSourceUrl: videoSourceUrl,
+  getSource: () => VideoCmd.mediaState(store).source,
+  getFileLoaded: localFileLoaded,
+  onFileChosen: chooseLocalFile,
   getPlayerState: () => player.getState(),
   getPlayerKind: () => player.kind,
   getCurrentSec: currentVideoSec,
@@ -718,7 +774,8 @@ views.video = createVideoPanel({
     setTempo: (args) => VideoCmd.setTempo(store, args),
     setBeatsPerCount: (args) => VideoCmd.setBeatsPerCount(store, args),
     reanchorTo: (args) => VideoCmd.reanchorTo(store, args),
-    clearTempo: () => VideoCmd.clearTempo(store)
+    clearTempo: () => VideoCmd.clearTempo(store),
+    clearFileSource: () => VideoCmd.clearFileSource(store)
   }
 });
 

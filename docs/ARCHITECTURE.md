@@ -250,7 +250,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `youtubeOembed.js` | YouTube oEmbed 제목 조회 |
 | `nullMediaPlayer.js` | 소스 없음을 정상 상태로 표현하는 재생기 |
 | `media/youtubePlayer.js` | YouTube IFrame API 를 `MediaPlayer` 계약으로 감싼다. **이 앱의 첫 외부 스크립트 의존**이라 실패를 예외가 아니라 상태로 다룬다 — 스크립트가 막히면 `getState().load === 'error'` 이고 한국어 문구는 뷰가 만든다. 생성만으로는 DOM 도 네트워크도 안 건드린다 |
-| `media/pickPlayer.js` | URL → 재생기 종류. `domain/links.parseYoutubeUrl` 을 재사용하고 언제나 완전한 `MediaPlayer` 를 돌려준다(호출부에 `player?.` 가 생기지 않는다) |
+| `media/filePlayer.js` | 로컬 영상 파일을 `<video>` 로 재생하는 `MediaPlayer`. blob URL 을 만들지 않는다 — 만든 쪽(`app/main`)이 revoke 까지 책임지므로 여기 들어오는 것은 이미 만들어진 `{kind:'file', url}` 뿐이다. 덕분에 node 에서 가짜 document 하나로 전 경로를 검사한다 |
+| `media/pickPlayer.js` | URL 또는 `MediaSource` → 재생기 종류(`youtube`/`file`/`null`). `domain/links.parseYoutubeUrl` 을 재사용하고 언제나 완전한 `MediaPlayer` 를 돌려준다(호출부에 `player?.` 가 생기지 않는다) |
 
 ### `src/usecases/` — 상태 전이
 
@@ -312,7 +313,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 
 `app/main.js` 가 이 계층의 나머지 절반이다. 저장소를 만들고, 어댑터를 포트 자리에 꽂고, 뷰와 컨트롤러에 협력자를 주입하고, presenter 를 그 모두에 넘긴다. 모든 뷰와 컨트롤러의 JSDoc 이 "`app/main` 이 넘긴다"고 적어 둔 대상이 이것이다. `index.html` 은 마크업과 CSS만 갖고 이 파일 하나를 `<script type="module">` 로 부른다.
 
-영상 재생기도 여기서만 산다. **재생기를 만드는 것은 패널이 실제로 화면에 보이는 순간**이고, 그 전에는 `pickPlayer('')` 가 준 널 재생기가 자리를 지킨다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가면 안 되기 때문이다. 소스가 바뀌어도 종류(`youtube`/`null`)가 같으면 재생기를 다시 만들지 않고 `load()` 만 부른다. iframe 을 다시 만들면 로딩이 눈에 보이게 끊긴다.
+영상 재생기도 여기서만 산다. **재생기를 만드는 것은 패널이 실제로 화면에 보이는 순간**이고, 그 전에는 `pickPlayer('')` 가 준 널 재생기가 자리를 지킨다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가면 안 되기 때문이다. 소스가 바뀌어도 종류(`youtube`/`file`/`null`)가 같으면 재생기를 다시 만들지 않고 `load()` 만 부른다. iframe 을 다시 만들면 로딩이 눈에 보이게 끊긴다. 로컬 파일의 blob URL 도 여기서만 산다 — `URL.createObjectURL` 을 부르는 자리는 `app/main` 하나이고, store 에는 파일명만 들어간다(파일 객체는 직렬화할 수 없고 blob URL 은 이 실행에서만 산다).
 
 ## 안전망 — 골든 150개
 

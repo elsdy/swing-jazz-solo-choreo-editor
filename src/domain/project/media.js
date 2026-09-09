@@ -22,15 +22,20 @@ import { MEDIA_FIELDS } from './schema.js';
 /** 아직 아무것도 정하지 않은 영상 블록. tempo.bpm 0 = 미설정(클램프 대상이 아니다). */
 export const DEFAULT_MEDIA = Object.freeze({ tempo: DEFAULT_TEMPO, source: null });
 
-/** 지금 지원하는 소스 종류. 로컬 파일(`file`)은 blob URL 이라 저장할 수 없어 아직 없다. */
-export const MEDIA_SOURCE_KINDS = Object.freeze(['youtube']);
+/**
+ * 지금 지원하는 소스 종류.
+ * `youtube` 는 url 로, `file` 은 **파일명만으로** 저장된다 — 브라우저는 파일 경로를 기억할 수 없고
+ * blob URL 은 다음 실행에서 죽으므로, 파일은 "다음에 같은 이름의 파일을 다시 골라 달라"는 힌트만 남긴다.
+ */
+export const MEDIA_SOURCE_KINDS = Object.freeze(['youtube', 'file']);
 
 /**
- * 소스 참조를 정규화한다. 모르는 kind·빈 url 은 **소스 없음(null)** 이다.
+ * 소스 참조를 정규화한다. 모르는 kind·빈 url/name 은 **소스 없음(null)** 이다.
  *
  * ⚠ url 은 사용자가 링크바에 넣은 문자열 그대로다. 여기서 normalizeYoutubeUrl 을 돌리지 않는다 —
  *   링크바의 `youtubeUrl` 과 글자가 달라지면 "같은 곡인데 두 값"이 되고, videoId 추출은
  *   adapters/media/pickPlayer.js 가 domain/links.parseYoutubeUrl 로 한 곳에서만 한다.
+ * ⚠ 파일 소스에는 url 이 **없다**. blob URL 이 들어와도 버린다 — 저장 파일에 죽은 주소가 남으면 안 된다.
  * @param {unknown} raw
  * @returns {import('./schema.js').MediaSourceRef|null}
  */
@@ -38,6 +43,10 @@ export function normalizeMediaSource(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const kind = typeof raw.kind === 'string' ? raw.kind : '';
   if (!MEDIA_SOURCE_KINDS.includes(kind)) return null;
+  if (kind === 'file') {
+    const name = raw.name == null ? '' : String(raw.name).trim();
+    return name ? { kind, name } : null;
+  }
   const url = raw.url == null ? '' : String(raw.url);
   if (!url) return null;
   return { kind, url };

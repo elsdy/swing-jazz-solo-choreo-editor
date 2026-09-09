@@ -55,8 +55,16 @@ const ERROR_TEXT = Object.freeze({
   'unknown': '영상을 재생할 수 없습니다.'
 });
 
-/** 소스가 없을 때의 안내. 링크바를 가리킨다 — 여기에 입력창을 만들지 않기 때문이다. */
-const NO_SOURCE_TEXT = '위 링크바의 `YouTube URL 입력...` 칸에 주소를 넣으면 여기에 영상이 뜹니다.';
+/** 소스가 없을 때의 안내. 링크바와 파일 버튼을 가리킨다 — 유튜브 주소 입력창은 여기 만들지 않기 때문이다. */
+const NO_SOURCE_TEXT = '위 링크바의 `YouTube URL 입력...` 칸에 주소를 넣거나 `📁 영상 파일 열기` 로 내 컴퓨터의 영상을 고르면 여기에 뜹니다.';
+
+/**
+ * 파일 소스는 저장됐는데 이 세션에서 아직 안 골랐을 때의 안내.
+ * 브라우저는 파일 경로를 기억하지 못하므로 다시 열면 같은 파일을 다시 골라야 한다 — 오류가 아니라 안내다.
+ * @param {string} name
+ * @returns {string}
+ */
+const REPICK_TEXT = (name) => `이 안무표는 영상 파일 \`${name}\` 을 쓰던 것입니다. 브라우저는 파일 위치를 기억하지 못하므로 \`📁 영상 파일 열기\` 로 같은 파일을 다시 골라 주세요.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 표시용 순수 헬퍼
@@ -103,7 +111,13 @@ function formatBpm(bpm) {
  * @property {(dirty: any) => void} render presenter 의 apply
  * @property {() => void} [commitHistory] app/main 이 `() => render(commitHistory('main'))` 로 넘긴다.
  *   없으면 커밋을 건너뛴다(테스트용)
- * @property {() => string} getSourceUrl 지금 실제로 쓰는 영상 URL(없으면 빈 문자열)
+ * @property {() => string} getSourceUrl 지금 실제로 쓰는 영상 URL(없으면 빈 문자열). 파일 소스면 빈 문자열이다
+ * @property {() => ({kind:'youtube', url:string}|{kind:'file', name:string}|null)} [getSource]
+ *   확정된 소스 참조(store.media.source). 파일이면 이름만 있다. 기본은 store 에서 직접 읽는다
+ * @property {() => boolean} [getFileLoaded] 파일 소스에 대해 **이 세션에서 실제 파일이 골라져 있는가**.
+ *   저장 파일에서 연 직후에는 이름만 있고 파일이 없다 — 그때 "다시 골라 달라"고 안내한다
+ * @property {(file: File) => void} [onFileChosen] 사용자가 파일을 골랐다. blob URL 을 만들고 소스를
+ *   확정하는 것은 어댑터를 아는 자리(app/main)의 몫이라 여기서 하지 않는다
  * @property {() => {load:string, play:string, error:{code:string,message:string}|null}} getPlayerState
  *   MediaPlayer.getState() 를 감싼 게터
  * @property {() => number} getCurrentSec 보간된 현재 미디어 시각(초). 앵커·탭이 쓰는 **유일한 시계**다
@@ -113,7 +127,7 @@ function formatBpm(bpm) {
  *     통째로 새고, 새 영상이 영영 실리지 않는다.
  *   ⚠ 거짓일 때 호출부는 **반드시 player.pause()** 를 불러야 한다 — display:none 인 iframe 도
  *     오디오는 계속 나온다. 어댑터를 아는 자리의 몫이라 여기서 하지 않는다
- * @property {() => string} [getPlayerKind] 지금 재생기의 kind('youtube' | 'null').
+ * @property {() => string} [getPlayerKind] 지금 재생기의 kind('youtube' | 'file' | 'null').
  *   URL 은 있는데 'null' 이면 **알아보지 못한 주소**라는 뜻이라 문구가 달라진다
  * @property {{
  *   togglePanel: () => any, closePanel: () => any,
@@ -127,7 +141,8 @@ function formatBpm(bpm) {
  *   setTempo: (args: {tempo: object}) => any,
  *   setBeatsPerCount: (args: {beatsPerCount:number}) => any,
  *   reanchorTo: (args: {count:number, sec:number}) => any,
- *   clearTempo: () => any
+ *   clearTempo: () => any,
+ *   clearFileSource?: () => any
  * }} commands app/main 이 videoCommands 를 store 에 묶어 넘긴다
  * @property {() => boolean} [isStacked] 좁은 화면인가. 기본값은 ui/layout.isStacked
  * @property {Record<string, HTMLElement|null>} [elements] 테스트용 요소 주입
@@ -146,6 +161,9 @@ export function createVideoPanel(deps) {
     render,
     commitHistory = () => {},
     getSourceUrl,
+    getSource = () => (store.media && store.media.source) || null,
+    getFileLoaded = () => false,
+    onFileChosen = () => {},
     getPlayerState,
     getPlayerKind = () => 'null',
     getCurrentSec,
@@ -166,6 +184,10 @@ export function createVideoPanel(deps) {
   const titleChip = byId('videoTitleChip');
   const frame = byId('videoFrame');
   const statusEl = byId('videoStatus');
+  const fileInput = byId('videoFileInput');
+  const fileBtn = byId('videoFileBtn');
+  const fileName = byId('videoFileName');
+  const fileClearBtn = byId('videoFileClearBtn');
   const bpmText = byId('videoBpmText');
   const anchorRow = byId('videoAnchorRow');
   const anchorCount = byId('videoAnchorCount');
@@ -248,23 +270,39 @@ export function createVideoPanel(deps) {
    *   Dirty 를 타지 않는다. 재생기 상태 변화(loading → ready)에 얹어 따라오게 한다.
    */
   function renderStatus() {
-    // 제목은 링크바가 이미 조회해 둔 것을 그대로 쓴다(두 번 조회하지 않는다).
-    const title = (store.links && store.links.youtubeTitle) || '';
+    const source = getSource();
+    const isFile = !!source && source.kind === 'file';
+    // 제목 칩: 유튜브면 링크바가 이미 조회해 둔 제목(두 번 조회하지 않는다), 파일이면 파일명이다.
+    const title = isFile ? source.name : ((store.links && store.links.youtubeTitle) || '');
     if (titleChip) {
       titleChip.hidden = !title;
       titleChip.textContent = title;
       titleChip.title = title;
     }
+    // 파일 줄: 이름 칩과 놓기 버튼은 파일 소스일 때만 보인다.
+    if (fileName) {
+      fileName.hidden = !isFile;
+      fileName.textContent = isFile ? source.name : '';
+      fileName.title = isFile ? source.name : '';
+    }
+    if (fileClearBtn) fileClearBtn.hidden = !isFile;
+    if (fileBtn) fileBtn.textContent = isFile ? '📁 다른 파일 열기' : '📁 영상 파일 열기';
 
     if (!statusEl) return;
+    if (isFile && !getFileLoaded()) {
+      // 저장 파일에서 연 직후. 이름은 아는데 파일이 없다 — 오류가 아니라 안내다.
+      statusEl.textContent = REPICK_TEXT(source.name);
+      statusEl.classList.remove(CLS.isError);
+      return;
+    }
     const url = getSourceUrl();
-    if (!url) {
+    if (!url && !isFile) {
       statusEl.textContent = NO_SOURCE_TEXT;
       statusEl.classList.remove(CLS.isError);
       return;
     }
     // 주소는 있는데 널 재생기다 = 유튜브 주소로 알아보지 못했다. 오류가 아니라 안내다.
-    if (getPlayerKind() === 'null') {
+    if (!isFile && getPlayerKind() === 'null') {
       statusEl.textContent = '유튜브 주소로 알아보지 못했습니다. 링크바의 주소를 확인하세요.';
       statusEl.classList.remove(CLS.isError);
       return;
@@ -381,6 +419,18 @@ export function createVideoPanel(deps) {
   if (closeBtn) closeBtn.onclick = () => render(commands.closePanel());
   if (collapseBtn) collapseBtn.onclick = () => render(commands.setCollapsed());
   if (followBtn) followBtn.onclick = () => render(commands.setFollow());
+
+  // 파일 고르기. 버튼이 숨은 <input type=file> 을 대신 누른다 — 파일 입력은 스타일이 안 먹는다.
+  if (fileBtn && fileInput) fileBtn.onclick = () => fileInput.click();
+  if (fileInput) {
+    fileInput.onchange = () => {
+      const file = fileInput.files && fileInput.files[0];
+      // 같은 파일을 다시 고를 수 있게 값을 비운다 — 비우지 않으면 change 가 두 번째엔 안 온다.
+      fileInput.value = '';
+      if (file) onFileChosen(file);
+    };
+  }
+  if (fileClearBtn && commands.clearFileSource) fileClearBtn.onclick = () => render(commands.clearFileSource());
 
   if (markBtn) {
     markBtn.onclick = () => {

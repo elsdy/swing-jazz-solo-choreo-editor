@@ -53,7 +53,8 @@ import {
 } from '../../src/domain/project/media.js';
 import { buildProjectFile } from '../../src/domain/project/serialize.js';
 import { createYouTubePlayer, YT_CAPABILITIES } from '../../src/adapters/media/youtubePlayer.js';
-import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../../src/adapters/media/pickPlayer.js';
+import { mediaSourceFromUrl, pickPlayer, pickPlayerKind, toMediaSource } from '../../src/adapters/media/pickPlayer.js';
+import { createFilePlayer, FILE_CAPABILITIES } from '../../src/adapters/media/filePlayer.js';
 import * as VideoCmd from '../../src/usecases/videoCommands.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
@@ -1355,6 +1356,220 @@ test('videoCommands: 소스는 링크바 URL 그대로이고 템포를 건드리
   assert.equal(VideoCmd.mediaState(store).tempo.bpm, 192);
   assert.equal(VideoCmd.mediaState(store).tempo.anchorCount, 64);
   assert.deepEqual(VideoCmd.reanchorTo(store, { count: NaN, sec: 1 }), NONE);
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 로컬 영상 파일(2026-09-09) — <video> 어댑터가 계약을 채우는지, 파일 소스가 이름만 남기는지
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * <video> 의 최소 스텁. 이벤트를 **동기로** 쏜다(실제는 비동기) — 어댑터가 두 순서를 다 견뎌야 한다.
+ * `load()` 를 부르면 loadedmetadata 가, src 가 'bad' 로 끝나면 error 가 온다.
+ */
+function fakeVideoDoc() {
+  const made = [];
+  function createElement(tag) {
+    const listeners = new Map();
+    const el = {
+      tag, src: '', currentTime: 0, duration: 90, playbackRate: 1, muted: false, paused: true, ended: false,
+      error: null, controls: false, playsInline: false, preload: '',
+      addEventListener(type, fn) { listeners.set(type, fn); },
+      removeEventListener(type) { listeners.delete(type); },
+      removeAttribute(name) { if (name === 'src') el.src = ''; },
+      emit(type) { const fn = listeners.get(type); if (fn) fn({ type, target: el }); },
+      load() {
+        if (!el.src) return;
+        if (el.src.endsWith('bad')) { el.error = { code: 4, message: 'no supported source' }; el.emit('error'); }
+        else el.emit('loadedmetadata');
+      },
+      play() { el.paused = false; el.emit('play'); return el.blockPlay ? Promise.reject(Object.assign(new Error('x'), { name: 'NotAllowedError' })) : Promise.resolve(); },
+      pause() { el.paused = true; el.emit('pause'); }
+    };
+    made.push(el);
+    return el;
+  }
+  return { doc: { createElement }, made };
+}
+
+/** container 스텁. appendChild 로 들어온 것을 기억하고 innerHTML='' 로 비운다. */
+function fakeVideoContainer() {
+  const c = { children: [], innerHTML: '<p>자리표시</p>', appendChild(el) { c.children.push(el); } };
+  return c;
+}
+
+function stubbedFilePlayer(extra = {}) {
+  const env = fakeVideoDoc();
+  const container = fakeVideoContainer();
+  const player = createFilePlayer({ container, doc: env.doc, sampleIntervalMs: 10, ...extra });
+  return { player, env, container };
+}
+
+test('filePlayer: 생성만으로 MediaPlayer 계약을 만족한다(DOM 없이)', () => {
+  const bare = createFilePlayer();
+  assert.equal(assertMediaPlayer(bare, 'filePlayer'), bare);
+  assert.ok(isMediaPlayer(bare));
+  assert.equal(bare.kind, 'file');
+  for (const key of MEDIA_PLAYER_MEMBERS) assert.ok(bare[key] != null, `${key} 가 없다`);
+  assert.equal(Object.isFrozen(bare.capabilities), true);
+  // <video> 는 키프레임 스냅이 없다 — YouTube(0.5)보다 10배 정확하고, 180bpm 의 1카운트(0.333s) 안에 든다.
+  assert.equal(bare.capabilities.seekToleranceSec, 0.05);
+  assert.ok(FILE_CAPABILITIES.seekToleranceSec < YT_CAPABILITIES.seekToleranceSec);
+  assert.equal(bare.capabilities.needsUserGesture, true);
+  assert.deepEqual(bare.getState(), { load: 'idle', play: 'unstarted', error: null });
+  assert.equal(bare.getDuration(), null);
+  assert.equal(bare.getTimeSample(), null);
+  bare.destroy();
+  bare.destroy();   // 멱등
+});
+
+test('filePlayer: 소스 없이 만든 재생기는 컨테이너 없이 load 하면 오류 상태다(던지지 않는다)', async () => {
+  const player = createFilePlayer({ doc: fakeVideoDoc().doc });
+  await player.load({ kind: 'file', url: 'blob:x' });
+  assert.equal(player.getState().load, 'error');
+  assert.equal(player.getState().error.code, 'unsupported');
+  assert.equal(await player.play(), 'error');
+  // 유튜브 소스를 파일 재생기에 넣는 것도 예외가 아니라 상태다.
+  const other = stubbedFilePlayer().player;
+  await other.load({ kind: 'youtube', videoId: 'abc' });
+  assert.equal(other.getState().error.code, 'unsupported');
+  other.destroy();
+});
+
+test('filePlayer: 준비되면 재생·탐색이 되고 seek 은 실제 착지 시각을 돌려준다', async () => {
+  const { player, env, container } = stubbedFilePlayer();
+  await player.load({ kind: 'file', url: 'blob:good', name: 'a.mp4' });
+
+  assert.equal(player.getState().load, 'ready');
+  assert.equal(player.getDuration(), 90);
+  assert.equal(env.made.length, 1, '<video> 는 하나만 만든다');
+  assert.equal(container.children[0], env.made[0], '컨테이너 **안에** 넣는다(갈아치우지 않는다)');
+  assert.equal(env.made[0].controls, true, '재생·정지는 브라우저 기본 컨트롤이다');
+
+  assert.equal(await player.play(), 'started');
+  assert.equal(player.getState().play, 'playing');
+  assert.equal(player.getTimeSample().playing, true);
+
+  // 착지는 요청 그대로다. 길이를 넘는 요청은 길이에서 멈춘다.
+  assert.equal(await player.seek(12.34), 12.34);
+  assert.equal(await player.seek(500), 90);
+  assert.equal(await player.seek(-3), 0);
+
+  // 같은 kind 의 다른 소스 — <video> 를 다시 만들지 않고 src 만 바꾼다(계약).
+  await player.load({ kind: 'file', url: 'blob:other' });
+  assert.equal(env.made.length, 1);
+  assert.equal(env.made[0].src, 'blob:other');
+
+  player.pause();
+  assert.equal(player.getState().play, 'paused');
+
+  // 배속은 표본에만 들어간다.
+  player.setRate(1.5);
+  assert.equal(env.made[0].playbackRate, 1.5);
+  assert.equal(player.getTimeSample().rate, 1.5);
+  player.setRate(-1);
+  assert.equal(player.getTimeSample().rate, 1.5, '이상한 배속은 무시한다');
+
+  player.destroy();
+  assert.equal(container.innerHTML, '', 'destroy 는 컨테이너를 비운 채 남긴다');
+  assert.equal(env.made[0].src, '', 'src 를 비워 디코더를 놓는다');
+});
+
+test('filePlayer: 디코드 실패는 {load:"error"} 로, 자동재생 차단은 "blocked" 로 드러난다', async () => {
+  const bad = stubbedFilePlayer();
+  await bad.player.load({ kind: 'file', url: 'blob:bad' });
+  assert.equal(bad.player.getState().load, 'error');
+  assert.equal(bad.player.getState().error.code, 'unsupported', '뷰는 이 코드를 보고 한국어 문구를 고른다');
+  bad.player.destroy();
+
+  const blocked = stubbedFilePlayer();
+  await blocked.player.load({ kind: 'file', url: 'blob:good' });
+  blocked.env.made[0].blockPlay = true;
+  assert.equal(await blocked.player.play(), 'blocked');
+  blocked.player.destroy();
+});
+
+test('filePlayer: 준비 전의 play/seek 은 마지막 의도 하나만 큐잉되고 onTime 은 구독 즉시 1회다', async () => {
+  const { player, env } = stubbedFilePlayer();
+  // load 가 resolve 하기 전(loadedmetadata 전)에 의도를 넣는다 — 스텁은 load() 안에서 동기로 준비되므로
+  // src 를 비워 두고 직접 흉내낸다.
+  assert.equal(await player.play(), 'no-source');
+  const loading = player.load({ kind: 'file', url: '' });     // 빈 url = unsupported
+  await loading;
+  assert.equal(player.getState().load, 'error');
+
+  const fresh = stubbedFilePlayer();
+  await fresh.player.load({ kind: 'file', url: 'blob:good' });
+  const seen = [];
+  const off = fresh.player.onTime((s) => seen.push(s.sec));
+  assert.equal(seen.length, 1, '구독 즉시 1회');
+  fresh.env.made[0].currentTime = 7;
+  fresh.env.made[0].emit('timeupdate');
+  assert.deepEqual(seen.slice(-1), [7], 'timeupdate 도 표본을 뜨는 계기다');
+  off();
+  fresh.env.made[0].emit('timeupdate');
+  assert.equal(seen.length, 2, '해제한 뒤에는 오지 않는다');
+  fresh.player.destroy();
+  player.destroy();
+  void env;
+});
+
+test('pickPlayer: 파일 소스 객체를 알아보고 <video> 어댑터를 고른다', () => {
+  assert.equal(pickPlayerKind({ kind: 'file', url: 'blob:x', name: 'a.mp4' }), 'file');
+  assert.equal(pickPlayerKind({ kind: 'file', name: 'a.mp4' }), 'null', 'blob URL 이 없는 파일 참조는 아직 실을 수 없다');
+  assert.equal(pickPlayerKind({ kind: 'youtube', videoId: 'abc' }), 'youtube');
+  assert.equal(pickPlayerKind({ kind: '???' }), 'null');
+  assert.equal(pickPlayerKind(null), 'null');
+  assert.deepEqual(toMediaSource('https://youtu.be/abc'), { kind: 'youtube', videoId: 'abc' });
+  assert.equal(toMediaSource(42), null);
+
+  const file = pickPlayer({ kind: 'file', url: 'blob:x' });
+  assert.equal(file.kind, 'file');
+  assert.ok(isMediaPlayer(file));
+  file.destroy();
+});
+
+test('media: 파일 소스는 파일명만 남고 blob URL 은 버린다', () => {
+  assert.deepEqual(normalizeMediaSource({ kind: 'file', name: ' a.mp4 ', url: 'blob:http://x/1' }), { kind: 'file', name: 'a.mp4' });
+  assert.equal(normalizeMediaSource({ kind: 'file', url: 'blob:http://x/1' }), null, '이름 없는 파일 참조는 소스 없음이다');
+  assert.equal(normalizeMediaSource({ kind: 'file', name: '' }), null);
+  assert.deepEqual(normalizeMediaSource({ kind: 'youtube', url: 'u', name: 'ignored' }), { kind: 'youtube', url: 'u' });
+  assert.equal(isEmptyMedia({ source: { kind: 'file', name: 'a.mp4' } }), false);
+});
+
+test('videoCommands: 파일 소스는 유튜브보다 우선하고, 놓으면 링크바 주소로 돌아간다', () => {
+  const store = createStore();
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  store.patch('links', { ...store.get().links, youtubeUrl: 'https://youtu.be/abc' });
+  VideoCmd.setSource(store, { url: 'https://youtu.be/abc' });
+
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'practice.mp4' }), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).source, { kind: 'file', name: 'practice.mp4' });
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 192, '파일로 바꿨는데 템포가 날아갔다');
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'practice.mp4' }), NONE, '같은 이름은 바뀐 게 없다');
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: '' }), NONE);
+
+  // 링크바만 비우는 것은 파일을 놓는 것이 아니다.
+  assert.deepEqual(VideoCmd.setSource(store, { url: '' }), NONE);
+  assert.equal(VideoCmd.mediaState(store).source.kind, 'file');
+  // 유튜브 주소를 새로 넣으면 그것이 마지막에 고른 것이다.
+  assert.deepEqual(VideoCmd.setSource(store, { url: 'https://youtu.be/zzz' }), { video: true });
+  assert.equal(VideoCmd.mediaState(store).source.kind, 'youtube');
+
+  VideoCmd.setFileSource(store, { name: 'b.mp4' });
+  assert.deepEqual(VideoCmd.clearFileSource(store), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).source, { kind: 'youtube', url: 'https://youtu.be/abc' }, '링크바의 주소로 돌아온다');
+  assert.deepEqual(VideoCmd.clearFileSource(store), NONE, '파일 소스가 아니면 할 일이 없다');
+
+  store.patch('links', { ...store.get().links, youtubeUrl: '' });
+  VideoCmd.setFileSource(store, { name: 'c.mp4' });
+  VideoCmd.clearFileSource(store);
+  assert.equal(VideoCmd.mediaState(store).source, null, '링크바가 비어 있으면 소스 없음이다');
+
+  // 저장 포맷: 파일 소스는 이름만 들어간다.
+  VideoCmd.setFileSource(store, { name: 'd.mp4' });
+  assert.deepEqual(serializeMedia(store.get().media).source, { kind: 'file', name: 'd.mp4' });
 });
 
 test('videoCommands: 템포가 undo 스냅샷을 타고 되돌아온다', () => {
