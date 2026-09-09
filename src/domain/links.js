@@ -51,8 +51,10 @@ function parseTimeParam(value) {
 
 /**
  * normalizeYoutubeUrl 옆에 두는 구조 분해판. 임베드 플레이어가 videoId 를 요구하기 때문에 둔다.
- * ⚠ 오늘 이 함수를 부르는 곳은 없다(영상 패널은 이번 PR 밖이다). normalizeYoutubeUrl 의 동작에는
- *   전혀 관여하지 않으며, 실패는 예외 없이 `{ videoId: '', startSec: 0 }` 으로 흡수한다.
+ * ⚠ 부르는 곳은 adapters/media/pickPlayer.js **한 곳뿐**이다(2026-09, 영상 패널). videoId 파싱을
+ *   두 벌로 만들지 않기 위해 어댑터가 정규식을 쓰지 않고 이 함수를 쓴다.
+ *   normalizeYoutubeUrl 의 동작에는 전혀 관여하지 않으며, 실패는 예외 없이
+ *   `{ videoId: '', startSec: 0 }` 으로 흡수한다 — 못 알아본 URL 은 "소스 없음"이지 오류가 아니다.
  * @param {string} raw
  * @returns {{ videoId: string, startSec: number }}
  */

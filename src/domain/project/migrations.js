@@ -36,11 +36,17 @@ export const MIGRATIONS = Object.freeze([
   Object.freeze({
     from: 1,
     to: 2,
-    describe: '링크 4필드를 doc.links 로 묶고 projectId/versions/practiceLogs/media 를 신설한다',
+    describe: '링크 4필드를 doc.links 로 묶고 최상위 media 블록을 doc.media 로 내리며 projectId/versions/practiceLogs/media 를 신설한다',
     up(raw, ctx = {}) {
       const {
         youtubeUrl = '', youtubeTitle = '', clickupUrl = '', customLinks = [],
         rows, cols, categories, moveLibrary, placements, routines,
+        // ⚠ v1 파일의 최상위 `media` 는 우리가 쓴 영상 블록(`{tempo, source}`)이다. 여기서 꺼내
+        //   doc.media 로 옮기지 않으면 아래 `media: []`(최상위 MediaRef 자리)가 덮어써 통째로 사라진다.
+        //   ⚠ 옛 파일에는 이 키가 아예 없다 — 그때 doc.media 는 null 이고, 읽는 쪽(normalize.js)의
+        //     normalizeMedia 가 DEFAULT_MEDIA 로 채운다. 여기서 기본값을 만들지 않는 이유는
+        //     "마이그레이션은 검증하지 않는다"(원칙 1) 와 "레코드를 날조하지 않는다"(원칙 4) 때문이다.
+        media: docMedia,
         fileName = '', savedAt,
         version: _version,
         ...rest
@@ -56,8 +62,12 @@ export const MIGRATIONS = Object.freeze([
         doc: {
           rows, cols, categories, moveLibrary, placements,
           routines: Array.isArray(routines) ? routines : [],
-          links: { youtubeUrl, youtubeTitle, clickupUrl, customLinks }
+          links: { youtubeUrl, youtubeTitle, clickupUrl, customLinks },
+          media: docMedia === undefined ? null : docMedia
         },
+        // ⚠ 최상위 `media` 는 doc.media 와 **이름만 같고 타입이 다르다**(MediaRef[] 자리, 아직 아무도
+        //   만들지 않는다). readProjectData 가 `{...value, ...value.doc}` 로 펼칠 때 doc 쪽이 이겨서
+        //   우리가 읽고 싶은 블록이 나온다. 이름 충돌 정리는 v3 의 몫이다 — schema.js 의 ProjectFile 참조.
         versions: [], practiceLogs: [], media: [],
         // 구버전 index.html(GitHub Pages 캐시 등)이 열어도 링크를 잃지 않도록 남기는 미러.
         // v3 에서 제거한다. 4필드뿐이라 비용이 거의 없다.

@@ -11,6 +11,8 @@
 //   · domain/grid 의 카운트 축   — linearOf/cellOf 는 신설이고 tempo 가 그 위에 서 있다
 //   · domain/boardOps 의 충돌 규칙 — 2026-09-07 에 **의도적으로** 원본과 갈라졌다. 골든은 시나리오별
 //     결과만 못박지만, 여기서는 그 결과를 낳는 성질("네 조작이 하나의 규칙")을 직접 단언한다
+//   · 영상 패널(2026-09) — adapters/media 의 YouTube 어댑터가 포트 계약을 채우는지, pickPlayer 의
+//     URL 분기, videoCommands 의 두 점 앵커·탭 템포, 그리고 **media 가 없는 옛 파일의 왕복**
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,6 +48,13 @@ import { clearBoard } from '../../src/usecases/boardCommands.js';
 import { serializeLinks } from '../../src/domain/links.js';
 import { CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
+import {
+  DEFAULT_MEDIA, isEmptyMedia, normalizeMedia, normalizeMediaSource, serializeMedia
+} from '../../src/domain/project/media.js';
+import { buildProjectFile } from '../../src/domain/project/serialize.js';
+import { createYouTubePlayer, YT_CAPABILITIES } from '../../src/adapters/media/youtubePlayer.js';
+import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../../src/adapters/media/pickPlayer.js';
+import * as VideoCmd from '../../src/usecases/videoCommands.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
 import {
@@ -489,14 +498,17 @@ test('resolvePlacementColor 는 루틴 색을 실제로 칠하고 글자색을 �
 // DOM 도 어댑터도 쓰지 않는다 — usecases + domain 만으로 돌아간다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 링크가 undo 로 되돌아오려면 스냅샷 필드여야 한다. 루틴 보드에는 링크바가 아예 없다. */
-test('schema: UNDO_FIELDS 에 links 가 있고 ROUTINE_UNDO_FIELDS 에는 없다', () => {
+/** 링크·템포가 undo 로 되돌아오려면 스냅샷 필드여야 한다. 루틴 보드에는 링크바도 영상도 없다. */
+test('schema: UNDO_FIELDS 에 links·media 가 있고 ROUTINE_UNDO_FIELDS 에는 없다', () => {
   assert.ok(UNDO_FIELDS.includes('links'), 'links 가 빠지면 전체 초기화한 링크가 Undo 로 안 돌아온다');
+  assert.ok(UNDO_FIELDS.includes('media'), 'media 가 빠지면 애써 찍은 템포·앵커가 Undo 로 안 돌아온다');
   assert.ok(!ROUTINE_UNDO_FIELDS.includes('links'), '루틴 편집기에는 링크바가 없다');
+  assert.ok(!ROUTINE_UNDO_FIELDS.includes('media'), '루틴 보드에는 시간 매핑이 없다');
   // 두 목록의 집합이 같아야 한다 — 한쪽에만 있으면 "파일엔 있는데 Undo 는 못 하는" 결함이 다시 생긴다.
   assert.deepEqual([...UNDO_FIELDS].sort(), [...DOC_FIELDS].sort());
-  // 키 순서 = 스냅샷 JSON 바이트 순서. 앞 6개는 원본 리터럴 순서 그대로여야 한다.
-  assert.deepEqual([...UNDO_FIELDS], ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links']);
+  // 키 순서 = 스냅샷 JSON 바이트 순서. 앞 6개는 원본 리터럴 순서 그대로이고 신설은 꼬리에 붙는다.
+  assert.deepEqual([...UNDO_FIELDS],
+    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media']);
   assert.deepEqual([...ROUTINE_UNDO_FIELDS], ['rows', 'cols', 'placements']);
 });
 
@@ -997,4 +1009,505 @@ test('boardOps: 루틴 보드에서도 겹치면 그룹 전체가 한 레인 아
   ]);
   assert.equal(laneOfGroup(result.placements, 'STEP'), 1, '두 행에 걸친 그룹의 레인이 조각마다 달라졌다');
   assert.equal(laneOfGroup(result.placements, 'TURN'), 0, '겹친 턴이 지워졌거나 밀려났다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 영상 패널 (2026-09) — adapters/media · usecases/videoCommands · media 저장 블록
+//
+// 골든이 한 줄도 못 덮는다(원본 index.html 에 대응물이 없다). 여기서 지키는 것은 넷이다.
+//   ① YouTube 어댑터가 MediaPlayer 계약을 실제로 만족하는가 — DOM 없이도 검사된다
+//   ② pickPlayer 가 URL 하나로 어댑터를 고르는가(못 알아보면 널 재생기, 오류가 아니다)
+//   ③ 두 점 앵커·탭 템포가 store 를 어떻게 바꾸는가, 그리고 **재생 위치가 들어가지 않는가**
+//   ④ media 가 없는 옛 파일이 지금과 똑같이 열리고, 빈 media 가 저장 바이트를 늘리지 않는가
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * YT IFrame API 의 최소 스텁. **onReady 를 생성자 안에서 동기로** 부른다 —
+ * 실제 YT 는 비동기로 부르지만, 어댑터가 두 순서를 모두 견디는지 확인하는 편이 더 강한 검사다
+ * (어댑터는 `ev.target` 으로 플레이어를 붙잡는다).
+ */
+function fakeYT() {
+  const made = [];
+  function Player(container, cfg) {
+    const self = this;
+    made.push(self);
+    self.container = container;
+    self.cfg = cfg;
+    self.sec = Number(cfg.playerVars && cfg.playerVars.start) || 0;
+    self.rate = 1;
+    self.destroyed = false;
+    self.muted = false;
+    self.cued = null;
+    self.getCurrentTime = () => self.sec;
+    self.getDuration = () => 120;
+    self.getPlaybackRate = () => self.rate;
+    self.setPlaybackRate = (r) => { self.rate = r; };
+    self.playVideo = () => cfg.events.onStateChange({ data: 1, target: self });
+    self.pauseVideo = () => cfg.events.onStateChange({ data: 2, target: self });
+    // ⚠ 일부러 요청보다 0.4초 앞에 착지한다 — YT 의 키프레임 스냅을 흉내낸 것이고,
+    //   그 오차가 capabilities.seekToleranceSec(0.5) 안이라는 것이 계약이다.
+    self.seekTo = (sec) => { self.sec = Math.max(0, sec - 0.4); };
+    self.cueVideoById = (arg) => { self.cued = arg; self.sec = arg.startSeconds || 0; };
+    self.mute = () => { self.muted = true; };
+    self.unMute = () => { self.muted = false; };
+    self.destroy = () => { self.destroyed = true; };
+    cfg.events.onReady({ target: self });
+  }
+  return { YT: { Player }, made };
+}
+
+/** container 스텁. destroy 가 "컨테이너를 비운 채 남긴다"를 검사하려면 innerHTML 이 필요하다. */
+const fakeContainer = () => ({ innerHTML: '<p>자리표시</p>' });
+
+/** 어댑터가 API 스크립트를 실제로 받아왔다고 치는 주입점. 네트워크를 한 번도 타지 않는다. */
+function stubbedPlayer(extra = {}) {
+  const yt = fakeYT();
+  const container = fakeContainer();
+  const player = createYouTubePlayer({
+    container,
+    win: { location: { origin: 'http://localhost:8000' } },
+    doc: {},
+    loadApi: () => Promise.resolve({ ok: true, YT: yt.YT }),
+    playConfirmMs: 20,
+    sampleIntervalMs: 10,
+    ...extra
+  });
+  return { player, yt, container };
+}
+
+test('youtubePlayer: 생성만으로 MediaPlayer 계약을 만족한다(DOM 도 네트워크도 없이)', () => {
+  // 인자 하나 없이 node 에서 만들어도 던지지 않아야 한다 — 계약 검사가 곧 이 어댑터의 자기검증이다.
+  const bare = createYouTubePlayer();
+  assert.equal(assertMediaPlayer(bare, 'youtubePlayer'), bare);
+  assert.ok(isMediaPlayer(bare));
+  assert.equal(bare.kind, 'youtube');
+  for (const key of MEDIA_PLAYER_MEMBERS) assert.ok(bare[key] != null, `${key} 가 없다`);
+
+  // capabilities 는 불변이고 seekToleranceSec 은 옵셔널이 아니다(YT 는 키프레임에 스냅한다).
+  assert.equal(Object.isFrozen(bare.capabilities), true);
+  assert.equal(bare.capabilities.seekToleranceSec, 0.5);
+  assert.equal(bare.capabilities.needsUserGesture, true);
+  assert.equal(bare.capabilities.canSeek, true);
+  assert.ok(Array.isArray(YT_CAPABILITIES.rates) && YT_CAPABILITIES.rates.includes(1));
+
+  // 소스가 없을 때의 상태는 오류가 아니라 정상이다.
+  assert.deepEqual(bare.getState(), { load: 'idle', play: 'unstarted', error: null });
+  assert.equal(bare.getDuration(), null, '0 을 돌려주면 "0초짜리"라는 거짓말이 된다');
+  assert.equal(bare.getTimeSample(), null);
+  bare.destroy();
+  bare.destroy();   // 멱등
+});
+
+test('youtubePlayer: API 로드 실패는 던지지 않고 {load:"error"} 로 드러난다', async () => {
+  const player = createYouTubePlayer({
+    container: fakeContainer(),
+    win: {}, doc: {},
+    loadApi: () => Promise.resolve({ ok: false, code: 'network', message: 'blocked' })
+  });
+  await player.load({ kind: 'youtube', videoId: 'abc' });   // reject 하지 않는다
+  const state = player.getState();
+  assert.equal(state.load, 'error');
+  assert.equal(state.error.code, 'network', '뷰는 이 코드를 보고 한국어 문구를 고른다');
+
+  // 오류 상태에서도 play 는 던지지 않고 결과 문자열을 준다.
+  assert.equal(await player.play(), 'error');
+  player.destroy();
+});
+
+test('youtubePlayer: 준비되면 재생·탐색이 되고 seek 은 실제 착지 시각을 돌려준다', async () => {
+  // ⚠ 아래 테스트들이 destroy 를 반드시 부르는 이유: 재생 중이면 폴링 인터벌이 돌고 있어서
+  //   그걸 안 걷으면 node 의 테스트 러너가 종료되지 않는다.
+  const { player, yt, container } = stubbedPlayer();
+  await player.load({ kind: 'youtube', videoId: 'abc', startSec: 5 });
+
+  assert.equal(player.getState().load, 'ready');
+  assert.equal(player.getDuration(), 120);
+  assert.equal(yt.made.length, 1);
+  assert.equal(yt.made[0].cfg.playerVars.enablejsapi, 1);
+  assert.equal(yt.made[0].cfg.playerVars.origin, 'http://localhost:8000');
+
+  assert.equal(await player.play(), 'started');
+  assert.equal(player.getState().play, 'playing');
+
+  // ★ 요청 30 → 착지 29.6. "요청 ≠ 결과"를 타입으로 인정하는 자리이며, 오차가 허용치 안이다.
+  const landed = await player.seek(30);
+  assert.equal(landed, 29.6);
+  assert.ok(Math.abs(landed - 30) <= player.capabilities.seekToleranceSec);
+
+  // seek 직후 표본이 갱신되어 있어야 한다(계약 3보장 중 하나).
+  assert.equal(player.getTimeSample().sec, 29.6);
+  assert.equal(player.getTimeSample().playing, true);
+
+  player.pause();
+  assert.equal(player.getState().play, 'paused');
+
+  player.setRate(1.5);
+  assert.equal(yt.made[0].rate, 1.5);
+  player.setMuted(true);
+  assert.equal(yt.made[0].muted, true);
+
+  player.destroy();
+  assert.equal(yt.made[0].destroyed, true, 'destroy 가 iframe 을 안 걷었다');
+  assert.equal(container.innerHTML, '', 'destroy 는 컨테이너를 비운 채로 남긴다');
+  player.destroy();   // 멱등
+});
+
+test('youtubePlayer: onTime 은 구독 즉시 1회 보내고 해제하면 끊긴다', async () => {
+  const { player } = stubbedPlayer();
+  await player.load({ kind: 'youtube', videoId: 'abc' });
+
+  const seen = [];
+  const off = player.onTime(s => seen.push(s));
+  assert.equal(seen.length, 1, '구독 즉시 1회 보장이 깨졌다');
+  assert.ok(Number.isFinite(seen[0].atMs) && Number.isFinite(seen[0].sec));
+
+  await player.seek(10);
+  assert.equal(seen.length, 2, 'seek 직후 1회 보장이 깨졌다');
+
+  off();
+  await player.seek(20);
+  assert.equal(seen.length, 2, '해제한 구독자에게 계속 보냈다');
+  player.destroy();
+});
+
+test('youtubePlayer: 같은 kind 의 소스 교체는 iframe 을 다시 만들지 않는다', async () => {
+  const { player, yt } = stubbedPlayer();
+  await player.load({ kind: 'youtube', videoId: 'abc' });
+  await player.load({ kind: 'youtube', videoId: 'def', startSec: 12 });
+
+  assert.equal(yt.made.length, 1, 'iframe 을 다시 만들면 재생이 눈에 띄게 끊긴다');
+  assert.deepEqual(yt.made[0].cued, { videoId: 'def', startSeconds: 12 });
+  assert.equal(player.getState().load, 'ready');
+
+  // 소스를 비우는 것은 오류가 아니라 정상 경로다.
+  await player.load(null);
+  assert.deepEqual(player.getState(), { load: 'idle', play: 'unstarted', error: null });
+  player.destroy();
+});
+
+test('youtubePlayer: 준비 전 play/seek 은 던지지 않고 마지막 의도 1개만 큐잉된다', async () => {
+  // ⚠ API 로드를 **손으로 열어야** 하는 게이트로 막는다. 즉시 resolve 하는 스텁을 쓰면 첫 await 에서
+  //   로딩이 끝나 버려 "준비 전"이라는 상황 자체가 만들어지지 않는다(그러면 이 테스트는 아무것도 안 지킨다).
+  const yt = fakeYT();
+  let openGate;
+  const gate = new Promise((resolve) => { openGate = resolve; });
+  const player = createYouTubePlayer({
+    container: fakeContainer(),
+    win: { location: { origin: 'http://localhost:8000' } },
+    doc: {},
+    loadApi: () => gate.then(() => ({ ok: true, YT: yt.YT })),
+    playConfirmMs: 20,
+    sampleIntervalMs: 10
+  });
+  try {
+    assert.equal(await player.play(), 'no-source', '소스가 없는 것과 준비가 안 된 것은 다른 말이다');
+
+    // 로딩이 끝나기 전에 seek → play 순서로 눌렀다면, 이뤄지는 것은 **마지막 하나**다.
+    const loading = player.load({ kind: 'youtube', videoId: 'abc' });
+    assert.equal(player.getState().load, 'loading');
+    assert.equal(await player.seek(50), 50, '준비 전 seek 은 요청값을 그대로 돌려준다(던지지 않는다)');
+    assert.equal(await player.play(), 'not-ready');
+
+    openGate();
+    await loading;
+    assert.equal(player.getState().play, 'playing', '큐잉된 마지막 의도(play)가 적용되지 않았다');
+    assert.equal(yt.made[0].sec, 0, 'seek 은 마지막 의도가 아니므로 적용되면 안 된다');
+  } finally {
+    // ⚠ finally 로 감싼다. 단언이 실패한 채 destroy 를 건너뛰면 폴링 인터벌이 살아남아
+    //   테스트 러너가 영영 끝나지 않는다(실패가 "느린 테스트"로 둔갑한다).
+    player.destroy();
+  }
+});
+
+test('pickPlayer: URL 을 알아보면 YouTube, 못 알아보면 널 재생기다', () => {
+  assert.deepEqual(mediaSourceFromUrl('https://youtu.be/dQw4w9WgXcQ'), { kind: 'youtube', videoId: 'dQw4w9WgXcQ' });
+  assert.deepEqual(mediaSourceFromUrl('https://www.youtube.com/watch?v=abc123&t=1m30s'),
+    { kind: 'youtube', videoId: 'abc123', startSec: 90 });
+  // startSec 0 은 키를 만들지 않는다(비교·저장이 단순해진다).
+  assert.deepEqual(Object.keys(mediaSourceFromUrl('https://www.youtube.com/watch?v=abc123')), ['kind', 'videoId']);
+
+  for (const bad of [null, undefined, '', '   ', '그냥 글자', 'https://example.com/a.mp4', 'https://vimeo.com/1']) {
+    assert.equal(mediaSourceFromUrl(bad), null, `${bad} 를 소스로 인정했다`);
+    assert.equal(pickPlayerKind(bad), 'null');
+  }
+  assert.equal(pickPlayerKind('https://youtu.be/abc'), 'youtube');
+
+  // 못 알아본 URL 이어도 **완전한 MediaPlayer** 가 나온다 — 호출부에 `player?.` 가 생기지 않는다.
+  const nullish = pickPlayer('그냥 글자');
+  assert.equal(nullish.kind, 'null');
+  assert.ok(isMediaPlayer(nullish));
+  const yt = pickPlayer('https://youtu.be/abc');
+  assert.equal(yt.kind, 'youtube');
+  yt.destroy();
+});
+
+// ── videoCommands ───────────────────────────────────────────────────────────
+
+test('videoCommands: 패널 상태는 휘발성이고 media 를 건드리지 않는다', () => {
+  const store = createStore();
+  assert.deepEqual(VideoCmd.panelState(store).open, false, '켜야 보이는 기능이므로 기본은 닫힘이다');
+
+  assert.deepEqual(VideoCmd.togglePanel(store), { video: true });
+  assert.equal(VideoCmd.panelState(store).open, true);
+  assert.deepEqual(VideoCmd.openPanel(store), NONE, '값이 안 바뀌면 헛렌더를 만들지 않는다');
+  assert.deepEqual(VideoCmd.setCollapsed(store), { video: true });
+  assert.equal(VideoCmd.panelState(store).collapsed, true);
+  assert.deepEqual(VideoCmd.setFollow(store, { follow: false }), { video: true });
+  assert.equal(VideoCmd.panelState(store).follow, false);
+
+  // 화면 상태를 아무리 만져도 안무(media)는 그대로다 = undo 스택에 아무 일도 없다.
+  assert.deepEqual(store.get().media, DEFAULT_MEDIA);
+  assertDirty(VideoCmd.closePanel(store));
+});
+
+test('videoCommands: 재생 위치·재생 상태는 store 어디에도 없다', () => {
+  const store = createStore();
+  VideoCmd.openPanel(store);
+  const text = JSON.stringify({ media: store.get().media, video: store.get().session.video });
+  for (const banned of ['currentSec', 'playing', 'playhead', 'currentTime']) {
+    assert.ok(!text.includes(banned), `${banned} 가 store 에 들어왔다 — 초당 60회 재렌더가 된다`);
+  }
+  assert.deepEqual(Object.keys(store.get().session.video).sort(),
+    ['collapsed', 'follow', 'open', 'taps', 'tempoPoints']);
+});
+
+test('videoCommands: 두 점을 찍으면 bpm 과 앵커가 동시에 정해진다', () => {
+  const store = createStore();
+  // "여기가 8x1 의 1"(선형 0, 2초) — 아직 확정이 아니므로 히스토리 커밋 신호가 없다.
+  const first = VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  assert.deepEqual(first, { video: true });
+  assert.equal(first.committed, undefined);
+  assert.equal(VideoCmd.isTempoReady(store), false, '한 점만으로는 변환하면 안 된다');
+
+  // "여기가 8x5 의 1"(선형 32, 12초) → 32카운트 / 10초 = 192bpm
+  const second = VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  assert.equal(second.committed, true, '확정 신호가 없으면 호출부가 히스토리를 커밋할 자리를 모른다');
+  assert.equal(VideoCmd.isTempoReady(store), true);
+
+  const tempo = VideoCmd.mediaState(store).tempo;
+  assert.equal(tempo.bpm, 192);
+  assert.equal(tempo.anchorSec, 2, '앞선 점이 앵커가 된다');
+  assert.equal(tempo.anchorCount, 0);
+  assert.deepEqual(VideoCmd.panelState(store).tempoPoints, [], '확정 뒤에는 찍던 점이 남지 않는다');
+
+  // 카운트 0 은 2초, 카운트 32 는 12초 — 찍은 두 점을 그대로 되돌려준다.
+  assert.equal(countToTime(0, tempo), 2);
+  assert.ok(Math.abs(countToTime(32, tempo) - 12) < 1e-9);
+});
+
+test('videoCommands: 뒤집힌 두 점은 거부하고 마지막 점부터 다시 센다', () => {
+  const store = createStore();
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  const bad = VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });   // 순서가 뒤집혔다
+  assert.equal(bad.committed, undefined);
+  assert.equal(VideoCmd.isTempoReady(store), false, '뒤집힌 두 점으로 음수 bpm 이 만들어졌다');
+  assert.deepEqual(VideoCmd.panelState(store).tempoPoints, [{ count: 0, sec: 2 }],
+    '실수로 뒤쪽을 먼저 찍었을 때 마지막 점에서 다시 셀 수 있어야 한다');
+
+  // 이어서 뒤쪽 점을 찍으면 정상 확정된다.
+  assert.equal(VideoCmd.markTempoPoint(store, { count: 16, sec: 7 }).committed, true);
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 192);
+
+  // 취소는 찍던 점만 버린다.
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 0 });
+  assert.deepEqual(VideoCmd.clearTempoPoints(store), { video: true });
+  assert.deepEqual(VideoCmd.clearTempoPoints(store), NONE);
+});
+
+test('videoCommands: 탭 템포는 확정할 때만 media 에 쓰고 간격이 벌어지면 새로 센다', () => {
+  const store = createStore();
+  assert.deepEqual(VideoCmd.commitTaps(store), NONE, '탭 2개 미만은 아무 일도 하지 않는다');
+
+  for (const at of [10, 10.5, 11, 11.5]) VideoCmd.tapTempo(store, { atSec: at });
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 0, '두드리는 동안 media 가 바뀌면 undo 가 쌓인다');
+
+  const done = VideoCmd.commitTaps(store);
+  assert.equal(done.committed, true);
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 120, '평균 간격 0.5초 = 120bpm');
+  assert.deepEqual(VideoCmd.panelState(store).taps, []);
+
+  // TAP_RESET_SEC 보다 벌어지면 앞의 탭을 버린다(딴짓하다 돌아와 다시 두드린 경우).
+  VideoCmd.tapTempo(store, { atSec: 100 });
+  VideoCmd.tapTempo(store, { atSec: 100 + VideoCmd.TAP_RESET_SEC + 1 });
+  assert.deepEqual(VideoCmd.panelState(store).taps, [100 + VideoCmd.TAP_RESET_SEC + 1]);
+  assert.deepEqual(VideoCmd.clearTaps(store), { video: true });
+
+  // 앵커는 탭이 건드리지 않는다 — 탭은 "얼마나 빠른가"만 답한다.
+  assert.equal(VideoCmd.mediaState(store).tempo.anchorSec, 0);
+});
+
+test('videoCommands: 소스는 링크바 URL 그대로이고 템포를 건드리지 않는다', () => {
+  const store = createStore();
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+
+  assert.deepEqual(VideoCmd.setSource(store, { url: '  https://youtu.be/abc  ' }), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).source, { kind: 'youtube', url: 'https://youtu.be/abc' });
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 192, '소스만 바꿨는데 애써 찍은 템포가 날아갔다');
+  assert.deepEqual(VideoCmd.setSource(store, { url: 'https://youtu.be/abc' }), NONE);
+
+  // 빈 URL 은 "소스 없음"이지 오류가 아니다.
+  assert.deepEqual(VideoCmd.setSource(store, { url: '' }), { video: true });
+  assert.equal(VideoCmd.mediaState(store).source, null);
+
+  // 재앵커는 bpm 을 그대로 두고 앵커만 옮긴다.
+  VideoCmd.reanchorTo(store, { count: 64, sec: 25 });
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 192);
+  assert.equal(VideoCmd.mediaState(store).tempo.anchorCount, 64);
+  assert.deepEqual(VideoCmd.reanchorTo(store, { count: NaN, sec: 1 }), NONE);
+});
+
+test('videoCommands: 템포가 undo 스냅샷을 타고 되돌아온다', () => {
+  const store = createStore();
+  const hist = History.createHistory(store);
+  History.commit(hist, BOARD_MAIN);                        // 템포 미설정 상태
+
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  History.commit(hist, BOARD_MAIN);                        // 확정 시점에만 커밋한다
+  assert.equal(store.get().media.tempo.bpm, 192);
+
+  History.undo(hist, BOARD_MAIN);
+  assert.equal(store.get().media.tempo.bpm, 0, '템포가 Undo 로 되돌아오지 않았다');
+  History.redo(hist, BOARD_MAIN);
+  assert.equal(store.get().media.tempo.bpm, 192);
+  assert.equal(store.get().media.tempo.anchorSec, 2);
+});
+
+test('videoCommands: 전체 초기화가 링크와 함께 영상 소스·템포도 비운다', () => {
+  // 회귀(2026-09): `전체 초기화(링크 포함)` 가 링크바의 youtubeUrl 만 비우고 media.source 를
+  // 남겼다. 그러면 링크바는 비었는데 패널은 옛 영상을 계속 싣고, 다음 저장이 사용자가 지운
+  // 주소를 파일에 다시 썼다 — 같은 사실이 두 곳에서 갈라지는 상태다.
+  const saved = [];
+  const storage = { saveLinks: (next) => saved.push(next) };
+  const store = createStore();
+  store.update({ links: LINKS_SAMPLE() });
+  VideoCmd.setSource(store, { url: 'https://www.youtube.com/watch?v=abc' });
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  assert.equal(store.get().media.tempo.bpm, 192);
+
+  const hist = History.createHistory(store, { storage });
+  History.commit(hist, BOARD_MAIN);
+
+  const dirty = clearBoard(store, { storage });
+  assert.equal(dirty.video, true, 'Dirty.video 가 없으면 패널이 안 다시 그려져 iframe 이 그대로 남는다');
+  assert.equal(store.get().media.source, null, '링크를 비웠는데 영상 소스가 남았다');
+  assert.equal(store.get().media.tempo.bpm, 0, '지운 영상의 앵커가 다음 영상에 조용히 적용된다');
+  assert.equal(isEmptyMedia(store.get().media), true);
+
+  // 되돌리면 배치처럼 함께 살아난다(media 는 undo 스냅샷 안에 있다).
+  History.commit(hist, BOARD_MAIN);
+  History.undo(hist, BOARD_MAIN);
+  assert.equal(store.get().media.tempo.bpm, 192, 'Undo 로 템포가 안 돌아왔다');
+  assert.deepEqual(store.get().media.source, { kind: 'youtube', url: 'https://www.youtube.com/watch?v=abc' });
+});
+
+test('videoCommands: 영상을 한 번도 안 쓴 전체 초기화는 Dirty 가 예전과 같다', () => {
+  // 이 기능이 들어오기 전과 글자 하나 달라지면 안 된다 — 골든 150 이 이 Dirty 를 재생한다.
+  const store = createStore();
+  store.update({ links: LINKS_SAMPLE() });
+  const dirty = clearBoard(store, { storage: { saveLinks() {} } });
+  assert.equal('video' in dirty, false, '영상을 안 쓴 사용자에게 video 플래그가 새어 나갔다');
+  assert.deepEqual(VideoCmd.clearMedia(store), NONE);
+});
+
+// ── 저장 포맷 ───────────────────────────────────────────────────────────────
+
+test('media: 빈 블록은 저장 바이트를 한 글자도 늘리지 않는다', () => {
+  const source = {
+    rows: 8, cols: 8, categories: {}, moveLibrary: [], placements: [], routines: [],
+    youtubeUrl: '', youtubeTitle: '', clickupUrl: '', customLinks: []
+  };
+  const before = JSON.stringify(buildProjectFile(source, { fileName: 'a', savedAt: 'S' }));
+  const withEmpty = JSON.stringify(
+    buildProjectFile({ ...source, media: normalizeMedia(null) }, { fileName: 'a', savedAt: 'S' }));
+  assert.equal(withEmpty, before, '빈 media 가 파일에 새어 나갔다');
+  assert.ok(!before.includes('"media"'));
+
+  // 값이 있으면 customLinks 뒤에 붙는다(키 순서 = 바이트 순서).
+  const filled = buildProjectFile(
+    { ...source, media: { tempo: { bpm: 180, beatsPerCount: 1, anchorSec: 2, anchorCount: 0 }, source: null } },
+    { fileName: 'a', savedAt: 'S' });
+  assert.deepEqual(Object.keys(filled).slice(-2), ['customLinks', 'media']);
+  assert.equal(filled.media.tempo.bpm, 180);
+  assert.deepEqual(Object.keys(filled.media), ['tempo', 'source']);
+
+  // passthrough 로 남의 media 가 되살아나면 안 된다.
+  const guarded = buildProjectFile(source, { passthrough: { media: { tempo: { bpm: 999 } }, 미래필드: 1 } });
+  assert.equal('media' in guarded, false);
+  assert.equal(guarded.미래필드, 1, '알 수 없는 키는 여전히 왕복해야 한다');
+});
+
+test('media: normalizeMedia 는 손상된 입력을 기본값으로 접고 isEmptyMedia 가 그것을 알아본다', () => {
+  for (const bad of [null, undefined, 42, '문자열', [], { tempo: 'x', source: 7 }]) {
+    assert.deepEqual(normalizeMedia(bad), DEFAULT_MEDIA, `${JSON.stringify(bad)} 가 기본값으로 안 접혔다`);
+    assert.equal(isEmptyMedia(bad), true);
+    assert.equal(serializeMedia(bad), null);
+  }
+  // 모르는 kind·빈 url 은 소스 없음이다(오류가 아니다).
+  assert.equal(normalizeMediaSource({ kind: 'vimeo', url: 'x' }), null);
+  assert.equal(normalizeMediaSource({ kind: 'youtube', url: '' }), null);
+  assert.deepEqual(normalizeMediaSource({ kind: 'youtube', url: 'u', 잡음: 1 }), { kind: 'youtube', url: 'u' });
+
+  // bpm 0(미설정)이어도 앵커를 옮겼으면 비어 있지 않다 — 사용자가 찍은 값이라 저장해야 한다.
+  assert.equal(isEmptyMedia({ tempo: { anchorSec: 3 } }), false);
+  assert.equal(isEmptyMedia({ source: { kind: 'youtube', url: 'u' } }), false);
+  // 언제나 새 객체다(스냅샷이 store 와 객체를 공유하면 undo 가 죽는다).
+  const src = { tempo: { bpm: 100 }, source: { kind: 'youtube', url: 'u' } };
+  assert.notEqual(normalizeMedia(src).tempo, src.tempo);
+  assert.notEqual(normalizeMedia(src).source, src.source);
+});
+
+test('media: media 가 없는 옛 파일이 지금과 똑같이 열리고 왕복해도 커지지 않는다', () => {
+  // V1_FILE 에는 media 가 아예 없다 — 이 기능이 들어오기 전의 파일이다.
+  assert.equal('media' in V1_FILE, false);
+
+  const res = migrateProjectFile(V1_FILE, { now: () => '1970-01-01T00:00:00.000Z' });
+  assert.equal(res.ok, true);
+  assert.equal(res.value.doc.media, null, '없던 것을 날조하지 않는다');
+
+  const flat = { ...res.value, ...res.value.doc };
+  const normalized = normalizeProject(flat, { ids: counterEnv() });
+  assert.notEqual(normalized, null, '옛 파일이 열리지 않았다');
+  assert.deepEqual(normalized.media, DEFAULT_MEDIA, 'media 가 없으면 미설정으로 떨어져야 한다');
+
+  // 열었다 다시 저장했을 때 media 키가 생기지 않아야 한다(= 바이트가 안 늘어난다).
+  const resaved = buildProjectFile({
+    rows: normalized.rows, cols: normalized.cols, categories: normalized.categories,
+    moveLibrary: normalized.moveLibrary, placements: normalized.placements, routines: normalized.routines,
+    ...toLinkBundle(flat), media: normalized.media
+  }, { fileName: 'demo', savedAt: 'S' });
+  assert.equal('media' in resaved, false);
+});
+
+test('media: 우리가 쓴 media 블록은 v1→v2 왕복에서 살아남는다', () => {
+  const withMedia = {
+    ...V1_FILE,
+    media: { tempo: { bpm: 180, beatsPerCount: 2, anchorSec: 1.5, anchorCount: 8 }, source: { kind: 'youtube', url: 'https://youtu.be/abc' } }
+  };
+  const res = migrateProjectFile(withMedia, { now: () => '1970-01-01T00:00:00.000Z' });
+  assert.deepEqual(res.value.doc.media, withMedia.media, '최상위 media:[] 가 우리 블록을 덮어썼다');
+  assert.deepEqual(res.value.media, [], '최상위 자리는 MediaRef 목록 그대로다(이름만 같다)');
+
+  // readProjectData 의 되펼치기에서는 doc 쪽이 이긴다 — 우리가 읽고 싶은 값이 나온다.
+  const flat = { ...res.value, ...res.value.doc };
+  assert.deepEqual(normalizeProject(flat, { ids: counterEnv() }).media, withMedia.media);
+});
+
+test('snapshot: applySnapshot(main) 은 media 가 없는 옛 스냅샷도 미설정으로 되돌린다', () => {
+  const legacy = JSON.stringify({ rows: 8, cols: 8, placements: [], moveLibrary: [], categories: {}, routines: [] });
+  assert.deepEqual(applySnapshot(legacy, { kind: 'main' }).media, DEFAULT_MEDIA);
+  // 루틴 패치에는 media 가 없어야 한다(루틴 보드에는 시간 매핑이 없다).
+  const routineSnap = JSON.stringify({ rows: 4, cols: 8, placements: [] });
+  assert.equal('media' in applySnapshot(routineSnap, { kind: 'routine' }), false);
+
+  // pickUndoFields 는 media 를 **값으로 복제**한다(스냅샷이 지금 값을 따라가면 undo 가 죽는다).
+  const state = {
+    rows: 8, cols: 8, placements: [], moveLibrary: [], categories: {}, routines: [],
+    links: LINKS_SAMPLE(), media: { tempo: { bpm: 120, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 }, source: null }
+  };
+  const picked = pickUndoFields(state);
+  state.media.tempo.bpm = 999;
+  assert.equal(picked.media.tempo.bpm, 120, '스냅샷이 현재 상태를 따라 변했다 — 얕은 복제다');
 });

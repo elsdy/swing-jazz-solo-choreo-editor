@@ -14,6 +14,7 @@
 import { normalize as normalizeCategories } from '../categories.js';
 import { normalizeLibrary } from '../moves.js';
 import { normalizeRoutine } from '../routines.js';
+import { normalizeMedia } from './media.js';
 
 /** ids 는 함수(`()=>string`)와 `{uid}` 객체를 모두 받는다 — domain/placements.js 와 같은 규약. */
 function uidOf(ids) {
@@ -66,6 +67,8 @@ export function normalizePlacements(rawPlacements, board, categories, ids) {
  * placements(새 categories 기준) → routines → fileName.
  * uid() 소비 순서도 같으므로 결정적 env 아래에서 id 가 원본과 일치한다.
  *
+ * ⚠ media 는 여기서 다룬다(2026-09 신설). 원본에 대응물이 없어 "오늘 동작 보존" 제약이 없고,
+ *    링크와 달리 브라우저 저장소를 건드리지 않기 때문이다 — 순수 정규화 한 줄로 끝난다.
  * ⚠ 링크는 여기서 다루지 않는다. 원본은 applyLinksData(data)(4380)로 별도 처리하며
  *    그 안에서 브라우저 저장소까지 건드린다 — domain/links.js 와 유스케이스의 몫이다.
  * ⚠ routines 가 배열이 아니면 routines=[] 이고 favoriteRoutineIds 도 비운다(4376-4379).
@@ -78,7 +81,8 @@ export function normalizePlacements(rawPlacements, board, categories, ids) {
  *             moveLibrary:{id:string,name:string,category:string}[],
  *             placements: import('./schema.js').Placement[],
  *             routines: import('./schema.js').Routine[],
- *             favoriteRoutineIds: Set<string>, fileName: string } | null}
+ *             favoriteRoutineIds: Set<string>, media: import('./schema.js').MediaBlock,
+ *             fileName: string } | null}
  */
 export function normalizeProject(data, deps) {
   const { ids, defaultCategories = {} } = deps;
@@ -101,5 +105,10 @@ export function normalizeProject(data, deps) {
     favoriteRoutineIds = new Set();
   }
 
-  return { rows, cols, categories, moveLibrary, placements, routines, favoriteRoutineIds, fileName: data.fileName || '' };
+  // media 는 신설 필드다(2026-09). **없는 옛 파일이 지금과 똑같이 열려야 하므로** 여기서 거부하지 않고
+  // DEFAULT_MEDIA(bpm 0 = 미설정)로 떨어뜨린다. 그 값은 isEmptyMedia 가 참이라 다시 저장할 때
+  // 파일에서 키째로 빠진다 — 열었다 저장하는 왕복이 바이트를 늘리지 않는다.
+  const media = normalizeMedia(data.media);
+
+  return { rows, cols, categories, moveLibrary, placements, routines, favoriteRoutineIds, media, fileName: data.fileName || '' };
 }

@@ -43,6 +43,7 @@ import * as Grid from '../domain/grid.js';
  *   routineEditor?: { sync(): void, syncHistory(): void },
  *   savedLists?: { render(kind: string, list?: unknown[]): void },
  *   linksBar?: { render(links?: object, titleFetch?: object): void },
+ *   video?: { render(): void, renderStatus(): void },
  *   notify?: (n: { kind: 'alert', message: string }) => void
  * }} views
  * @param {{ dev?: boolean, paranoid?: boolean }} [options]
@@ -101,6 +102,10 @@ export function createRenderer(store, views, options = {}) {
     }
     if (d.routineList) views.routineList?.render();
     if (d.routineEditor) views.routineEditor?.sync();
+    // ⚠ 영상 패널은 **루틴 편집기와 동시에 열리지 않는다**(CSS 가 `[data-routine="on"]` 으로 가린다).
+    //   그래서 편집기 개폐도 이 패널을 다시 그려야 한다 — 안 그리면 숨겨진 채 소리만 계속 난다.
+    // ⚠ 재생 헤드는 이 경로를 타지 **않는다**. 초당 60회 재렌더가 된다(ui/playhead.js 채널 B).
+    if (d.video || d.routineEditor) views.video?.render();
     if (d.savedLists) {
       for (const kind of d.savedLists) views.savedLists?.render(kind, store.recents[kind]);
     }

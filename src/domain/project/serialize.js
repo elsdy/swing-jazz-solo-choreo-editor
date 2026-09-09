@@ -1,15 +1,19 @@
-// src/domain/project/serialize.js — 파일로 내보낼 페이로드 조립 (순수, ./schema.js 만 import)
+// src/domain/project/serialize.js — 파일로 내보낼 페이로드 조립 (순수, ./schema.js·./media.js 만 import)
 //
 // 원본 index.html 의 projectPayloadWithRoutines(5273-5286) · saveMoveListFile 의 페이로드부(4049-4052) ·
 // saveCategoriesFile 의 페이로드부(4060-4062)를 옮겼다.
 // projectPayload(4025-4036)는 호출처가 0인 죽은 코드라 이관하지 않았다(grep 으로 확인, 아래 주석 참조).
 
 import { LEGACY_FILE_VERSION } from './schema.js';
+import { serializeMedia } from './media.js';
 
 /** 프로젝트 파일이 이미 쓰는 최상위 키. passthrough 가 이것들을 덮어쓰지 못하게 막는다. */
 const PROJECT_KEYS = new Set([
   'version', 'savedAt', 'fileName', 'rows', 'cols', 'categories', 'moveLibrary',
-  'placements', 'routines', 'youtubeUrl', 'youtubeTitle', 'clickupUrl', 'customLinks'
+  'placements', 'routines', 'youtubeUrl', 'youtubeTitle', 'clickupUrl', 'customLinks',
+  // 2026-09 신설. 값이 비면 아래에서 키를 아예 쓰지 않지만, 목록에는 있어야 한다 —
+  // 없으면 passthrough 가 옛 파일의 media 를 되살려 우리가 뺀 자리에 도로 끼워 넣는다.
+  'media'
 ]);
 
 /** 카테고리 사전을 키 오름차순으로 재조립한다. 동작목록·카테고리 두 파일이 같은 규칙을 쓴다(4051·4062). */
@@ -32,6 +36,9 @@ function unknownKeys(passthrough, known) {
 /**
  * 프로젝트 파일 본문. projectPayloadWithRoutines(5273-5286)를 키 순서까지 그대로 옮긴 것이다.
  *
+ * ⚠ 2026-09 신설: `media` 블록(`{tempo, source}`)이 customLinks 뒤에 붙는다. **비어 있으면 붙지 않는다** —
+ *   그래서 이 기능을 안 쓰는 사용자의 파일은 예전과 바이트가 같다(domain/project/media.serializeMedia).
+ *
  * ⚠ 오늘 그대로인 점 세 가지:
  *  1. `version` 은 LEGACY_FILE_VERSION(=1) 이다. SCHEMA_VERSION(=2)로 쓰면 저장 파일이 달라진다.
  *  2. state 의 배열을 **복제하지 않고 그대로 참조**한다. saveProjectFile(4041-4042)이 이 페이로드를
@@ -52,6 +59,7 @@ export function buildProjectFile(source, options = {}) {
   const favorites = favoriteRoutineIds instanceof Set
     ? favoriteRoutineIds
     : new Set(Array.isArray(favoriteRoutineIds) ? favoriteRoutineIds : []);
+  const media = serializeMedia(source.media);
 
   return {
     version: LEGACY_FILE_VERSION,
@@ -68,6 +76,9 @@ export function buildProjectFile(source, options = {}) {
     youtubeTitle: source.youtubeTitle,
     clickupUrl: source.clickupUrl,
     customLinks: source.customLinks,
+    // ⚠ 빈 media 는 키째로 빠진다(serializeMedia → null). 템포를 한 번도 안 정한 사용자의
+    //   저장 파일은 영상 기능이 들어오기 전과 **바이트 단위로 같아야** 한다.
+    ...(media ? { media } : {}),
     ...unknownKeys(passthrough, PROJECT_KEYS)
   };
 }

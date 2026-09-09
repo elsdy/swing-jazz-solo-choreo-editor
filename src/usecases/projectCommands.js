@@ -73,7 +73,10 @@ function mainView(state) {
     moveLibrary: state.library,
     categories: state.categories,
     routines: state.routines,
-    ...state.links
+    ...state.links,
+    // media 는 링크와 달리 **평평하게 풀지 않는다** — 원래 블록 하나이고, 비어 있으면
+    // buildProjectFile 이 키째로 뺀다(저장 바이트가 예전과 같아야 한다).
+    media: state.media
   };
 }
 
@@ -201,6 +204,7 @@ export function saveCategories(deps, options = {}) {
  *   ② rows·cols·categories·moveLibrary·placements·routines·favoriteRoutineIds 일곱을 대입
  *   ③ ⚠ routines 유무 **두 갈래 모두에서** saveRoutineFavorites() (4373·4377)
  *   ④ fileNameInput.value = fileName (4379)
+ *   ④' media 대입 — 신설(2026-09). 원본 대응 줄이 없다. `부분 채우기` 에는 **없다**
  *   ⑤ applyLinksData(data) — 링크 정규화 + choreo_links 저장 + 링크바 렌더 (4380)
  *   ⑥ 렌더 5종(4381-4385) ⑦ saveHistory() (4386)
  * ⚠ renderCategoryOptions 는 categories 대입 **직후**(4346)라 항상 함께 더러워진다.
@@ -223,6 +227,9 @@ function applyProjectData(deps, data) {
     library: normalized.moveLibrary,                                // 4347
     routines: normalized.routines                                   // 4363-4375
   });
+  // media(템포·소스)는 신설이라 원본 대응 줄이 없다. **`media` 가 없는 옛 파일은 여기서
+  // DEFAULT_MEDIA 로 떨어지므로** 열리는 모습이 지금과 똑같다(normalize.js 참조).
+  store.update({ media: normalized.media });
   store.patch('favorites', { routineIds: normalized.favoriteRoutineIds }); // 4372·4376
   storage.saveRoutineFavorites([...normalized.favoriteRoutineIds]);  // 4373·4377 (두 갈래 모두)
 
@@ -243,7 +250,8 @@ function applyProjectData(deps, data) {
     legend: true,             // 4382
     palette: true,            // 4383
     boards: { [BOARD_MAIN]: { rows: 'all', skeleton: true } },       // 4384 renderBoard(true)
-    routineList: true         // 4385
+    routineList: true,        // 4385
+    video: true               // 2026-09 신설 — 불러온 템포·소스를 패널에 반영한다(닫혀 있으면 무해)
   };
   return mergeDirty(dirty, commitMainHistory(deps));                 // 4386
 }

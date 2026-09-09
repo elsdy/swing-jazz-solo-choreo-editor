@@ -12,6 +12,7 @@ import { clamp, clampToGrid, totalCellsFrom } from '../domain/grid.js';
 import { getGroup, groupCount } from '../domain/placements.js';
 import { BOARD_MAIN, BOARD_ROUTINE, NONE, boardOf, mergeDirty } from './store.js';
 import { clearLinks } from './linkCommands.js';
+import { clearMedia } from './videoCommands.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 공통 규약
@@ -247,6 +248,10 @@ export function setBoardRows(store, args) {
  *   (linkCommands 파일 주석이 못박은 소유권). 두 벌로 두면 원본 renderLinksBar(4488)가 지우던
  *   제목 조회 스피너(session.youtubeTitleFetch)가 여기 경로에서만 남는다 —
  *   '전체 초기화' 뒤에도 '제목 불러오는 중…' 이 붙어 있는 회귀가 그것이다.
+ * ⚠ 2026-09 영상 블록도 같은 이유로 videoCommands.clearMedia 에 위임한다. 링크바의 주소를
+ *   비우면서 `media.source` 를 남기면 **같은 사실이 두 곳에서 갈라진다** — 링크바는 비었는데
+ *   패널은 옛 영상을 계속 싣고, 다음 저장이 사용자가 지운 주소를 파일에 다시 쓴다.
+ *   영상을 한 번도 안 쓴 사용자에게는 clearMedia 가 NONE 이라 Dirty 가 예전과 똑같다.
  * ⚠ 저장 포트의 모양도 한 벌로 맞춘다: 오늘 프로젝트/링크 경로가 모두
  *   `storage.saveLinks(serializeLinks(links))` 로 부르므로 여기도 같은 자리를 쓴다.
  *   예전 시그니처(deps.saveLinks)도 계속 받아 app/main 배선이 어느 쪽이든 동작한다.
@@ -266,8 +271,11 @@ export function clearBoard(store, deps = {}) {
   const saveLinks = deps.storage?.saveLinks ?? deps.saveLinks;
   const linksDirty = clearLinks({ store, storage: { saveLinks } });  // 4484-4489
   return mergeDirty(
-    { boards: { [BOARD_MAIN]: { rows } } },                 // 4490
-    linksDirty                                              // 4488 renderLinksBar()
+    mergeDirty(
+      { boards: { [BOARD_MAIN]: { rows } } },               // 4490
+      linksDirty                                            // 4488 renderLinksBar()
+    ),
+    clearMedia(store)                                       // 2026-09 — 링크를 비우면 영상도 비운다
   );
 }
 

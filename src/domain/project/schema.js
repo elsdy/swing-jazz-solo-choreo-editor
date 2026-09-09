@@ -1,4 +1,4 @@
-// src/domain/project/schema.js — 프로젝트 파일 스키마의 상수와 타입 정의 (로직 없음, import 0개)
+// src/domain/project/schema.js — 프로젝트 파일 스키마의 상수와 타입 정의 (로직 없음, 런타임 import 0개)
 //
 // 오늘 index.html 은 "상태"를 네 군데에서 서로 다르게 정의한다:
 // snapshotState(2833) 6필드 · projectPayloadWithRoutines(5273) 12필드 · restoreSnapshot(2845)의 기본값 ·
@@ -8,6 +8,11 @@
 // ⚠ 2026-09 변경: UNDO_FIELDS 에 links 를 더해 **undo 스냅샷과 파일 포맷의 필드 집합이 같아졌다**.
 //   그 전에는 undo 6필드 / 파일 12필드로 "상태의 정의"가 갈려 있었고, 그 틈에서
 //   `전체 초기화` 가 지운 링크가 Undo 로 돌아오지 않는 결함이 나왔다(docs/PRINCIPLES.md D-4).
+//
+// ⚠ 2026-09 변경(영상 패널): UNDO_FIELDS·DOC_FIELDS 에 `media` 를 더했다. 템포(bpm·앵커)는
+//   사용자가 공들여 찍는 **안무의 일부**라 Undo 로 돌아와야 하고 파일에도 실려야 한다.
+//   반대로 재생 위치·재생 상태는 여기에 **절대 들어오지 않는다** — 휘발성이고 초당 60번 바뀐다
+//   (docs/PORTS.md '재생 헤드가 렌더 파이프라인을 타면 안 되는 이유'의 채널 B).
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 버전
@@ -41,10 +46,13 @@ export const LEGACY_FILE_VERSION = 1;
  *   이 변경은 undo 스냅샷을 파일 포맷 쪽으로 맞추는 방향이기도 하다.
  * ⚠ 키 순서를 바꾸면 스냅샷 문자열이 달라져 중복 판정(saveHistory 2864)이 흔들린다.
  * ⚠ 스냅샷에 실리는 links 는 **값 복제**여야 한다(중첩 customLinks 배열 공유 금지) —
- *   snapshot.js 의 pickUndoFields 가 그 책임을 진다.
+ *   snapshot.js 의 pickUndoFields 가 그 책임을 진다. `media` 도 같다.
+ * ⚠ `media` 는 links 뒤 **맨 끝**이다(2026-09). 앞에 끼워 넣으면 스냅샷 문자열이 통째로 달라진다.
+ *   media 가 비어 있어도 스냅샷에는 들어간다(문자열 비교용이라 바이트가 아깝지 않다) —
+ *   **파일**에만 빈 블록을 쓰지 않는다(serialize.js).
  * @see index.html:2833
  */
-export const UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links']);
+export const UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media']);
 
 /**
  * 루틴 편집기 undo 스냅샷 필드. snapshotStateRe(2900-2902)의 리터럴 키 순서 그대로다.
@@ -60,7 +68,17 @@ export const ROUTINE_UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements'])
  *   지킨다). 한쪽에 필드를 더할 때 다른 쪽을 함께 보라: 파일에만 있으면 Undo 로 안 돌아오고,
  *   스냅샷에만 있으면 저장·불러오기에서 새어 나간다.
  */
-export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibrary', 'placements', 'routines', 'links']);
+export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibrary', 'placements', 'routines', 'links', 'media']);
+
+/**
+ * 영상 블록(`media`)의 필드. 키 순서가 곧 저장 바이트다.
+ * 정규화·직렬화 로직은 domain/project/media.js 가 갖는다(이 파일은 목록만 소유한다).
+ *
+ * ⚠ 지금 영상은 **프로젝트 공통**이다 — 버전마다 다른 영상을 쓰게 되면 이 블록이 통째로
+ *   ChoreoVersion.reference 자리로 내려가고 최상위에는 "기본 영상"만 남는다. 그래서 tempo 와
+ *   source 를 state 최상위에 평평하게 풀지 않고 블록 하나로 묶어 둔다(옮길 때 한 줄이 되도록).
+ */
+export const MEDIA_FIELDS = Object.freeze(['tempo', 'source']);
 
 /**
  * v1 프로젝트 파일이 최상위에 평평하게 들고 있는 링크 4필드.
@@ -119,6 +137,24 @@ export const LINK_FIELDS = Object.freeze(['youtubeUrl', 'youtubeTitle', 'clickup
  * @property {Placement[]} placements
  * @property {Routine[]} routines
  * @property {LinkBundle} links
+ * @property {MediaBlock} media  2026-09 신설. 없는 옛 파일은 DEFAULT_MEDIA 로 떨어진다
+ */
+
+/**
+ * 영상 소스 참조. 지금은 YouTube 하나뿐이고, url 은 링크바의 `youtubeUrl` 과 **같은 문자열**이다
+ * (상태를 두 곳에 두지 않는다 — 링크바 칸이 곧 소스다).
+ * ⚠ `{kind:'file', url}` 은 아직 없다. blob URL 은 저장해도 다음 실행에서 죽는다.
+ * @typedef {Object} MediaSourceRef
+ * @property {'youtube'} kind
+ * @property {string} url
+ */
+
+/**
+ * 프로젝트의 영상 블록. `tempo` 는 안무의 일부(Undo·파일 대상)이고 `source` 는 어떤 곡인가다.
+ * ⚠ 재생 위치·재생 상태·패널 열림 여부는 여기 없다. 전부 휘발성이라 store.session 소유다.
+ * @typedef {Object} MediaBlock
+ * @property {import('../tempo.js').Tempo} tempo
+ * @property {MediaSourceRef|null} source
  */
 
 /**
@@ -131,7 +167,11 @@ export const LINK_FIELDS = Object.freeze(['youtubeUrl', 'youtubeTitle', 'clickup
  * @property {ChoreoDoc} [doc]           v2. v1 은 rows/cols/... 가 최상위에 평평하다
  * @property {ChoreoVersion[]} [versions]      v2 신설. 이번 PR 에서는 항상 []
  * @property {PracticeLog[]} [practiceLogs]    v2 신설. 이번 PR 에서는 항상 []
- * @property {MediaRef[]} [media]              v2 신설. 이번 PR 에서는 항상 []
+ * @property {MediaRef[]} [media]              v2 최상위 자리. 아직 아무도 만들지 않아 항상 []
+ *   ⚠ **이름이 doc.media 와 겹친다.** 최상위 `media` 는 연습 기록이 참조할 MediaRef 목록(빈 배열)이고,
+ *     `doc.media` 는 이번에 신설한 `{tempo, source}` 블록이다. 둘은 다른 타입이며,
+ *     projectCommands.readProjectData 가 `{...value, ...value.doc}` 로 펼칠 때 doc 쪽이 이긴다
+ *     (그것이 우리가 읽고 싶은 값이다). v3 에서 최상위 자리의 이름을 바꿔 정리한다.
  */
 
 /**

@@ -28,16 +28,20 @@ import * as CategoryCmd from '../usecases/categoryCommands.js';
 import * as RoutineCmd from '../usecases/routineCommands.js';
 import * as ProjectCmd from '../usecases/projectCommands.js';
 import * as LinkCmd from '../usecases/linkCommands.js';
+import * as VideoCmd from '../usecases/videoCommands.js';
 
 import * as Grid from '../domain/grid.js';
 import { normalizeLinks } from '../domain/links.js';
+import { groupToSpan, secondsPerCount } from '../domain/tempo.js';
 
 import { STORAGE_KEYS } from '../ports/storage.js';
+import { projectTime } from '../ports/media.js';
 import { browserEnv, browserDialogs, browserFileIO, debounce, longPress } from '../adapters/browser.js';
 import {
   createRecentList, createFavoritesRepo, loadLocalMeta, loadLinksRaw, saveLinksRaw
 } from '../adapters/localStore.js';
 import { fetchTitle } from '../adapters/youtubeOembed.js';
+import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/media/pickPlayer.js';
 
 import { createBoardView } from '../ui/boardView.js';
 import { createOverlays, ensureOverlaySingletons } from '../ui/overlays.js';
@@ -51,6 +55,9 @@ import { createRoutineListView } from '../ui/routineListView.js';
 import { createRoutineEditorView } from '../ui/routineEditorView.js';
 import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createDocsHub } from '../ui/docsHub.js';
+import { createVideoPanel } from '../ui/videoPanel.js';
+import { createPlayhead } from '../ui/playhead.js';
+import { SEL, DATA } from '../ui/domContract.js';
 import { confirmOnce } from '../ui/widgets.js';
 import { readCellW } from '../ui/cssVars.js';
 import { initLayout, syncCellSize } from '../ui/layout.js';
@@ -395,6 +402,9 @@ views.linksBar = createLinksBarView({
   // 2026-09 — 링크 편집의 커밋 지점(change·✕·추가·삭제)은 뷰가 소유한다. 커맨드는 히스토리를
   // 쌓지 않는다(usecases 규약). Dirty.history 는 Undo/Redo 버튼만 건드리므로 입력 중에도 안전하다.
   commitHistory: () => render(commitHistory(BOARD_MAIN)),
+  // 2026-09 — 링크바의 YouTube 칸이 그대로 영상 소스다(새 입력창을 만들지 않는다).
+  // ⚠ 확정(change · ✕)에만 불린다. 반환 Dirty 를 그려야 패널이 새 소스를 싣는다.
+  onYoutubeUrlCommit: (rawUrl) => render(VideoCmd.setSource(store, { url: rawUrl })),
   debounce,
   fetchTitle,
   commands: {
@@ -596,7 +606,161 @@ makeBoardController(BOARD_ROUTINE);
 views.routineEditor.sync();   // 패널은 마크업이 이미 display:none 이라 무동작이다(상태와 한 번 맞춘다)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 16. 문서 허브 — 상단 액션 줄에 '문서' 버튼을 붙인다
+// 16. 영상 패널 — 재생기(어댑터) · 패널 뷰 · 재생 헤드 (2026-09 신설)
+//
+// ⚠ **어댑터를 아는 자리는 여기 하나다.** 뷰는 MediaPlayer 계약만 보고, 유스케이스는 초만 받는다.
+// ⚠ 재생기는 **패널이 실제로 보이는 순간에** 만든다. 한 번도 안 연 사용자에게 유튜브 요청이
+//   나가면 안 된다(createYouTubePlayer 는 생성만으로는 DOM·네트워크를 건드리지 않고,
+//   첫 load(source) 에서 <script> 가 붙는다).
+// ⚠ kind 가 같으면 pickPlayer 를 **다시 부르지 않는다** — load() 만 불러야 iframe 이 재로드되지 않는다.
+// ⚠ 재생 위치·재생 상태는 store 에 넣지 않는다. 시각은 어댑터의 표본을 rAF 에서 보간해 쓴다(채널 B).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const videoFrameEl = byId('videoFrame');
+
+/**
+ * 지금 실제로 쓰는 영상 URL. 링크바가 원본이고 `media.source` 는 그 확정 사본이다.
+ * ⚠ 폴백이 있는 이유: 이 기능 이전에 저장한 프로젝트 파일에는 media 블록이 아예 없다.
+ *   그런 파일을 열면 링크바에는 주소가 있는데 media.source 는 null 이므로, 그때는 링크바를 읽는다.
+ */
+function videoSourceUrl() {
+  const source = VideoCmd.mediaState(store).source;
+  return source ? source.url : (store.links.youtubeUrl || '');
+}
+
+/** 소스 없음 = 널 재생기. 덕분에 아래 어느 줄에도 `player?.` 가 생기지 않는다. */
+let player = pickPlayer('', {});
+let playerKind = 'null';
+/** 마지막으로 load() 에 넘긴 URL. 같으면 다시 싣지 않는다(iframe 재로드 방지). */
+let loadedVideoUrl = '';
+/** 길이는 상태가 바뀔 때만 다시 읽는다 — getDuration 폴링은 iframe 경계를 넘는다. */
+let videoDurationSec = null;
+let unsubscribeVideoState = () => {};
+
+/** 지금 URL 에 맞는 재생기를 준비한다. 멱등이며, 바뀐 것이 없으면 아무 일도 하지 않는다. */
+function ensurePlayer() {
+  const url = videoSourceUrl();
+  const kind = pickPlayerKind(url);
+
+  if (kind !== playerKind) {
+    unsubscribeVideoState();
+    player.destroy();
+    // ⚠ YT.Player 는 넘겨받은 <div> 를 <iframe> 으로 **갈아치운다** — 새로 만들 때마다 빈 자리를
+    //   다시 마련해야 한다(먼젓번 컨테이너는 이미 사라졌다).
+    videoFrameEl.innerHTML = '';
+    const host = document.createElement('div');
+    videoFrameEl.appendChild(host);
+    player = pickPlayer(url, { container: host });
+    playerKind = kind;
+    loadedVideoUrl = '';
+    // 재생 상태는 도메인이 아니라 store 를 거치지 않는다 — 문구만 직접 다시 그린다.
+    unsubscribeVideoState = player.onState(() => {
+      videoDurationSec = player.getDuration();
+      views.video?.renderStatus();
+    });
+  }
+
+  if (url !== loadedVideoUrl) {
+    loadedVideoUrl = url;
+    player.load(mediaSourceFromUrl(url));
+  }
+}
+
+/** 보간된 현재 미디어 시각(초). 표본은 캐시된 값이라 매 프레임 불러도 iframe 경계를 넘지 않는다. */
+const currentVideoSec = () => projectTime(player.getTimeSample(), performance.now(), videoDurationSec);
+
+const playhead = createPlayhead({
+  scrollRoot: byId('mainBoardWrap'),
+  getTrack: (row) => boardViews[BOARD_MAIN].rowRefs.get(row)?.track || null,
+  getCols: () => store.board(BOARD_MAIN).cols,
+  getTempo: () => VideoCmd.mediaState(store).tempo,
+  // ⚠ 템포가 준비되지 않았으면 **아예 그리지 않는다**. bpm 0 에서 그리면 거짓 위치가 선다.
+  isActive: () => VideoCmd.isTempoReady(store) && !!videoSourceUrl(),
+  isFollowing: () => VideoCmd.panelState(store).follow,
+  getCurrentSec: currentVideoSec
+});
+
+views.video = createVideoPanel({
+  store,
+  render,
+  commitHistory: () => render(commitHistory(BOARD_MAIN)),
+  getSourceUrl: videoSourceUrl,
+  getPlayerState: () => player.getState(),
+  getPlayerKind: () => player.kind,
+  getCurrentSec: currentVideoSec,
+  // ⚠ 매 렌더 불린다(패널이 열린 채 URL 만 바뀌는 경로가 있다). 아래 셋은 전부 멱등이다.
+  onSync: (shown) => {
+    if (shown) {
+      ensurePlayer();
+      playhead.start();
+    } else {
+      // ⚠ 반드시 멈춘다 — display:none 인 iframe 도 오디오는 계속 나온다(패널 닫기·루틴 편집기 열기).
+      player.pause();
+      playhead.stop();
+    }
+    playhead.invalidate();   // 폭이 달라졌을 수 있다(패널이 안무표를 좁힌다)
+  },
+  commands: {
+    togglePanel: () => VideoCmd.togglePanel(store),
+    closePanel: () => VideoCmd.closePanel(store),
+    setCollapsed: (args) => VideoCmd.setCollapsed(store, args),
+    setFollow: (args) => VideoCmd.setFollow(store, args),
+    markTempoPoint: (args) => VideoCmd.markTempoPoint(store, args),
+    clearTempoPoints: () => VideoCmd.clearTempoPoints(store),
+    tapTempo: (args) => VideoCmd.tapTempo(store, args),
+    commitTaps: (args) => VideoCmd.commitTaps(store, args),
+    clearTaps: () => VideoCmd.clearTaps(store),
+    setTempo: (args) => VideoCmd.setTempo(store, args),
+    setBeatsPerCount: (args) => VideoCmd.setBeatsPerCount(store, args),
+    reanchorTo: (args) => VideoCmd.reanchorTo(store, args),
+    clearTempo: () => VideoCmd.clearTempo(store)
+  }
+});
+
+/**
+ * 배치 시작 카운트로 영상을 옮기고 그 자리에서 재생한다.
+ *
+ * ⚠ YouTube 의 착지 오차는 0.5초라(capabilities.seekToleranceSec) 180bpm 에서 1카운트보다 크다 —
+ *   "정확한 카운트로 점프"는 원리적으로 불가능하다. 대신 착지가 부정확할 뿐 **진행 자체는 정확**하므로,
+ *   프리롤(`ceil(tolerance / spc) + 2` 카운트)만큼 앞을 겨냥해 탐색한 뒤 재생으로 통과시킨다
+ *   (docs/PORTS.md '탐색은 정확하지 않다').
+ * ⚠ 그래서 여기서 재생까지 한다. 멈춘 채 탐색만 하면 표본이 갱신되지 않아(폴링은 재생 중에만 돈다)
+ *   재생 헤드가 옛 자리에 남는다. "누른 곳을 들려준다"가 이 조작의 뜻이기도 하다.
+ * ⚠ play() 는 **클릭 콜스택 안에서** 불러야 한다(capabilities.needsUserGesture) — await 뒤로
+ *   미루면 브라우저가 차단한다. 그래서 seek 을 기다리지 않고 곧바로 부른다.
+ */
+function seekToSpanStart(startSec) {
+  const tempo = VideoCmd.mediaState(store).tempo;
+  const tolerance = player.capabilities.seekToleranceSec;
+  const spc = secondsPerCount(tempo);
+  const preRoll = (Number.isFinite(tolerance) && spc > 0) ? (Math.ceil(tolerance / spc) + 2) * spc : 0;
+  player.seek(Math.max(0, startSec - preRoll));
+  player.play();
+}
+
+// 배치를 누르면 그 시각으로 영상이 이동한다.
+// ⚠ **영상 패널이 열려 있을 때만** 동작한다 — 닫혀 있으면 첫 두 줄에서 물러나므로 선택 동작이
+//   오늘과 한 글자도 다르지 않다. boardController 의 click 리스너와 같은 엘리먼트에 따로 붙으므로
+//   그쪽의 stopPropagation 은 이 핸들러를 막지 않는다(stopImmediatePropagation 이 아니다).
+boardEl.addEventListener('click', (e) => {
+  if (!VideoCmd.panelState(store).open) return;
+  if (!VideoCmd.isTempoReady(store)) return;
+  if (e.target.closest(SEL.moveHandle) || e.target.closest(SEL.resizeHandle)) return;
+  const placementEl = e.target.closest(SEL.placement);
+  if (!placementEl) return;
+  const groupId = placementEl.dataset[DATA.groupId];
+  const board = store.board(BOARD_MAIN);
+  const segments = board.placements.filter(p => p.groupId === groupId);
+  const span = groupToSpan(segments, board.cols, VideoCmd.mediaState(store).tempo);
+  if (!span) return;
+  seekToSpanStart(span.startSec);
+});
+
+// 첫 동기화. 기본이 open:false 라 패널은 hidden 그대로이고 재생기는 만들어지지 않는다.
+views.video.render();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 17. 문서 허브 — 상단 액션 줄에 '문서' 버튼을 붙인다
 // ─────────────────────────────────────────────────────────────────────────────
 
 createDocsHub({ container: document.querySelector('.top-actions') });

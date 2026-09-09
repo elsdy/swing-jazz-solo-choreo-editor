@@ -141,6 +141,14 @@ export const CLS = Object.freeze({
   paletteList: 'palette-list',
   fileInput: 'file-input',
 
+  // ── 영상 패널 · 재생 헤드 (2026-09 신설) ──
+  // ⚠ 값은 index.html 의 새 CSS 블록과 글자 단위로 같다. 기존 값처럼 바꾸지 마라.
+  videoPanel: 'video-panel',
+  videoStatus: 'video-status',
+  isCollapsed: 'is-collapsed',   // .video-panel.is-collapsed — 본문을 접는다(헤더만 남는다)
+  isError: 'is-error',           // .video-status.is-error — 재생기 오류 문구
+  playhead: 'playhead',          // 재생 헤드. z-index 6 = .snap-indicator 와 동급
+
   // ── 공통 유틸 클래스 (마크업과 JS 가 함께 쓴다) ──
   row: 'row', wrap: 'wrap', stack: 'stack', section: 'section', softCard: 'soft-card',
   compactGrid: 'compact-grid', ghost: 'ghost', accent: 'accent', danger: 'danger',
@@ -263,6 +271,18 @@ export const DATA = Object.freeze({
   previewAttr: 'data-preview',
   resizePreview: 'resizePreview',
   resizePreviewAttr: 'data-resize-preview',
+
+  // .boards-container 가 켜고 끄는 두 표식(2026-09 신설). 값은 'on' | 'off'.
+  //   [data-routine="on"] → 영상 패널을 숨긴다(루틴 편집기와 동시 개방 금지)
+  //   [data-video="on"]   → 좁은 화면에서 보드 컨테이너를 세로로 세운다(영상이 위로 올라간다)
+  // ⚠ 둘 다 ui/videoPanel.js 가 store 에서 재도출해 쓴다. 다른 곳에서 만지지 마라.
+  routineOpen: 'routine',
+  routineOpenAttr: 'data-routine',
+  videoOpen: 'video',
+  videoOpenAttr: 'data-video',
+  /** 위 두 표식의 값. dataset 은 문자열이라 불리언을 쓸 수 없다(FLAG_ON 의 '1' 과는 다른 어휘다). */
+  ON: 'on',
+  OFF: 'off',
 
   // confirmOnce 의 2단계 확인 상태(1701). 값 '1', 끌 때는 delete.
   pendingConfirm: 'pendingConfirm',

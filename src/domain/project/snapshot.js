@@ -4,11 +4,16 @@
 // restoreSnapshot 의 순수부(2845-2850)를 옮겼다. 렌더 호출 7종과 selectedGroupIds.clear() 는
 // 여기 없다 — 그것은 유스케이스/뷰의 몫이다.
 //
-// ⚠ 2026-09 변경: 메인 스냅샷에 links 가 들어왔다(UNDO_FIELDS 7개 / ROUTINE_UNDO_FIELDS 3개).
+// ⚠ 2026-09 변경: 메인 스냅샷에 links 가 들어왔다(UNDO_FIELDS 8개 / ROUTINE_UNDO_FIELDS 3개).
 //   `전체 초기화` 가 지운 링크를 Undo 로 되살리기 위해서다. 링크는 중첩 객체라 두 자리에서
 //   조심해야 한다 — 뽑을 때(pickUndoFields)는 값 복제, 되돌릴 때(applySnapshot)는 기본값 채우기.
+// ⚠ 2026-09 변경(영상 패널): 8번째 필드 media 도 정확히 같은 규칙을 따른다. 템포는 안무의 일부다.
 
 import { UNDO_FIELDS, ROUTINE_UNDO_FIELDS, DOC_FIELDS, LINK_FIELDS } from './schema.js';
+// ⚠ 이 파일의 두 번째(이자 마지막) import 다. links 는 4필드 리터럴이라 toLinkBundle 로 손수 채웠지만,
+//   media 의 기본값은 domain/tempo.js 의 DEFAULT_TEMPO 라 손으로 적으면 그 상수가 두 벌이 된다.
+//   그래서 media 만 정규화 함수를 빌려 온다(domain → domain 이라 계층 규칙 위반이 아니다).
+import { normalizeMedia } from './media.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 복제 — 브라우저의 구조적 복제 내장 함수는 도메인에서 금지라 명시적 재귀 복제를 쓴다
@@ -83,7 +88,8 @@ export function createEmptyDoc(seed = {}) {
     moveLibrary: [],
     placements: [],
     routines: [],
-    links: toLinkBundle()
+    links: toLinkBundle(),
+    media: normalizeMedia(null)   // DEFAULT_MEDIA 와 같은 값의 **새 객체**
   };
 }
 
@@ -95,7 +101,7 @@ export function createEmptyDoc(seed = {}) {
  * undo 스냅샷에 들어갈 필드만 UNDO_FIELDS 순서로 뽑는다.
  * 값이 undefined 인 키는 JSON.stringify 가 통째로 빼므로 원본의 객체 리터럴과 결과가 같다.
  *
- * ⚠ links 만 **값 복제**다(toLinkBundle). 나머지 6필드는 원본대로 얕은 참조를 담는다 —
+ * ⚠ links·media 만 **값 복제**다(toLinkBundle / normalizeMedia). 나머지 6필드는 원본대로 얕은 참조를 담는다 —
  *   docSignature 가 곧바로 JSON.stringify 하므로 서명 문자열은 어느 쪽이든 같지만,
  *   이 함수의 반환값을 그대로 들고 있는 호출부가 생기면 중첩 customLinks 배열을 store 와
  *   공유하게 되어 스냅샷이 조용히 "지금 값"으로 따라 변한다. 그 문을 여기서 닫는다.
@@ -105,7 +111,11 @@ export function createEmptyDoc(seed = {}) {
  */
 export function pickUndoFields(source) {
   const out = {};
-  for (const key of UNDO_FIELDS) out[key] = key === 'links' ? toLinkBundle(source.links) : source[key];
+  for (const key of UNDO_FIELDS) {
+    if (key === 'links') out[key] = toLinkBundle(source.links);
+    else if (key === 'media') out[key] = normalizeMedia(source.media);
+    else out[key] = source[key];
+  }
   return out;
 }
 
@@ -150,6 +160,8 @@ export function snapshotRoutine(reState) {
  *   ⚠ links 는 routines 와 달리 **언제나** 패치에 들어간다(2026-09 신설). 링크가 빠진 옛 스냅샷을
  *   되돌릴 때 "키가 없으니 지금 값을 남긴다"로 두면, 링크를 지운 상태를 Undo 로 되돌릴 수 없다 —
  *   그 구멍이 바로 이번에 고친 결함이다. 없으면 빈 4필드로 채운다.
+ *   ⚠ media 도 같은 규칙이다 — 없으면 DEFAULT_MEDIA(bpm 0 = 미설정)로 채운다. 여기서 "지금 값을
+ *   남기는" 쪽을 택하면 템포를 지운 상태가 Undo 로 되돌아오지 않는다.
  *
  * kind:'routine' — undoRe/redoRe 와 동일하게 **기본값 없이** rows/cols/placements 를 그대로 싣는다.
  *
@@ -176,7 +188,8 @@ export function applySnapshot(snapshot, deps = {}) {
     placements: data.placements || [],
     moveLibrary: data.moveLibrary || [],
     categories: normalizeCategories(data.categories || defaultCategories),
-    links: toLinkBundle(data.links)
+    links: toLinkBundle(data.links),
+    media: normalizeMedia(data.media)
   };
   if (Array.isArray(data.routines)) patch.routines = data.routines;
   return patch;
@@ -188,6 +201,7 @@ export function applySnapshot(snapshot, deps = {}) {
 
 /**
  * state 처럼 링크가 평평하게 놓인 객체에서 ChoreoDoc 을 만든다(DOC_FIELDS 순서 고정).
+ * ⚠ media 는 링크와 달리 평평하게 풀리지 않는다 — 원래 블록 하나라 source.media 를 그대로 싣는다.
  * ⚠ 얕은 참조다. 원본 projectPayloadWithRoutines(5273)도 state 배열을 복제하지 않고
  * 그대로 참조하므로(최근목록 항목이 이후 편집에 딸려 바뀌는 오늘의 성질) 여기서도 복제하지 않는다.
  * @param {Object} source

@@ -8,6 +8,7 @@
 import { DEFAULT_CATEGORIES, DEFAULT_COUNT_INITIAL, makeDefaultMoves } from '../domain/defaults.js';
 import { cloneCategories } from '../domain/categories.js';
 import { rowIndices } from '../domain/grid.js';
+import { normalizeMedia } from '../domain/project/media.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 보드 식별자와 보드별 정책
@@ -57,7 +58,7 @@ export const BOARD_POLICY = Object.freeze({
  *   palette?: true, legend?: true, categorySelect?: true, categoryManager?: true,
  *   routineList?: true, routineEditor?: true,
  *   savedLists?: ('projects'|'moves'|'categories')[],
- *   links?: true, toolbar?: true, history?: true,
+ *   links?: true, toolbar?: true, history?: true, video?: true,
  *   notify?: { kind:'alert', message:string }
  * }} Dirty
  */
@@ -68,7 +69,11 @@ export const NONE = Object.freeze({});
 /** 불리언 플래그 전부. presenter 의 적용 순서와는 무관하다(순서는 app/render 가 안다). */
 const DIRTY_FLAGS = Object.freeze([
   'layout', 'selection', 'palette', 'legend', 'categorySelect', 'categoryManager',
-  'routineList', 'routineEditor', 'links', 'toolbar', 'history'
+  'routineList', 'routineEditor', 'links', 'toolbar', 'history',
+  // 2026-09 신설(영상 패널). 패널 열림/접힘·따라가기·템포 표시가 이 플래그로 다시 그려진다.
+  // ⚠ **재생 헤드는 이 플래그를 쓰지 않는다.** 재생 위치는 초당 60번 바뀌므로 렌더 파이프라인을
+  //   타면 안 된다 — 뷰의 rAF 루프가 자기 엘리먼트의 transform 만 직접 쓴다(docs/PORTS.md 채널 B).
+  'video'
 ]);
 const DIRTY_KEYS = new Set([...DIRTY_FLAGS, 'boards', 'savedLists', 'notify']);
 const BOARD_DIRTY_KEYS = new Set(['rows', 'skeleton']);
@@ -231,6 +236,11 @@ function createInitialState(ids) {
       clickupUrl: '',
       customLinks: []
     },
+    // 2026-09 신설(영상 패널). 원본에 대응물이 없다. `{tempo, source}` 블록 하나이며
+    // UNDO_FIELDS·DOC_FIELDS 의 8번째 필드다 — Undo 로 되돌아오고 파일에도 실린다(비었으면 안 실린다).
+    // ⚠ 재생 위치·재생 상태는 여기 **절대** 넣지 마라. 아래 session.video 도 마찬가지다 —
+    //   거기 있는 것은 "패널이 열려 있나" 같은 화면 상태이지 시각이 아니다.
+    media: normalizeMedia(null),
     recents: {                // 1403-1405, 각각 상한 10 / 3 / 3 (4042·4053·4063)
       projects: [],
       moves: [],
@@ -252,7 +262,15 @@ function createInitialState(ids) {
       defaultCount: DEFAULT_COUNT_INITIAL,  // 1384 의 가변 모듈 전역
       editingRoutineId: null,               // reState.routineId (1427)
       routineColorIdx: 0,                   // _routineColorIdx (4497). ⚠ 저장하지 않는다(보존 대상 결함)
-      recentSortMode: 'recent'              // savedSortMode (1518) 'recent' | 'alpha'
+      recentSortMode: 'recent',             // savedSortMode (1518) 'recent' | 'alpha'
+      // 영상 패널의 **휘발성** 상태(2026-09). 저장하지도 Undo 하지도 않는다.
+      //   open      패널이 열려 있는가 (닫힌 상태가 기본 — 켜야 보이는 기능이다)
+      //   collapsed 헤더만 남기고 접었는가
+      //   follow    재생 위치를 안무표가 따라가는가("따라가기")
+      //   tempoPoints 두 점 앵커를 찍는 중 모아 둔 점들. 두 개가 차면 Tempo 로 접히고 비워진다
+      //   taps      탭 템포로 누른 시각(초). 확정되면 비워진다
+      // ⚠ 여기에도 재생 위치(currentSec)는 없다. 있으면 초당 60번 store 가 바뀐다.
+      video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [] }
     }
   };
 }
@@ -314,8 +332,8 @@ export function createStore(initial = {}) {
     },
 
     /**
-     * 1단 중첩 구획(session·palette·links·recents·favorites)을 병합한다.
-     * @param {'session'|'palette'|'links'|'recents'|'favorites'} section
+     * 1단 중첩 구획(session·palette·links·media·recents·favorites)을 병합한다.
+     * @param {'session'|'palette'|'links'|'media'|'recents'|'favorites'} section
      */
     patch(section, values) {
       if (section === 'boards') throw new TypeError("boards 는 setBoard(boardId, values) 로 갱신한다");
@@ -361,6 +379,7 @@ export function createStore(initial = {}) {
     get routines() { return state.routines; },
     get favorites() { return state.favorites; },
     get links() { return state.links; },
+    get media() { return state.media; },
     get recents() { return state.recents; },
     get palette() { return state.palette; },
     get selection() { return state.selection; },
