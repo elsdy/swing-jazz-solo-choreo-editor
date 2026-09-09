@@ -136,11 +136,13 @@ export function createSettingsView(deps) {
             <span class="settings-label">제공자</span>
             <select data-role="llm-provider" class="video-pick">
               <option value="anthropic">Claude (Anthropic)</option>
-              <option value="openai">OpenAI (Codex·GPT)</option>
+              <option value="openai">OpenAI 호환 (GPT·Codex · LM Studio · llama.cpp)</option>
               <option value="ollama">로컬 LLM (Ollama)</option>
             </select>
             <span class="settings-label">모델</span>
-            <input class="settings-text" data-role="llm-model" type="text" placeholder="claude-opus-5" />
+            <input class="settings-text" data-role="llm-model" type="text" placeholder="claude-opus-5" list="llmModelList" style="width: 16em;" />
+            <datalist id="llmModelList"></datalist>
+            <button class="ghost" data-act="llm-models" type="button" title="지금 주소·키로 모델 목록을 받아 옵니다">목록 받기</button>
           </div>
           <div class="settings-row">
             <span class="settings-label">주소</span>
@@ -177,6 +179,7 @@ export function createSettingsView(deps) {
   const llmKeyRow = overlay.querySelector('[data-role="llm-key-row"]');
   const llmKeyState = overlay.querySelector('[data-role="llm-key-state"]');
   const llmNote = overlay.querySelector('[data-role="llm-note"]');
+  const llmModelList = overlay.querySelector('#llmModelList');
 
   /** 제공자별 기본 모델·주소. server.py 의 LLM_DEFAULTS 와 같다(빈 칸의 placeholder 로만 쓴다). */
   const LLM_DEFAULTS = {
@@ -204,7 +207,7 @@ export function createSettingsView(deps) {
     }
     if (llmNote) {
       llmNote.textContent = cfg.available
-        ? `지금 ${cfg.provider} 의 ${cfg.model} 을 씁니다.`
+        ? `지금 ${cfg.provider} · ${cfg.baseUrl} 의 ${cfg.model} 을 씁니다.${cfg.provider === 'openai' && !cfg.hasKey ? ' 로컬 서버가 토큰을 요구하면(LM Studio) API 키 칸에 넣으세요.' : ''}`
         : (cfg.provider === 'ollama'
           ? `${cfg.baseUrl} 에 ollama 가 떠 있어야 합니다.`
           : `키가 없어 말로 채우기가 동작하지 않습니다. 위에 키를 넣거나 서버를 ${cfg.provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} 환경 변수와 함께 띄우세요.`);
@@ -313,6 +316,23 @@ export function createSettingsView(deps) {
         if (!cfg && llmNote) llmNote.textContent = '저장하지 못했습니다. 서버가 켜져 있는지 확인하세요.';
         renderLlm();
         onChange();
+      });
+      return;
+    }
+    if (kind === 'llm-models' && llm) {
+      // 목록은 지금 저장된 설정 기준이다 — 주소·키를 바꿨으면 먼저 저장한다.
+      const pending = {};
+      if (llmProvider) pending.provider = llmProvider.value;
+      if (llmBase) pending.baseUrl = llmBase.value.trim();
+      if (llmKey && llmKey.value) pending.apiKey = llmKey.value;
+      llm.setConfig(pending).then(() => llm.listModels()).then(({ models, error }) => {
+        if (llmKey) llmKey.value = '';
+        if (llmModelList) {
+          llmModelList.innerHTML = '';
+          for (const m of models) { const o = doc.createElement('option'); o.value = m; llmModelList.appendChild(o); }
+        }
+        if (llmNote) llmNote.textContent = models.length ? `모델 ${models.length}개: ${models.slice(0, 8).join(', ')}${models.length > 8 ? ' …' : ''} — 모델 칸에서 고르고 저장하세요.` : (error || '모델 목록이 비어 있습니다.');
+        if (llmModel && models.length && !models.includes(llmModel.value)) llmModel.value = models[0];
       });
       return;
     }

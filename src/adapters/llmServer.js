@@ -17,6 +17,7 @@ function defaultFetch() {
  * @returns {{
  *   getConfig: () => Promise<LlmConfig|null>,
  *   setConfig: (next: {provider?:string, model?:string, baseUrl?:string, apiKey?:string}) => Promise<LlmConfig|null>,
+ *   listModels: () => Promise<{models:string[], error:string}>,
  *   refine: (text: string, context: object) => Promise<{ok:true, prompt:string}|{ok:false, error:string}>,
  *   compose: (prompt: string, context: object) => Promise<{ok:true, plan:object}|{ok:false, error:string}>
  * }}
@@ -49,6 +50,11 @@ export function createLlmServer(options = {}) {
     async getConfig() {
       const r = await call('GET', '/api/llm/config');
       return r.ok && r.data && typeof r.data.provider === 'string' ? r.data : null;
+    },
+    /** 제공자가 가진 모델 이름들. 못 받으면 빈 목록과 이유 문구. */
+    async listModels() {
+      const r = await call('GET', '/api/llm/models');
+      return r.ok && r.data ? { models: Array.isArray(r.data.models) ? r.data.models : [], error: String(r.data.error || '') } : { models: [], error: r.error };
     },
     async setConfig(next) {
       const r = await call('PUT', '/api/llm/config', next || {});

@@ -160,6 +160,31 @@ function fakeOllama() {
   return new Promise((resolve) => srv.listen(0, '127.0.0.1', () => resolve({ srv, seen, base: `http://127.0.0.1:${srv.address().port}` })));
 }
 
+/** LM Studio·llama.cpp 흉내(OpenAI 호환). requireToken 이면 Authorization 없는 요청에 401. */
+function fakeOpenAiCompatible() {
+  const seen = [];
+  const state = { requireToken: false };
+  const srv = http.createServer((req, res) => {
+    let buf = '';
+    req.on('data', (d) => { buf += d; });
+    req.on('end', () => {
+      seen.push({ url: req.url, auth: req.headers.authorization || null, body: buf ? JSON.parse(buf) : null });
+      if (state.requireToken && !req.headers.authorization) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'token required' } }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url === '/v1/models') res.end(JSON.stringify({ data: [{ id: 'b-model' }, { id: 'a-model' }] }));
+      else res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '다듬음' } }] }));
+    });
+  });
+  return new Promise((resolve) => srv.listen(0, '127.0.0.1', () => resolve({
+    srv, seen, base: `http://127.0.0.1:${srv.address().port}`,
+    get requireToken() { return state.requireToken; }, set requireToken(v) { state.requireToken = v; }
+  })));
+}
+
 test('server.py: LLM 설정은 키를 돌려주지 않고, 로컬 제공자로 다듬기·스키마 작성이 끝까지 돈다', { skip: !hasPython && 'python3 없음' }, async () => {
   const s = await startServer();
   const ol = await fakeOllama();
@@ -203,6 +228,28 @@ test('server.py: LLM 설정은 키를 돌려주지 않고, 로컬 제공자로 �
     assert.equal(composed.plan.moves.length, 1, '숫자가 아닌 항목은 서버 검증이 버린다');
     assert.deepEqual(composed.plan.moves[0], { bar: 1, count: 1, length: 8, name: 'Charleston', category: 'step', note: '' });
     assert.equal(composed.plan.notes.length, 2, '버린 이유가 notes 에 남는다');
+
+    // openai 호환 로컬 서버(LM Studio 등)는 키 없이도 available 이고, /v1/models 로 목록을 받는다.
+    const lm = await fakeOpenAiCompatible();
+    try {
+      const oc = await (await fetch(`${s.base}/api/llm/config`, { method: 'PUT', body: JSON.stringify({ provider: 'openai', baseUrl: lm.base, model: 'local-model' }) })).json();
+      assert.equal(oc.available, true, '로컬 OpenAI 호환 서버는 키 없이 시도한다');
+      const models = await (await fetch(`${s.base}/api/llm/models`)).json();
+      assert.deepEqual(models.models, ['a-model', 'b-model']);
+      const r2 = await (await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: JSON.stringify({ text: '찰스턴', context: ctx }) })).json();
+      assert.equal(r2.prompt, '다듬음');
+      assert.equal(lm.seen[lm.seen.length - 1].auth, null, '키가 없으면 Authorization 을 보내지 않는다');
+      lm.requireToken = true;
+      const denied = await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: JSON.stringify({ text: '찰스턴', context: ctx }) });
+      assert.equal(denied.status, 502);
+      assert.match((await denied.json()).error, /토큰/);
+      await fetch(`${s.base}/api/llm/config`, { method: 'PUT', body: JSON.stringify({ apiKey: 'lm-token' }) });
+      const ok2 = await (await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: JSON.stringify({ text: '찰스턴', context: ctx }) })).json();
+      assert.equal(ok2.prompt, '다듬음');
+      assert.equal(lm.seen[lm.seen.length - 1].auth, 'Bearer lm-token');
+    } finally {
+      lm.srv.close();
+    }
 
     assert.equal((await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: '{"text":""}' })).status, 400);
     assert.equal((await fetch(`${s.base}/api/llm/compose`, { method: 'POST', body: '{}' })).status, 400);

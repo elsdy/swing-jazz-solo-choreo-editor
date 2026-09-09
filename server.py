@@ -18,11 +18,13 @@
     GET  /clips/<path>                    파일. Range 를 지원한다(<video> 탐색에 필수)
 
     GET  /api/llm/config                  {provider, model, baseUrl, hasKey, available}. 키 값은 절대 돌려주지 않는다
+    GET  /api/llm/models                  지금 제공자가 가진 모델 이름 목록(openai 호환 /v1/models, ollama /api/tags)
     PUT  /api/llm/config  {provider?, model?, baseUrl?, apiKey?}   설정 변경. apiKey 는 .clipserver.json 에만 남는다
     POST /api/llm/refine  {text, context}  말하거나 대충 적은 텍스트 → 다듬은 안무 설명(평문)
     POST /api/llm/compose {prompt, context} 다듬은 설명 → 안무표 스키마(JSON). 서버가 스키마로 검증한다
 
-    LLM 제공자: anthropic(Claude, 기본 claude-opus-5) · openai(Codex 계열, 기본 gpt-5) · ollama(로컬, 기본 http://127.0.0.1:11434).
+    LLM 제공자: anthropic(Claude, 기본 claude-opus-5) · openai(OpenAI 호환 — GPT/Codex, LM Studio, llama.cpp, vLLM; 기본 gpt-5)
+    · ollama(로컬, 기본 http://127.0.0.1:11434). openai 호환 로컬 서버는 키가 없어도 부른다(LM Studio 처럼 토큰을 요구하면 넣는다).
     키는 설정 파일의 apiKey 또는 환경 변수 ANTHROPIC_API_KEY / OPENAI_API_KEY 에서 읽는다. 브라우저에는 키가 가지 않는다.
 
 설계 메모
@@ -131,13 +133,17 @@ class Config:
         env = LLM_KEY_ENV.get(self.llm['provider'])
         return os.environ.get(env, '') if env else ''
 
+    def llm_is_local_openai(self):
+        """openai 호환이지만 OpenAI 가 아닌 서버(LM Studio·llama.cpp·vLLM). 키가 없어도 시도한다."""
+        return self.llm['provider'] == 'openai' and 'api.openai.com' not in self.llm['baseUrl']
+
     def llm_public(self):
         """브라우저에 보여도 되는 것만. 키 값은 절대 나가지 않는다."""
         has_key = bool(self.llm_key())
         return {
             'provider': self.llm['provider'], 'model': self.llm['model'], 'baseUrl': self.llm['baseUrl'],
             'hasKey': has_key, 'keyFromEnv': has_key and not self.llm['apiKey'],
-            'available': self.llm['provider'] == 'ollama' or has_key,
+            'available': self.llm['provider'] == 'ollama' or self.llm_is_local_openai() or has_key,
         }
 
     def save(self):
@@ -265,7 +271,8 @@ def call_llm(config, system, user, schema=None):
         return _finish(text, schema)
 
     if provider == 'openai':
-        if not key:
+        local = config.llm_is_local_openai()
+        if not key and not local:
             return None, 'OPENAI_API_KEY 가 없습니다. 설정에서 키를 넣거나 서버 환경 변수로 주세요.'
         payload = {
             'model': model,
@@ -273,9 +280,12 @@ def call_llm(config, system, user, schema=None):
         }
         if schema:
             payload['response_format'] = {'type': 'json_schema', 'json_schema': {'name': 'choreo_plan', 'schema': schema, 'strict': True}}
-        status, data = http_json(f'{base}/v1/chat/completions', payload, {'Authorization': f'Bearer {key}'})
+        headers = {'Authorization': f'Bearer {key}'} if key else {}
+        status, data = http_json(f'{base}/v1/chat/completions', payload, headers, timeout=600 if local else 180)
+        if status == 401 and local:
+            return None, f'{base} 가 API 토큰을 요구합니다(LM Studio 는 Developer 탭의 API token). 설정의 API 키 칸에 넣으세요.'
         if status != 200:
-            return None, f'OpenAI 응답 실패: {data.get("error")}'
+            return None, f'{"로컬 OpenAI 호환 서버" if local else "OpenAI"} 응답 실패: {data.get("error")}'
         choices = data.get('choices') or []
         text = ((choices[0].get('message') or {}).get('content') or '') if choices else ''
         return _finish(text, schema)
@@ -292,6 +302,41 @@ def call_llm(config, system, user, schema=None):
         return None, f'로컬 LLM(ollama) 응답 실패: {data.get("error")} — {base} 에 ollama 가 떠 있고 모델 {model} 이 받아져 있는지 확인하세요.'
     text = (data.get('message') or {}).get('content') or ''
     return _finish(text, schema)
+
+
+def http_get_json(url, headers, timeout=15):
+    req = urllib.request.Request(url, method='GET', headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            return res.status, json.loads(res.read().decode('utf-8') or '{}')
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+    except (urllib.error.URLError, OSError, ValueError):
+        return 0, {}
+
+
+def list_models(config):
+    """제공자가 가진 모델 이름들. 못 물어보면(anthropic 은 목록 API 가 있지만 키가 필요) 빈 목록과 이유."""
+    llm = config.llm
+    base, key = llm['baseUrl'], config.llm_key()
+    if llm['provider'] == 'ollama':
+        status, data = http_get_json(f'{base}/api/tags', {})
+        if status != 200:
+            return [], f'{base} 에서 모델 목록을 못 받았습니다(ollama 가 떠 있나요?)'
+        return sorted(m.get('name', '') for m in data.get('models', []) if m.get('name')), ''
+    headers = {'Authorization': f'Bearer {key}'} if key else {}
+    if llm['provider'] == 'anthropic':
+        if not key:
+            return [], '키가 있어야 목록을 받습니다'
+        headers['anthropic-version'] = '2023-06-01'
+        status, data = http_get_json(f'{base}/v1/models', headers)
+    else:
+        status, data = http_get_json(f'{base}/v1/models', headers)
+    if status == 401:
+        return [], '토큰이 없거나 틀려 목록을 못 받았습니다'
+    if status != 200:
+        return [], f'{base} 에서 모델 목록을 못 받았습니다'
+    return sorted(m.get('id', '') for m in data.get('data', []) if m.get('id')), ''
 
 
 def _finish(text, schema):
@@ -399,6 +444,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(HTTPStatus.OK, self.config.to_json())
         if url.path == '/api/llm/config':
             return self._json(HTTPStatus.OK, self.config.llm_public())
+        if url.path == '/api/llm/models':
+            models, err = list_models(self.config)
+            return self._json(HTTPStatus.OK, {'ok': True, 'models': models, 'error': err})
         if url.path == '/api/clips':
             return self._list_clips(parse_qs(url.query))
         if url.path.startswith('/api/clips/'):
