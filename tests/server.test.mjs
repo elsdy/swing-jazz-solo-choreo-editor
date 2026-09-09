@@ -145,6 +145,11 @@ function fakeOllama() {
     let buf = '';
     req.on('data', (d) => { buf += d; });
     req.on('end', () => {
+      if (req.url === '/api/tags') {           // 판별용: Ollama 는 여기서 모델 목록을 준다
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ models: [{ name: 'fake' }] }));
+        return;
+      }
       const body = JSON.parse(buf || '{}');
       seen.push({ url: req.url, body });
       const content = body.format
@@ -247,6 +252,15 @@ test('server.py: LLM 설정은 키를 돌려주지 않고, 로컬 제공자로 �
       const ok2 = await (await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: JSON.stringify({ text: '찰스턴', context: ctx }) })).json();
       assert.equal(ok2.prompt, '다듬음');
       assert.equal(lm.seen[lm.seen.length - 1].auth, 'Bearer lm-token');
+      // 제공자를 '로컬(Ollama)' 로 골랐어도 주소가 OpenAI 호환이면 서버가 알아낸다. 없는 모델 이름은 목록의 첫 것으로.
+      await fetch(`${s.base}/api/llm/config`, { method: 'PUT', body: JSON.stringify({ provider: 'ollama', baseUrl: lm.base, model: 'llama3.1', apiKey: 'lm-token' }) });
+      const ok3 = await (await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: JSON.stringify({ text: '찰스턴', context: ctx }) })).json();
+      assert.equal(ok3.prompt, '다듬음');
+      const last = lm.seen[lm.seen.length - 1];
+      assert.equal(last.url, '/v1/chat/completions', 'Ollama 가 아니라 OpenAI 호환 경로로 갔다');
+      assert.equal(last.body.model, 'a-model', '설정의 llama3.1 은 그 서버에 없어 목록의 첫 모델을 썼다');
+      const lst = await (await fetch(`${s.base}/api/llm/models`)).json();
+      assert.deepEqual(lst.models, ['a-model', 'b-model']);
     } finally {
       lm.srv.close();
     }

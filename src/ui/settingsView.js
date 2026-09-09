@@ -136,8 +136,8 @@ export function createSettingsView(deps) {
             <span class="settings-label">제공자</span>
             <select data-role="llm-provider" class="video-pick">
               <option value="anthropic">Claude (Anthropic)</option>
-              <option value="openai">OpenAI 호환 (GPT·Codex · LM Studio · llama.cpp)</option>
-              <option value="ollama">로컬 LLM (Ollama)</option>
+              <option value="openai">OpenAI (GPT·Codex)</option>
+              <option value="ollama">로컬 LLM (Ollama · LM Studio · llama.cpp)</option>
             </select>
             <span class="settings-label">모델</span>
             <input class="settings-text" data-role="llm-model" type="text" placeholder="claude-opus-5" list="llmModelList" style="width: 16em;" />
@@ -200,16 +200,16 @@ export function createSettingsView(deps) {
     if (llmProvider && !typing(llmProvider)) llmProvider.value = cfg.provider;
     if (llmModel && !typing(llmModel)) llmModel.value = cfg.model;
     if (llmBase && !typing(llmBase)) llmBase.value = cfg.baseUrl;
-    if (llmKeyRow) llmKeyRow.hidden = cfg.provider === 'ollama';
+    if (llmKeyRow) llmKeyRow.hidden = false;      // 로컬도 LM Studio 처럼 토큰을 요구할 수 있다
     if (llmKeyState) {
-      llmKeyState.textContent = cfg.provider === 'ollama' ? '키 필요 없음' : (cfg.hasKey ? (cfg.keyFromEnv ? '키 있음(서버 환경 변수)' : '키 있음(설정 파일)') : '키 없음');
-      llmKeyState.classList.toggle('is-off', cfg.provider !== 'ollama' && !cfg.hasKey);
+      llmKeyState.textContent = cfg.hasKey ? (cfg.keyFromEnv ? '키 있음(서버 환경 변수)' : '키 있음(설정 파일)') : (cfg.provider === 'ollama' ? '키 없음(Ollama 는 필요 없음, LM Studio 는 필요)' : '키 없음');
+      llmKeyState.classList.toggle('is-off', !cfg.hasKey);
     }
     if (llmNote) {
       llmNote.textContent = cfg.available
-        ? `지금 ${cfg.provider} · ${cfg.baseUrl} 의 ${cfg.model} 을 씁니다.${cfg.provider === 'openai' && !cfg.hasKey ? ' 로컬 서버가 토큰을 요구하면(LM Studio) API 키 칸에 넣으세요.' : ''}`
+        ? `지금 ${cfg.provider} · ${cfg.baseUrl} 의 ${cfg.model} 을 씁니다.${cfg.provider === 'ollama' ? ' 모델 이름이 그 서버에 없으면 로드된 모델을 씁니다 — 목록 받기로 확인하세요.' : ''}`
         : (cfg.provider === 'ollama'
-          ? `${cfg.baseUrl} 에 ollama 가 떠 있어야 합니다.`
+          ? `${cfg.baseUrl} 에 Ollama 나 LM Studio 가 떠 있어야 합니다.`
           : `키가 없어 말로 채우기가 동작하지 않습니다. 위에 키를 넣거나 서버를 ${cfg.provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} 환경 변수와 함께 띄우세요.`);
     }
   }
@@ -352,7 +352,6 @@ export function createSettingsView(deps) {
       const d = LLM_DEFAULTS[llmProvider.value] || LLM_DEFAULTS.anthropic;
       if (llmModel) { llmModel.value = d.model; llmModel.placeholder = d.model; }
       if (llmBase) { llmBase.value = d.baseUrl; llmBase.placeholder = d.baseUrl; }
-      if (llmKeyRow) llmKeyRow.hidden = llmProvider.value === 'ollama';
     };
   }
   if (subdirInput) {
