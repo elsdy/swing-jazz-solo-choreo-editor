@@ -225,6 +225,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `links.js` | YouTube URL 정규화와 커스텀 링크 목록 규칙 |
 | `defaults.js` | 초기값만. `makeDefaultMoves(ids)` 가 uid 소비 순서를 결정적으로 만든다 |
 | `tempo.js` | 카운트 ↔ 초 변환. 카운트 축에 얹는 곱셈 한 겹. 2026-09-09 부터 영상 패널이 실제로 쓴다 |
+| `choreoPlan.js` | LLM 플랜(`server.py` PLAN_SCHEMA) → 격자 항목. 이름을 동작 목록과 느슨하게 맞추고(공백·대소문자 무시, 3글자 이상 포함), 마디를 넘는 카운트를 다음 마디로 넘기며, 못 쓰는 항목은 버린 이유와 함께 남긴다 |
 | `project/schema.js` | 저장 포맷 상수와 필드 목록. 로직이 없고 import 도 0개. `UNDO_FIELDS` 와 `DOC_FIELDS` 는 같은 집합이다(`rows` `cols` `placements` `moveLibrary` `categories` `routines` `links` `media`, 순서만 다르다) — 파일과 undo 가 같은 것을 상태로 본다 |
 | `project/media.js` | 영상 블록(`{tempo, source}`)의 정규화·직렬화. **비어 있으면 `serializeMedia` 가 `null` 을 돌려주고 파일에서 키가 통째로 빠진다** — 영상을 안 쓴 사용자의 저장 파일은 이 기능 전과 바이트가 같다. 로직이 있어야 해서 `schema.js`(import 0개 리프)가 아니라 여기다 |
 | `project/serialize.js` | 파일로 내보낼 페이로드 조립 |
@@ -250,6 +251,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `youtubeOembed.js` | YouTube oEmbed 제목 조회 |
 | `nullMediaPlayer.js` | 소스 없음을 정상 상태로 표현하는 재생기 |
 | `media/youtubePlayer.js` | YouTube IFrame API 를 `MediaPlayer` 계약으로 감싼다. **이 앱의 첫 외부 스크립트 의존**이라 실패를 예외가 아니라 상태로 다룬다 — 스크립트가 막히면 `getState().load === 'error'` 이고 한국어 문구는 뷰가 만든다. 생성만으로는 DOM 도 네트워크도 안 건드린다 |
+| `llmServer.js` | `server.py` 의 LLM 중계 클라이언트(`/api/llm/*`). 브라우저는 모델을 직접 부르지 않는다 — 키가 브라우저에 가면 안 되고 로컬 LLM 은 CORS 에 막힌다. 어떤 함수도 던지지 않는다 |
 | `clipServer.js` | `server.py` 의 클립 API 클라이언트. 서버가 있는지 `probe` 하고, 업로드(`PUT /api/clips`, 본문이 파일 바이트라 multipart 가 없다)·존재 확인·재생 URL(`/clips/<path>`)을 준다. 어떤 함수도 던지지 않는다 — 서버가 없으면 null 이고 `app/main` 이 브라우저 폴더 방식으로 떨어진다 |
 | `clipLibrary.js` | 영상 보관 폴더(브라우저 방식). File System Access API 의 폴더 핸들을 IndexedDB 에 남기고 `<subdir>/<프로젝트>/<파일>` 로 복사·재읽기한다. 경로 규칙은 `domain/clips.js` 가 정하고 여기서는 이름을 만들지 않는다. 지원하지 않는 브라우저에서는 "없음"으로 답한다 |
 | `media/filePlayer.js` | 로컬 영상 파일을 `<video>` 로 재생하는 `MediaPlayer`. blob URL 을 만들지 않는다 — 만든 쪽(`app/main`)이 revoke 까지 책임지므로 여기 들어오는 것은 이미 만들어진 `{kind:'file', url}` 뿐이다. 덕분에 node 에서 가짜 document 하나로 전 경로를 검사한다 |
@@ -267,6 +269,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `projectCommands.js` | 저장·불러오기·`부분 불러오기`·최근 목록 |
 | `linkCommands.js` | 링크바 상태 전이와 제목 조회 상태머신 |
 | `videoCommands.js` | 영상 패널 상태·두 점 앵커·탭 템포·소스 확정·`clearMedia`. **DOM 도 플레이어도 시계도 모른다** — 시각(초)은 전부 인자로 들어온다(`check-arch` 가 `performance` 를 막는다). 재생 위치·재생 상태는 여기에도 store 에도 없다 |
+| `planCommands.js` | 플랜 미리보기와 채우기. 새 배치 경로를 만들지 않고 `paletteCommands.createAndPlace`(빠른 동작 생성과 같은 길)로 하나씩 놓는다 — 겹침·스택·클램프가 손으로 놓을 때와 같아진다. 행이 모자라면 `setBoardRows` |
 | `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 8필드(링크·영상 템포 포함), 루틴은 3필드. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
 
 ### `src/ui/` — DOM 렌더
@@ -287,6 +290,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `routineActionPopup.js` | 메인 보드 루틴 블록의 편집/삭제 팝업 |
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
+| `composeView.js` | 상단 `✨ 말로 채우기` 팝업. 음성 인식(webkitSpeechRecognition) → 다듬기 → 스키마 → 미리보기 → 채우기의 세 단. LLM 은 주입받은 어댑터로, 배치는 주입받은 유스케이스로 |
 | `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 첫 항목이 영상 보관 폴더다. docsHub 처럼 자기 DOM·CSS 를 만들고, 어댑터는 함수로 주입받는다 |
 | `playhead.js` | 안무표 위의 재생 헤드(채널 B). rAF 루프가 자기 엘리먼트의 `transform` 과, 지금 지나가는 블록의 `is-playing` 클래스만 쓴다. 렌더 파이프라인을 타지 않는 유일한 상설 루프다 |
 | `layout.js` | 셸의 부작용 전부. 브레이크포인트·스크롤 락·셀 크기 동기화 |
@@ -374,7 +378,9 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | `PUT /api/clips?project=&name=` | 본문 = 파일 바이트. `<root>/<subdir>/<프로젝트>/<파일>` 로 저장(겹치면 ` (2)`) |
 | `GET /api/clips?project=` · `GET /api/clips/<path>` | 목록 · 존재 확인 |
 | `GET /clips/<path>` | 파일 스트리밍. `Range` 를 지원한다 — `<video>` 탐색에 필수다 |
+| `GET` · `PUT /api/llm/config` | LLM 제공자·모델·주소·키. 키 값은 절대 돌려주지 않는다(`hasKey` 만) |
+| `POST /api/llm/refine` · `POST /api/llm/compose` | 말로 적은 안무 → 다듬은 설명(평문) → 안무표 스키마(JSON). 제공자는 anthropic(Messages API, `output_config.format` 구조화 출력, 서버 측 폴백) · openai(chat completions, `response_format: json_schema`) · ollama(`/api/chat` 의 `format`). 서버가 스키마로 손 검증한다 |
 
-경계는 HTTP 뿐이다. `server.py` 는 `src/` 를 모르고 `src/` 는 서버 코드를 모른다(`adapters/clipServer.js` 가 URL 만 안다). 하나 겹치는 것이 **경로 규칙**이다 — `<subdir>/<프로젝트>/<파일>`, 못 쓰는 글자는 `_`, 앞의 점 제거, 빈 조각은 대체 이름. `src/domain/clips.js` 와 `server.py` 상단에 같은 규칙이 두 번 적혀 있고, 그래서 프로젝트 파일의 `media.source.path` 가 서버 방식과 브라우저 폴더 방식 사이에서 그대로 통한다. 한쪽을 고치면 다른 쪽도 고친다.
+경계는 HTTP 뿐이다. `server.py` 는 `src/` 를 모르고 `src/` 는 서버 코드를 모른다(`adapters/clipServer.js` 가 URL 만 안다). 두 가지가 겹친다. **경로 규칙** — `<subdir>/<프로젝트>/<파일>`, 못 쓰는 글자는 `_`, 앞의 점 제거, 빈 조각은 대체 이름 — 은 `src/domain/clips.js` 와 `server.py` 상단에 같은 규칙이 두 번 적혀 있고, **안무표 스키마** — `{title, moves:[{bar,count,length,name,category,note}], notes}` — 는 `server.py` 의 `PLAN_SCHEMA` 와 `src/domain/choreoPlan.js` 가 같은 모양을 두 번 안다. 그래서 프로젝트 파일의 `media.source.path` 가 서버 방식과 브라우저 폴더 방식 사이에서 그대로 통한다. 한쪽을 고치면 다른 쪽도 고친다.
 
 `tools/check-arch.mjs` 는 `src/` 만 본다. 서버는 `tests/server.test.mjs` 가 실제로 띄워 검사한다(업로드 → 번호 붙이기 → Range → 루트 탈출 거부 → 숨김 파일 거부).

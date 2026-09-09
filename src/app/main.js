@@ -58,6 +58,9 @@ import { createDocsHub } from '../ui/docsHub.js';
 import { createSettingsView } from '../ui/settingsView.js';
 import { createClipLibrary } from '../adapters/clipLibrary.js';
 import { createClipServer } from '../adapters/clipServer.js';
+import { createLlmServer } from '../adapters/llmServer.js';
+import { createComposeView } from '../ui/composeView.js';
+import * as PlanCmd from '../usecases/planCommands.js';
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
 import { clipDirParts } from '../domain/clips.js';
 import { createVideoPanel } from '../ui/videoPanel.js';
@@ -966,11 +969,14 @@ createDocsHub({ container: document.querySelector('.top-actions') });
 // 18. 설정 — 영상 보관 폴더. 어댑터(clipLibrary·localStore)를 아는 자리는 여기다.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const llmServer = createLlmServer();
+
 views.settings = createSettingsView({
   container: document.querySelector('.top-actions'),
   getClipSetting: loadClipSetting,
   saveClipSetting,
   clips: clipLibrary,
+  llm: llmServer,
   // 서버 모드면 설정은 서버의 것이다 — 폴더 선택 대신 경로 입력이고, 서버의 .clipserver.json 에 남는다.
   server: {
     isActive: () => !!clipServerConfig,
@@ -985,4 +991,28 @@ views.settings = createSettingsView({
   previewDirParts: clipDirParts,
   // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
   onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 19. 말로 채우기 — 음성/텍스트 → LLM 다듬기 → 스키마 → 배치. LLM 은 서버가 부른다(키는 서버에만).
+// ─────────────────────────────────────────────────────────────────────────────
+
+createComposeView({
+  container: document.querySelector('.top-actions'),
+  llm: llmServer,
+  getContext: () => {
+    const st = store.get();
+    const board = store.board(BOARD_MAIN);
+    return {
+      cols: board.cols, rows: board.rows,
+      moves: st.library.map(m => m.name),
+      categories: Object.fromEntries(Object.entries(st.categories).map(([k, v]) => [k, v.label]))
+    };
+  },
+  previewPlan: (plan) => PlanCmd.previewPlan(store, plan),
+  applyPlan: (plan, args) => PlanCmd.applyPlan(paletteCtx, plan, args),
+  render,
+  commitHistory: () => render(commitHistory(BOARD_MAIN)),
+  getCols: () => store.board(BOARD_MAIN).cols,
+  hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
 });

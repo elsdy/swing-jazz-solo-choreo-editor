@@ -137,3 +137,78 @@ test('server.py: 업로드는 <subdir>/<프로젝트>/<파일> 에 놓이고 겹
     s.stop();
   }
 });
+
+/** ollama 흉내. /api/chat 을 받아 format 이 있으면 플랜 JSON 을, 없으면 다듬은 평문을 돌려준다. */
+function fakeOllama() {
+  const seen = [];
+  const srv = http.createServer((req, res) => {
+    let buf = '';
+    req.on('data', (d) => { buf += d; });
+    req.on('end', () => {
+      const body = JSON.parse(buf || '{}');
+      seen.push({ url: req.url, body });
+      const content = body.format
+        ? JSON.stringify({ title: '테스트', moves: [
+            { bar: 1, count: 1, length: 8, name: 'Charleston', category: 'step', note: '' },
+            { bar: 'x', count: 1, length: 1, name: 'bad', category: '', note: '' }
+          ], notes: ['임의로 정함'] })
+        : '8x1 1카운트부터 8카운트: Charleston';
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: { role: 'assistant', content } }));
+    });
+  });
+  return new Promise((resolve) => srv.listen(0, '127.0.0.1', () => resolve({ srv, seen, base: `http://127.0.0.1:${srv.address().port}` })));
+}
+
+test('server.py: LLM 설정은 키를 돌려주지 않고, 로컬 제공자로 다듬기·스키마 작성이 끝까지 돈다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  const ol = await fakeOllama();
+  try {
+    const cfg0 = await (await fetch(`${s.base}/api/llm/config`)).json();
+    assert.equal(cfg0.provider, 'anthropic');
+    assert.equal(cfg0.hasKey, false);
+    assert.equal('apiKey' in cfg0, false, '키 값은 절대 나가지 않는다');
+
+    // 키를 넣으면 hasKey 만 참이 되고 값은 여전히 안 나온다. 설정 파일에는 남는다.
+    const put = await (await fetch(`${s.base}/api/llm/config`, { method: 'PUT', body: JSON.stringify({ apiKey: 'sk-test-123' }) })).json();
+    assert.equal(put.hasKey, true);
+    assert.equal(put.keyFromEnv, false);
+    assert.equal('apiKey' in put, false);
+    const { readFileSync } = await import('node:fs');
+    assert.match(readFileSync(s.config, 'utf8'), /sk-test-123/);
+
+    // 키 없이 anthropic 을 부르면 502 와 문구.
+    await fetch(`${s.base}/api/llm/config`, { method: 'PUT', body: JSON.stringify({ apiKey: '' }) });
+    const noKey = await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: JSON.stringify({ text: '찰스턴', context: {} }) });
+    assert.equal(noKey.status, 502);
+    assert.match((await noKey.json()).error, /ANTHROPIC_API_KEY/);
+
+    // 제공자를 로컬(가짜 ollama)로 바꾸면 키 없이 된다. 제공자를 바꾸면 모델·주소는 기본값으로 시작한다.
+    const sw = await (await fetch(`${s.base}/api/llm/config`, { method: 'PUT', body: JSON.stringify({ provider: 'ollama', baseUrl: ol.base, model: 'fake' }) })).json();
+    assert.equal(sw.provider, 'ollama');
+    assert.equal(sw.available, true);
+    assert.equal(sw.baseUrl, ol.base);
+    assert.equal((await fetch(`${s.base}/api/llm/config`, { method: 'PUT', body: JSON.stringify({ provider: 'nope' }) })).status, 400);
+
+    const ctx = { cols: 8, rows: 8, moves: ['Charleston', 'Jazz Square'], categories: { step: 'step' } };
+    const refined = await (await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: JSON.stringify({ text: '찰스턴 여덟 카운트', context: ctx }) })).json();
+    assert.equal(refined.prompt, '8x1 1카운트부터 8카운트: Charleston');
+    assert.match(ol.seen[0].body.messages[0].content, /Charleston, Jazz Square/, '동작 목록이 시스템 프롬프트에 들어간다');
+    assert.equal(ol.seen[0].body.format, undefined, '다듬기는 평문이다');
+
+    const composed = await (await fetch(`${s.base}/api/llm/compose`, { method: 'POST', body: JSON.stringify({ prompt: refined.prompt, context: ctx }) })).json();
+    assert.equal(composed.ok, true);
+    assert.equal(ol.seen[1].body.format.type, 'object', '스키마 작성은 format 에 스키마를 준다');
+    assert.equal(composed.plan.title, '테스트');
+    assert.equal(composed.plan.moves.length, 1, '숫자가 아닌 항목은 서버 검증이 버린다');
+    assert.deepEqual(composed.plan.moves[0], { bar: 1, count: 1, length: 8, name: 'Charleston', category: 'step', note: '' });
+    assert.equal(composed.plan.notes.length, 2, '버린 이유가 notes 에 남는다');
+
+    assert.equal((await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: '{"text":""}' })).status, 400);
+    assert.equal((await fetch(`${s.base}/api/llm/compose`, { method: 'POST', body: '{}' })).status, 400);
+    assert.equal((await fetch(`${s.base}/api/nope`, { method: 'POST', body: '{}' })).status, 404);
+  } finally {
+    ol.srv.close();
+    s.stop();
+  }
+});

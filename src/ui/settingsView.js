@@ -52,6 +52,10 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  *   getConfig: () => Promise<{root:string, subdir:string, dir:string}|null>,
  *   setConfig: (next: {root?: string, subdir?: string}) => Promise<{root:string, subdir:string, dir:string}|null>
  * }} [server] 로컬 서버(server.py)의 보관 설정. isActive 가 참이면 폴더 선택 대신 경로 입력을 보여 준다
+ * @property {{
+ *   getConfig: () => Promise<{provider:string, model:string, baseUrl:string, hasKey:boolean, keyFromEnv:boolean, available:boolean}|null>,
+ *   setConfig: (next: object) => Promise<object|null>
+ * }} [llm] 서버의 LLM 설정(server.py). 서버 모드에서만 보인다. 키 값은 서버가 돌려주지 않는다
  * @property {() => string} [getProjectName] 경로 미리보기에 쓸 지금 프로젝트 이름
  * @property {(subdir: string, projectName: string) => string[]} [previewDirParts] 미리보기 경로 조각(domain/clips.clipDirParts)
  * @property {() => void} [onChange] 설정이 바뀌었다 — 호출부가 패널 문구 등을 다시 그린다
@@ -70,6 +74,7 @@ export function createSettingsView(deps) {
     saveClipSetting,
     clips,
     server = null,
+    llm = null,
     getProjectName = () => '',
     previewDirParts = (subdir, name) => [subdir || 'video-clip', name || '_미지정'],
     onChange = () => {},
@@ -123,6 +128,35 @@ export function createSettingsView(deps) {
           <div class="settings-path" data-role="preview"></div>
           <div class="helper" data-role="note"></div>
         </section>
+
+        <section class="settings-section" data-role="llm-section" hidden>
+          <h3>말로 채우기 — LLM</h3>
+          <div class="helper"><code>✨ 말로 채우기</code> 가 쓰는 모델입니다. 호출은 로컬 서버가 대신 하고, API 키는 서버의 설정 파일(<code>.clipserver.json</code>)에만 남습니다 — 브라우저로 오지 않습니다.</div>
+          <div class="settings-row">
+            <span class="settings-label">제공자</span>
+            <select data-role="llm-provider" class="video-pick">
+              <option value="anthropic">Claude (Anthropic)</option>
+              <option value="openai">OpenAI (Codex·GPT)</option>
+              <option value="ollama">로컬 LLM (Ollama)</option>
+            </select>
+            <span class="settings-label">모델</span>
+            <input class="settings-text" data-role="llm-model" type="text" placeholder="claude-opus-5" />
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">주소</span>
+            <input class="settings-text" data-role="llm-base" type="text" style="width: 22em; max-width: 100%;" placeholder="https://api.anthropic.com" />
+          </div>
+          <div class="settings-row" data-role="llm-key-row">
+            <span class="settings-label">API 키</span>
+            <input class="settings-text" data-role="llm-key" type="password" style="width: 22em; max-width: 100%;" placeholder="입력한 것만 서버에 저장됩니다" autocomplete="off" />
+            <span class="settings-chip is-off" data-role="llm-key-state">키 없음</span>
+          </div>
+          <div class="settings-row">
+            <button class="ghost accent" data-act="llm-save" type="button">저장</button>
+            <button class="ghost" data-act="llm-clear-key" type="button">키 지우기</button>
+          </div>
+          <div class="helper" data-role="llm-note"></div>
+        </section>
       </div>
     </div>`;
   doc.body.appendChild(overlay);
@@ -135,12 +169,54 @@ export function createSettingsView(deps) {
   const previewEl = overlay.querySelector('[data-role="preview"]');
   const noteEl = overlay.querySelector('[data-role="note"]');
   const pickBtn = overlay.querySelector('[data-act="pick"]');
+  const llmSection = overlay.querySelector('[data-role="llm-section"]');
+  const llmProvider = overlay.querySelector('[data-role="llm-provider"]');
+  const llmModel = overlay.querySelector('[data-role="llm-model"]');
+  const llmBase = overlay.querySelector('[data-role="llm-base"]');
+  const llmKey = overlay.querySelector('[data-role="llm-key"]');
+  const llmKeyRow = overlay.querySelector('[data-role="llm-key-row"]');
+  const llmKeyState = overlay.querySelector('[data-role="llm-key-state"]');
+  const llmNote = overlay.querySelector('[data-role="llm-note"]');
+
+  /** 제공자별 기본 모델·주소. server.py 의 LLM_DEFAULTS 와 같다(빈 칸의 placeholder 로만 쓴다). */
+  const LLM_DEFAULTS = {
+    anthropic: { model: 'claude-opus-5', baseUrl: 'https://api.anthropic.com' },
+    openai: { model: 'gpt-5', baseUrl: 'https://api.openai.com' },
+    ollama: { model: 'llama3.1', baseUrl: 'http://127.0.0.1:11434' }
+  };
+
+  /** LLM 항목. 서버 모드에서만 보인다(키를 브라우저에 둘 수 없으므로 브라우저 모드에서는 이 기능 자체가 없다). */
+  async function renderLlm() {
+    if (!llmSection) return;
+    const active = !!(llm && server && server.isActive());
+    llmSection.hidden = !active;
+    if (!active) return;
+    const cfg = await llm.getConfig();
+    if (!cfg) { if (llmNote) llmNote.textContent = '서버에서 LLM 설정을 읽지 못했습니다.'; return; }
+    const typing = (el) => el && doc.activeElement === el;
+    if (llmProvider && !typing(llmProvider)) llmProvider.value = cfg.provider;
+    if (llmModel && !typing(llmModel)) llmModel.value = cfg.model;
+    if (llmBase && !typing(llmBase)) llmBase.value = cfg.baseUrl;
+    if (llmKeyRow) llmKeyRow.hidden = cfg.provider === 'ollama';
+    if (llmKeyState) {
+      llmKeyState.textContent = cfg.provider === 'ollama' ? '키 필요 없음' : (cfg.hasKey ? (cfg.keyFromEnv ? '키 있음(서버 환경 변수)' : '키 있음(설정 파일)') : '키 없음');
+      llmKeyState.classList.toggle('is-off', cfg.provider !== 'ollama' && !cfg.hasKey);
+    }
+    if (llmNote) {
+      llmNote.textContent = cfg.available
+        ? `지금 ${cfg.provider} 의 ${cfg.model} 을 씁니다.`
+        : (cfg.provider === 'ollama'
+          ? `${cfg.baseUrl} 에 ollama 가 떠 있어야 합니다.`
+          : `키가 없어 말로 채우기가 동작하지 않습니다. 위에 키를 넣거나 서버를 ${cfg.provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} 환경 변수와 함께 띄우세요.`);
+    }
+  }
   const forgetBtn = overlay.querySelector('[data-act="forget"]');
 
   function isOpen() { return overlay.dataset.open === '1'; }
 
   /** store 가 아니라 설정·어댑터에서 재도출한다(팝업이 열릴 때와 바뀔 때만). */
   async function render() {
+    await renderLlm();
     if (server && server.isActive()) { await renderServer(); return; }
     if (browserRow) browserRow.hidden = false;
     if (serverRow) serverRow.hidden = true;
@@ -226,6 +302,24 @@ export function createSettingsView(deps) {
       });
       return;
     }
+    if (kind === 'llm-save' && llm) {
+      const next = {};
+      if (llmProvider) next.provider = llmProvider.value;
+      if (llmModel) next.model = llmModel.value.trim();
+      if (llmBase) next.baseUrl = llmBase.value.trim();
+      if (llmKey && llmKey.value) next.apiKey = llmKey.value;      // 비어 있으면 보내지 않는다(기존 키 유지)
+      llm.setConfig(next).then((cfg) => {
+        if (llmKey) llmKey.value = '';
+        if (!cfg && llmNote) llmNote.textContent = '저장하지 못했습니다. 서버가 켜져 있는지 확인하세요.';
+        renderLlm();
+        onChange();
+      });
+      return;
+    }
+    if (kind === 'llm-clear-key' && llm) {
+      llm.setConfig({ apiKey: '' }).then(() => { renderLlm(); onChange(); });
+      return;
+    }
     if (kind === 'apply-root' && server && rootInput) {
       server.setConfig({ root: rootInput.value.trim() }).then((cfg) => {
         if (!cfg && noteEl) noteEl.textContent = '서버가 그 경로를 만들지 못했습니다. 절대 경로인지, 쓸 수 있는 곳인지 확인하세요.';
@@ -233,6 +327,14 @@ export function createSettingsView(deps) {
       });
     }
   });
+  if (llmProvider) {
+    llmProvider.onchange = () => {
+      const d = LLM_DEFAULTS[llmProvider.value] || LLM_DEFAULTS.anthropic;
+      if (llmModel) { llmModel.value = d.model; llmModel.placeholder = d.model; }
+      if (llmBase) { llmBase.value = d.baseUrl; llmBase.placeholder = d.baseUrl; }
+      if (llmKeyRow) llmKeyRow.hidden = llmProvider.value === 'ollama';
+    };
+  }
   if (subdirInput) {
     subdirInput.onchange = () => {
       const subdir = subdirInput.value.trim();

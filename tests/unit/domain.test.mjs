@@ -59,6 +59,9 @@ import { createFilePlayer, FILE_CAPABILITIES } from '../../src/adapters/media/fi
 import { createClipLibrary } from '../../src/adapters/clipLibrary.js';
 import { safeSegment, projectDirName, clipDirParts, joinClipPath, splitClipPath, numberedName } from '../../src/domain/clips.js';
 import { DEFAULT_CLIP_SUBDIR, CLIP_UNFILED_DIR } from '../../src/ports/clips.js';
+import { nameKey, matchMove, normalizePlan, cellLabel } from '../../src/domain/choreoPlan.js';
+import * as PlanCmd from '../../src/usecases/planCommands.js';
+import { createLlmServer } from '../../src/adapters/llmServer.js';
 import * as VideoCmd from '../../src/usecases/videoCommands.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
@@ -1844,6 +1847,123 @@ test('clipLibrary: 폴더를 고르면 핸들이 남고, 복사는 하위 폴더
   await again.forgetFolder();
   assert.equal(await again.getFolder(), null);
   assert.equal(idb.data.has('folder'), false);
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 말로 채우기(2026-09-09) — LLM 플랜을 격자 항목으로, 격자 항목을 기존 배치 경로로
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LIB = [
+  { id: 'm1', name: 'Jazz Square', category: 'step' },
+  { id: 'm2', name: 'Charleston', category: 'step' },
+  { id: 'm3', name: '킥볼체인지', category: 'jump' }
+];
+const CATS = { step: { label: 'step', color: '#0f0' }, jump: { label: 'jump', color: '#f00' } };
+
+test('choreoPlan: 이름은 느슨하게 맞추되 짧은 조각으로는 아무 데나 걸리지 않는다', () => {
+  assert.equal(nameKey(' Jazz  Square '), 'jazzsquare');
+  assert.equal(matchMove(LIB, 'Jazz Square').id, 'm1', '정확히 같은 것');
+  assert.equal(matchMove(LIB, 'jazz square').id, 'm1', '대소문자·공백 무시');
+  assert.equal(matchMove(LIB, '킥볼 체인지').id, 'm3');
+  assert.equal(matchMove(LIB, '킥볼체인지 두 번').id, 'm3', '포함 관계(3글자 이상)');
+  assert.equal(matchMove(LIB, 'ab'), null, '두 글자로는 포함 매칭을 하지 않는다');
+  assert.equal(matchMove(LIB, 'Shorty George'), null);
+  assert.equal(matchMove([], 'x'), null);
+});
+
+test('choreoPlan: normalizePlan 은 마디·카운트를 격자 좌표로 바꾸고 넘치는 카운트는 다음 마디로 넘긴다', () => {
+  const plan = {
+    title: '연습', notes: ['둘째 동작 길이는 임의'],
+    moves: [
+      { bar: 1, count: 1, length: 8, name: 'charleston', category: '', note: '' },
+      { bar: 1, count: 12, length: 4, name: 'Jazz Square', category: 'step', note: '오른쪽' },
+      { bar: 3, count: 5, length: 6, name: 'Shorty George', category: 'nope', note: '' },
+      { bar: 0, count: 3, length: 2, name: '킥볼체인지', category: '', note: '' },
+      { bar: -1, count: 1, length: 1, name: 'x', category: '', note: '' },
+      { bar: 2, count: 'a', length: 1, name: 'y', category: '', note: '' },
+      { bar: 2, count: 1, length: 0, name: '', category: '', note: '' }
+    ]
+  };
+  const p = normalizePlan(plan, { cols: 8, rows: 2, library: LIB, categories: CATS });
+  assert.equal(p.title, '연습');
+  assert.deepEqual(p.notes, ['둘째 동작 길이는 임의']);
+  assert.equal(p.items.length, 4);
+  assert.deepEqual(p.items[0], { row: 1, index: 0, length: 8, name: 'Charleston', category: 'step', note: '', moveId: 'm2', created: false }, '느슨히 맞춘 이름은 목록 표기로');
+  assert.deepEqual([p.items[1].row, p.items[1].index], [2, 3], '8x1 의 12카운트 = 8x2 의 4카운트');
+  assert.equal(p.items[1].note, '오른쪽');
+  assert.equal(p.items[2].created, true);
+  assert.equal(p.items[2].category, 'step', '모르는 카테고리는 첫 카테고리로');
+  assert.deepEqual([p.items[3].row, p.items[3].index], [0, 2], 'intro 행');
+  assert.deepEqual(p.newMoves, ['Shorty George']);
+  assert.equal(p.dropped.length, 3);
+  assert.equal(p.rowsNeeded, 4, '8x3 의 5카운트부터 6카운트면 8x4 의 2카운트까지 걸친다');
+  assert.equal(normalizePlan({ moves: [{ bar: 2, count: 8, length: 2, name: 'Charleston' }] }, { cols: 8, rows: 1, library: LIB, categories: CATS }).rowsNeeded, 3, '마디를 넘어가는 길이는 다음 행까지 요구한다');
+  assert.equal(cellLabel(0, 2, 8), 'intro · 3');
+  assert.equal(cellLabel(2, 0, 8), '8x2 · 1');
+  assert.deepEqual(normalizePlan(null, { cols: 8, rows: 8, library: [], categories: {} }).items, []);
+});
+
+test('planCommands: applyPlan 은 기존 배치 경로로 놓고, 행을 늘리고, replace 는 배치만 비운다', () => {
+  const store = createStore({ ids: counterEnv() });
+  const ctx = { store, ids: counterEnv(), dialogs: {}, storage: {} };
+  const plan = { title: '', notes: [], moves: [
+    { bar: 1, count: 1, length: 8, name: 'Charleston', category: '', note: '' },
+    { bar: 10, count: 1, length: 4, name: '새 동작', category: 'turn', note: '' }
+  ] };
+  const before = store.board('main').rows;
+  const d = PlanCmd.applyPlan(ctx, plan);
+  assert.equal(d.placed, 2);
+  assert.equal(d.skipped, 0);
+  assert.ok(d.boards && d.boards.main, 'Dirty 에 보드가 있다');
+  assert.equal(d.palette, true, '새 동작이 생겨 팔레트를 다시 그린다');
+  assert.equal(store.board('main').rows, 10, `행이 ${before} → 10 으로 늘었다`);
+  assert.ok(store.get().library.some(m => m.name === '새 동작'), '새 동작이 목록에 생겼다');
+  assert.equal(store.board('main').placements.filter(p => p.row === 1).length, 1);
+
+  // 두 번 놓으면 겹쳐 쌓인다(지우지 않는다) — 손으로 놓을 때와 같은 규칙.
+  PlanCmd.applyPlan(ctx, plan);
+  assert.equal(store.board('main').placements.filter(p => p.row === 1).length, 2);
+
+  // replace: 배치만 비우고 새로. 행은 줄이지 않는다.
+  store.patch('links', { ...store.get().links, youtubeUrl: 'https://youtu.be/abc' });
+  const r = PlanCmd.applyPlan(ctx, { moves: [{ bar: 1, count: 1, length: 2, name: 'Charleston' }] }, { mode: 'replace' });
+  assert.equal(r.placed, 1);
+  assert.equal(store.board('main').placements.length, 1);
+  assert.equal(store.get().links.youtubeUrl, 'https://youtu.be/abc', '링크는 그대로다(전체 초기화가 아니다)');
+  assert.equal(store.board('main').rows, 10);
+
+  assert.deepEqual(PlanCmd.applyPlan(ctx, { moves: [] }), NONE);
+  const pv = PlanCmd.previewPlan(store, plan);
+  assert.equal(pv.items.length, 2);
+});
+
+test('llmServer: 서버가 없으면 404 를 알아듣는 문구로, 있으면 결과를 그대로 준다', async () => {
+  const calls = [];
+  const fake = (bodyFor) => async (url, init) => {
+    calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : null });
+    const r = bodyFor(url);
+    return { ok: r.status < 400, status: r.status, json: async () => r.json };
+  };
+  const gone = createLlmServer({ fetchImpl: fake(() => ({ status: 404, json: null })) });
+  assert.equal(await gone.getConfig(), null);
+  const rf = await gone.refine('x', {});
+  assert.equal(rf.ok, false);
+  assert.match(rf.error, /server\.py/);
+
+  const up = createLlmServer({ fetchImpl: fake((url) => {
+    if (url.endsWith('/api/llm/config')) return { status: 200, json: { provider: 'ollama', model: 'm', baseUrl: 'b', hasKey: false, keyFromEnv: false, available: true } };
+    if (url.endsWith('/api/llm/refine')) return { status: 200, json: { ok: true, prompt: '8x1 1카운트부터 8카운트: Charleston' } };
+    if (url.endsWith('/api/llm/compose')) return { status: 200, json: { ok: true, plan: { title: '', moves: [], notes: [] } } };
+    return { status: 502, json: { ok: false, error: '모델이 답하지 않았습니다' } };
+  }) });
+  assert.equal((await up.getConfig()).provider, 'ollama');
+  assert.deepEqual(await up.refine('찰스턴 여덟', { cols: 8 }), { ok: true, prompt: '8x1 1카운트부터 8카운트: Charleston' });
+  assert.deepEqual(calls[calls.length - 1].body, { text: '찰스턴 여덟', context: { cols: 8 } });
+  assert.equal((await up.compose('p', {})).ok, true);
+  assert.equal((await up.setConfig({ provider: 'openai' })).provider, 'ollama', 'PUT 도 같은 가짜 응답을 받는다');
+  const none = createLlmServer({ fetchImpl: null });
+  assert.equal((await none.refine('x', {})).ok, false);
 });
 
 test('videoCommands: 템포가 undo 스냅샷을 타고 되돌아온다', () => {
