@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 원본이 쓰는 localStorage 키 7개. 문자열을 바꾸면 기존 사용자의 데이터가 통째로 사라지므로
+ * 원본이 쓰는 localStorage 키 7개 + 2026-09-09 의 clipFolder. 문자열을 바꾸면 기존 사용자의 데이터가 통째로 사라지므로
  * 값은 절대 바꾸지 않는다(키 이름만 이 상수를 통해 부른다).
  * @see index.html:4043 choreo_saved_files
  * @see index.html:4054 choreo_saved_moves
@@ -30,7 +30,9 @@ export const STORAGE_KEYS = Object.freeze({
   favMoves: 'choreo_fav_moves',
   favCategories: 'choreo_fav_cats',
   favRoutines: 'choreo_fav_routines',
-  links: 'choreo_links'
+  links: 'choreo_links',
+  /** 2026-09-09 신설. 영상 보관 폴더 설정(표시 이름·하위 폴더). 폴더 핸들 자체는 IndexedDB 에 있다(adapters/clipLibrary). */
+  clipFolder: 'choreo_clip_folder'
 });
 
 /**

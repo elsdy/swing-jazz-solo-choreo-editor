@@ -56,6 +56,9 @@ import { buildProjectFile } from '../../src/domain/project/serialize.js';
 import { createYouTubePlayer, YT_CAPABILITIES } from '../../src/adapters/media/youtubePlayer.js';
 import { mediaSourceFromUrl, pickPlayer, pickPlayerKind, toMediaSource } from '../../src/adapters/media/pickPlayer.js';
 import { createFilePlayer, FILE_CAPABILITIES } from '../../src/adapters/media/filePlayer.js';
+import { createClipLibrary } from '../../src/adapters/clipLibrary.js';
+import { safeSegment, projectDirName, clipDirParts, joinClipPath, splitClipPath, numberedName } from '../../src/domain/clips.js';
+import { DEFAULT_CLIP_SUBDIR, CLIP_UNFILED_DIR } from '../../src/ports/clips.js';
 import * as VideoCmd from '../../src/usecases/videoCommands.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
@@ -1708,6 +1711,139 @@ test('videoCommands: 보정점은 undo 를 타고, 거부는 rejected 로 알리
   VideoCmd.markTempoPoint(store, { count: 0, sec: 1 });
   VideoCmd.markTempoPoint(store, { count: 32, sec: 21 });
   assert.deepEqual(VideoCmd.mediaState(store).tempo.points, []);
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 영상 보관 폴더(2026-09-09) — 경로 규칙은 순수 함수, 어댑터는 가짜 핸들·가짜 IndexedDB 로 검사한다
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('clips: 경로 조각은 파일 시스템에 못 쓰는 글자를 바꾸고 빈 조각은 대체 이름으로 떨어진다', () => {
+  assert.equal(safeSegment(' a/b:c*d?e"f<g>h|i '), 'a_b_c_d_e_f_g_h_i');
+  assert.equal(safeSegment(''), CLIP_UNFILED_DIR);
+  assert.equal(safeSegment(null, 'x'), 'x');
+  assert.equal(safeSegment('..hidden'), 'hidden', '앞의 점은 뗀다(숨김 폴더·상위 폴더 탈출 방지)');
+  assert.equal(projectDirName('내 안무.json'), '내 안무');
+  assert.equal(projectDirName(''), CLIP_UNFILED_DIR);
+  assert.deepEqual(clipDirParts('', 'demo'), [DEFAULT_CLIP_SUBDIR, 'demo'], '하위 폴더가 비면 기본 이름');
+  assert.deepEqual(clipDirParts('clips', ''), ['clips', CLIP_UNFILED_DIR]);
+  assert.equal(joinClipPath(['video-clip', 'demo'], 'take 1.mp4'), 'video-clip/demo/take 1.mp4');
+  assert.deepEqual(splitClipPath('video-clip/../demo//a.mp4'), ['video-clip', 'demo', 'a.mp4'], '.. 과 빈 조각은 버린다');
+  assert.deepEqual(splitClipPath(null), []);
+  assert.equal(numberedName('a.mp4', 2), 'a (2).mp4');
+  assert.equal(numberedName('noext', 3), 'noext (3)');
+});
+
+test('media: 파일 소스의 path 는 있을 때만 남고 setFileSource 는 path 가 바뀌면 다른 소스로 본다', () => {
+  assert.deepEqual(normalizeMediaSource({ kind: 'file', name: 'a.mp4', path: ' video-clip/x/a.mp4 ' }), { kind: 'file', name: 'a.mp4', path: 'video-clip/x/a.mp4' });
+  assert.deepEqual(normalizeMediaSource({ kind: 'file', name: 'a.mp4', path: '' }), { kind: 'file', name: 'a.mp4' });
+  const store = createStore();
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'a.mp4' }), { video: true });
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'a.mp4', path: 'video-clip/x/a.mp4' }), { video: true }, '복사가 끝나 경로가 붙는 것은 변경이다');
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'a.mp4', path: 'video-clip/x/a.mp4' }), NONE);
+  assert.deepEqual(serializeMedia(store.get().media).source, { kind: 'file', name: 'a.mp4', path: 'video-clip/x/a.mp4' });
+});
+
+/**
+ * File System Access API 의 최소 가짜. 디렉터리는 중첩 Map 이고 파일은 {name, chunks} 다.
+ * requestPermission 은 interactive 없이도 'granted' 를 주는지 검사할 수 있게 상태를 노출한다.
+ */
+function fakeDirHandle(name, perm = 'granted') {
+  const dirs = new Map();
+  const files = new Map();
+  const h = {
+    kind: 'directory', name, dirs, files, perm,
+    queryPermission: async () => h.perm,
+    requestPermission: async () => { h.asked = true; return h.perm === 'prompt' ? (h.perm = 'granted') : h.perm; },
+    getDirectoryHandle: async (n, o = {}) => {
+      if (!dirs.has(n)) { if (!o.create) throw new Error('NotFound'); dirs.set(n, fakeDirHandle(n)); }
+      return dirs.get(n);
+    },
+    getFileHandle: async (n, o = {}) => {
+      if (!files.has(n)) {
+        if (!o.create) throw new Error('NotFound');
+        const f = { name: n, chunks: [] };
+        files.set(n, { kind: 'file', name: n,
+          createWritable: async () => ({ write: async (b) => { f.chunks.push(b); }, close: async () => {} }),
+          getFile: async () => ({ name: n, type: 'video/mp4', size: f.chunks.reduce((a, b) => a + (b.size || 0), 0) }) });
+      }
+      return files.get(n);
+    }
+  };
+  return h;
+}
+
+/** IndexedDB 의 최소 가짜. 요청 콜백을 마이크로태스크로 부른다(실제와 같이 비동기). */
+function fakeIndexedDb() {
+  const data = new Map();
+  const mkReq = (fn) => {
+    const req = {};
+    queueMicrotask(() => { try { req.result = fn(); req.onsuccess && req.onsuccess(); } catch (e) { req.error = e; req.onerror && req.onerror(); } });
+    return req;
+  };
+  const db = {
+    objectStoreNames: { contains: () => true },
+    transaction: () => {
+      const tx = {};
+      queueMicrotask(() => queueMicrotask(() => tx.oncomplete && tx.oncomplete()));
+      tx.objectStore = () => ({
+        get: (k) => mkReq(() => data.get(k)),
+        put: (v, k) => mkReq(() => { data.set(k, v); }),
+        delete: (k) => mkReq(() => { data.delete(k); })
+      });
+      return tx;
+    },
+    close() {}
+  };
+  return { data, open: () => mkReq(() => db) };
+}
+
+test('clipLibrary: 지원하지 않는 브라우저에서는 모든 호출이 없음으로 답하고 던지지 않는다', async () => {
+  const lib = createClipLibrary({ win: {} });
+  assert.equal(lib.isSupported(), false);
+  assert.equal(await lib.getFolder(), null);
+  assert.equal(await lib.pickFolder(), null);
+  assert.equal(await lib.ensurePermission(true), false);
+  assert.equal(await lib.openClip('video-clip/x/a.mp4'), null);
+  await lib.forgetFolder();
+  await assert.rejects(() => lib.saveClip({}, ['video-clip'], 'a.mp4'), '폴더가 없으면 복사는 실패로 알린다(호출부가 조용히 삼킨다)');
+});
+
+test('clipLibrary: 폴더를 고르면 핸들이 남고, 복사는 하위 폴더를 만들며 같은 이름에 (2) 를 붙이고, 경로로 다시 읽는다', async () => {
+  const root = fakeDirHandle('내 문서');
+  const idb = fakeIndexedDb();
+  const win = { indexedDB: idb, showDirectoryPicker: async () => root };
+  const lib = createClipLibrary({ win });
+  assert.equal(lib.isSupported(), true);
+  assert.equal(await lib.getFolder(), null, '아직 안 골랐다');
+
+  assert.deepEqual(await lib.pickFolder(), { name: '내 문서' });
+  assert.equal(idb.data.get('folder'), root, '핸들이 IndexedDB 에 남는다');
+
+  const file = { name: 'take.mp4', size: 3 };
+  const a = await lib.saveClip(file, ['video-clip', 'demo'], 'take.mp4');
+  assert.equal(a.path, 'video-clip/demo/take.mp4');
+  const b = await lib.saveClip(file, ['video-clip', 'demo'], 'take.mp4');
+  assert.equal(b.path, 'video-clip/demo/take (2).mp4', '이미 있는 파일은 건드리지 않는다');
+  assert.ok(root.dirs.get('video-clip').dirs.get('demo').files.has('take (2).mp4'));
+
+  const opened = await lib.openClip('video-clip/demo/take.mp4');
+  assert.equal(opened && opened.name, 'take.mp4');
+  assert.equal(await lib.openClip('video-clip/demo/없음.mp4'), null, '없는 파일은 null 이지 예외가 아니다');
+  assert.equal(await lib.openClip('../etc/passwd'), null, '폴더 밖으로 나가지 않는다');
+
+  // 새 세션: 핸들은 IndexedDB 에서 돌아오고, 권한이 prompt 면 조용한 확인은 거짓·대화형은 참이다.
+  root.perm = 'prompt';
+  const again = createClipLibrary({ win });
+  assert.deepEqual(await again.getFolder(), { name: '내 문서' });
+  assert.equal(await again.ensurePermission(false), false, '조용한 확인은 묻지 않는다');
+  assert.equal(root.asked, undefined);
+  assert.equal(await again.ensurePermission(true), true);
+  assert.equal(root.asked, true);
+
+  await again.forgetFolder();
+  assert.equal(await again.getFolder(), null);
+  assert.equal(idb.data.has('folder'), false);
 });
 
 test('videoCommands: 템포가 undo 스냅샷을 타고 되돌아온다', () => {

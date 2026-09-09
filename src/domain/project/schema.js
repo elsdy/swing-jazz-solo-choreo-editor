@@ -144,12 +144,15 @@ export const LINK_FIELDS = Object.freeze(['youtubeUrl', 'youtubeTitle', 'clickup
  * 영상 소스 참조. 두 가지다 —
  *   `{kind:'youtube', url}` : url 은 링크바의 `youtubeUrl` 과 **같은 문자열**이다
  *                              (상태를 두 곳에 두지 않는다 — 링크바 칸이 곧 소스다).
- *   `{kind:'file', name}`   : 로컬 영상 파일. **파일명만** 남는다. 브라우저는 파일 경로를 기억할 수
- *                              없고 blob URL 은 다음 실행에서 죽으므로, 다시 열면 같은 파일을 다시 골라야 한다.
+ *   `{kind:'file', name, path?}` : 로컬 영상 파일. 파일명과, 보관 폴더에 복사해 둔 경우 그 폴더 기준
+ *                              상대 경로(`video-clip/<프로젝트>/<파일>`)가 남는다. 브라우저는 절대 경로를
+ *                              기억할 수 없고 blob URL 은 다음 실행에서 죽으므로, path 가 없으면 다시 열 때
+ *                              같은 파일을 다시 골라야 한다.
  * @typedef {Object} MediaSourceRef
  * @property {'youtube'|'file'} kind
  * @property {string} [url]  youtube 만
  * @property {string} [name] file 만
+ * @property {string} [path] file 만, 보관 폴더에 있을 때만
  */
 
 /**

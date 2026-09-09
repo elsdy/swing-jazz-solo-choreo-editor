@@ -36,6 +36,7 @@ export const MEDIA_SOURCE_KINDS = Object.freeze(['youtube', 'file']);
  *   링크바의 `youtubeUrl` 과 글자가 달라지면 "같은 곡인데 두 값"이 되고, videoId 추출은
  *   adapters/media/pickPlayer.js 가 domain/links.parseYoutubeUrl 로 한 곳에서만 한다.
  * ⚠ 파일 소스에는 url 이 **없다**. blob URL 이 들어와도 버린다 — 저장 파일에 죽은 주소가 남으면 안 된다.
+ *   대신 보관 폴더에 복사해 둔 파일은 `path`(폴더 기준 상대 경로)를 갖고, 다음에 열 때 그 경로로 다시 읽는다.
  * @param {unknown} raw
  * @returns {import('./schema.js').MediaSourceRef|null}
  */
@@ -45,7 +46,10 @@ export function normalizeMediaSource(raw) {
   if (!MEDIA_SOURCE_KINDS.includes(kind)) return null;
   if (kind === 'file') {
     const name = raw.name == null ? '' : String(raw.name).trim();
-    return name ? { kind, name } : null;
+    if (!name) return null;
+    // path 는 보관 폴더 기준 상대 경로(video-clip/<프로젝트>/<파일>). 보관 폴더에 복사한 파일만 갖는다.
+    const path = raw.path == null ? '' : String(raw.path).trim();
+    return path ? { kind, name, path } : { kind, name };
   }
   const url = raw.url == null ? '' : String(raw.url);
   if (!url) return null;

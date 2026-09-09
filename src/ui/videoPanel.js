@@ -66,6 +66,16 @@ const NO_SOURCE_TEXT = '위 링크바의 `YouTube URL 입력...` 칸에 주소�
  */
 const REPICK_TEXT = (name) => `이 안무표는 영상 파일 \`${name}\` 을 쓰던 것입니다. 브라우저는 파일 위치를 기억하지 못하므로 \`📁 영상 파일 열기\` 로 같은 파일을 다시 골라 주세요.`;
 
+/**
+ * 보관 폴더에 복사해 둔 파일인데 아직 이 세션에서 못 읽었을 때의 안내. 권한만 다시 받으면 되므로 버튼을 가리킨다.
+ * @param {string} path
+ * @returns {string}
+ */
+const LIB_TEXT = (path) => `보관 폴더의 \`${path}\` 을 쓰던 안무표입니다. \`📂 보관 폴더에서 불러오기\` 를 누르면 다시 읽어 옵니다(브라우저가 폴더 사용 허가를 물으면 허용하세요).`;
+
+/** 보관 폴더에서 읽으려 했는데 파일이 없을 때. 옮겼거나 지웠거나 다른 컴퓨터다. */
+const LIB_MISSING_TEXT = (path) => `보관 폴더에 \`${path}\` 이 없습니다. 파일을 옮겼거나 다른 컴퓨터라면 \`📁 영상 파일 열기\` 로 다시 고르세요.`;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 표시용 순수 헬퍼
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +128,8 @@ function formatBpm(bpm) {
  *   저장 파일에서 연 직후에는 이름만 있고 파일이 없다 — 그때 "다시 골라 달라"고 안내한다
  * @property {(file: File) => void} [onFileChosen] 사용자가 파일을 골랐다. blob URL 을 만들고 소스를
  *   확정하는 것은 어댑터를 아는 자리(app/main)의 몫이라 여기서 하지 않는다
+ * @property {() => void} [onOpenFromLibrary] `📂 보관 폴더에서 불러오기`. 클릭 콜스택 안에서 권한을 묻는다
+ * @property {() => 'idle'|'missing'} [getLibraryState] 마지막 보관 폴더 읽기 시도의 결과. 'missing' 이면 파일이 없었다
  * @property {() => {load:string, play:string, error:{code:string,message:string}|null}} getPlayerState
  *   MediaPlayer.getState() 를 감싼 게터
  * @property {() => number} getCurrentSec 보간된 현재 미디어 시각(초). 앵커·탭이 쓰는 **유일한 시계**다
@@ -166,6 +178,8 @@ export function createVideoPanel(deps) {
     getSource = () => (store.media && store.media.source) || null,
     getFileLoaded = () => false,
     onFileChosen = () => {},
+    onOpenFromLibrary = () => {},
+    getLibraryState = () => 'idle',
     getPlayerState,
     getPlayerKind = () => 'null',
     getCurrentSec,
@@ -190,6 +204,7 @@ export function createVideoPanel(deps) {
   const fileBtn = byId('videoFileBtn');
   const fileName = byId('videoFileName');
   const fileClearBtn = byId('videoFileClearBtn');
+  const fileLibBtn = byId('videoFileLibBtn');
   const bpmText = byId('videoBpmText');
   const anchorRow = byId('videoAnchorRow');
   const anchorCount = byId('videoAnchorCount');
@@ -307,18 +322,23 @@ export function createVideoPanel(deps) {
       titleChip.title = title;
     }
     // 파일 줄: 이름 칩과 놓기 버튼은 파일 소스일 때만 보인다.
+    const inLibrary = isFile && !!source.path;
     if (fileName) {
       fileName.hidden = !isFile;
       fileName.textContent = isFile ? source.name : '';
-      fileName.title = isFile ? source.name : '';
+      // 보관 폴더에 있는 파일은 툴팁에 경로를 보여 준다 — 어디 복사됐는지가 곧 이 기능의 약속이다.
+      fileName.title = inLibrary ? source.path : (isFile ? source.name : '');
     }
     if (fileClearBtn) fileClearBtn.hidden = !isFile;
+    if (fileLibBtn) fileLibBtn.hidden = !(inLibrary && !getFileLoaded());
     if (fileBtn) fileBtn.textContent = isFile ? '📁 다른 파일 열기' : '📁 영상 파일 열기';
 
     if (!statusEl) return;
     if (isFile && !getFileLoaded()) {
       // 저장 파일에서 연 직후. 이름은 아는데 파일이 없다 — 오류가 아니라 안내다.
-      statusEl.textContent = REPICK_TEXT(source.name);
+      statusEl.textContent = inLibrary
+        ? (getLibraryState() === 'missing' ? LIB_MISSING_TEXT(source.path) : LIB_TEXT(source.path))
+        : REPICK_TEXT(source.name);
       statusEl.classList.remove(CLS.isError);
       return;
     }
@@ -477,6 +497,8 @@ export function createVideoPanel(deps) {
     };
   }
   if (fileClearBtn && commands.clearFileSource) fileClearBtn.onclick = () => render(commands.clearFileSource());
+  // ★ 여기서 권한을 묻는다 — 클릭 콜스택 안이어야 브라우저가 대화상자를 연다.
+  if (fileLibBtn) fileLibBtn.onclick = () => onOpenFromLibrary();
 
   if (markBtn) {
     markBtn.onclick = () => {

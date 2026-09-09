@@ -181,12 +181,12 @@ export function setSource(store, args = {}) {
  * ⚠ 파일이 유튜브 주소보다 우선한다. 링크바의 주소는 그대로 남아 있으므로 파일을 놓으면(clearFileSource)
  *   다시 유튜브로 돌아간다 — 사용자가 마지막에 고른 것이 소스다.
  * @param {object} store
- * @param {{name?: string|null}} [args]
+ * @param {{name?: string|null, path?: string|null}} [args] path 는 보관 폴더에 복사한 경우의 상대 경로
  * @returns {import('./store.js').Dirty}
  */
 export function setFileSource(store, args = {}) {
   const cur = mediaState(store);
-  const next = normalizeMediaSource({ kind: 'file', name: args.name });
+  const next = normalizeMediaSource({ kind: 'file', name: args.name, path: args.path });
   if (!next) return NONE;
   if (sameSource(cur.source, next)) return NONE;
   return setMedia(store, { tempo: cur.tempo, source: next });
@@ -215,7 +215,7 @@ export function clearFileSource(store) {
 function sameSource(a, b) {
   if (!a || !b) return a === b;
   if (a.kind !== b.kind) return false;
-  return a.kind === 'file' ? a.name === b.name : a.url === b.url;
+  return a.kind === 'file' ? (a.name === b.name && (a.path || '') === (b.path || '')) : a.url === b.url;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

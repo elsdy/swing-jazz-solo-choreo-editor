@@ -245,3 +245,28 @@ export function loadLocalMeta() {
     favorites: createFavoritesRepo().load()
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 영상 보관 폴더 설정 (2026-09-09 신설). 핸들은 IndexedDB(adapters/clipLibrary)에, 표시 이름·하위 폴더는 여기.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 기본 설정. subdir 의 기본값은 ports/clips.DEFAULT_CLIP_SUBDIR 과 같은 'video-clip' 이다. */
+const DEFAULT_CLIP_SETTING = Object.freeze({ folderName: '', subdir: 'video-clip' });
+
+/**
+ * @returns {{folderName:string, subdir:string}} 손상된 값은 기본값으로 떨어진다
+ */
+export function loadClipSetting() {
+  const raw = localKv.get(STORAGE_KEYS.clipFolder, null);
+  const src = raw && typeof raw === 'object' ? raw : {};
+  return {
+    folderName: typeof src.folderName === 'string' ? src.folderName : '',
+    subdir: typeof src.subdir === 'string' && src.subdir.trim() ? src.subdir.trim() : DEFAULT_CLIP_SETTING.subdir
+  };
+}
+
+/** @param {{folderName?:string, subdir?:string}} next */
+export function saveClipSetting(next) {
+  const cur = loadClipSetting();
+  localKv.set(STORAGE_KEYS.clipFolder, { ...cur, ...(next || {}) });
+}

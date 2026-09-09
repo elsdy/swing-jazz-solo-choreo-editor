@@ -250,6 +250,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `youtubeOembed.js` | YouTube oEmbed 제목 조회 |
 | `nullMediaPlayer.js` | 소스 없음을 정상 상태로 표현하는 재생기 |
 | `media/youtubePlayer.js` | YouTube IFrame API 를 `MediaPlayer` 계약으로 감싼다. **이 앱의 첫 외부 스크립트 의존**이라 실패를 예외가 아니라 상태로 다룬다 — 스크립트가 막히면 `getState().load === 'error'` 이고 한국어 문구는 뷰가 만든다. 생성만으로는 DOM 도 네트워크도 안 건드린다 |
+| `clipLibrary.js` | 영상 보관 폴더. File System Access API 의 폴더 핸들을 IndexedDB 에 남기고 `<subdir>/<프로젝트>/<파일>` 로 복사·재읽기한다. 경로 규칙은 `domain/clips.js` 가 정하고 여기서는 이름을 만들지 않는다. 지원하지 않는 브라우저에서는 "없음"으로 답한다 |
 | `media/filePlayer.js` | 로컬 영상 파일을 `<video>` 로 재생하는 `MediaPlayer`. blob URL 을 만들지 않는다 — 만든 쪽(`app/main`)이 revoke 까지 책임지므로 여기 들어오는 것은 이미 만들어진 `{kind:'file', url}` 뿐이다. 덕분에 node 에서 가짜 document 하나로 전 경로를 검사한다 |
 | `media/pickPlayer.js` | URL 또는 `MediaSource` → 재생기 종류(`youtube`/`file`/`null`). `domain/links.parseYoutubeUrl` 을 재사용하고 언제나 완전한 `MediaPlayer` 를 돌려준다(호출부에 `player?.` 가 생기지 않는다) |
 
@@ -285,6 +286,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `routineActionPopup.js` | 메인 보드 루틴 블록의 편집/삭제 팝업 |
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
+| `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 첫 항목이 영상 보관 폴더다. docsHub 처럼 자기 DOM·CSS 를 만들고, 어댑터는 함수로 주입받는다 |
 | `playhead.js` | 안무표 위의 재생 헤드(채널 B). rAF 루프가 자기 엘리먼트의 `transform` 과, 지금 지나가는 블록의 `is-playing` 클래스만 쓴다. 렌더 파이프라인을 타지 않는 유일한 상설 루프다 |
 | `layout.js` | 셸의 부작용 전부. 브레이크포인트·스크롤 락·셀 크기 동기화 |
 | `cssVars.js` | `--cellW` `--cellH` `--rowLabelW` `--noteW` 의 유일한 소유자 |

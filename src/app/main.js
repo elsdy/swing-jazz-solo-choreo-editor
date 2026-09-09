@@ -55,6 +55,10 @@ import { createRoutineListView } from '../ui/routineListView.js';
 import { createRoutineEditorView } from '../ui/routineEditorView.js';
 import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createDocsHub } from '../ui/docsHub.js';
+import { createSettingsView } from '../ui/settingsView.js';
+import { createClipLibrary } from '../adapters/clipLibrary.js';
+import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
+import { clipDirParts } from '../domain/clips.js';
 import { createVideoPanel } from '../ui/videoPanel.js';
 import { createPlayhead } from '../ui/playhead.js';
 import { SEL, DATA } from '../ui/domContract.js';
@@ -706,17 +710,90 @@ function ensurePlayer() {
 }
 
 /**
- * 사용자가 영상 파일을 골랐다. blob URL 을 만들고(앞의 것은 놓고) 소스를 파일명으로 확정한다.
- * ⚠ 여기가 URL.createObjectURL 을 부르는 유일한 자리다 — 만든 곳이 revoke 까지 책임진다.
+ * 영상 보관 폴더(설정에서 지정). 지원하지 않는 브라우저에서는 모든 호출이 "없음"으로 답한다.
+ * 핸들은 IndexedDB 에, 표시 이름·하위 폴더는 localStorage 에 있다.
+ */
+const clipLibrary = createClipLibrary();
+/** 마지막 보관 폴더 읽기 시도의 결과. 패널이 "파일이 없다"와 "권한만 다시 받으면 된다"를 구분해 말한다. */
+let libraryState = 'idle';
+
+/** 실물 파일을 이 세션의 소스로 붙인다. blob URL 은 여기서만 만들고, 앞의 것은 놓는다. */
+function attachLocalFile(file) {
+  if (localFile) URL.revokeObjectURL(localFile.url);
+  localFile = { name: file.name, url: URL.createObjectURL(file) };
+}
+
+/** 지금 프로젝트 이름(파일 이름 칸). 보관 폴더 아래 프로젝트별 하위 폴더 이름이 된다. */
+const projectNameForClips = () => (byId('fileNameInput')?.value || '').trim();
+
+/**
+ * 사용자가 영상 파일을 골랐다. 보관 폴더가 지정돼 있으면 거기 복사하고 그 상대 경로까지 소스에 남긴다.
+ * 복사는 비동기라 먼저 blob 으로 바로 띄우고(기다리게 하지 않는다), 복사가 끝나면 path 만 덧붙인다.
+ * ⚠ 여기가 URL.createObjectURL 을 부르는 자리다 — 만든 곳이 revoke 까지 책임진다.
  * @param {File} file
  */
 function chooseLocalFile(file) {
   if (!file) return;
-  if (localFile) URL.revokeObjectURL(localFile.url);
-  localFile = { name: file.name, url: URL.createObjectURL(file) };
+  attachLocalFile(file);
+  libraryState = 'idle';
   // 같은 이름을 다시 골라도(다시 열었을 때가 그렇다) 소스는 그대로라 NONE 이 온다 — 그래도 재생기는 새 blob 을 실어야 한다.
   render(VideoCmd.setFileSource(store, { name: file.name }));
   views.video?.render();
+
+  // 보관 폴더로 복사. 권한은 조용히 확인만 한다(파일 선택 대화상자가 닫힌 뒤라 제스처가 끝났을 수 있다).
+  clipLibrary.ensurePermission(false).then(async (ok) => {
+    if (!ok) return;
+    const { subdir } = loadClipSetting();
+    let saved;
+    try {
+      saved = await clipLibrary.saveClip(file, clipDirParts(subdir, projectNameForClips()), file.name);
+    } catch {
+      return;                                    // 복사 실패는 조용히 — blob 으로는 이미 재생 중이다
+    }
+    // 그 사이 사용자가 다른 소스로 바꿨으면 낡은 결과다.
+    const cur = VideoCmd.mediaState(store).source;
+    if (!cur || cur.kind !== 'file' || cur.name !== file.name || !localFile || localFile.name !== file.name) return;
+    render(VideoCmd.setFileSource(store, { name: file.name, path: saved.path }));
+    commitHistoryAndRender();
+  });
+}
+
+/** 파일 경로를 덧붙인 것도 되돌릴 수 있게 히스토리를 한 단계 남긴다. */
+function commitHistoryAndRender() {
+  render(commitHistory(BOARD_MAIN));
+}
+
+/**
+ * 보관 폴더에서 저장된 경로의 파일을 읽어 소스로 붙인다.
+ * @param {boolean} interactive 참이면 권한을 묻는다(클릭 콜스택 안에서만 의미가 있다)
+ */
+async function openFromLibrary(interactive) {
+  const source = VideoCmd.mediaState(store).source;
+  if (!source || source.kind !== 'file' || !source.path) return;
+  if (localFileLoaded()) return;
+  if (!(await clipLibrary.ensurePermission(interactive))) return;
+  const file = await clipLibrary.openClip(source.path);
+  // 그 사이 소스가 바뀌었으면 낡은 결과다.
+  const now = VideoCmd.mediaState(store).source;
+  if (!now || now.kind !== 'file' || now.path !== source.path) return;
+  if (!file) {
+    libraryState = 'missing';
+    views.video?.renderStatus();
+    return;
+  }
+  libraryState = 'idle';
+  attachLocalFile(new File([file], source.name, { type: file.type }));
+  views.video?.render();
+}
+
+/** 소스에 보관 경로가 있고 아직 못 읽었으면 조용히 시도한다. 권한이 이미 있으면 대화상자 없이 붙는다. */
+let libraryAutoTriedFor = '';
+function tryLibraryQuietly() {
+  const source = VideoCmd.mediaState(store).source;
+  const key = source && source.kind === 'file' && source.path ? source.path : '';
+  if (!key || localFileLoaded() || key === libraryAutoTriedFor) return;
+  libraryAutoTriedFor = key;
+  openFromLibrary(false);
 }
 
 /** 보간된 현재 미디어 시각(초). 표본은 캐시된 값이라 매 프레임 불러도 iframe 경계를 넘지 않는다. */
@@ -746,12 +823,15 @@ views.video = createVideoPanel({
   getSource: () => VideoCmd.mediaState(store).source,
   getFileLoaded: localFileLoaded,
   onFileChosen: chooseLocalFile,
+  onOpenFromLibrary: () => openFromLibrary(true),
+  getLibraryState: () => libraryState,
   getPlayerState: () => player.getState(),
   getPlayerKind: () => player.kind,
   getCurrentSec: currentVideoSec,
   // ⚠ 매 렌더 불린다(패널이 열린 채 URL 만 바뀌는 경로가 있다). 아래 셋은 전부 멱등이다.
   onSync: (shown) => {
     if (shown) {
+      tryLibraryQuietly();
       ensurePlayer();
       playhead.start();
     } else {
@@ -828,3 +908,18 @@ views.video.render();
 // ─────────────────────────────────────────────────────────────────────────────
 
 createDocsHub({ container: document.querySelector('.top-actions') });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 18. 설정 — 영상 보관 폴더. 어댑터(clipLibrary·localStore)를 아는 자리는 여기다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+createSettingsView({
+  container: document.querySelector('.top-actions'),
+  getClipSetting: loadClipSetting,
+  saveClipSetting,
+  clips: clipLibrary,
+  getProjectName: projectNameForClips,
+  previewDirParts: clipDirParts,
+  // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
+  onChange: () => { libraryAutoTriedFor = ''; views.video?.render(); }
+});
