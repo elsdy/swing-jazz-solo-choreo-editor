@@ -22,7 +22,7 @@
 //     골격 재생성(buildBoardSkeleton)은 innerHTML 을 비우므로, 매 프레임 parentElement 를 확인해
 //     끊긴 경우 다시 붙인다(비교는 프로퍼티 하나라 공짜다).
 
-import { CLS } from './domContract.js';
+import { CLS, SEL } from './domContract.js';
 import { timeToCell } from '../domain/tempo.js';
 
 /** 사용자가 스크롤·터치한 뒤 자동 추종을 멈추는 시간. 따라가기와 손 스크롤이 싸우면 화면이 튄다. */
@@ -49,6 +49,9 @@ const FOLLOW_EDGE_PAD = 8;
  *     거짓말이 서 있게 되고, 그게 가장 나쁜 실패다(docs/PORTS.md)
  * @property {() => number} getCurrentSec 보간된 현재 미디어 시각(초).
  *   app/main 이 `projectTime(player.getTimeSample(), performance.now(), duration)` 로 만든다
+ * @property {(row: number) => Array<{groupId:string, startIndex:number, length:number}>} [getPlacementsInRow]
+ *   그 행에 놓인 배치들. 재생 위치가 지나가는 블록을 켜는 데 쓴다. 없으면 하이라이트를 하지 않는다.
+ *   ⚠ 칸이 바뀔 때만 부른다 — 매 프레임 필터링하지 않는다
  * @property {() => boolean} [isFollowing] "따라가기" 가 켜져 있는가. 기본 false
  * @property {Window} [win]
  * @property {Document} [doc]
@@ -74,6 +77,7 @@ export function createPlayhead(deps) {
     getTempo,
     isActive,
     getCurrentSec,
+    getPlacementsInRow = null,
     isFollowing = () => false,
     win = window,
     doc = document
@@ -94,9 +98,48 @@ export function createPlayhead(deps) {
 
   const nowMs = () => win.performance.now();
 
-  /** 칸 폭 캐시를 버린다. 리사이즈·보드 재렌더·패널 개폐가 부른다. */
+  /** 마지막으로 하이라이트를 계산한 칸. `${row}:${index}`. '' 이면 아직 없다. */
+  let litKey = '';
+  /** 지금 `is-playing` 이 붙어 있는 엘리먼트들. 다음 칸에서 떼기 위해 기억한다. */
+  let litEls = [];
+
+  /** 켜 둔 블록을 전부 끈다. 재렌더로 이미 떨어져 나간 엘리먼트에 classList 를 써도 무해하다. */
+  function unlight() {
+    for (const node of litEls) node.classList.remove(CLS.isPlaying);
+    litEls = [];
+    litKey = '';
+  }
+
+  /**
+   * 지금 칸에 걸친 블록을 켠다. 이전 칸의 블록은 끈다.
+   * ⚠ 같은 groupId 의 블록이 이 트랙에 둘 이상 있을 수 있어(루틴) 셀렉터로 전부 찾는다. 트랙 안에서만 찾으므로
+   *   다른 행의 같은 그룹은 건드리지 않는다.
+   * @param {HTMLElement} track
+   * @param {number} row
+   * @param {number} index
+   */
+  function relight(track, row, index) {
+    const key = `${row}:${index}`;
+    const alive = litEls.length === 0 || litEls.every(node => node.isConnected);
+    if (key === litKey && alive) return;
+    unlight();
+    litKey = key;
+    if (!getPlacementsInRow) return;
+    for (const p of getPlacementsInRow(row)) {
+      if (index < p.startIndex || index >= p.startIndex + p.length) continue;
+      track.querySelectorAll(SEL.placementsOfGroup(p.groupId))
+        .forEach(node => { node.classList.add(CLS.isPlaying); litEls.push(node); });
+    }
+  }
+
+  /**
+   * 칸 폭과 하이라이트 캐시를 버린다. 리사이즈·보드 재렌더·패널 개폐가 부른다.
+   * ⚠ 하이라이트 캐시도 여기서 버려야 한다 — 헤드가 같은 칸에 멈춰 있는 동안 그 칸에 블록을 놓으면
+   *   칸 키가 그대로라 새 블록이 영영 켜지지 않는다. 다음 프레임이 다시 계산한다.
+   */
   function invalidate() {
     cellW = 0;
+    litKey = '';
   }
 
   /**
@@ -146,20 +189,26 @@ export function createPlayhead(deps) {
     else if (headX > rightEdge) scrollRoot.scrollLeft += headX - rightEdge;
   }
 
-  /** 한 프레임. **여기서 하는 DOM 쓰기는 el.style.transform 과 el.hidden 뿐이다.** */
+  /** 헤드를 숨기고 켜 둔 블록도 끈다. 헤드가 없는데 블록만 켜져 있으면 거짓 위치가 된다. */
+  function hide() {
+    el.hidden = true;
+    unlight();
+  }
+
+  /** 한 프레임. **여기서 하는 DOM 쓰기는 el.style.transform · el.hidden · 블록의 is-playing 뿐이다.** */
   function frame() {
     rafId = win.requestAnimationFrame(frame);
 
-    if (!isActive()) { el.hidden = true; return; }
+    if (!isActive()) { hide(); return; }
 
     const cols = getCols();
-    if (!(cols > 0)) { el.hidden = true; return; }
+    if (!(cols > 0)) { hide(); return; }
 
     // 초 → 칸. intro 행(row 0)은 음수 카운트로 분기 없이 떨어진다(domain/tempo.js 상단 참조).
     const { row, index, fraction } = timeToCell(getCurrentSec(), cols, getTempo());
     const track = getTrack(row);
     // 격자 밖(앵커보다 한참 앞이거나 마지막 행 뒤)이면 그릴 자리가 없다 — 숨긴다.
-    if (!track) { el.hidden = true; return; }
+    if (!track) { hide(); return; }
 
     // 행이 바뀌었거나 골격이 다시 세워져 끊겼으면 새 트랙에 붙인다(8카운트에 한 번).
     if (el.parentElement !== track) {
@@ -171,6 +220,7 @@ export function createPlayhead(deps) {
     const x = (index + fraction) * cellW;
     el.style.transform = `translateX(${x}px)`;
     el.hidden = false;
+    relight(track, row, index);
 
     follow(track, x);
   }
@@ -194,7 +244,7 @@ export function createPlayhead(deps) {
         win.cancelAnimationFrame(rafId);
         rafId = null;
       }
-      el.hidden = true;
+      hide();
     },
 
     invalidate,

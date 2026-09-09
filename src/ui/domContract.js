@@ -40,6 +40,7 @@ export const CLS = Object.freeze({
   isSelected: 'is-selected',  // 3424 · 2463 · 4537 — 선택. ⚠ 메인 보드에만 붙는다
   isDragging: 'is-dragging',  // 3425 · 3746 · 3893
   isResizing: 'is-resizing',  // 3746 — is-dragging 과 **함께** 붙고 따로 떨어진다(3771)
+  isPlaying: 'is-playing',    // 재생 위치가 지나가는 중인 블록. ⚠ ui/playhead 의 rAF 루프만 붙였다 뗀다(채널 B)
 
   // ── 트랙의 상태 클래스 ──
   dropHover: 'drop-hover',    // 2399 · 3864 · 3982

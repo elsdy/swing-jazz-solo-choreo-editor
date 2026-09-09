@@ -300,6 +300,14 @@
       box-shadow: 0 0 10px rgba(250,204,21,0.4), 0 8px 18px rgba(0,0,0,0.2);
       z-index: 4;
     }
+    /* 재생 위치가 지나가는 블록. ⚠ 렌더가 아니라 ui/playhead 의 rAF 루프가 붙였다 뗀다(채널 B).
+       선택(노랑)·리사이즈(파랑)와 겹칠 수 있어 색은 재생 헤드와 같은 초록이고 z-index 는 올리지 않는다. */
+    .placement.is-playing {
+      outline: 2.5px solid rgba(34,197,94,0.95);
+      outline-offset: -1px;
+      box-shadow: 0 0 14px rgba(34,197,94,0.55), 0 8px 18px rgba(0,0,0,0.2);
+      filter: brightness(1.12);
+    }
     .placement.is-resizing {
       outline: 2px solid rgba(96,165,250,0.85);
       outline-offset: -1px;

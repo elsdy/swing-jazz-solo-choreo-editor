@@ -128,12 +128,12 @@ Dirty = {
 
 | | 채널 A — 도메인 | 채널 B — 휘발성 |
 |---|---|---|
-| 무엇이 흐르나 | bpm·앵커 확정, 소스 변경, 패널 열림/접힘 | 재생 위치 |
-| 경로 | 커맨드 → store → Dirty → `app/render.js` → 뷰 | `ui/playhead.js` 의 rAF 루프 → 자기 엘리먼트 |
+| 무엇이 흐르나 | bpm·앵커 확정, 소스 변경, 패널 열림/접힘 | 재생 위치, 지금 지나가는 블록 |
+| 경로 | 커맨드 → store → Dirty → `app/render.js` → 뷰 | `ui/playhead.js` 의 rAF 루프 → 자기 엘리먼트와 블록의 클래스 하나 |
 | 얼마나 자주 | 사람이 확정할 때 | 초당 60번 |
 | store 를 만지나 | 쓴다 | **읽지도 않는다** (주입된 게터로만 본다) |
 | undo 에 남나 | 남는다(`media` 는 `UNDO_FIELDS` 안) | 남지 않는다 |
-| DOM 쓰기 | 뷰 전체 재구성 가능 | `el.style.transform` 과 `el.hidden` **둘뿐** |
+| DOM 쓰기 | 뷰 전체 재구성 가능 | `el.style.transform` · `el.hidden` · 블록의 `is-playing` 클래스 **셋뿐** |
 
 채널 B 를 A 로 합치면 초당 60회 전체 재렌더가 된다. 그것만이 이유가 아니다 — 재생 위치가 store 에 들어가는 순간 undo 스택이 재생 위치로 가득 차고, 저장 파일에 "그때 어디까지 봤는지" 가 섞여 들어간다. **재생 위치는 상태가 아니라 관측값이다.**
 
@@ -143,8 +143,9 @@ Dirty = {
 - 어댑터는 시각을 이벤트로 밀지 않고 **표본**(`{sec, atMs, rate, playing}`)으로 들고만 있는다. `ports/media.js` 의 `projectTime(sample, nowMs, duration)` 이 그것을 매 프레임 보간한다 — 순수 함수라 계층을 넘지 않는다.
 - 움직임은 `left` 가 아니라 `transform: translateX()` 다. 칸 폭은 `--cellW` 를 읽지 않고 `track.getBoundingClientRect().width / cols` 로 재되 **행이 바뀔 때·리사이즈·패널 개폐에만** 재고 캐시한다(매 프레임 재면 강제 리플로가 초당 60번이다).
 - 헤드는 현재 행의 `.track` 안에 살고 8카운트에 한 번만 자리를 옮긴다. `boardView.renderRow` 는 `.placement` 만 걷어내므로 행 재렌더에서 살아남고, 골격 재생성(`innerHTML=''`)으로 끊기면 다음 프레임이 `el.parentElement !== track` 을 보고 다시 붙인다.
+- 재생 위치가 지나가는 블록의 `is-playing` 도 이 채널이 붙였다 뗀다. "지금 어느 블록인가"는 재생 위치의 함수이지 상태가 아니므로 store 에 들어가지 않는다. 토글은 **칸이 바뀔 때만** 하고(초당 60번이 아니라 카운트마다 한 번), 헤드가 같은 칸에 멈춰 있는 동안 블록이 다시 그려지면 `app/render.js` 가 `views.playhead.invalidate()` 로 캐시를 버려 다음 프레임이 다시 계산한다 — 렌더러는 헤드를 그리지 않고 "네 캐시가 낡았다"고만 알린다.
 
-실제로 그런지는 브라우저에서 잰다. 재생 중 `#board` 에 `MutationObserver` 를 걸면 **`.playhead` 의 `style`·`hidden` 말고는 아무 변화도 찍히지 않는다** — 배치도, 트랙도, 패널도 그대로다. 이 관찰이 이 절의 유일한 증거다.
+실제로 그런지는 브라우저에서 잰다. 재생 중 `#board` 에 `MutationObserver` 를 걸면 **`.playhead` 의 `style`·`hidden` 과 `.placement` 의 `class`(카운트마다 한 번) 말고는 아무 변화도 찍히지 않는다** — 배치의 위치도, 트랙도, 패널도 그대로다. 이 관찰이 이 절의 유일한 증거다.
 
 ## `board.rows` 는 행 개수가 아니다
 
@@ -283,7 +284,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `routineActionPopup.js` | 메인 보드 루틴 블록의 편집/삭제 팝업 |
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
-| `playhead.js` | 안무표 위의 재생 헤드(채널 B). rAF 루프가 자기 엘리먼트의 `transform` 만 쓴다. 렌더 파이프라인을 타지 않는 유일한 상설 루프다 |
+| `playhead.js` | 안무표 위의 재생 헤드(채널 B). rAF 루프가 자기 엘리먼트의 `transform` 과, 지금 지나가는 블록의 `is-playing` 클래스만 쓴다. 렌더 파이프라인을 타지 않는 유일한 상설 루프다 |
 | `layout.js` | 셸의 부작용 전부. 브레이크포인트·스크롤 락·셀 크기 동기화 |
 | `cssVars.js` | `--cellW` `--cellH` `--rowLabelW` `--noteW` 의 유일한 소유자 |
 | `popup.js` | 팝업 공통 부품(위치 계산, 바깥 클릭 닫기) |

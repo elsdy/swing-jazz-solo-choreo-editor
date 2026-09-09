@@ -677,8 +677,13 @@ const playhead = createPlayhead({
   // ⚠ 템포가 준비되지 않았으면 **아예 그리지 않는다**. bpm 0 에서 그리면 거짓 위치가 선다.
   isActive: () => VideoCmd.isTempoReady(store) && !!videoSourceUrl(),
   isFollowing: () => VideoCmd.panelState(store).follow,
-  getCurrentSec: currentVideoSec
+  getCurrentSec: currentVideoSec,
+  // 재생 위치가 지나가는 블록을 켠다. 칸이 바뀔 때만 불리므로 여기서 필터링해도 싸다.
+  getPlacementsInRow: (row) => store.board(BOARD_MAIN).placements.filter(p => p.row === row)
 });
+
+// 렌더러가 보드를 다시 그린 뒤 헤드 캐시를 버리게 한다. 헤드를 그리는 것은 여전히 rAF 루프뿐이다.
+views.playhead = { invalidate: () => playhead.invalidate() };
 
 views.video = createVideoPanel({
   store,

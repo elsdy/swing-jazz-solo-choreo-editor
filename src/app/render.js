@@ -20,7 +20,7 @@
 //
 // ⚠ 이 파일은 커맨드를 부르지 않는다. store 는 **읽기만** 한다.
 
-import { BOARD_IDS, expandRows, assertDirty } from '../usecases/store.js';
+import { BOARD_IDS, BOARD_MAIN, expandRows, assertDirty } from '../usecases/store.js';
 import * as Grid from '../domain/grid.js';
 
 /**
@@ -81,6 +81,9 @@ export function createRenderer(store, views, options = {}) {
         : expandRows(store.get(), boardId, b.rows);
       view.updateRows(rows, store.viewDeps(boardId));
     }
+    // 메인 보드가 다시 그려졌으면 재생 헤드의 캐시(칸 폭·켜 둔 블록)를 버린다. 헤드 자체는 여기서
+    // 그리지 않는다(채널 B) — 다음 rAF 프레임이 스스로 다시 잰다.
+    if (d.layout || d.boards?.[BOARD_MAIN]) views.playhead?.invalidate();
 
     // ── ③ selection — 행 재렌더 없이 클래스만 ──────────────────────────────
     // ⚠ **전체 선택 집합**을 넘긴다(바뀐 것만이 아니다). 루틴 보드에는 붙는 게 없다
