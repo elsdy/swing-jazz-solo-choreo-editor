@@ -17,7 +17,7 @@ function defaultFetch() {
  * @returns {{
  *   getConfig: () => Promise<LlmConfig|null>,
  *   setConfig: (next: {provider?:string, model?:string, baseUrl?:string, apiKey?:string}) => Promise<LlmConfig|null>,
- *   listModels: () => Promise<{models:string[], error:string}>,
+ *   listModels: () => Promise<{models:string[], details:{id:string,label:string,state:string}[], error:string}>,
  *   refine: (text: string, context: object) => Promise<{ok:true, prompt:string}|{ok:false, error:string}>,
  *   compose: (prompt: string, context: object) => Promise<{ok:true, plan:object}|{ok:false, error:string}>
  * }}
@@ -54,7 +54,10 @@ export function createLlmServer(options = {}) {
     /** 제공자가 가진 모델 이름들. 못 받으면 빈 목록과 이유 문구. */
     async listModels() {
       const r = await call('GET', '/api/llm/models');
-      return r.ok && r.data ? { models: Array.isArray(r.data.models) ? r.data.models : [], error: String(r.data.error || '') } : { models: [], error: r.error };
+      if (!r.ok || !r.data) return { models: [], details: [], error: r.error };
+      const models = Array.isArray(r.data.models) ? r.data.models : [];
+      const details = Array.isArray(r.data.details) ? r.data.details : models.map(id => ({ id, label: id, state: '' }));
+      return { models, details, error: String(r.data.error || '') };
     },
     async setConfig(next) {
       const r = await call('PUT', '/api/llm/config', next || {});

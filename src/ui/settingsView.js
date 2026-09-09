@@ -140,9 +140,12 @@ export function createSettingsView(deps) {
               <option value="ollama">로컬 LLM (Ollama · LM Studio · llama.cpp)</option>
             </select>
             <span class="settings-label">모델</span>
-            <input class="settings-text" data-role="llm-model" type="text" placeholder="claude-opus-5" list="llmModelList" style="width: 16em;" />
-            <datalist id="llmModelList"></datalist>
+            <input class="settings-text" data-role="llm-model" type="text" placeholder="claude-opus-5" style="width: 16em;" />
             <button class="ghost" data-act="llm-models" type="button" title="지금 주소·키로 모델 목록을 받아 옵니다">목록 받기</button>
+          </div>
+          <div class="settings-row" data-role="llm-pick-row" hidden>
+            <span class="settings-label">서버의 모델</span>
+            <select data-role="llm-pick" class="video-pick" style="max-width: 100%;"></select>
           </div>
           <div class="settings-row">
             <span class="settings-label">주소</span>
@@ -179,7 +182,8 @@ export function createSettingsView(deps) {
   const llmKeyRow = overlay.querySelector('[data-role="llm-key-row"]');
   const llmKeyState = overlay.querySelector('[data-role="llm-key-state"]');
   const llmNote = overlay.querySelector('[data-role="llm-note"]');
-  const llmModelList = overlay.querySelector('#llmModelList');
+  const llmPickRow = overlay.querySelector('[data-role="llm-pick-row"]');
+  const llmPick = overlay.querySelector('[data-role="llm-pick"]');
 
   /** 제공자별 기본 모델·주소. server.py 의 LLM_DEFAULTS 와 같다(빈 칸의 placeholder 로만 쓴다). */
   const LLM_DEFAULTS = {
@@ -325,14 +329,21 @@ export function createSettingsView(deps) {
       if (llmProvider) pending.provider = llmProvider.value;
       if (llmBase) pending.baseUrl = llmBase.value.trim();
       if (llmKey && llmKey.value) pending.apiKey = llmKey.value;
-      llm.setConfig(pending).then(() => llm.listModels()).then(({ models, error }) => {
+      llm.setConfig(pending).then(() => llm.listModels()).then(({ models, details, error }) => {
         if (llmKey) llmKey.value = '';
-        if (llmModelList) {
-          llmModelList.innerHTML = '';
-          for (const m of models) { const o = doc.createElement('option'); o.value = m; llmModelList.appendChild(o); }
+        if (llmPick) {
+          llmPick.innerHTML = '';
+          for (const d of details) {
+            const o = doc.createElement('option');
+            o.value = d.id;
+            o.textContent = d.label;
+            llmPick.appendChild(o);
+          }
+          if (llmModel && models.includes(llmModel.value)) llmPick.value = llmModel.value;
         }
-        if (llmNote) llmNote.textContent = models.length ? `모델 ${models.length}개: ${models.slice(0, 8).join(', ')}${models.length > 8 ? ' …' : ''} — 모델 칸에서 고르고 저장하세요.` : (error || '모델 목록이 비어 있습니다.');
-        if (llmModel && models.length && !models.includes(llmModel.value)) llmModel.value = models[0];
+        if (llmPickRow) llmPickRow.hidden = models.length === 0;
+        if (llmNote) llmNote.textContent = models.length ? `서버에 모델 ${models.length}개. 아래에서 고르면 모델 칸에 들어갑니다 — 그 뒤 저장하세요. 로드되지 않은 모델은 첫 호출 때 LM Studio 가 그 자리에서 로드합니다.` : (error || '모델 목록이 비어 있습니다.');
+        if (llmModel && models.length && !models.includes(llmModel.value)) { llmModel.value = models[0]; if (llmPick) llmPick.value = models[0]; }
       });
       return;
     }
@@ -347,8 +358,10 @@ export function createSettingsView(deps) {
       });
     }
   });
+  if (llmPick) llmPick.onchange = () => { if (llmModel) llmModel.value = llmPick.value; };
   if (llmProvider) {
     llmProvider.onchange = () => {
+      if (llmPickRow) llmPickRow.hidden = true;
       const d = LLM_DEFAULTS[llmProvider.value] || LLM_DEFAULTS.anthropic;
       if (llmModel) { llmModel.value = d.model; llmModel.placeholder = d.model; }
       if (llmBase) { llmBase.value = d.baseUrl; llmBase.placeholder = d.baseUrl; }

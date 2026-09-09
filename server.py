@@ -327,6 +327,25 @@ def call_llm(config, system, user, schema=None):
     return _finish(text, schema)
 
 
+LAST_MODEL_DETAILS = {}
+
+
+def model_details(ids):
+    """목록의 id 마다 {id, label, state}. LM Studio 상세가 있으면 아키텍처·양자화·로드 상태를 라벨에 넣는다."""
+    out = []
+    for i in ids:
+        d = LAST_MODEL_DETAILS.get(i)
+        if d:
+            bits = [b for b in (d['arch'], d['quantization']) if b]
+            if d['context']:
+                bits.append(f'{int(d["context"]) // 1024}k')
+            label = (' · '.join(bits) or i) + (' — 로드됨' if d['state'] == 'loaded' else '') + f'  [{i[:12]}…]' if len(i) > 16 else (' · '.join(bits) or i) + (' — 로드됨' if d['state'] == 'loaded' else '')
+            out.append({'id': i, 'label': label, 'state': d['state']})
+        else:
+            out.append({'id': i, 'label': i, 'state': ''})
+    return out
+
+
 def detect_local(base, key):
     """로컬 주소가 Ollama 인지 OpenAI 호환인지, 그리고 모델 목록. (None, []) 이면 아무것도 안 떠 있다.
     Ollama 는 /api/tags, LM Studio 는 /api/v0/models(종류·로드 상태), 그 밖은 /v1/models 로 안다."""
@@ -339,6 +358,13 @@ def detect_local(base, key):
         llms = [m for m in d['data'] if m.get('id') and m.get('type', 'llm') == 'llm']
         loaded = [m['id'] for m in llms if m.get('state') == 'loaded']
         rest = sorted(m['id'] for m in llms if m.get('state') != 'loaded')
+        # 상세는 모듈 전역 캐시에 둔다(list_models 가 details 로 돌려준다). id 가 해시라 사람이 못 읽는다.
+        LAST_MODEL_DETAILS.clear()
+        for m in llms:
+            LAST_MODEL_DETAILS[m['id']] = {
+                'arch': m.get('arch') or '', 'quantization': m.get('quantization') or '',
+                'state': m.get('state') or '', 'context': m.get('max_context_length') or None,
+            }
         return 'openai', loaded + rest
     st, d = http_get_json(f'{base}/v1/models', headers, timeout=5)
     if st == 200 and isinstance(d.get('data'), list):
@@ -492,7 +518,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(HTTPStatus.OK, self.config.llm_public())
         if url.path == '/api/llm/models':
             models, err = list_models(self.config)
-            return self._json(HTTPStatus.OK, {'ok': True, 'models': models, 'error': err})
+            return self._json(HTTPStatus.OK, {'ok': True, 'models': models, 'details': model_details(models), 'error': err})
         if url.path == '/api/clips':
             return self._list_clips(parse_qs(url.query))
         if url.path.startswith('/api/clips/'):
