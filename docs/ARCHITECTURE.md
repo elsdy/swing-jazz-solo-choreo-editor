@@ -12,13 +12,16 @@ python3 -m http.server 8000
 
 그리고 `http://localhost:8000` 을 연다. `python3` 자리에는 정적 파일을 내주는 무엇을 써도 된다.
 
-고치기 전과 후에 이 셋을 돌린다. 셋 다 의존성이 0이고 몇 초 안에 끝난다.
+고치기 전과 후에 이 넷을 돌린다. 넷 다 의존성이 0이고 몇 초 안에 끝난다.
 
 ```
-node tests/run.mjs        # 격자 알고리즘 골든 150개
-node tools/check-arch.mjs # 계층 방향과 순수성
-node tools/check-docs.mjs # 문서 등록 누락과 깨진 앵커
+node tests/run.mjs                     # 격자 알고리즘 골든 150개
+node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스 단위 66개
+node tools/check-arch.mjs              # 계층 방향과 순수성
+node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커
 ```
+
+둘의 역할이 다르다. 골든은 **격자 알고리즘의 현재 동작**을 기록한 것이라 undo·링크·영상처럼 격자 밖의 일은 지켜 주지 못한다. 그쪽 안전망이 단위 테스트다.
 
 ## 의존 규칙 한 줄
 
@@ -113,9 +116,35 @@ Dirty = {
 
 ### 이 흐름을 타지 않는 것
 
-드래그 프리뷰, 고스트, 툴팁, 그리고 앞으로 들어올 재생 헤드는 Dirty 를 거치지 않는다. 60fps 로 움직이는 것을 상태 전이로 만들면 undo 히스토리와 렌더가 오염된다. `src/ui/overlays.js` 가 제스처 상태를 직접 받아 **자기가 만든 엘리먼트의 인라인 스타일만** 바꾸고, 커밋은 제스처가 끝날 때 딱 한 번 유스케이스로 들어간다.
+드래그 프리뷰, 고스트, 툴팁, 그리고 재생 헤드는 Dirty 를 거치지 않는다. 60fps 로 움직이는 것을 상태 전이로 만들면 undo 히스토리와 렌더가 오염된다. `src/ui/overlays.js` 가 제스처 상태를 직접 받아 **자기가 만든 엘리먼트의 인라인 스타일만** 바꾸고, 커밋은 제스처가 끝날 때 딱 한 번 유스케이스로 들어간다.
 
 링크바도 예외다. `src/ui/linksBarView.js` 의 입력 핸들러는 원본이 전부 부분 렌더였기 때문에 presenter 를 거치지 않는다. presenter 가 부르는 `render(links)` 는 프로젝트 불러오기·`전체 초기화` 처럼 바깥에서 값이 통째로 바뀔 때만 쓴다.
+
+### 휘발성 렌더 채널 — 재생 헤드는 Dirty 를 타지 않는다
+
+재생 헤드(2026-09-09)는 위 예외들과 **종류가 다르다.** 드래그 프리뷰는 사람의 손가락이 움직이는 동안에만 살아 있고 끝나면 커밋된다. 재생 헤드는 **아무도 아무것도 하지 않는 동안 계속 움직이고, 끝나도 커밋할 것이 없다.** 그래서 이 앱에 처음으로 "상태가 아닌 것을 그리는 상설 루프" 가 생겼고, 그 경계를 여기 적어 둔다.
+
+채널이 둘이다.
+
+| | 채널 A — 도메인 | 채널 B — 휘발성 |
+|---|---|---|
+| 무엇이 흐르나 | bpm·앵커 확정, 소스 변경, 패널 열림/접힘 | 재생 위치 |
+| 경로 | 커맨드 → store → Dirty → `app/render.js` → 뷰 | `ui/playhead.js` 의 rAF 루프 → 자기 엘리먼트 |
+| 얼마나 자주 | 사람이 확정할 때 | 초당 60번 |
+| store 를 만지나 | 쓴다 | **읽지도 않는다** (주입된 게터로만 본다) |
+| undo 에 남나 | 남는다(`media` 는 `UNDO_FIELDS` 안) | 남지 않는다 |
+| DOM 쓰기 | 뷰 전체 재구성 가능 | `el.style.transform` 과 `el.hidden` **둘뿐** |
+
+채널 B 를 A 로 합치면 초당 60회 전체 재렌더가 된다. 그것만이 이유가 아니다 — 재생 위치가 store 에 들어가는 순간 undo 스택이 재생 위치로 가득 차고, 저장 파일에 "그때 어디까지 봤는지" 가 섞여 들어간다. **재생 위치는 상태가 아니라 관측값이다.**
+
+그 경계를 코드가 어떻게 지키는지가 중요하다.
+
+- `usecases/videoCommands.js` 에는 `currentSec` 도 `playing` 도 **없다.** 단위 테스트가 store 를 JSON 으로 훑어 그런 키가 없음을 직접 단언한다.
+- 어댑터는 시각을 이벤트로 밀지 않고 **표본**(`{sec, atMs, rate, playing}`)으로 들고만 있는다. `ports/media.js` 의 `projectTime(sample, nowMs, duration)` 이 그것을 매 프레임 보간한다 — 순수 함수라 계층을 넘지 않는다.
+- 움직임은 `left` 가 아니라 `transform: translateX()` 다. 칸 폭은 `--cellW` 를 읽지 않고 `track.getBoundingClientRect().width / cols` 로 재되 **행이 바뀔 때·리사이즈·패널 개폐에만** 재고 캐시한다(매 프레임 재면 강제 리플로가 초당 60번이다).
+- 헤드는 현재 행의 `.track` 안에 살고 8카운트에 한 번만 자리를 옮긴다. `boardView.renderRow` 는 `.placement` 만 걷어내므로 행 재렌더에서 살아남고, 골격 재생성(`innerHTML=''`)으로 끊기면 다음 프레임이 `el.parentElement !== track` 을 보고 다시 붙인다.
+
+실제로 그런지는 브라우저에서 잰다. 재생 중 `#board` 에 `MutationObserver` 를 걸면 **`.playhead` 의 `style`·`hidden` 말고는 아무 변화도 찍히지 않는다** — 배치도, 트랙도, 패널도 그대로다. 이 관찰이 이 절의 유일한 증거다.
 
 ## `board.rows` 는 행 개수가 아니다
 
@@ -194,8 +223,9 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `gestureMath.js` | 제스처 판정의 순수 부분. `resolveDragCount` 의 `lowerBound` 가 곳마다 다른 하한을 담는다 |
 | `links.js` | YouTube URL 정규화와 커스텀 링크 목록 규칙 |
 | `defaults.js` | 초기값만. `makeDefaultMoves(ids)` 가 uid 소비 순서를 결정적으로 만든다 |
-| `tempo.js` | 카운트 ↔ 초 변환. 카운트 축에 얹는 곱셈 한 겹 |
-| `project/schema.js` | 저장 포맷 상수와 필드 목록. 로직이 없고 import 도 0개. `UNDO_FIELDS` 와 `DOC_FIELDS` 는 같은 집합이다(`rows` `cols` `placements` `moveLibrary` `categories` `routines` `links`, 순서만 다르다) — 파일과 undo 가 같은 것을 상태로 본다 |
+| `tempo.js` | 카운트 ↔ 초 변환. 카운트 축에 얹는 곱셈 한 겹. 2026-09-09 부터 영상 패널이 실제로 쓴다 |
+| `project/schema.js` | 저장 포맷 상수와 필드 목록. 로직이 없고 import 도 0개. `UNDO_FIELDS` 와 `DOC_FIELDS` 는 같은 집합이다(`rows` `cols` `placements` `moveLibrary` `categories` `routines` `links` `media`, 순서만 다르다) — 파일과 undo 가 같은 것을 상태로 본다 |
+| `project/media.js` | 영상 블록(`{tempo, source}`)의 정규화·직렬화. **비어 있으면 `serializeMedia` 가 `null` 을 돌려주고 파일에서 키가 통째로 빠진다** — 영상을 안 쓴 사용자의 저장 파일은 이 기능 전과 바이트가 같다. 로직이 있어야 해서 `schema.js`(import 0개 리프)가 아니라 여기다 |
 | `project/serialize.js` | 파일로 내보낼 페이로드 조립 |
 | `project/normalize.js` | 불러온 데이터의 정규화·클리핑 |
 | `project/merge.js` | `부분 불러오기` 의 전 알고리즘 |
@@ -218,6 +248,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `localStore.js` | `localStorage` 7키의 유일한 창구. 최근 목록·즐겨찾기·링크 |
 | `youtubeOembed.js` | YouTube oEmbed 제목 조회 |
 | `nullMediaPlayer.js` | 소스 없음을 정상 상태로 표현하는 재생기 |
+| `media/youtubePlayer.js` | YouTube IFrame API 를 `MediaPlayer` 계약으로 감싼다. **이 앱의 첫 외부 스크립트 의존**이라 실패를 예외가 아니라 상태로 다룬다 — 스크립트가 막히면 `getState().load === 'error'` 이고 한국어 문구는 뷰가 만든다. 생성만으로는 DOM 도 네트워크도 안 건드린다 |
+| `media/pickPlayer.js` | URL → 재생기 종류. `domain/links.parseYoutubeUrl` 을 재사용하고 언제나 완전한 `MediaPlayer` 를 돌려준다(호출부에 `player?.` 가 생기지 않는다) |
 
 ### `src/usecases/` — 상태 전이
 
@@ -230,7 +262,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `routineCommands.js` | 루틴 CRUD 와 편집기 세션(`openEditor` `syncFromEditor` `setRoutineSize`) |
 | `projectCommands.js` | 저장·불러오기·`부분 불러오기`·최근 목록 |
 | `linkCommands.js` | 링크바 상태 전이와 제목 조회 상태머신 |
-| `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 7필드(링크 포함), 루틴은 3필드. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
+| `videoCommands.js` | 영상 패널 상태·두 점 앵커·탭 템포·소스 확정·`clearMedia`. **DOM 도 플레이어도 시계도 모른다** — 시각(초)은 전부 인자로 들어온다(`check-arch` 가 `performance` 를 막는다). 재생 위치·재생 상태는 여기에도 store 에도 없다 |
+| `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 8필드(링크·영상 템포 포함), 루틴은 3필드. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
 
 ### `src/ui/` — DOM 렌더
 
@@ -249,6 +282,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `quickPicker.js` | 빠른 배치 팝업 1벌. 노브 5개로 메인/루틴 차이를 표현 |
 | `routineActionPopup.js` | 메인 보드 루틴 블록의 편집/삭제 팝업 |
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
+| `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
+| `playhead.js` | 안무표 위의 재생 헤드(채널 B). rAF 루프가 자기 엘리먼트의 `transform` 만 쓴다. 렌더 파이프라인을 타지 않는 유일한 상설 루프다 |
 | `layout.js` | 셸의 부작용 전부. 브레이크포인트·스크롤 락·셀 크기 동기화 |
 | `cssVars.js` | `--cellW` `--cellH` `--rowLabelW` `--noteW` 의 유일한 소유자 |
 | `popup.js` | 팝업 공통 부품(위치 계산, 바깥 클릭 닫기) |
@@ -276,6 +311,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 
 `app/main.js` 가 이 계층의 나머지 절반이다. 저장소를 만들고, 어댑터를 포트 자리에 꽂고, 뷰와 컨트롤러에 협력자를 주입하고, presenter 를 그 모두에 넘긴다. 모든 뷰와 컨트롤러의 JSDoc 이 "`app/main` 이 넘긴다"고 적어 둔 대상이 이것이다. `index.html` 은 마크업과 CSS만 갖고 이 파일 하나를 `<script type="module">` 로 부른다.
 
+영상 재생기도 여기서만 산다. **재생기를 만드는 것은 패널이 실제로 화면에 보이는 순간**이고, 그 전에는 `pickPlayer('')` 가 준 널 재생기가 자리를 지킨다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가면 안 되기 때문이다. 소스가 바뀌어도 종류(`youtube`/`null`)가 같으면 재생기를 다시 만들지 않고 `load()` 만 부른다. iframe 을 다시 만들면 로딩이 눈에 보이게 끊긴다.
+
 ## 안전망 — 골든 150개
 
 `tests/golden/placement-algorithms.json` 은 시나리오 150개와 그 기대값이다. 각 시나리오는 초기 보드·동작·루틴을 세운 뒤 `placeMove` `move` `copy` `rebuild` `remove` `repack` `clearArea` `merge` `boardSize` `syncRoutine` `probe` 같은 op 를 순서대로 재생하고, 끝난 뒤의 배치 배열·렌더 로그·alert 문구를 대조한다. 갈래는 `grid` 20 · `merge` 16 · `place` 15 · `resize` 15 · `move` 13 · `flow` 10 순으로 많다.
@@ -297,6 +334,8 @@ node tests/run.mjs --strict       어댑터가 없으면 실패로 간주
 
 러너는 도메인 코드를 직접 부르지 않는다. `src/testing/golden-adapter.mjs` 의 `createAdapter()` 하나만 부르고, 그 파일이 `tests/replay.mjs` 상단에 적힌 계약을 실제 모듈 위에 구현한다. 어댑터가 없으면 `PENDING` 을 알리고 0으로 끝난다 — 재구성 중에도 CI 가 붉지 않게 하기 위해서다. 브라우저에서 보고 싶으면 `tests/index.html` 을 서버로 연다.
 
+골든이 다루지 않는 영역은 `tests/unit/domain.test.mjs` 가 받는다. undo/redo 와 링크 복원, 저장 포맷의 왕복, 색 대비의 전수 대입, 그리고 2026-09-09 부터는 영상 어댑터의 계약 충족과 "재생 위치가 store 어디에도 없다" 는 성질이 여기 있다. **시나리오 결과가 아니라 그 결과를 낳는 성질을 단언하는 것**이 이 파일의 성격이다.
+
 DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true })` 를 켜면 `assertDirty` 가 알 수 없는 Dirty 키를 던지고, `assertDirtyCovers` 가 **실제로 바뀐 행이 Dirty 에 덮이지 않으면** 즉시 던진다. "덜 그리는" 회귀는 이 앱의 실제 버그 이력이라 눈으로 잡을 수 없다. 배치가 안 바뀌었는데 다시 그려야 하는 경우(선택 표시·카테고리 색)는 이 검사가 못 잡으므로 `paranoid` 옵션이 받는다.
 
 ## 여기서 무엇을 고칠 때 어디를 보나
@@ -312,6 +351,9 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 저장 위치·최근 목록을 바꾼다 | `src/ports/storage.js` + `src/adapters/localStore.js` | 용량 상한을 먼저 확인한다 |
 | 드래그·터치 판정을 바꾼다 | `src/input/*` + `src/domain/gestureMath.js` | 마우스와 터치는 하한도 알고리즘도 다르다. 통일하려면 동작 변경 커밋으로 |
 | 두 보드의 차이를 바꾼다 | `src/usecases/store.js` 의 `BOARD_POLICY` | 새 `if (boardId === 'main')` 를 쓰지 말고 정책 키를 추가한다 |
-| 영상·시간축을 붙인다 | `src/domain/tempo.js` + `src/ports/media.js` | [포트 계약](PORTS.md)과 [로드맵](ROADMAP.md)의 미결정 사항 |
+| 영상 패널의 화면·문구를 바꾼다 | `src/ui/videoPanel.js` + `index.html` 의 `.video-*` 블록 | 오류 코드 5종의 한국어 문구는 뷰가 소유한다. 라벨을 바꿨으면 [기능 설명서](FEATURES.md) |
+| 재생 헤드의 움직임을 바꾼다 | `src/ui/playhead.js` | Dirty 를 쓰지 마라 — 초당 60회 재렌더가 된다([휘발성 렌더 채널](#휘발성-렌더-채널-재생-헤드는-dirty-를-타지-않는다)) |
+| 템포·앵커의 규칙을 바꾼다 | `src/domain/tempo.js` + `src/usecases/videoCommands.js` | `media` 는 `UNDO_FIELDS` 안이므로 저장 포맷과 undo 를 함께 본다 |
+| 다른 재생기(로컬 파일 등)를 붙인다 | `src/adapters/media/` + `src/ports/media.js` | `assertMediaPlayer` 를 마지막 줄에 둔다. [포트 계약](PORTS.md)과 [로드맵](ROADMAP.md)의 미결정 사항 |
 
 규칙을 우회하고 싶어지면 대개 파일 위치가 틀린 것이다. 그리고 구조를 옮기는 커밋과 동작을 바꾸는 커밋은 섞지 않는다 — 섞으면 골든이 깨졌을 때 어느 쪽이 회귀인지 알 수 없다.
