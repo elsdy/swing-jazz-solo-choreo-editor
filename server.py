@@ -232,10 +232,10 @@ def http_json(url, payload, headers, timeout=180):
     req = urllib.request.Request(url, data=body, method='POST', headers={'Content-Type': 'application/json', **headers})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
-            return res.status, json.loads(res.read().decode('utf-8') or '{}')
+            return res.status, json.loads(res.read().decode('utf-8') or '{}', strict=False)
     except urllib.error.HTTPError as e:
         try:
-            detail = json.loads(e.read().decode('utf-8') or '{}')
+            detail = json.loads(e.read().decode('utf-8') or '{}', strict=False)
         except ValueError:
             detail = {}
         msg = (detail.get('error') or {}).get('message') if isinstance(detail.get('error'), dict) else detail.get('error')
@@ -311,13 +311,20 @@ def call_llm(config, system, user, schema=None):
             return None, f'로컬 LLM(Ollama) 응답 실패: {data.get("error")} — 모델 {model} 이 받아져 있는지 확인하세요.'
         text = (data.get('message') or {}).get('content') or ''
         return _finish(text, schema)
-    payload = {
-        'model': model,
-        'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-    }
+    # ⚠ 로컬 OpenAI 호환에는 문법 제약(json_schema strict)을 걸지 않는다. LM Studio 에서 추론 모델에 문법을
+    #   걸면 10분이 지나도 답이 없었다(추론 토큰까지 문법에 묶이는 것으로 보인다). 대신 스키마를 프롬프트에
+    #   넣고 JSON 만 내라고 한 뒤 느슨하게 파싱한다(코드 펜스·앞뒤 말 제거). 검증은 어차피 validate_plan 이 한다.
+    user_text = user
     if schema:
-        payload['response_format'] = {'type': 'json_schema', 'json_schema': {'name': 'choreo_plan', 'schema': schema, 'strict': True}}
-    status, data = http_json(f'{base}/v1/chat/completions', payload, headers, timeout=600)
+        user_text = (
+            user + '\n\n출력은 아래 JSON 스키마를 만족하는 JSON 객체 **하나만**이다. 설명·코드 펜스·다른 말을 붙이지 마라.\n'
+            + json.dumps(schema, ensure_ascii=False)
+        )
+    payload = {
+        'model': model, 'stream': False, 'max_tokens': 8000,
+        'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user_text}],
+    }
+    status, data = http_json(f'{base}/v1/chat/completions', payload, headers, timeout=900)
     if status == 401:
         return None, f'{base} 가 API 토큰을 요구합니다(LM Studio 는 Developer 탭의 API token). 설정의 API 키 칸에 넣으세요.'
     if status != 200:
@@ -415,9 +422,17 @@ def _finish(text, schema):
     if not schema:
         return text.strip(), None
     try:
-        return json.loads(_strip_fence(text)), None
+        return json.loads(_strip_fence(text), strict=False), None
     except ValueError:
-        return None, f'모델이 JSON 이 아닌 답을 냈습니다: {text[:200]}'
+        pass
+    # 앞뒤에 말을 붙였으면 첫 '{' 부터 마지막 '}' 까지만 본다.
+    a, b = text.find('{'), text.rfind('}')
+    if a >= 0 and b > a:
+        try:
+            return json.loads(text[a:b + 1], strict=False), None
+        except ValueError:
+            pass
+    return None, f'모델이 JSON 이 아닌 답을 냈습니다: {text[:200]}'
 
 
 def _strip_fence(text):
