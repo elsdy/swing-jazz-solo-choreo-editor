@@ -249,6 +249,9 @@ export function createVideoPanel(deps) {
   const openBtn = byId('videoPanelBtn');          // 안무표 툴바의 진입점
   const followBtn = byId('videoFollowBtn');
   const collapseBtn = byId('videoCollapseBtn');
+  const floatBtn = byId('videoFloatBtn');
+  const floatBar = byId('videoFloatBar');
+  const floatDockBtn = byId('videoFloatDockBtn');
   const closeBtn = byId('videoCloseBtn');
   const titleChip = byId('videoTitleChip');
   const frame = byId('videoFrame');
@@ -305,6 +308,8 @@ export function createVideoPanel(deps) {
   let pointRejected = false;
   /** 마지막 `박자에 반영` 이 거부된 마커 id. 다음 성공이나 마커 변경이 지운다. */
   let markerRejectedId = '';
+  /** 띄운 창의 `position: fixed` 기준점(floatOrigin). 창 크기가 바뀌면 버린다. */
+  let floatOriginCache = null;
 
   // ── store 읽기 (얇은 접근자) ──────────────────────────────────────────────
 
@@ -680,6 +685,76 @@ export function createVideoPanel(deps) {
     }
   }
 
+  // ── 띄운 창의 자리와 크기 ──────────────────────────────────────────────────
+  //
+  // ⚠ 값은 **인라인 스타일**로만 쓴다. CSS 의 기본 자리(오른쪽 아래·min(56vw,1100px))는 그대로 두고,
+  //   사용자가 옮기거나 크기를 바꾼 뒤에만 덮어쓴다 — 그래야 처음 띄울 때 화면 크기를 따라간다.
+  // ⚠ 창이 화면 밖으로 나가지 않게 가둔다. 끌다 놓친 창을 되찾을 길이 없으면 새로고침밖에 없다.
+
+  /** 화면 크기에 맞춘 기본 폭. 큰 모니터에서 너무 커지지 않게 위를 막는다. */
+  function defaultFloatWidth() {
+    const vw = window.innerWidth;
+    return Math.round(Math.max(420, Math.min(vw * 0.56, 1100)));
+  }
+
+  /**
+   * `position: fixed` 의 기준점(뷰포트 좌표). 보통은 (0,0) 이라고 생각하지만 **이 앱에서는 아니다.**
+   *
+   * ⚠⚠ 조상에 `transform`·`filter`·`backdrop-filter` 가 있으면 그 조상이 fixed 의 기준(포함 블록)이
+   *   된다. 이 앱은 `.panel` 에 `backdrop-filter: blur(10px)` 이 있고 `.workspace` 가 `.panel` 이라,
+   *   `left: 260px` 를 줬는데 화면에서는 601px 에 섰다(실측 341·69px 어긋남). 이 사실을 모르고
+   *   뷰포트 좌표를 그대로 쓰면 창이 손끝을 따라오지 않고 비스듬히 달아난다.
+   *
+   * 재는 방법은 하나뿐이다 — **0,0 에 놓고 어디에 서는지 본다.** 조상 체인을 뒤져 어떤 속성이
+   * 포함 블록을 만드는지 맞히려 들면 CSS 가 하나 늘 때마다 틀린다.
+   * @returns {{x:number, y:number}}
+   */
+  function floatOrigin() {
+    if (floatOriginCache) return floatOriginCache;
+    const keep = ['left', 'top', 'right', 'bottom'].map(k => [k, frame.style[k]]);
+    frame.style.left = '0px'; frame.style.top = '0px';
+    frame.style.right = 'auto'; frame.style.bottom = 'auto';
+    const r = frame.getBoundingClientRect();
+    for (const [k, v] of keep) frame.style[k] = v;
+    floatOriginCache = { x: r.left, y: r.top };
+    return floatOriginCache;
+  }
+
+  function placeFloat(p) {
+    if (!frame) return;
+    const w = Number.isFinite(p.floatW) ? p.floatW : defaultFloatWidth();
+    frame.style.width = `${w}px`;
+    if (!Number.isFinite(p.floatX) || !Number.isFinite(p.floatY)) {
+      // 처음 띄울 때는 오른쪽 아래 — 안무표의 왼쪽 위(마디 번호·앞 카운트)를 가리지 않는다.
+      // ⚠ right/bottom 은 포함 블록 기준이라 기준점 보정이 필요 없다(어느 쪽 끝에서 재든 같은 모서리).
+      frame.style.left = '';
+      frame.style.top = '';
+      frame.style.right = '18px';
+      frame.style.bottom = '18px';
+      return;
+    }
+    setFloatViewportPos(p.floatX, p.floatY, w);
+  }
+
+  /** 뷰포트 좌표 (x,y) 에 창의 왼쪽 위를 놓는다. 화면 밖으로 나가지 않게 가둔 뒤 기준점만큼 뺀다. */
+  function setFloatViewportPos(x, y, width) {
+    const w = width || frame.getBoundingClientRect().width;
+    const h = w * 9 / 16;
+    const vx = clamp(x, 8, Math.max(8, window.innerWidth - w - 8));
+    const vy = clamp(y, 8, Math.max(8, window.innerHeight - h - 8));
+    const o = floatOrigin();
+    frame.style.left = `${Math.round(vx - o.x)}px`;
+    frame.style.top = `${Math.round(vy - o.y)}px`;
+    frame.style.right = 'auto';
+    frame.style.bottom = 'auto';
+  }
+
+  function clearFloat() {
+    if (!frame) return;
+    floatOriginCache = null;
+    for (const k of ['width', 'left', 'top', 'right', 'bottom']) frame.style.removeProperty(k);
+  }
+
   /** 구간 자르기·마커 구획. In/Out 은 화면 상태, 마커는 media 에서 읽는다. */
   function renderCut() {
     const board = mainBoard();
@@ -818,6 +893,18 @@ export function createVideoPanel(deps) {
     if (openBtn) openBtn.className = p.open ? CLS.quickBtnActive : CLS.ghost;
     if (followBtn) followBtn.className = p.follow ? CLS.quickBtnActive : CLS.ghost;
     if (collapseBtn) collapseBtn.textContent = p.collapsed ? '펼치기' : '접기';
+
+    // ── 큰 창으로 띄우기(2026-09-13) ──
+    // ⚠ 상태는 <body> 의 data-videofloat 하나이고 CSS 가 그것만 읽는다. DOM 을 옮기지 않는다 —
+    //   .video-frame 은 제자리에 있고 position:fixed 로만 떠 있다(iframe 리로드 방지).
+    // ⚠ 패널이 닫히거나 접히면 띄운 창도 내린다. 안 그러면 패널을 닫았는데 영상만 화면에 남는다.
+    const floating = !!p.floating && shown && !p.collapsed;
+    document.body.dataset.videofloat = floating ? 'on' : 'off';
+    if (floatBtn) {
+      floatBtn.className = floating ? CLS.quickBtnActive : CLS.ghost;
+      floatBtn.textContent = floating ? '⤡ 제자리로' : '⤢ 크게';
+    }
+    if (floating) placeFloat(p); else clearFloat();
 
     renderStatus();
     renderClips();
@@ -993,6 +1080,56 @@ export function createVideoPanel(deps) {
       render(commands.clearMarkers());
       commitHistory();
     };
+  }
+
+  // ── 띄우기 조작 ───────────────────────────────────────────────────────────
+  if (floatBtn && commands.setFloating) floatBtn.onclick = () => render(commands.setFloating());
+  // ⚠ 브라우저 창 크기가 바뀌면 포함 블록의 자리도 바뀐다 — 기준점을 버리고 다시 잰다.
+  window.addEventListener('resize', () => { floatOriginCache = null; });
+  if (floatDockBtn && commands.setFloating) {
+    floatDockBtn.onclick = (e) => { e.stopPropagation(); render(commands.setFloating({ floating: false })); };
+  }
+
+  // 막대를 잡아 끈다. ⚠ 끄는 **동안에는 store 를 건드리지 않는다**(초당 수십 번 렌더가 된다) —
+  //   인라인 스타일만 직접 쓰고, 놓는 순간 한 번만 커맨드로 확정한다(재생 헤드의 채널 B 와 같은 규약).
+  if (floatBar && frame) {
+    let drag = null;
+    floatBar.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      const r = frame.getBoundingClientRect();
+      drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height };
+      floatBar.classList.add('is-dragging');
+      floatBar.setPointerCapture(e.pointerId);
+    });
+    floatBar.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      // ⚠ 손끝은 뷰포트 좌표다. 창은 포함 블록 좌표로 선다 — 변환은 setFloatViewportPos 한 곳에서만.
+      setFloatViewportPos(e.clientX - drag.dx, e.clientY - drag.dy, drag.w);
+    });
+    const endDrag = (e) => {
+      if (!drag) return;
+      drag = null;
+      floatBar.classList.remove('is-dragging');
+      if (e && e.pointerId != null && floatBar.hasPointerCapture(e.pointerId)) floatBar.releasePointerCapture(e.pointerId);
+      const r = frame.getBoundingClientRect();
+      if (commands.setFloatBox) render(commands.setFloatBox({ x: r.left, y: r.top, w: r.width }));
+      onSync(true);   // 오버레이·재생 헤드가 자리를 다시 재게 한다
+    };
+    floatBar.addEventListener('pointerup', endDrag);
+    floatBar.addEventListener('pointercancel', endDrag);
+
+    // 모서리 리사이즈(CSS resize)는 이벤트가 없다 — 크기가 바뀌면 ResizeObserver 가 알려 준다.
+    if (typeof ResizeObserver === 'function') {
+      let last = 0;
+      const ro = new ResizeObserver(() => {
+        if (document.body.dataset.videofloat !== 'on') return;
+        const w = Math.round(frame.getBoundingClientRect().width);
+        if (!w || Math.abs(w - last) < 2) return;
+        last = w;
+        onSync(true);
+      });
+      ro.observe(frame);
+    }
   }
 
   // ── 받아 적기 ─────────────────────────────────────────────────────────────

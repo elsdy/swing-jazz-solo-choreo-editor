@@ -53,7 +53,7 @@ export const TEMPO_POINTS_NEEDED = 2;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** session.video 의 기본값. store.js 의 초기 상태와 같은 값이다(옛 스냅샷 복원 뒤에도 안전하도록 여기서도 채운다). */
-const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null });
+const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null, floating: false, floatX: null, floatY: null, floatW: null });
 
 /**
  * 영상 패널의 휘발성 화면 상태. 없는 키는 기본값으로 채운다(In/Out·loop 은 나중에 생긴 키라 옛 세션에 없다).
@@ -228,6 +228,42 @@ export function closePanel(store) {
  */
 export function togglePanel(store) {
   return patchPanel(store, { open: !panelState(store).open });
+}
+
+/**
+ * 영상을 큰 창으로 띄웠다 놓았다 한다(2026-09-13).
+ *
+ * 패널 안의 영상 칸은 사이드바 폭(280~460px)에 묶여 있어 PC 에서 동작을 보기에 작다. 띄우면 화면
+ * 크기에 맞춘 큰 창이 되고, 패널에는 단계(박자·받아 적기·마커…)만 남는다.
+ *
+ * ⚠ **DOM 을 옮기지 않는다.** `.video-frame` 을 그 자리에 둔 채 CSS 로 띄운다 — 엘리먼트를 다른
+ *   부모로 옮기면 iframe 이 리로드되어 재생이 처음으로 돌아간다(docs/PORTS.md).
+ * ⚠ 자리·폭은 화면 상태라 저장하지 않는다. 새로고침하면 기본 자리로 돌아온다.
+ * @param {object} store
+ * @param {{floating?: boolean}} [args] 생략하면 토글
+ * @returns {import('./store.js').Dirty}
+ */
+export function setFloating(store, args = {}) {
+  const cur = panelState(store);
+  const next = typeof args.floating === 'boolean' ? args.floating : !cur.floating;
+  // 놓을 때 자리를 비운다 — 다음에 띄울 때 화면 크기에 맞춰 다시 잡는다(창 크기가 바뀌었을 수 있다).
+  return patchPanel(store, next ? { floating: true } : { floating: false, floatX: null, floatY: null, floatW: null });
+}
+
+/**
+ * 띄운 창의 자리와 폭을 기억한다(끌어 옮기거나 크기를 바꿨을 때). 값은 px 다.
+ * ⚠ 드래그 **중**에 부르지 않는다 — 초당 수십 번 store 를 흔든다. 놓는 순간 한 번만 부른다.
+ * @param {object} store
+ * @param {{x?: number, y?: number, w?: number}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function setFloatBox(store, args = {}) {
+  const next = {};
+  if (Number.isFinite(args.x)) next.floatX = Math.round(args.x);
+  if (Number.isFinite(args.y)) next.floatY = Math.round(args.y);
+  if (Number.isFinite(args.w)) next.floatW = Math.round(args.w);
+  if (!Object.keys(next).length) return NONE;
+  return patchPanel(store, next);
 }
 
 /**

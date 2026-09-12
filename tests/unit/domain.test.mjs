@@ -1281,8 +1281,10 @@ test('videoCommands: 재생 위치·재생 상태는 store 어디에도 없다',
   }
   // In/Out·loop(2026-09-10)도 화면 상태다 — 시각이 아니라 "찍어 둔 지점"이고 확정 전 값이라 여기 산다.
   // captureSec(2026-09-12, 받아 적기)도 같은 성격이다 — 끝을 찍는 순간 블록이 되고 그때부터 안무다.
+  // floating·float*(2026-09-13, 큰 창으로 띄우기)는 **창의 자리와 폭**이지 재생 위치가 아니다.
   assert.deepEqual(Object.keys(store.get().session.video).sort(),
-    ['captureSec', 'collapsed', 'follow', 'inSec', 'loop', 'open', 'outSec', 'taps', 'tempoPoints']);
+    ['captureSec', 'collapsed', 'floatW', 'floatX', 'floatY', 'floating',
+     'follow', 'inSec', 'loop', 'open', 'outSec', 'taps', 'tempoPoints']);
 });
 
 test('videoCommands: 두 점을 찍으면 bpm 과 앵커가 동시에 정해진다', () => {

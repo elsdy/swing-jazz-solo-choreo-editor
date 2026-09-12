@@ -1351,6 +1351,64 @@
        (어댑터는 width/height 를 넘기지 않아 iframe 기본값이 640x390 이다). */
     .video-frame > * { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 
+    /* ── 영상을 큰 창으로 띄우기 (2026-09-13) ──
+       패널 안의 영상 칸은 사이드바 폭(280~460px)에 묶여 있어 PC 에서 동작을 보기에 작다.
+
+       ⚠⚠ **DOM 을 옮기지 않는다.** `.video-frame` 을 제자리에 둔 채 `position: fixed` 로만 띄운다 —
+          엘리먼트를 다른 부모로 옮기면 iframe 이 리로드되어 재생이 처음으로 돌아간다(docs/PORTS.md).
+          그래서 패널 안에는 빈 자리(.video-frame-slot)가 남고, 그 자리가 무너지지 않게 높이를 준다.
+       ⚠ 폭만 인라인으로 주고 높이는 aspect-ratio 가 정한다 — 16:9 가 아닌 영상도 object-fit: contain
+         이 이미 안에서 맞추므로, 창의 비율을 고정해도 잘리지 않는다. */
+    .only-wide { display: inline-flex; }
+    .video-frame-slot { display: none; }
+    body[data-videofloat="on"] .video-frame-slot {
+      display: block;
+      border: 1px dashed rgba(34,197,94,0.35);
+      border-radius: 10px;
+      background: rgba(34,197,94,0.05);
+      color: var(--muted);
+      font-size: 11px;
+      text-align: center;
+      padding: 10px 8px;
+    }
+    body[data-videofloat="on"] .video-frame {
+      position: fixed;
+      z-index: 2600;
+      /* 기본 크기·자리 — ui/layout.js 가 화면 크기를 재서 인라인으로 덮어쓴다. */
+      width: min(56vw, 1100px);
+      right: 18px;
+      bottom: 18px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+      border-color: rgba(34,197,94,0.55);
+      /* 오른쪽 아래 모서리로 크기 조절. 세로는 aspect-ratio 가 정하므로 가로만 연다. */
+      resize: horizontal;
+    }
+    body[data-videofloat="on"] .video-float-bar {
+      display: flex;
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      background: linear-gradient(180deg, rgba(2,6,23,0.85), rgba(2,6,23,0));
+      color: #dbe4ef;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: grab;
+      user-select: none;
+      z-index: 3;
+    }
+    body[data-videofloat="on"] .video-float-bar.is-dragging { cursor: grabbing; }
+    .video-float-bar { display: none; }
+    .video-float-bar button { padding: 2px 8px; font-size: 11px; }
+    /* 좁은 화면에서는 띄우지 않는다 — 영상이 이미 안무표 위를 차지한다. */
+    @media (max-width: 1040px) {
+      .only-wide { display: none !important; }
+      body[data-videofloat="on"] .video-frame { position: relative; width: 100%; right: auto; bottom: auto; box-shadow: none; resize: none; }
+      body[data-videofloat="on"] .video-frame-slot { display: none; }
+      body[data-videofloat="on"] .video-float-bar { display: none; }
+    }
+
     .video-status { font-size: 11px; color: var(--muted); line-height: 1.4; }
     .video-status.is-error { color: #fca5a5; }
     .video-cut .helper.is-error { color: #fca5a5; }
@@ -1828,12 +1886,19 @@
             </div>
             <div class="video-head-actions">
               <button id="videoFollowBtn" class="ghost" type="button" title="재생 위치를 안무표가 따라 스크롤합니다">따라가기</button>
+              <button id="videoFloatBtn" class="ghost only-wide" type="button" title="영상을 큰 창으로 띄웁니다. 창은 끌어 옮기고 오른쪽 아래 모서리로 크기를 바꿉니다">⤢ 크게</button>
               <button id="videoCollapseBtn" class="ghost" type="button">접기</button>
               <button id="videoCloseBtn" class="ghost" type="button">✕ 닫기</button>
             </div>
           </div>
           <div class="video-body" id="videoBody">
-            <div class="video-frame" id="videoFrame"><canvas class="video-pose" id="videoPoseCanvas" hidden></canvas></div>
+            <div class="video-frame" id="videoFrame">
+              <!-- 띄웠을 때만 보인다. 여기를 잡아 끈다. ⚠ 프레임 **안**에 둔다 — 밖에 두면 같이 안 움직인다. -->
+              <div class="video-float-bar" id="videoFloatBar"><span>영상</span><span style="flex:1"></span><button id="videoFloatDockBtn" class="ghost" type="button">⤡ 제자리로</button></div>
+              <canvas class="video-pose" id="videoPoseCanvas" hidden></canvas>
+            </div>
+            <!-- 띄운 동안 패널에 남는 빈 자리. 영상이 어디로 갔는지 말해 준다. -->
+            <div class="video-frame-slot" id="videoFrameSlot">영상은 큰 창으로 띄워 두었습니다 — 창의 <b>⤡ 제자리로</b> 로 되돌립니다</div>
             <div class="video-status" id="videoStatus"></div>
             <details class="vstep" open>
               <summary>① 영상 고르기</summary>

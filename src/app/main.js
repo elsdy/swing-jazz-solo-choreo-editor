@@ -1188,6 +1188,9 @@ views.video = createVideoPanel({
     togglePanel: () => VideoCmd.togglePanel(store),
     closePanel: () => VideoCmd.closePanel(store),
     setCollapsed: (args) => VideoCmd.setCollapsed(store, args),
+    // 큰 창으로 띄우기(2026-09-13). 자리·폭은 끌기를 **놓는 순간** 한 번만 들어온다.
+    setFloating: (args) => VideoCmd.setFloating(store, args),
+    setFloatBox: (args) => VideoCmd.setFloatBox(store, args),
     setFollow: (args) => VideoCmd.setFollow(store, args),
     markTempoPoint: (args) => VideoCmd.markTempoPoint(store, args),
     clearTempoPoints: () => VideoCmd.clearTempoPoints(store),
