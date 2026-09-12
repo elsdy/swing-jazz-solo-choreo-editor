@@ -336,6 +336,24 @@ export function reanchor(tempo, point) {
 }
 
 /**
+ * 시간축을 통째로 민다 — 영상을 [inSec, …) 로 잘라 새 클립으로 만들면 모든 시각이 inSec 만큼 당겨진다.
+ * 앵커와 보정점의 초에 같은 deltaSec 을 더하고, bpm·beatsPerCount·카운트는 그대로다.
+ * ⚠ 미설정(bpm 0)이어도 앵커 초는 민다 — 앵커만 찍어 둔 사용자의 값도 그 영상의 시간축에 붙은 값이다.
+ * @param {Tempo} tempo
+ * @param {number} deltaSec 더할 초(잘라내기면 -inSec)
+ * @returns {Tempo}
+ */
+export function shiftTempo(tempo, deltaSec) {
+  const d = finiteOr(deltaSec, 0);
+  const t = normalizeTempo(tempo);
+  return normalizeTempo({
+    ...t,
+    anchorSec: t.anchorSec + d,
+    points: t.points.map(p => ({ count: p.count, sec: p.sec + d }))
+  });
+}
+
+/**
  * 보정점 하나를 넣는다(같은 카운트가 있으면 갈아 끼운다). 앵커와 같은 카운트면 보정점으로 앵커를 덮는다.
  * ⚠ 넣은 결과가 되감기면(앞 카운트인데 초가 뒤이거나 그 반대) **null** — 넣지 않는다. 조용히 다른 점을
  *   버리면 사용자는 무엇이 사라졌는지 모른다. 뷰가 null 을 보고 "앞뒤 점과 순서가 맞지 않는다"고 말한다.

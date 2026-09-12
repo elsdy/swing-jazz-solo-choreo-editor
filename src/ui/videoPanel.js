@@ -21,13 +21,14 @@
 // ⚠ 히스토리 커밋 지점(linkCommands·linksBarView 와 같은 저장소 규약 — 커맨드는 히스토리를 쌓지 않는다):
 //     ① 두 점 앵커가 완성된 순간(markTempoPoint 가 committed 를 돌려줄 때)
 //     ② 탭 템포 확정(commitTaps)  ③ BPM·박 직접 입력의 change(blur/Enter)
-//     ④ 재앵커  ⑤ 템포 지우기
-//   패널 열기/접기/따라가기·탭 한 번 한 번에는 걸지 않는다 — 화면 상태이지 안무가 아니다.
+//     ④ 재앵커  ⑤ 템포 지우기  ⑥ 마커 추가·삭제·박자 반영  ⑦ 잘라내기 결과 적용(applyTrim)
+//   패널 열기/접기/따라가기·탭 한 번 한 번·In/Out 찍기·구간 반복에는 걸지 않는다 — 화면 상태이지 안무가 아니다.
 
 import { CLS, DATA } from './domContract.js';
 import { isStacked as layoutIsStacked } from './layout.js';
 import { cellOf, clamp, linearOf, rowIndices } from '../domain/grid.js';
 import { isTempoUsable, normalizeTempo } from '../domain/tempo.js';
+import { markersAt, normalizeMarkers } from '../domain/markers.js';
 
 /** 메인 보드의 store 상 id. usecases/store.BOARD_MAIN 과 같은 문자열이다(ui 는 usecases 를 import 하지 않는다). */
 const BOARD_MAIN = 'main';
@@ -39,7 +40,18 @@ const POINTS_NEEDED = 2;
 const SECOND_POINT_ROW_GAP = 4;
 
 /** session.video 가 없을 때의 기본값(옛 스냅샷 복원 뒤에도 안전하도록). */
-const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [] });
+const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false });
+
+/** 잘라내기가 안 되는 이유 → 안내 문구. 어댑터·서버는 코드/사실만 주고 문구는 여기서 만든다. */
+const TRIM_TEXT = Object.freeze({
+  'no-inout': 'In 과 Out 을 먼저 찍으세요. 잘라 낸 구간은 새 파일이 되고 원본은 그대로 남습니다.',
+  'not-file': '잘라내기는 영상 파일에만 됩니다 — 유튜브 영상은 `📁 영상 파일 열기` 로 받아 온 파일이어야 합니다.',
+  'no-server': '로컬 서버(server.py)가 없어 잘라낼 수 없습니다. `python3 server.py` 로 열면 됩니다.',
+  'no-ffmpeg': '서버에 ffmpeg 이 없습니다. 설치하고(`brew install ffmpeg`) 서버를 다시 켜면 잘라낼 수 있습니다.',
+  'not-stored': '이 파일은 아직 보관 폴더에 없습니다. 보관이 끝나면(파일명 옆 경로가 생기면) 잘라낼 수 있습니다.',
+  'busy': '잘라내는 중… 구간 길이에 따라 수십 초가 걸릴 수 있습니다. 끝나면 새 클립으로 바뀝니다.',
+  'ready': '이 구간만 남긴 새 클립(MP4)을 만들고 그 클립으로 갈아 끼웁니다. 박자 설정과 마커도 새 시간축으로 따라갑니다.'
+});
 
 /**
  * 재생기 오류 코드 → 한국어 문구. **어댑터는 문구를 만들지 않는다** — 코드만 준다.
@@ -112,6 +124,23 @@ function formatBpm(bpm) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
+/**
+ * 선형 카운트 구간 [from, to) → 안무표의 말. 같은 행이면 `8x3의 1~8카운트`, 아니면 `8x3의 1카운트 ~ 8x4의 8카운트`.
+ * @param {number} from
+ * @param {number} to 배타적
+ * @param {number} cols
+ * @returns {string}
+ */
+export function formatRange(from, to, cols) {
+  const a = cellOf(from, cols);
+  const b = cellOf(to - 1, cols);
+  const label = (row) => (row === 0 ? 'intro' : `${cols}x${row}`);
+  if (a.row === b.row) {
+    return a.index === b.index ? `${label(a.row)}의 ${a.index + 1}카운트` : `${label(a.row)}의 ${a.index + 1}~${b.index + 1}카운트`;
+  }
+  return `${label(a.row)}의 ${a.index + 1}카운트 ~ ${label(b.row)}의 ${b.index + 1}카운트`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -141,6 +170,13 @@ function formatBpm(bpm) {
  *     오디오는 계속 나온다. 어댑터를 아는 자리의 몫이라 여기서 하지 않는다
  * @property {() => string} [getPlayerKind] 지금 재생기의 kind('youtube' | 'file' | 'null').
  *   URL 은 있는데 'null' 이면 **알아보지 못한 주소**라는 뜻이라 문구가 달라진다
+ * @property {(sec: number, opts?: {play?: boolean}) => void} [onSeek] 영상을 그 시각으로 옮긴다(play 면 재생까지).
+ *   `In 으로`·`Out 으로`·마커의 ▶ 가 쓴다. 어댑터를 아는 자리의 몫이라 여기서 player 를 만지지 않는다
+ * @property {() => 'ready'|'busy'|'no-inout'|'not-file'|'no-server'|'no-ffmpeg'|'not-stored'} [getTrimState]
+ *   잘라내기를 지금 할 수 있는가, 안 되면 왜인가. In/Out 유무는 뷰가 스스로 보므로 호출부는 나머지만 답해도 된다
+ * @property {() => string} [getTrimError] 마지막 잘라내기 실패 이유(서버 문구). 비어 있으면 실패가 없었다
+ * @property {(range: {inSec:number, outSec:number}) => void} [onTrim] `✂ 잘라서 새 클립으로`. 서버에 자르기를 시키고
+ *   끝나면 applyTrim 커맨드로 소스를 갈아 끼우는 것까지 호출부(app/main)의 몫이다
  * @property {{
  *   togglePanel: () => any, closePanel: () => any,
  *   setCollapsed: (args?: {collapsed?: boolean}) => any,
@@ -156,7 +192,16 @@ function formatBpm(bpm) {
  *   clearTempo: () => any,
  *   clearFileSource?: () => any,
  *   addTempoPoint?: (args: {count:number, sec:number}) => any,
- *   clearTempoMap?: () => any
+ *   clearTempoMap?: () => any,
+ *   setInPoint?: (args: {sec:number}) => any,
+ *   setOutPoint?: (args: {sec:number}) => any,
+ *   setInOut?: (args: {inSec:number, outSec:number}) => any,
+ *   clearInOut?: () => any,
+ *   setLoop?: (args?: {loop?: boolean}) => any,
+ *   addMarker?: (args: {fromCount:number, toCount:number, label?:string}) => any,
+ *   removeMarker?: (args: {id:string}) => any,
+ *   clearMarkers?: () => any,
+ *   applyMarkerToTempo?: (args: {id:string}) => any
  * }} commands app/main 이 videoCommands 를 store 에 묶어 넘긴다
  * @property {() => boolean} [isStacked] 좁은 화면인가. 기본값은 ui/layout.isStacked
  * @property {Record<string, HTMLElement|null>} [elements] 테스트용 요소 주입
@@ -183,6 +228,10 @@ export function createVideoPanel(deps) {
     getPlayerState,
     getPlayerKind = () => 'null',
     getCurrentSec,
+    onSeek = () => {},
+    getTrimState = () => 'no-server',
+    getTrimError = () => '',
+    onTrim = () => {},
     onSync = () => {},
     commands,
     isStacked = layoutIsStacked,
@@ -222,6 +271,20 @@ export function createVideoPanel(deps) {
   const pointSelBtn = byId('videoPointSelBtn');
   const pointClearBtn = byId('videoPointClearBtn');
   const pointHelp = byId('videoPointHelp');
+  const inBtn = byId('videoInBtn');
+  const outBtn = byId('videoOutBtn');
+  const inGoBtn = byId('videoInGoBtn');
+  const outGoBtn = byId('videoOutGoBtn');
+  const loopBtn = byId('videoLoopBtn');
+  const inOutClearBtn = byId('videoInOutClearBtn');
+  const inOutText = byId('videoInOutText');
+  const trimBtn = byId('videoTrimBtn');
+  const trimHelp = byId('videoTrimHelp');
+  const markerSelBtn = byId('videoMarkerSelBtn');
+  const markerRowBtn = byId('videoMarkerRowBtn');
+  const markerClearBtn = byId('videoMarkerClearBtn');
+  const markerHelp = byId('videoMarkerHelp');
+  const markerList = byId('videoMarkerList');
 
   /** 마지막으로 세운 행 선택지의 `${cols}x${rows}`. 같으면 다시 만들지 않는다(선택·포커스 보존). */
   let rowOptionsSig = null;
@@ -229,6 +292,8 @@ export function createVideoPanel(deps) {
   let openedOnce = false;
   /** 마지막 보정점 추가가 거부됐는가(앞뒤 점과 순서가 맞지 않음). 다음 성공이나 지우기가 지운다. */
   let pointRejected = false;
+  /** 마지막 `박자에 반영` 이 거부된 마커 id. 다음 성공이나 마커 변경이 지운다. */
+  let markerRejectedId = '';
 
   // ── store 읽기 (얇은 접근자) ──────────────────────────────────────────────
 
@@ -236,7 +301,13 @@ export function createVideoPanel(deps) {
   const panelState = () => store.get().session.video || DEFAULT_PANEL;
   /** 확정된 Tempo. 손상된 값·없는 값은 normalizeTempo 가 흡수한다(bpm 0 = 미설정). */
   const tempo = () => normalizeTempo(store.media && store.media.tempo);
+  const markers = () => normalizeMarkers(store.media && store.media.markers);
   const mainBoard = () => store.board(BOARD_MAIN);
+  /** In·Out 이 둘 다 있고 순서가 맞으면 그 구간, 아니면 null. usecases/videoCommands.inOutRange 와 같은 규칙이다. */
+  const inOutRange = () => {
+    const p = panelState();
+    return Number.isFinite(p.inSec) && Number.isFinite(p.outSec) && p.outSec > p.inSec ? { inSec: p.inSec, outSec: p.outSec } : null;
+  };
 
   // ── 앵커 입력 읽기/쓰기 ───────────────────────────────────────────────────
 
@@ -271,6 +342,38 @@ export function createVideoPanel(deps) {
       if (min === null || start < min) min = start;
     }
     return min;
+  }
+
+  /**
+   * 안무표에서 선택된 그룹들이 덮는 선형 카운트 구간 [from, to) 과 이름들. 선택이 없으면 null.
+   * 여러 그룹이면 가장 앞 시작 ~ 가장 뒤 끝이다(사이의 빈틈은 그냥 포함한다 — domain/tempo.groupToSpan 과 같은 규칙).
+   * @returns {{from:number, to:number, names:string[]}|null}
+   */
+  function selectedRange() {
+    const sel = store.selection;
+    if (!sel || sel.size === 0) return null;
+    const board = mainBoard();
+    let from = null;
+    let to = null;
+    const names = [];
+    for (const p of board.placements) {
+      if (!sel.has(p.groupId)) continue;
+      const start = linearOf(p.row, p.startIndex, board.cols);
+      const end = start + p.length;
+      if (from === null || start < from) from = start;
+      if (to === null || end > to) to = end;
+      if (!names.includes(p.name)) names.push(p.name);
+    }
+    return from === null ? null : { from, to, names };
+  }
+
+  /** `여기가 [행]` 칸이 가리키는 마디 전체의 선형 카운트 구간 [from, to). */
+  function anchorRowRange() {
+    const board = mainBoard();
+    const row = Number(anchorRow && anchorRow.value);
+    const safeRow = Number.isFinite(row) ? row : 1;
+    const from = linearOf(safeRow, 0, board.cols);
+    return { from, to: from + board.cols, row: safeRow };
   }
 
   /** 첫 점을 찍은 뒤 두 번째 후보를 멀리 민다. 마지막 행을 넘지 않는다. */
@@ -429,6 +532,125 @@ export function createVideoPanel(deps) {
     }
   }
 
+  /** 구간 자르기·마커 구획. In/Out 은 화면 상태, 마커는 media 에서 읽는다. */
+  function renderCut() {
+    const board = mainBoard();
+    const p = panelState();
+    const range = inOutRange();
+    const hasIn = Number.isFinite(p.inSec);
+    const hasOut = Number.isFinite(p.outSec);
+
+    if (inGoBtn) inGoBtn.disabled = !hasIn;
+    if (outGoBtn) outGoBtn.disabled = !hasOut;
+    if (inOutClearBtn) inOutClearBtn.disabled = !hasIn && !hasOut;
+    if (loopBtn) {
+      // 켜져 있어도 구간이 없으면 켜진 것으로 보이지 않게 한다 — 잘라낸 뒤·In/Out 을 지운 뒤에 "반복 중"으로 보이면 거짓말이다.
+      loopBtn.className = p.loop && range ? CLS.quickBtnActive : CLS.ghost;
+      loopBtn.disabled = !range;
+    }
+    if (inOutText) {
+      if (!hasIn && !hasOut) {
+        inOutText.textContent = '영상을 보다가 구간의 시작에서 `[ In 지금 여기`, 끝에서 `Out ] 지금 여기` 를 누르세요. 재생 중이든 멈춘 채든 지금 시각이 찍힙니다.';
+      } else if (range) {
+        inOutText.textContent = `In ${formatClock(range.inSec)} · Out ${formatClock(range.outSec)} · 길이 ${(range.outSec - range.inSec).toFixed(1)}초`
+          + (p.loop ? ' · 구간 반복 중' : '');
+      } else {
+        inOutText.textContent = hasIn ? `In ${formatClock(p.inSec)} — 이제 구간의 끝에서 Out 을 찍으세요.` : `Out ${formatClock(p.outSec)} — 이제 구간의 시작에서 In 을 찍으세요.`;
+      }
+    }
+
+    // 잘라내기 — 할 수 있는가, 안 되면 왜인가.
+    const state = range ? getTrimState() : 'no-inout';
+    if (trimBtn) {
+      trimBtn.disabled = state !== 'ready';
+      trimBtn.textContent = state === 'busy' ? '✂ 잘라내는 중…' : '✂ 잘라서 새 클립으로';
+    }
+    if (trimHelp) {
+      const err = getTrimError();
+      trimHelp.textContent = err && state !== 'busy' ? `잘라내기 실패: ${err}` : (TRIM_TEXT[state] || TRIM_TEXT.ready);
+      trimHelp.classList.toggle(CLS.isError, !!err && state !== 'busy');
+    }
+
+    // 마커 — 만들기 버튼과 목록.
+    const sel = selectedRange();
+    const list = markers();
+    if (markerSelBtn) markerSelBtn.disabled = !range || !sel;
+    if (markerRowBtn) markerRowBtn.disabled = !range;
+    if (markerClearBtn) markerClearBtn.disabled = list.length === 0;
+    if (markerHelp) {
+      if (markerRejectedId) {
+        markerHelp.textContent = '이 마커의 양 끝이 앞뒤 보정점과 순서가 맞지 않아 박자에 넣지 않았습니다 — 앞 카운트는 앞 시각에, 뒤 카운트는 뒤 시각에 와야 합니다.';
+      } else if (!range) {
+        markerHelp.textContent = 'In~Out 을 찍은 뒤, 안무표에서 그 구간에 해당하는 블록을 선택하고 `선택한 블록에 맵핑` 을 누르면 영상 구간과 안무표 구간이 짝지어집니다.';
+      } else if (sel) {
+        markerHelp.textContent = `선택: ${formatRange(sel.from, sel.to, board.cols)} (${sel.names.slice(0, 4).join(' · ')}${sel.names.length > 4 ? ' …' : ''}) ← In~Out 을 여기에 맵핑합니다.`;
+      } else {
+        const r = anchorRowRange();
+        markerHelp.textContent = `블록을 선택하지 않았습니다 — \`이 마디에 맵핑\` 은 위 칸의 ${formatRange(r.from, r.to, board.cols)} 전체에 맵핑합니다.`;
+      }
+    }
+    if (markerList) {
+      markerList.innerHTML = '';
+      const now = getCurrentSec();
+      const current = new Set(markersAt(list, now).map(m => m.id));
+      for (const m of list) {
+        const li = document.createElement('li');
+        li.className = 'video-marker' + (current.has(m.id) ? ' is-current' : '');
+        li.dataset.markerId = m.id;
+
+        const play = document.createElement('button');
+        play.type = 'button';
+        play.className = CLS.ghost;
+        play.textContent = '▶';
+        play.title = '이 구간을 In/Out 으로 삼고 그 시작에서 재생합니다';
+        play.onclick = () => {
+          if (commands.setInOut) render(commands.setInOut({ inSec: m.inSec, outSec: m.outSec }));
+          onSeek(m.inSec, { play: true });
+        };
+
+        const label = document.createElement('span');
+        label.className = 'video-marker-label';
+        label.textContent = m.label || formatRange(m.fromCount, m.toCount, board.cols);
+        label.title = label.textContent;
+
+        const rangeEl = document.createElement('span');
+        rangeEl.className = 'video-marker-range';
+        rangeEl.textContent = `${formatRange(m.fromCount, m.toCount, board.cols)} ↔ ${formatClock(m.inSec)}–${formatClock(m.outSec)}`;
+
+        const tempoBtn = document.createElement('button');
+        tempoBtn.type = 'button';
+        tempoBtn.className = CLS.ghost;
+        tempoBtn.textContent = '박자에 반영';
+        tempoBtn.title = isTempoUsable(tempo())
+          ? '이 마커의 양 끝을 보정점으로 넣어 세로선이 이 구간에서 딱 맞게 합니다'
+          : 'BPM 이 아직 없으므로 이 마커의 양 끝을 두 지점으로 삼아 BPM 과 시작 지점을 정합니다';
+        tempoBtn.onclick = () => {
+          if (!commands.applyMarkerToTempo) return;
+          const { rejected, ...dirty } = commands.applyMarkerToTempo({ id: m.id }) || {};
+          markerRejectedId = rejected ? m.id : '';
+          if (rejected) { renderCut(); return; }
+          render(dirty);
+          commitHistory();
+        };
+
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = CLS.ghost;
+        del.textContent = '✕';
+        del.title = '이 마커를 지웁니다';
+        del.onclick = () => {
+          if (!commands.removeMarker) return;
+          markerRejectedId = '';
+          render(commands.removeMarker({ id: m.id }));
+          commitHistory();
+        };
+
+        li.append(play, label, rangeEl, tempoBtn, del);
+        markerList.appendChild(li);
+      }
+    }
+  }
+
   /** Dirty.video 의 적용점. store 만 보고 패널의 모든 표시를 재도출한다. */
   function renderPanel() {
     const p = panelState();
@@ -451,6 +673,7 @@ export function createVideoPanel(deps) {
 
     renderStatus();
     renderTempo();
+    renderCut();
 
     // ⚠ **매번** 부른다. 값이 바뀔 때만 부르면 "패널이 열린 채로 URL 만 바뀌는" 경로가 통째로
     //   새어 새 영상이 영영 실리지 않는다. 호출부의 구현은 멱등이어야 한다.
@@ -574,11 +797,61 @@ export function createVideoPanel(deps) {
     };
   }
 
+  // ── In / Out · 잘라내기 · 마커 ────────────────────────────────────────────
+  // In/Out·반복은 화면 상태라 커밋하지 않는다. 마커와 잘라내기는 안무의 일부라 커밋한다(호출부 규약).
+  if (inBtn && commands.setInPoint) inBtn.onclick = () => render(commands.setInPoint({ sec: getCurrentSec() }));
+  if (outBtn && commands.setOutPoint) outBtn.onclick = () => render(commands.setOutPoint({ sec: getCurrentSec() }));
+  if (inGoBtn) inGoBtn.onclick = () => { const p = panelState(); if (Number.isFinite(p.inSec)) onSeek(p.inSec); };
+  if (outGoBtn) outGoBtn.onclick = () => { const p = panelState(); if (Number.isFinite(p.outSec)) onSeek(p.outSec); };
+  if (loopBtn && commands.setLoop) loopBtn.onclick = () => render(commands.setLoop());
+  if (inOutClearBtn && commands.clearInOut) inOutClearBtn.onclick = () => render(commands.clearInOut());
+  if (trimBtn) {
+    trimBtn.onclick = () => {
+      const range = inOutRange();
+      if (!range || getTrimState() !== 'ready') return;
+      onTrim(range);
+    };
+  }
+
+  /**
+   * 마커 하나를 만들고 커밋한다. 라벨은 선택한 블록 이름들(또는 마디 이름)이라 목록에서 "무엇에 붙었나"가 바로 읽힌다.
+   * @param {{from:number, to:number}} range 카운트 구간
+   * @param {string} label
+   */
+  function addMarker(range, label) {
+    if (!commands.addMarker) return;
+    markerRejectedId = '';
+    const dirty = commands.addMarker({ fromCount: range.from, toCount: range.to, label });
+    render(dirty);
+    commitHistory();
+  }
+  if (markerSelBtn) {
+    markerSelBtn.onclick = () => {
+      const sel = selectedRange();
+      if (sel) addMarker(sel, sel.names.join(' · '));
+    };
+  }
+  if (markerRowBtn) {
+    markerRowBtn.onclick = () => {
+      const r = anchorRowRange();
+      addMarker(r, r.row === 0 ? 'intro' : `${mainBoard().cols}x${r.row} 마디`);
+    };
+  }
+  if (markerClearBtn && commands.clearMarkers) {
+    markerClearBtn.onclick = () => {
+      markerRejectedId = '';
+      render(commands.clearMarkers());
+      commitHistory();
+    };
+  }
+
   return {
     render: renderPanel,
     renderStatus,
-    /** 선택이 바뀌었다 — `선택한 블록이 여기서 시작` 의 활성 여부만 다시 잰다(패널이 닫혀 있으면 값만 바뀌고 안 보인다). */
-    syncSelection: renderTempo,
+    /** 잘라내기 상태(대기·진행·실패)가 바뀌었다 — 구획만 다시 그린다(store 를 거치지 않는 값이다). */
+    renderCut,
+    /** 선택이 바뀌었다 — `선택한 블록이 여기서 시작`·`선택한 블록에 맵핑` 의 활성 여부만 다시 잰다(패널이 닫혀 있으면 값만 바뀌고 안 보인다). */
+    syncSelection: () => { renderTempo(); renderCut(); },
     /** YT.Player 가 iframe 으로 갈아치울 자리. app/main 이 여기에 컨테이너를 만든다. */
     playerHost: () => frame
   };

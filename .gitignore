@@ -1,3 +1,5 @@
 video-clip/
 .clipserver.json
 tmp-verify/
+models/
+.DS_Store

@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readdirSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,12 +27,17 @@ function rawStatus(base, rawPath) {
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hasPython = spawnSync('python3', ['--version']).status === 0;
 
-/** 서버를 띄우고 {base, root, stop} 을 준다. */
-async function startServer() {
+const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
+
+/** 서버를 띄우고 {base, root, stop} 을 준다. extraArgs 로 --ffmpeg 같은 인자를 더한다. */
+async function startServer(extraArgs = []) {
   // macOS 의 /var 는 /private/var 의 심볼릭 링크다. 서버는 resolve 한 경로를 돌려주므로 여기서도 맞춘다.
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'choreo-clips-')));
   const config = path.join(root, 'config.json');
-  const child = spawn('python3', ['server.py', '--port', '0', '--root', root, '--config', config, '--quiet'], { cwd: REPO });
+  // ⚠ `--models` 를 반드시 준다. 안 주면 저장소의 `models/` 로 떨어져서, 개발자가 실제로 모델을 받아 둔
+  //   기계에서는 "아직 아무것도 없다" 를 전제한 검사가 깨진다(2026-09-12 에 실제로 그랬다).
+  const child = spawn('python3', ['server.py', '--port', '0', '--root', root, '--config', config,
+    '--models', path.join(root, 'models'), '--quiet', ...extraArgs], { cwd: REPO });
   const base = await new Promise((resolve, reject) => {
     let buf = '';
     child.stdout.on('data', (d) => {
@@ -270,6 +275,154 @@ test('server.py: LLM 설정은 키를 돌려주지 않고, 로컬 제공자로 �
     assert.equal((await fetch(`${s.base}/api/nope`, { method: 'POST', body: '{}' })).status, 404);
   } finally {
     ol.srv.close();
+    s.stop();
+  }
+});
+
+test('server.py: 자르기는 ffmpeg 이 없으면 501 이고 health 가 그 사실을 알린다, 인자 검증은 그 전에 한다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer(['--ffmpeg', '/nonexistent/ffmpeg']);
+  try {
+    const health = await (await fetch(`${s.base}/api/health`)).json();
+    assert.equal(health.ffmpeg, false, '--ffmpeg 가 틀리면 PATH 로 슬쩍 떨어지지 않는다');
+    const up = await (await fetch(`${s.base}/api/clips?project=p&name=a.mp4`, { method: 'PUT', body: new Uint8Array(10) })).json();
+    const post = (body) => fetch(`${s.base}/api/clips/trim`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal((await post({ path: up.path, inSec: 'x', outSec: 2 })).status, 400);
+    assert.equal((await post({ path: up.path, inSec: 2, outSec: 1 })).status, 400);
+    assert.equal((await post({ path: up.path, inSec: 1, outSec: 1.05 })).status, 400, '0.1초보다 짧은 구간');
+    assert.equal((await post({ path: 'video-clip/p/nope.mp4', inSec: 0, outSec: 1 })).status, 404);
+    assert.equal((await post({ path: '../server.py', inSec: 0, outSec: 1 })).status, 404, '루트 밖');
+    const res = await post({ path: up.path, inSec: 0, outSec: 1 });
+    assert.equal(res.status, 501);
+    assert.match((await res.json()).error, /ffmpeg/);
+    assert.equal((await fetch(`${s.base}/api/clips/trim`, { method: 'POST', body: 'nope' })).status, 400);
+  } finally {
+    s.stop();
+  }
+});
+
+test('server.py: ffmpeg 이 있으면 In~Out 을 다시 인코딩한 MP4 가 같은 폴더에 생기고 원본은 남는다', { skip: (!hasPython && 'python3 없음') || (!hasFfmpeg && 'ffmpeg 없음') }, async () => {
+  const s = await startServer();
+  try {
+    assert.equal((await (await fetch(`${s.base}/api/health`)).json()).ffmpeg, true);
+    // 3초짜리 테스트 영상(소리 없음)을 ffmpeg 으로 만들어 올린다.
+    const gen = spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=duration=3:size=64x64:rate=10',
+      '-pix_fmt', 'yuv420p', path.join(s.root, 'src.mp4')]);
+    assert.equal(gen.status, 0, String(gen.stderr));
+    const bytes = readFileSync(path.join(s.root, 'src.mp4'));
+    const up = await (await fetch(`${s.base}/api/clips?project=p&name=take.mp4`, { method: 'PUT', body: bytes, headers: { 'Content-Type': 'video/mp4' } })).json();
+    const res = await fetch(`${s.base}/api/clips/trim`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: up.path, inSec: 0.5, outSec: 2 }) });
+    const cut = await res.json();
+    assert.equal(res.status, 201, JSON.stringify(cut));
+    assert.equal(cut.name, 'take [0m00.5s-0m02.0s].mp4');
+    assert.equal(cut.path, 'video-clip/p/take [0m00.5s-0m02.0s].mp4');
+    assert.equal(cut.url, '/clips/' + cut.path);
+    assert.equal(cut.durationSec, 1.5);
+    assert.ok(cut.size > 0);
+    assert.deepEqual(readdirSync(path.join(s.root, 'video-clip', 'p')).sort(), ['take [0m00.5s-0m02.0s].mp4', 'take.mp4'], '원본은 그대로');
+    // 길이가 실제로 1.5초 안팎이다(ffprobe 가 있으면 확인한다).
+    const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path.join(s.root, cut.path)]);
+    if (probe.status === 0) {
+      const dur = Number(String(probe.stdout).trim());
+      assert.ok(Math.abs(dur - 1.5) < 0.25, `길이 ${dur}`);
+    }
+    // 잘라 낸 파일도 Range 로 스트리밍된다.
+    const part = await fetch(`${s.base}${cut.url}`, { headers: { Range: 'bytes=0-9' } });
+    assert.equal(part.status, 206);
+    // 같은 구간을 다시 자르면 덮어쓰지 않고 (2) 다.
+    const again = await (await fetch(`${s.base}/api/clips/trim`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: up.path, inSec: 0.5, outSec: 2 }) })).json();
+    assert.equal(again.name, 'take [0m00.5s-0m02.0s] (2).mp4');
+  } finally {
+    s.stop();
+  }
+});
+
+test('server.py: 자세 분석 모델의 보관 위치를 설정으로 바꾸고 상태를 알려 준다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    // 기본은 아무것도 안 받아 둔 상태다. 기능이 꺼져 있을 뿐 오류가 아니다.
+    const health = await (await fetch(`${s.base}/api/health`)).json();
+    assert.equal(health.pose, false);
+    const st0 = await (await fetch(`${s.base}/api/models`)).json();
+    assert.equal(st0.dir, path.join(s.root, 'models'), '검사는 임시 폴더만 본다 — 개발자 기계의 설치 상태에 기대지 않는다');
+    assert.equal(st0.ready, false);
+    assert.equal(st0.poseModel, 'full');
+    assert.ok(st0.missingBytes > 15 * 1024 * 1024, '받아야 할 용량을 미리 알려 준다');
+    assert.equal(st0.files.filter(f => f.needed).length, 4, '런타임 3 + 고른 크기의 자세 모델 1');
+    assert.equal(st0.files.every(f => !f.present), true);
+
+    // 보관 위치 바꾸기 — 없는 폴더는 만든다.
+    const dir = path.join(s.root, '어디에든', 'models');
+    const st1 = await (await fetch(`${s.base}/api/models/config`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dir })
+    })).json();
+    assert.equal(st1.dir, dir);
+    assert.ok(existsSync(dir), '없는 폴더를 만든다');
+    // 서버를 다시 켜도 유지되도록 설정 파일에 남는다.
+    assert.equal(JSON.parse(readFileSync(s.config, 'utf8')).modelsDir, dir);
+
+    // 모델 크기를 바꾸면 필요한 파일이 달라진다.
+    const st2 = await (await fetch(`${s.base}/api/models/config`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ poseModel: 'lite' })
+    })).json();
+    assert.equal(st2.poseModel, 'lite');
+    assert.deepEqual(st2.files.filter(f => f.needed && f.group === 'model').map(f => f.name), ['pose_landmarker_lite.task']);
+    assert.ok(st2.missingBytes < st0.missingBytes, 'lite 는 full 보다 적게 받는다');
+
+    // 잘못된 입력은 400 이고 설정은 그대로다.
+    for (const body of ['{"poseModel":"nope"}', '{"dir":"   "}', 'not json']) {
+      assert.equal((await fetch(`${s.base}/api/models/config`, { method: 'PUT', body })).status, 400, body);
+    }
+    assert.equal((await (await fetch(`${s.base}/api/models`)).json()).poseModel, 'lite');
+
+    // 파일을 손으로 놓아 두면 있음으로 보이고 내줄 수 있다. 받기는 이미 있으면 다시 받지 않는다.
+    const target = path.join(dir, 'pose_landmarker_lite.task');
+    writeFileSync(target, Buffer.alloc(1234, 7));
+    const st3 = await (await fetch(`${s.base}/api/models`)).json();
+    const one = st3.files.find(f => f.name === 'pose_landmarker_lite.task');
+    assert.equal(one.present, true);
+    assert.equal(one.bytes, 1234);
+    const got = await fetch(`${s.base}/models/pose_landmarker_lite.task`);
+    assert.equal(got.status, 200);
+    assert.equal((await got.arrayBuffer()).byteLength, 1234);
+    const again = await (await fetch(`${s.base}/api/models/fetch`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'pose-lite' })
+    })).json();
+    assert.equal(again.cached, true, '이미 있는 파일은 인터넷을 다시 건드리지 않는다');
+    assert.equal(again.bytes, 1234);
+
+    // 모르는 키와 잘못된 본문.
+    assert.equal((await fetch(`${s.base}/api/models/fetch`, { method: 'POST', body: '{"key":"nope"}' })).status, 400);
+    assert.equal((await fetch(`${s.base}/api/models/fetch`, { method: 'POST', body: 'x' })).status, 400);
+
+    // 보관 폴더 밖으로는 못 나간다.
+    assert.equal(await rawStatus(s.base, '/models/../server.py'), 404);
+    assert.equal(await rawStatus(s.base, '/models/%2E%2E/%2E%2E/etc/passwd'), 404);
+    assert.equal(await rawStatus(s.base, '/models/nope.task'), 404);
+
+    // 폴더 고르기: 쓸 수 있는지와 추천 위치를 알려 준다.
+    // ⚠ `/api/models/choose` 는 **실제 대화상자를 띄우므로** 테스트에서 부르지 않는다 — 사람이 고를 때까지
+    //   끝나지 않아 테스트가 멈춘다. 창을 띄우는 부분은 손으로 확인하고, 여기서는 그 주변만 본다.
+    const st4 = await (await fetch(`${s.base}/api/models`)).json();
+    assert.equal(typeof st4.canChoose, 'boolean');
+    assert.ok(Array.isArray(st4.suggestions) && st4.suggestions.length >= 2, '추천 위치가 있어야 한다');
+    for (const item of st4.suggestions) {
+      assert.equal(typeof item.label, 'string');
+      assert.ok(path.isAbsolute(item.dir), `추천 경로가 절대 경로가 아니다: ${item.dir}`);
+      assert.equal(typeof item.note, 'string');
+    }
+    assert.ok(st4.suggestions.some(x => x.dir.endsWith(`${path.sep}models`)), '저장소 안 위치가 추천에 있어야 한다');
+
+    // 런타임과 모델이 다 있으면 준비됨이 되고 health 도 그렇게 말한다.
+    for (const name of ['vision_bundle.mjs', 'wasm/vision_wasm_internal.js', 'wasm/vision_wasm_internal.wasm']) {
+      const p = path.join(dir, name);
+      mkdirSync(path.dirname(p), { recursive: true });
+      writeFileSync(p, 'x');
+    }
+    assert.equal((await (await fetch(`${s.base}/api/models`)).json()).ready, true);
+    assert.equal((await (await fetch(`${s.base}/api/health`)).json()).pose, true);
+  } finally {
     s.stop();
   }
 });

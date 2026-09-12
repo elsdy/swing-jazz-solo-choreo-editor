@@ -83,7 +83,9 @@ function defaultTimers() {
  *   container?: any,       <video> 를 넣을 엘리먼트. YT 와 달리 갈아치우지 않고 **안에** 넣는다
  *   doc?: object|null,     createElement 를 가진 것. 테스트가 가짜를 준다
  *   timers?: {setInterval:Function, clearInterval:Function, now:()=>number},
- *   sampleIntervalMs?: number
+ *   sampleIntervalMs?: number,
+ *   preload?: 'none'|'metadata'|'auto'  <video preload>. 기본 'metadata'. 'auto' 면 브라우저가 파일을 **끝까지 미리 받아**
+ *                          두어 어느 시각으로 탐색해도 끊기지 않는다 — 로컬 파일·로컬 서버가 소스인 이 앱에서는 그게 맞다
  * }} [options]
  * @returns {import('../../ports/media.js').MediaPlayer}
  */
@@ -92,6 +94,7 @@ export function createFilePlayer(options = {}) {
   const doc = options.doc === undefined ? defaultDoc() : options.doc;
   const timers = options.timers || defaultTimers();
   const sampleIntervalMs = Number.isFinite(options.sampleIntervalMs) ? options.sampleIntervalMs : FILE_SAMPLE_INTERVAL_MS;
+  const preload = ['none', 'metadata', 'auto'].includes(options.preload) ? options.preload : 'metadata';
 
   /** @type {any} <video> 엘리먼트. 없으면 아직 안 만들었거나 destroy 된 것이다. */
   let video = null;
@@ -261,7 +264,7 @@ export function createFilePlayer(options = {}) {
     const el = doc.createElement('video');
     el.controls = true;
     el.playsInline = true;
-    el.preload = 'metadata';
+    el.preload = preload;
     for (const type of VIDEO_EVENTS) el.addEventListener(type, handleEvent);
     clearContainer();
     if (typeof container.appendChild === 'function') container.appendChild(el);

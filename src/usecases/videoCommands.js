@@ -24,8 +24,9 @@
 import { NONE } from './store.js';
 import { isEmptyMedia, normalizeMedia, normalizeMediaSource } from '../domain/project/media.js';
 import {
-  bpmFromTaps, isTempoUsable, normalizeTempo, reanchor, tempoFromTwoPoints, addTempoPoint as addTempoPointOf, removeTempoPoint as removeTempoPointOf, clearTempoPointsOf
+  bpmFromTaps, isTempoUsable, normalizeTempo, reanchor, tempoFromTwoPoints, addTempoPoint as addTempoPointOf, removeTempoPoint as removeTempoPointOf, clearTempoPointsOf, shiftTempo
 } from '../domain/tempo.js';
+import { addMarker as addMarkerOf, removeMarker as removeMarkerOf, markerTempoPoints, shiftMarkersForTrim } from '../domain/markers.js';
 
 /** 패널·템포 보정이 다시 그려져야 한다는 뜻. 재생 헤드와는 무관하다(위 경계 ①). */
 const VIDEO = Object.freeze({ video: true });
@@ -43,18 +44,33 @@ export const TEMPO_POINTS_NEEDED = 2;
 // 읽기 — 뷰가 store 를 직접 헤집지 않게 하는 접근자
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** session.video 의 기본값. store.js 의 초기 상태와 같은 값이다(옛 스냅샷 복원 뒤에도 안전하도록 여기서도 채운다). */
+const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false });
+
 /**
- * 영상 패널의 휘발성 화면 상태. 없으면 기본값을 만들어 준다(옛 스냅샷 복원 뒤에도 안전하도록).
+ * 영상 패널의 휘발성 화면 상태. 없는 키는 기본값으로 채운다(In/Out·loop 은 나중에 생긴 키라 옛 세션에 없다).
  * @param {object} store
- * @returns {{open:boolean, collapsed:boolean, follow:boolean, tempoPoints:{count:number,sec:number}[], taps:number[]}}
+ * @returns {{open:boolean, collapsed:boolean, follow:boolean, tempoPoints:{count:number,sec:number}[], taps:number[],
+ *            inSec:number|null, outSec:number|null, loop:boolean}}
  */
 export function panelState(store) {
   const v = store.get().session.video;
-  return v || { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [] };
+  return v ? { ...DEFAULT_PANEL, ...v } : { ...DEFAULT_PANEL };
 }
 
 /**
- * 지금의 영상 블록(`{tempo, source}`). **언제나 두 필드를 채워** 돌려준다.
+ * In·Out 이 둘 다 찍혀 있고 순서가 맞는가. 잘라내기·마커 만들기의 전제다.
+ * @param {object} store
+ * @returns {{inSec:number, outSec:number}|null}
+ */
+export function inOutRange(store) {
+  const p = panelState(store);
+  if (!Number.isFinite(p.inSec) || !Number.isFinite(p.outSec) || !(p.outSec > p.inSec)) return null;
+  return { inSec: p.inSec, outSec: p.outSec };
+}
+
+/**
+ * 지금의 영상 블록(`{tempo, source, markers}`). **언제나 세 필드를 채워** 돌려준다.
  * @param {object} store
  * @returns {import('../domain/project/schema.js').MediaBlock}
  */
@@ -172,7 +188,7 @@ export function setSource(store, args = {}) {
   //   놓은 것이 아니다. 파일을 놓는 것은 clearFileSource 의 몫이다.
   if (!next && cur.source && cur.source.kind === 'file') return NONE;
   if (sameSource(cur.source, next)) return NONE;
-  return setMedia(store, { tempo: cur.tempo, source: next });
+  return setMedia(store, { ...cur, source: next });
 }
 
 /**
@@ -189,7 +205,7 @@ export function setFileSource(store, args = {}) {
   const next = normalizeMediaSource({ kind: 'file', name: args.name, path: args.path });
   if (!next) return NONE;
   if (sameSource(cur.source, next)) return NONE;
-  return setMedia(store, { tempo: cur.tempo, source: next });
+  return setMedia(store, { ...cur, source: next });
 }
 
 /**
@@ -203,7 +219,7 @@ export function clearFileSource(store) {
   if (!cur.source || cur.source.kind !== 'file') return NONE;
   const url = String((store.get().links || {}).youtubeUrl || '').trim();
   const next = url ? normalizeMediaSource({ kind: 'youtube', url }) : null;
-  return setMedia(store, { tempo: cur.tempo, source: next });
+  return setMedia(store, { ...cur, source: next });
 }
 
 /**
@@ -231,7 +247,7 @@ function sameSource(a, b) {
  */
 export function setTempo(store, args = {}) {
   const cur = mediaState(store);
-  return setMedia(store, { tempo: normalizeTempo({ ...cur.tempo, ...(args.tempo || {}) }), source: cur.source });
+  return setMedia(store, { ...cur, tempo: normalizeTempo({ ...cur.tempo, ...(args.tempo || {}) }) });
 }
 
 /**
@@ -263,7 +279,7 @@ export function addTempoPoint(store, point = {}) {
   if (!isTempoUsable(cur.tempo)) return NONE;
   const next = addTempoPointOf(cur.tempo, { count, sec });
   if (!next) return { ...NONE, rejected: true };
-  return setMedia(store, { tempo: next, source: cur.source });
+  return setMedia(store, { ...cur, tempo: next });
 }
 
 /**
@@ -277,7 +293,7 @@ export function removeTempoPoint(store, args = {}) {
   if (!Number.isFinite(count)) return NONE;
   const cur = mediaState(store);
   if (!(cur.tempo.points || []).some(p => p.count === count)) return NONE;
-  return setMedia(store, { tempo: removeTempoPointOf(cur.tempo, count), source: cur.source });
+  return setMedia(store, { ...cur, tempo: removeTempoPointOf(cur.tempo, count) });
 }
 
 /**
@@ -288,7 +304,7 @@ export function removeTempoPoint(store, args = {}) {
 export function clearTempoMap(store) {
   const cur = mediaState(store);
   if ((cur.tempo.points || []).length === 0) return NONE;
-  return setMedia(store, { tempo: clearTempoPointsOf(cur.tempo), source: cur.source });
+  return setMedia(store, { ...cur, tempo: clearTempoPointsOf(cur.tempo) });
 }
 
 /**
@@ -303,7 +319,7 @@ export function reanchorTo(store, point = {}) {
   const sec = Number(point.sec);
   if (!Number.isFinite(count) || !Number.isFinite(sec)) return NONE;
   const cur = mediaState(store);
-  return setMedia(store, { tempo: reanchor(cur.tempo, { count, sec }), source: cur.source });
+  return setMedia(store, { ...cur, tempo: reanchor(cur.tempo, { count, sec }) });
 }
 
 /**
@@ -344,7 +360,7 @@ export function markTempoPoint(store, point = {}) {
     return VIDEO;
   }
   store.patch('session', { video: { ...cur, tempoPoints: [] } });
-  setMedia(store, { tempo, source: media.source });
+  setMedia(store, { ...media, tempo });
   return { video: true, committed: true };
 }
 
@@ -402,7 +418,7 @@ export function commitTaps(store, args = {}) {
   const media = mediaState(store);
   store.patch('session', { video: { ...cur, taps: [] } });
   // ⚠ 날 bpm 이다. 20..400 클램프는 normalizeTempo 안에서 일어난다(setMedia 가 부른다).
-  setMedia(store, { tempo: { ...media.tempo, bpm }, source: media.source });
+  setMedia(store, { ...media, tempo: { ...media.tempo, bpm } });
   return { video: true, committed: true };
 }
 
@@ -431,7 +447,7 @@ export function clearTaps(store) {
 export function clearTempo(store) {
   const cur = mediaState(store);
   if (!isTempoUsable(cur.tempo) && cur.tempo.anchorSec === 0 && cur.tempo.anchorCount === 0) return NONE;
-  return setMedia(store, { tempo: { beatsPerCount: cur.tempo.beatsPerCount }, source: cur.source });
+  return setMedia(store, { ...cur, tempo: { beatsPerCount: cur.tempo.beatsPerCount } });
 }
 
 /**
@@ -456,11 +472,183 @@ export function clearTempo(store) {
 export function clearMedia(store) {
   const cur = panelState(store);
   const wasEmpty = isEmptyMedia(mediaState(store));
-  const hasMarks = cur.tempoPoints.length > 0 || cur.taps.length > 0;
+  const hasMarks = cur.tempoPoints.length > 0 || cur.taps.length > 0 || cur.inSec !== null || cur.outSec !== null;
   if (wasEmpty && !hasMarks) return NONE;
-  // 찍다 만 점·두드리다 만 탭도 함께 버린다 — 지워진 영상의 시각이라 남겨 두면 다음 한 번의
+  // 찍다 만 점·두드리다 만 탭·In/Out 도 함께 버린다 — 지워진 영상의 시각이라 남겨 두면 다음 한 번의
   // `지금 여기` 가 옛 점과 짝을 이뤄 엉뚱한 bpm 을 만든다.
-  if (hasMarks) store.patch('session', { video: { ...cur, tempoPoints: [], taps: [] } });
+  if (hasMarks) store.patch('session', { video: { ...cur, tempoPoints: [], taps: [], inSec: null, outSec: null } });
   if (!wasEmpty) setMedia(store, null);
   return VIDEO;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// In / Out — 잘라내기와 마커의 재료. 확정 전 값이라 **휘발성**(session.video)이고 undo 에 남지 않는다
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * In 지점을 지금 시각으로 찍는다. Out 이 이미 있는데 그보다 뒤(또는 같음)면 Out 을 비운다 —
+ * 뒤집힌 구간을 조용히 바로 세우는 대신 "다시 찍어라"가 화면에 드러나게 한다.
+ * @param {object} store
+ * @param {{sec?: number}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function setInPoint(store, args = {}) {
+  const sec = Number(args.sec);
+  if (!Number.isFinite(sec) || sec < 0) return NONE;
+  const cur = panelState(store);
+  const outSec = Number.isFinite(cur.outSec) && cur.outSec > sec ? cur.outSec : null;
+  return patchPanel(store, { inSec: sec, outSec });
+}
+
+/**
+ * Out 지점을 지금 시각으로 찍는다. In 이 이미 있는데 그보다 앞(또는 같음)이면 In 을 비운다.
+ * @param {object} store
+ * @param {{sec?: number}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function setOutPoint(store, args = {}) {
+  const sec = Number(args.sec);
+  if (!Number.isFinite(sec) || sec <= 0) return NONE;
+  const cur = panelState(store);
+  const inSec = Number.isFinite(cur.inSec) && cur.inSec < sec ? cur.inSec : null;
+  return patchPanel(store, { outSec: sec, inSec });
+}
+
+/**
+ * In·Out 을 한 번에 놓는다(마커의 ▶ 가 그 마커의 구간을 In/Out 으로 삼을 때). 뒤집혔으면 NONE.
+ * @param {object} store
+ * @param {{inSec?: number, outSec?: number}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function setInOut(store, args = {}) {
+  const inSec = Number(args.inSec);
+  const outSec = Number(args.outSec);
+  if (!Number.isFinite(inSec) || !Number.isFinite(outSec) || !(outSec > inSec)) return NONE;
+  return patchPanel(store, { inSec, outSec });
+}
+
+/**
+ * In·Out 을 비운다. 반복은 켜진 채 남아도 구간이 없으면 뷰·재생기가 무시한다.
+ * @param {object} store
+ * @returns {import('./store.js').Dirty}
+ */
+export function clearInOut(store) {
+  return patchPanel(store, { inSec: null, outSec: null });
+}
+
+/**
+ * In~Out 구간 반복 토글. 실제 되감기는 어댑터를 아는 자리(app/main)가 onTime 에서 한다 — 여기는 뜻만 둔다.
+ * @param {object} store
+ * @param {{loop?: boolean}} [args] 생략하면 토글
+ * @returns {import('./store.js').Dirty}
+ */
+export function setLoop(store, args = {}) {
+  const next = typeof args.loop === 'boolean' ? args.loop : !panelState(store).loop;
+  return patchPanel(store, { loop: next });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 마커 — 영상 구간 ↔ 안무표 구간. **안무의 일부**라 media 에 들어가고 undo 를 탄다(커밋은 호출부)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 지금 In~Out 구간을 안무표의 [fromCount, toCount) 카운트 구간에 맵핑하는 마커를 만든다.
+ * In/Out 이 없거나 카운트 구간이 비었으면 NONE — 뷰는 버튼을 미리 비활성화해 이 경로가 드물게 한다.
+ * @param {object} store
+ * @param {{fromCount?: number, toCount?: number, label?: string}} args toCount 는 배타적
+ * @returns {import('./store.js').Dirty}
+ */
+export function addMarker(store, args = {}) {
+  const range = inOutRange(store);
+  if (!range) return NONE;
+  return addMarkerAt(store, { ...range, fromCount: args.fromCount, toCount: args.toCount, label: args.label });
+}
+
+/**
+ * 시각까지 직접 주는 마커 추가(파일에서 읽은 마커를 다시 넣는 경로, 테스트).
+ * @param {object} store
+ * @param {{inSec?: number, outSec?: number, fromCount?: number, toCount?: number, label?: string}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function addMarkerAt(store, args = {}) {
+  const cur = mediaState(store);
+  const next = addMarkerOf(cur.markers, args);
+  if (!next) return NONE;
+  return setMedia(store, { ...cur, markers: next });
+}
+
+/**
+ * 마커 하나를 뺀다.
+ * @param {object} store
+ * @param {{id?: string}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function removeMarker(store, args = {}) {
+  const cur = mediaState(store);
+  if (!cur.markers.some(m => m.id === String(args.id))) return NONE;
+  return setMedia(store, { ...cur, markers: removeMarkerOf(cur.markers, args.id) });
+}
+
+/**
+ * 마커를 전부 뺀다. 템포·소스는 그대로다.
+ * @param {object} store
+ * @returns {import('./store.js').Dirty}
+ */
+export function clearMarkers(store) {
+  const cur = mediaState(store);
+  if (cur.markers.length === 0) return NONE;
+  return setMedia(store, { ...cur, markers: [] });
+}
+
+/**
+ * 마커의 양 끝을 박자에 반영한다 — "이 카운트가 이 시각에 시작해서 저 카운트가 저 시각에 끝난다".
+ *   · bpm 이 아직 없으면 두 점 앵커로 삼아 bpm 과 시작 지점을 **동시에** 정한다(tempoFromTwoPoints).
+ *   · 이미 있으면 두 점을 보정점으로 넣는다. 둘 중 하나라도 앞뒤 보정점과 순서가 어긋나면 **둘 다 넣지 않고**
+ *     `rejected` 로 알린다 — 반만 들어간 마커는 세로선을 한쪽만 끌어당긴다.
+ * @param {object} store
+ * @param {{id?: string}} args
+ * @returns {import('./store.js').Dirty & {rejected?: boolean}}
+ */
+export function applyMarkerToTempo(store, args = {}) {
+  const cur = mediaState(store);
+  const marker = cur.markers.find(m => m.id === String(args.id));
+  if (!marker) return NONE;
+  const [a, b] = markerTempoPoints(marker);
+  if (!isTempoUsable(cur.tempo)) {
+    const tempo = tempoFromTwoPoints(a, b, cur.tempo.beatsPerCount);
+    if (!tempo) return { ...NONE, rejected: true };
+    return setMedia(store, { ...cur, tempo });
+  }
+  const first = addTempoPointOf(cur.tempo, a);
+  const second = first ? addTempoPointOf(first, b) : null;
+  if (!second) return { ...NONE, rejected: true };
+  return setMedia(store, { ...cur, tempo: second });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 잘라내기 — 서버가 만든 새 클립을 소스로 삼고 시간축을 당긴다
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 영상을 [inSec, outSec) 로 잘라 다시 인코딩한 새 클립이 생겼다. 소스를 그 파일로 바꾸고,
+ * 템포(앵커·보정점)와 마커의 시각을 inSec 만큼 당긴다 — 안무표는 그대로고 영상의 0초가 옮겨진 것이다.
+ * In/Out 은 비운다(이미 잘렸다). 원본 파일은 서버에 그대로 남는다(여기서는 모른다).
+ * ⚠ 실제 인코딩은 어댑터(clipServer.trim)가 했고 여기는 결과만 받는다 — usecases 는 fetch 를 모른다.
+ * @param {object} store
+ * @param {{name?: string, path?: string, inSec?: number, outSec?: number}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function applyTrim(store, args = {}) {
+  const inSec = Number(args.inSec);
+  const outSec = Number(args.outSec);
+  const source = normalizeMediaSource({ kind: 'file', name: args.name, path: args.path });
+  if (!source || !Number.isFinite(inSec) || !Number.isFinite(outSec) || !(outSec > inSec)) return NONE;
+  const cur = mediaState(store);
+  const panel = panelState(store);
+  store.patch('session', { video: { ...panel, inSec: null, outSec: null } });
+  return setMedia(store, {
+    source,
+    tempo: shiftTempo(cur.tempo, -inSec),
+    markers: shiftMarkersForTrim(cur.markers, inSec, outSec)
+  });
 }

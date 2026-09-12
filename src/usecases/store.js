@@ -269,8 +269,14 @@ function createInitialState(ids) {
       //   follow    재생 위치를 안무표가 따라가는가("따라가기")
       //   tempoPoints 두 점 앵커를 찍는 중 모아 둔 점들. 두 개가 차면 Tempo 로 접히고 비워진다
       //   taps      탭 템포로 누른 시각(초). 확정되면 비워진다
+      //   inSec/outSec  In·Out 지점(초, 없으면 null). 잘라내기와 마커 만들기의 재료이고 확정 전 값이라 휘발성이다
+      //   loop      In~Out 구간을 반복 재생하는가
       // ⚠ 여기에도 재생 위치(currentSec)는 없다. 있으면 초당 60번 store 가 바뀐다.
-      video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [] }
+      video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false },
+      // 자세 분석의 **요약만** 둔다(2026-09-12). 관절점 수만 개는 app/main.js 가 모듈 변수로 들고 있다 —
+      // store 에 넣으면 undo 스냅샷이 그만큼 불어나고, 되돌릴 값도 아니다(usecases/poseCommands.js 경계 ①).
+      pose: { state: 'idle', done: 0, total: 0, error: '', frames: 0, maxSubjects: 0,
+              trackIds: [], activeId: '', anchors: [], ambiguous: 0, lost: 0, fromSec: 0, toSec: 0, showMesh: true }
     }
   };
 }

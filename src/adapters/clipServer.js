@@ -8,7 +8,10 @@
 // ⚠ 경로(`<subdir>/<프로젝트>/<파일>`)의 모양은 브라우저 폴더 방식과 같다(server.py 가 domain/clips.js 와 같은
 //   규칙을 쓴다). 프로젝트 파일의 `media.source.path` 가 두 방식 사이에서 그대로 통한다.
 
-/** @typedef {{root:string, subdir:string, dir:string}} ClipServerConfig */
+/** @typedef {{root:string, subdir:string, dir:string, ffmpeg:boolean, pose:boolean}} ClipServerConfig
+ *  ffmpeg: 서버가 자르기를 할 수 있는가 · pose: 자세 분석 모델을 받아 두었는가 */
+
+/** @typedef {{ok:true, path:string, name:string, url:string, durationSec:number}|{ok:false, error:string}} TrimResult */
 
 function defaultFetch() {
   return typeof fetch === 'function' ? (...a) => fetch(...a) : null;
@@ -18,6 +21,7 @@ function defaultFetch() {
  * @param {{fetchImpl?: typeof fetch|null, base?: string}} [options] 테스트가 가짜 fetch 를 준다
  * @returns {{
  *   probe: () => Promise<ClipServerConfig|null>,
+ *   trim: (path: string, inSec: number, outSec: number) => Promise<TrimResult>,
  *   getConfig: () => Promise<ClipServerConfig|null>,
  *   setConfig: (next: {root?: string, subdir?: string}) => Promise<ClipServerConfig|null>,
  *   upload: (file: Blob & {name?: string}, projectName: string, fileName?: string) => Promise<{path:string, url:string}|null>,
@@ -47,7 +51,33 @@ export function createClipServer(options = {}) {
     /** 서버가 있고 클립 API 를 아는가. 정적 서버는 /api/health 에 404 나 index.html 을 준다 → null. */
     async probe() {
       const data = await json('GET', '/api/health');
-      return data && data.ok === true && data.mode === 'server' ? { root: data.root, subdir: data.subdir, dir: data.dir } : null;
+      return data && data.ok === true && data.mode === 'server'
+        ? { root: data.root, subdir: data.subdir, dir: data.dir, ffmpeg: data.ffmpeg === true, pose: data.pose === true }
+        : null;
+    },
+
+    /**
+     * 보관된 클립을 [inSec, outSec) 로 잘라 다시 인코딩한 새 클립을 만든다. 서버가 ffmpeg 을 돌리므로 수십 초가
+     * 걸릴 수 있다 — 호출부는 그동안 "잘라내는 중" 을 보여 준다. 원본 파일은 서버에 그대로 남는다.
+     * ⚠ 이 함수만은 실패 이유를 돌려준다(`{ok:false, error}`) — ffmpeg 이 없는 것과 인코딩이 실패한 것은 사용자가
+     *   할 일이 다르다. 문구는 서버가 만든 그대로고(한국어), 여기서 새 문구를 만들지 않는다.
+     * @returns {Promise<TrimResult>}
+     */
+    async trim(path, inSec, outSec) {
+      if (!doFetch) return { ok: false, error: 'no fetch' };
+      try {
+        const res = await doFetch(`${base}/api/clips/trim`, {
+          method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, inSec, outSec })
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data && data.ok === true && typeof data.path === 'string') {
+          return { ok: true, path: data.path, name: data.name, url: data.url, durationSec: Number(data.durationSec) || (outSec - inSec) };
+        }
+        return { ok: false, error: (data && data.error) || `HTTP ${res.status}` };
+      } catch (e) {
+        return { ok: false, error: String(e && e.message ? e.message : e) };
+      }
     },
 
     async getConfig() {

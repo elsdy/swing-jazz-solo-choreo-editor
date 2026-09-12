@@ -17,10 +17,11 @@
 //   state 에 평평하게 풀지 않고 블록 하나로 묶어 두는 것이다.
 
 import { DEFAULT_TEMPO, normalizeTempo } from '../tempo.js';
+import { normalizeMarkers } from '../markers.js';
 import { MEDIA_FIELDS } from './schema.js';
 
-/** 아직 아무것도 정하지 않은 영상 블록. tempo.bpm 0 = 미설정(클램프 대상이 아니다). */
-export const DEFAULT_MEDIA = Object.freeze({ tempo: DEFAULT_TEMPO, source: null });
+/** 아직 아무것도 정하지 않은 영상 블록. tempo.bpm 0 = 미설정(클램프 대상이 아니다). markers 는 빈 배열이다. */
+export const DEFAULT_MEDIA = Object.freeze({ tempo: DEFAULT_TEMPO, source: null, markers: Object.freeze([]) });
 
 /**
  * 지금 지원하는 소스 종류.
@@ -57,7 +58,7 @@ export function normalizeMediaSource(raw) {
 }
 
 /**
- * 손상된 입력 → MediaBlock. **언제나 두 필드를 채운 새 객체**를 돌려준다(snapshot.toLinkBundle 과 같은 규약).
+ * 손상된 입력 → MediaBlock. **언제나 세 필드를 채운 새 객체**를 돌려준다(snapshot.toLinkBundle 과 같은 규약).
  * media 가 아예 없는 옛 파일이 여기서 기본값으로 떨어지고, 그 결과가 DEFAULT_MEDIA 와 같으므로
  * 다시 저장할 때 isEmptyMedia 가 참이 되어 **바이트가 늘지 않는다.**
  * @param {unknown} raw
@@ -65,7 +66,7 @@ export function normalizeMediaSource(raw) {
  */
 export function normalizeMedia(raw) {
   const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-  return { tempo: normalizeTempo(src.tempo), source: normalizeMediaSource(src.source) };
+  return { tempo: normalizeTempo(src.tempo), source: normalizeMediaSource(src.source), markers: normalizeMarkers(src.markers) };
 }
 
 /**
@@ -77,6 +78,7 @@ export function normalizeMedia(raw) {
 export function isEmptyMedia(media) {
   const m = normalizeMedia(media);
   if (m.source !== null) return false;
+  if (m.markers.length > 0) return false;
   const t = m.tempo;
   return t.bpm === DEFAULT_TEMPO.bpm
     && t.beatsPerCount === DEFAULT_TEMPO.beatsPerCount
@@ -100,5 +102,7 @@ export function serializeMedia(media) {
     const { points: _omit, ...rest } = out.tempo;
     out.tempo = rest;
   }
+  // ⚠ 빈 마커도 키째로 뺀다 — 같은 이유다(2026-09-10). 마커를 안 쓴 파일은 이 필드가 생기기 전과 바이트가 같다.
+  if (Array.isArray(out.markers) && out.markers.length === 0) delete out.markers;
   return out;
 }

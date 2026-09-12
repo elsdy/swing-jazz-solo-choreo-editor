@@ -73,12 +73,14 @@ export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibr
 /**
  * 영상 블록(`media`)의 필드. 키 순서가 곧 저장 바이트다.
  * 정규화·직렬화 로직은 domain/project/media.js 가 갖는다(이 파일은 목록만 소유한다).
+ * ⚠ `markers` 는 2026-09-10 에 **맨 뒤**에 더했다(영상 구간 ↔ 안무표 구간 마커, domain/markers.js).
+ *   비어 있으면 파일에 쓰지 않으므로(serializeMedia) 마커를 안 쓴 파일은 바이트가 같다.
  *
  * ⚠ 지금 영상은 **프로젝트 공통**이다 — 버전마다 다른 영상을 쓰게 되면 이 블록이 통째로
  *   ChoreoVersion.reference 자리로 내려가고 최상위에는 "기본 영상"만 남는다. 그래서 tempo 와
  *   source 를 state 최상위에 평평하게 풀지 않고 블록 하나로 묶어 둔다(옮길 때 한 줄이 되도록).
  */
-export const MEDIA_FIELDS = Object.freeze(['tempo', 'source']);
+export const MEDIA_FIELDS = Object.freeze(['tempo', 'source', 'markers']);
 
 /**
  * v1 프로젝트 파일이 최상위에 평평하게 들고 있는 링크 4필드.
@@ -161,6 +163,7 @@ export const LINK_FIELDS = Object.freeze(['youtubeUrl', 'youtubeTitle', 'clickup
  * @typedef {Object} MediaBlock
  * @property {import('../tempo.js').Tempo} tempo
  * @property {MediaSourceRef|null} source
+ * @property {import('../markers.js').Marker[]} markers 영상 구간 ↔ 안무표 구간 마커(2026-09-10). 비면 파일에서 빠진다
  */
 
 /**

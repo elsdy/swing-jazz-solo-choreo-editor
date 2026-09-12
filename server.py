@@ -16,6 +16,16 @@
     GET  /api/clips?project=P             그 프로젝트의 클립 목록 [{path, name, size, mtime}]
     HEAD /api/clips/<path>                있는지(200/404)
     GET  /clips/<path>                    파일. Range 를 지원한다(<video> 탐색에 필수)
+    POST /api/clips/trim {path, inSec, outSec}   보관된 클립을 [inSec, outSec) 로 잘라 **다시 인코딩**해 같은 폴더에
+                                          '<이름> [0m12.3s-0m45.0s].mp4' 로 둔다(원본은 그대로). ffmpeg 이 있어야 한다
+                                          (health 의 ffmpeg 필드). → {path, name, url, size, durationSec}
+
+    GET  /api/models                      자세 분석 모델의 보관 위치와 파일별 있음/없음. {dir, poseModel, ready, files[]}
+    PUT  /api/models/config {dir?, poseModel?}  보관 위치·모델 크기 변경. 없는 폴더는 만든다. .clipserver.json 에 남는다
+    POST /api/models/fetch  {key}         그 파일 하나를 인터넷에서 받아 보관 위치에 둔다(이미 있으면 그대로). → {ok, key, bytes}
+    POST /api/models/choose               **네이티브 폴더 고르기 대화상자**를 띄우고, 고른 폴더를 곧바로 보관 위치로 삼는다.
+                                          취소하면 {ok:false, canceled:true}. 띄울 수 없는 환경이면 503
+    GET  /models/<path>                   받아 둔 모델 파일. 브라우저의 자세 추정기가 여기서 읽는다
 
     GET  /api/llm/config                  {provider, model, baseUrl, hasKey, available}. 키 값은 절대 돌려주지 않는다
     GET  /api/llm/models                  지금 제공자가 가진 모델 이름 목록(openai 호환 /v1/models, ollama /api/tags)
@@ -35,6 +45,12 @@
   프로젝트 파일에 저장되는 path(`<subdir>/<프로젝트>/<파일>`)가 브라우저 폴더 방식과 같은 모양이라
   두 방식 사이에서 파일을 열어도 경로가 그대로 통한다.
 - 저장 루트 밖으로는 절대 나가지 않는다(resolve 뒤 prefix 검사). 업로드 크기 상한은 없다 — 로컬 도구다.
+- 자세 분석 모델도 **선택**이다. 받아 두지 않으면 분석만 안 되고 나머지는 전부 된다. 파일은 인터넷에서
+  한 번 받아 `--models` 폴더(기본: 저장소의 models/)에 두고, 그 뒤로는 오프라인이다. 브라우저가 계산하므로
+  서버에는 파이썬 패키지가 하나도 늘지 않는다 — 서버는 파일을 받아 두고 내주기만 한다.
+- ffmpeg 은 **선택**이다. 없으면 자르기만 501 로 거절하고 나머지는 전부 된다. 찾는 순서는 --ffmpeg 인자 →
+  환경 변수 CHOREO_FFMPEG → PATH 의 ffmpeg. 자르기는 복사(-c copy)가 아니라 재인코딩이다 — 키프레임에 맞추지
+  않고 In/Out 시각 그대로 잘리고, 어떤 소스든 브라우저가 여는 H.264/AAC MP4 가 나온다.
 """
 
 import argparse
@@ -42,7 +58,10 @@ import json
 import mimetypes
 import os
 import re
+import shutil
+import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -61,6 +80,7 @@ BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 mimetypes.add_type('text/javascript', '.js')
 mimetypes.add_type('text/javascript', '.mjs')
 mimetypes.add_type('application/json', '.json')
+mimetypes.add_type('application/wasm', '.wasm')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +106,193 @@ def numbered_name(file_name, n):
 def split_clip_path(path):
     """저장된 상대 경로 → 조각. 빈 조각·'.'·'..' 은 버린다(루트 밖으로 나가지 않는다)."""
     return [p.strip() for p in str(path or '').split('/') if p.strip() and p.strip() not in ('.', '..')]
+
+
+def clock_tag(sec):
+    """초 → 파일 이름에 쓸 수 있는 시각 표기. 12.34 → '0m12.3s'. 콜론은 파일 이름에 못 쓰므로 m/s 로 적는다."""
+    sec = max(0.0, float(sec))
+    m = int(sec // 60)
+    return f'{m}m{sec - m * 60:04.1f}s'
+
+
+def trimmed_name(file_name, in_sec, out_sec):
+    """잘라 낸 클립의 이름. 'take.mov' + [12.3, 45.0) → 'take [0m12.3s-0m45.0s].mp4'. 재인코딩이라 확장자는 늘 .mp4 다."""
+    stem = re.sub(r'\.[^.]*$', '', file_name) or file_name
+    return f'{stem} [{clock_tag(in_sec)}-{clock_tag(out_sec)}].mp4'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ffmpeg — 선택 의존성. 없으면 자르기만 501 이다
+# ─────────────────────────────────────────────────────────────────────────────
+
+def find_ffmpeg(explicit=None):
+    """쓸 ffmpeg 실행 파일 경로. --ffmpeg 가 있으면 **그것만** 본다(틀리면 None — PATH 로 슬쩍 떨어지지 않는다).
+    없으면 CHOREO_FFMPEG → PATH 의 ffmpeg. 실행 파일이 아니면 None."""
+    def resolve(cand):
+        if os.path.sep in cand:
+            return cand if os.access(cand, os.X_OK) and os.path.isfile(cand) else None
+        return shutil.which(cand)
+    if explicit:
+        return resolve(explicit)
+    for cand in (os.environ.get('CHOREO_FFMPEG'), 'ffmpeg'):
+        if cand:
+            found = resolve(cand)
+            if found:
+                return found
+    return None
+
+
+def run_trim(ffmpeg, src, dst, in_sec, out_sec, timeout=3600):
+    """src 의 [in_sec, out_sec) 를 다시 인코딩해 dst 로. 성공이면 (True, ''), 실패면 (False, stderr 끝부분).
+
+    -ss 를 -i 앞에 두면 입력을 그 시각으로 탐색한 뒤 디코드하므로 재인코딩에서는 프레임 단위로 정확하다.
+    libx264 veryfast/crf 20 + aac 160k + faststart 는 "브라우저가 바로 여는 MP4" 의 무난한 조합이다.
+    소리가 없는 영상도 되게 -c:a 만 두고 오디오 스트림 존재를 전제하지 않는다."""
+    cmd = [
+        ffmpeg, '-y', '-hide_banner', '-loglevel', 'error', '-nostdin',
+        '-ss', f'{in_sec:.3f}', '-i', str(src), '-t', f'{out_sec - in_sec:.3f}',
+        '-map', '0:v:0', '-map', '0:a?',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart',
+        str(dst),
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
+    if res.returncode != 0:
+        return False, (res.stderr or '').strip()[-600:] or f'ffmpeg exit {res.returncode}'
+    return True, ''
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 자세 분석 모델 — 받아 두고 내주기만 한다. 계산은 브라우저가 한다
+#
+# ⚠ 버전을 못 박는다. `@latest` 로 두면 어느 날 구글이 올린 새 모델 때문에 각도가 몇 도씩 달라지고,
+#   어제 잰 가동 범위와 오늘 잰 값을 나란히 놓을 수 없게 된다. 올릴 때는 사람이 올린다.
+# ⚠ nosimd 는 선택이다. 요즘 브라우저는 전부 SIMD 를 쓰므로 받지 않아도 되고, 10MB 를 아낀다.
+#   FilesetResolver 가 SIMD 를 먼저 보고 고르므로 있으면 쓰고 없으면 안 찾는다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+MEDIAPIPE_VERSION = '1.0.1'
+_MP = f'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@{MEDIAPIPE_VERSION}'
+_POSE = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker'
+
+POSE_MODELS = ('lite', 'full', 'heavy')
+DEFAULT_POSE_MODEL = 'full'
+
+# 받기 전에도 "얼마나 받아야 하는지" 를 화면이 말할 수 있게, 2026-09-11 에 실제로 잰 크기를 적어 둔다.
+# 표시용이라 조금 틀려도 되고, 받은 뒤에는 실제 크기(bytes)가 이 자리를 대신한다.
+POSE_MODEL_BYTES = {'lite': 5777746, 'full': 9398198, 'heavy': 30664242}
+
+MODEL_FILES = (
+    {'key': 'bundle', 'name': 'vision_bundle.mjs', 'url': f'{_MP}/vision_bundle.mjs',
+     'label': 'MediaPipe 실행 코드', 'group': 'runtime', 'optional': False, 'approx': 155439},
+    {'key': 'wasm-js', 'name': 'wasm/vision_wasm_internal.js', 'url': f'{_MP}/wasm/vision_wasm_internal.js',
+     'label': 'WASM 로더', 'group': 'runtime', 'optional': False, 'approx': 323377},
+    {'key': 'wasm', 'name': 'wasm/vision_wasm_internal.wasm', 'url': f'{_MP}/wasm/vision_wasm_internal.wasm',
+     'label': 'WASM 런타임', 'group': 'runtime', 'optional': False, 'approx': 11756954},
+    {'key': 'wasm-nosimd-js', 'name': 'wasm/vision_wasm_nosimd_internal.js', 'url': f'{_MP}/wasm/vision_wasm_nosimd_internal.js',
+     'label': 'WASM 로더(SIMD 없는 브라우저용)', 'group': 'runtime', 'optional': True, 'approx': 323180},
+    {'key': 'wasm-nosimd', 'name': 'wasm/vision_wasm_nosimd_internal.wasm', 'url': f'{_MP}/wasm/vision_wasm_nosimd_internal.wasm',
+     'label': 'WASM 런타임(SIMD 없는 브라우저용)', 'group': 'runtime', 'optional': True, 'approx': 10960242},
+) + tuple(
+    {'key': f'pose-{size}', 'name': f'pose_landmarker_{size}.task',
+     'url': f'{_POSE}/pose_landmarker_{size}/float16/1/pose_landmarker_{size}.task',
+     'label': f'자세 모델({size})', 'group': 'model', 'optional': True, 'size': size,
+     'approx': POSE_MODEL_BYTES[size]}
+    for size in POSE_MODELS
+)
+
+MODEL_BY_KEY = {m['key']: m for m in MODEL_FILES}
+
+# ⚠ 대화상자는 **사용자 화면**에 뜬다. 서버가 127.0.0.1 에만 묶여 있으므로 이 컴퓨터의 사람만 부를 수 있고,
+#   고르는 것도 그 사람이다. 다만 두 개를 겹쳐 띄우면 어느 것이 답인지 알 수 없으므로 하나만 돈다.
+_chooser_lock = threading.Lock()
+
+# 대화상자를 열어 둔 채 자리를 비울 수 있다. 그래도 영원히 매달리지는 않는다.
+CHOOSER_TIMEOUT = 300
+
+
+def folder_chooser():
+    """이 운영체제에서 폴더 고르기 대화상자를 띄울 수 있는 명령. 없으면 None(그때는 경로를 직접 넣는다)."""
+    if sys.platform == 'darwin' and shutil.which('osascript'):
+        return 'osascript'
+    for cmd in ('zenity', 'kdialog'):
+        if shutil.which(cmd):
+            return cmd
+    if os.name == 'nt' and shutil.which('powershell'):
+        return 'powershell'
+    return None
+
+
+def _as_quote(text):
+    """AppleScript 문자열 안에 넣을 수 있게 감싼다. 따옴표가 든 경로에서 스크립트가 깨지지 않게."""
+    return str(text).replace('\\', '\\\\').replace('"', '\\"')
+
+
+def chooser_argv(kind, start):
+    """대화상자를 띄우는 명령줄. start 는 처음 보여 줄 폴더다."""
+    if kind == 'osascript':
+        where = f' default location POSIX file "{_as_quote(start)}"' if start else ''
+        return ['osascript', '-e', f'POSIX path of (choose folder with prompt "자세 분석 모델을 둘 폴더를 고르세요"{where})']
+    if kind == 'zenity':
+        args = ['zenity', '--file-selection', '--directory', '--title=자세 분석 모델을 둘 폴더']
+        if start:
+            args.append(f'--filename={start}/')
+        return args
+    if kind == 'kdialog':
+        return ['kdialog', '--getexistingdirectory', start or str(Path.home())]
+    if kind == 'powershell':
+        script = ('Add-Type -AssemblyName System.Windows.Forms;'
+                  '$d = New-Object System.Windows.Forms.FolderBrowserDialog;'
+                  'if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $d.SelectedPath }')
+        return ['powershell', '-NoProfile', '-STA', '-Command', script]
+    return None
+
+
+def choose_folder(start=None):
+    """폴더 고르기 대화상자. (경로, 오류). 취소는 오류가 아니라 (None, '') 다."""
+    kind = folder_chooser()
+    if not kind:
+        return None, '이 운영체제에서는 폴더 고르기 창을 띄울 수 없습니다. 경로를 직접 넣어 주세요.'
+    if not _chooser_lock.acquire(blocking=False):
+        return None, '폴더 고르기 창이 이미 열려 있습니다.'
+    try:
+        res = subprocess.run(chooser_argv(kind, start), capture_output=True, text=True, timeout=CHOOSER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # 상한을 분으로만 적으면 짧게 잡았을 때 "0분" 이 된다.
+        span = f'{CHOOSER_TIMEOUT // 60}분' if CHOOSER_TIMEOUT >= 60 else f'{CHOOSER_TIMEOUT}초'
+        return None, f'폴더 고르기 창이 {span} 넘게 열려 있어 닫았습니다. 다시 눌러 주세요.'
+    except OSError as e:
+        return None, f'폴더 고르기 창을 띄우지 못했습니다: {e}'
+    finally:
+        _chooser_lock.release()
+    if res.returncode != 0:
+        return None, ''                       # 취소. 오류가 아니다
+    path = (res.stdout or '').strip()
+    return (path or None), ''
+
+
+def models_suggestions():
+    """추천 위치. 대화상자를 못 띄우는 환경에서도 한 번 눌러 고를 수 있게 한다."""
+    home = Path.home()
+    out = [
+        {'label': '홈 캐시', 'dir': str(home / '.cache' / 'choreo-models'), 'note': '저장소를 다시 받아도 남습니다'},
+        {'label': '저장소 안', 'dir': str(REPO_DIR / 'models'), 'note': '프로젝트와 함께 있고 커밋되지 않습니다'},
+    ]
+    if sys.platform == 'darwin':
+        out.append({'label': '앱 지원 폴더',
+                    'dir': str(home / 'Library' / 'Application Support' / 'choreo-editor' / 'models'),
+                    'note': 'macOS 관례라 백업에 포함됩니다'})
+    return out
+
+
+def model_is_needed(entry, pose_model):
+    """지금 설정에서 이 파일이 있어야 하는가. 런타임 필수 + 고른 크기의 자세 모델 하나."""
+    if entry['group'] == 'runtime':
+        return not entry['optional']
+    return entry.get('size') == pose_model
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -114,11 +321,15 @@ def normalize_llm(raw):
 
 
 class Config:
-    def __init__(self, root, subdir, path=CONFIG_FILE, llm=None):
+    def __init__(self, root, subdir, path=CONFIG_FILE, llm=None, models_dir=None, pose_model=None):
         self.root = Path(root).expanduser().resolve()
         self.subdir = safe_segment(subdir, DEFAULT_SUBDIR)
         self.path = path
         self.llm = normalize_llm(llm)
+        # ⚠ 모델 보관 위치는 영상 보관 루트와 **따로**다. 영상은 외장 디스크에 두고 모델은 저장소 옆에
+        #   두는 것이 흔하고, 무엇보다 사용자가 "어디에 저장할지" 를 이 항목 하나로 정하기를 원한다.
+        self.models_dir = Path(models_dir or (REPO_DIR / 'models')).expanduser().resolve()
+        self.pose_model = pose_model if pose_model in POSE_MODELS else DEFAULT_POSE_MODEL
 
     @property
     def dir(self):
@@ -126,6 +337,32 @@ class Config:
 
     def to_json(self):
         return {'root': str(self.root), 'subdir': self.subdir, 'dir': str(self.dir)}
+
+    def models_json(self):
+        """모델 보관 위치와 파일별 있음/없음. 브라우저가 이걸 보고 '받아 두세요' 를 띄운다."""
+        files = []
+        ready = True
+        missing = 0
+        missing_bytes = 0
+        for entry in MODEL_FILES:
+            target = self.models_dir / entry['name']
+            present = target.is_file()
+            needed = model_is_needed(entry, self.pose_model)
+            files.append({
+                'key': entry['key'], 'name': entry['name'], 'label': entry['label'],
+                'group': entry['group'], 'needed': needed, 'optional': entry['optional'],
+                'present': present, 'bytes': target.stat().st_size if present else 0,
+                'approx': entry.get('approx', 0), 'url': '/models/' + entry['name'],
+            })
+            if needed and not present:
+                ready = False
+                missing += 1
+                missing_bytes += entry.get('approx', 0)
+        return {'dir': str(self.models_dir), 'poseModel': self.pose_model, 'ready': ready,
+                'missing': missing, 'missingBytes': missing_bytes,
+                'version': MEDIAPIPE_VERSION, 'sizes': POSE_MODEL_BYTES,
+                'canChoose': folder_chooser() is not None, 'suggestions': models_suggestions(),
+                'files': files}
 
     def llm_key(self):
         """설정 파일의 키가 있으면 그것, 없으면 환경 변수. 로컬(ollama)은 키가 필요 없다."""
@@ -149,21 +386,27 @@ class Config:
 
     def save(self):
         try:
-            self.path.write_text(json.dumps({'root': str(self.root), 'subdir': self.subdir, 'llm': self.llm}, ensure_ascii=False, indent=2))
+            self.path.write_text(json.dumps({
+                'root': str(self.root), 'subdir': self.subdir, 'llm': self.llm,
+                'modelsDir': str(self.models_dir), 'poseModel': self.pose_model,
+            }, ensure_ascii=False, indent=2))
         except OSError:
             pass
 
     @staticmethod
     def load(default_root, default_subdir, path=CONFIG_FILE):
         root, subdir, llm = default_root, default_subdir, None
+        models_dir, pose_model = None, None
         try:
             data = json.loads(Path(path).read_text())
             root = data.get('root') or root
             subdir = data.get('subdir') or subdir
             llm = data.get('llm')
+            models_dir = data.get('modelsDir')
+            pose_model = data.get('poseModel')
         except (OSError, ValueError):
             pass
-        return Config(root, subdir, path, llm)
+        return Config(root, subdir, path, llm, models_dir, pose_model)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -478,6 +721,7 @@ def validate_plan(plan):
 class Handler(SimpleHTTPRequestHandler):
     config = None          # Config. main() 이 넣는다
     quiet = False
+    ffmpeg = None          # ffmpeg 실행 파일 경로 또는 None. main() 이 넣는다
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(REPO_DIR), **kwargs)
@@ -485,6 +729,23 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         if not self.quiet:
             super().log_message(fmt, *args)
+
+    # ── 캐시 ──
+    # ⚠ 정적 파일은 **캐시하지 않는다.** 이 프로젝트에는 빌드 단계가 없어서 브라우저가 읽는 .js 가 곧
+    #   저장소의 .js 다. 브라우저가 휴리스틱으로 모듈을 붙들고 있으면 고친 코드가 새로고침해도 안 나오고,
+    #   그것이 "고쳤는데 안 바뀐다" 로 보인다(2026-09-11 에 실제로 겪었다). 개발용 로컬 서버이므로
+    #   전송량은 문제가 아니다. 모델 파일처럼 스스로 Cache-Control 을 붙인 응답은 그대로 둔다.
+
+    def send_header(self, keyword, value):
+        if keyword.lower() == 'cache-control':
+            self._own_cache = True
+        super().send_header(keyword, value)
+
+    def end_headers(self):
+        if not getattr(self, '_own_cache', False):
+            super().send_header('Cache-Control', 'no-store')
+        self._own_cache = False
+        super().end_headers()
 
     # ── 공통 ──
 
@@ -526,7 +787,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         url = urlsplit(self.path)
         if url.path == '/api/health':
-            return self._json(HTTPStatus.OK, {'ok': True, 'mode': 'server', **self.config.to_json()})
+            return self._json(HTTPStatus.OK, {'ok': True, 'mode': 'server', 'ffmpeg': bool(self.ffmpeg),
+                                              'pose': self.config.models_json()['ready'], **self.config.to_json()})
         if url.path == '/api/config':
             return self._json(HTTPStatus.OK, self.config.to_json())
         if url.path == '/api/llm/config':
@@ -534,6 +796,10 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path == '/api/llm/models':
             models, err = list_models(self.config)
             return self._json(HTTPStatus.OK, {'ok': True, 'models': models, 'details': model_details(models), 'error': err})
+        if url.path == '/api/models':
+            return self._json(HTTPStatus.OK, self.config.models_json())
+        if url.path.startswith('/models/'):
+            return self._serve_model(unquote(url.path[len('/models/'):]))
         if url.path == '/api/clips':
             return self._list_clips(parse_qs(url.query))
         if url.path.startswith('/api/clips/'):
@@ -551,6 +817,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_HEAD(self):
         url = urlsplit(self.path)
+        if url.path.startswith('/models/'):
+            return self._serve_model(unquote(url.path[len('/models/'):]), head_only=True)
         if url.path.startswith('/api/clips/'):
             return self._head_clip(unquote(url.path[len('/api/clips/'):]))
         if url.path.startswith('/clips/'):
@@ -567,6 +835,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._put_llm_config()
         if url.path == '/api/clips':
             return self._put_clip(parse_qs(url.query))
+        if url.path == '/api/models/config':
+            return self._put_models_config()
         return self._error(HTTPStatus.NOT_FOUND, 'no such endpoint')
 
     def do_POST(self):
@@ -575,6 +845,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._llm_refine()
         if url.path == '/api/llm/compose':
             return self._llm_compose()
+        if url.path == '/api/clips/trim':
+            return self._trim_clip()
+        if url.path == '/api/models/fetch':
+            return self._fetch_model()
+        if url.path == '/api/models/choose':
+            return self._choose_models_dir()
         return self._error(HTTPStatus.NOT_FOUND, 'no such endpoint')
 
     # ── LLM ──
@@ -674,6 +950,157 @@ class Handler(SimpleHTTPRequestHandler):
         rel = f'{self.config.subdir}/{project}/{final}'
         return self._json(HTTPStatus.CREATED, {'ok': True, 'path': rel, 'url': '/clips/' + rel, 'size': target.stat().st_size})
 
+    # ── 자세 분석 모델 ──
+
+    def _models_file(self, rel_path):
+        """모델 폴더 기준 상대 경로 → 실제 파일 경로. 폴더 밖이면 None."""
+        parts = split_clip_path(rel_path)
+        if not parts:
+            return None
+        target = (self.config.models_dir / Path(*parts)).resolve()
+        try:
+            target.relative_to(self.config.models_dir)
+        except ValueError:
+            return None
+        return target
+
+    def _serve_model(self, rel_path, head_only=False):
+        target = self._models_file(rel_path)
+        if not target or not target.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND, 'no such model file')
+            return
+        size = target.stat().st_size
+        ctype = mimetypes.guess_type(str(target))[0] or 'application/octet-stream'
+        self.send_response(HTTPStatus.OK)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(size))
+        # 한 번 받으면 바뀌지 않는 파일이다(버전이 경로가 아니라 내용에 박혀 있으므로 서버가 바꿀 때만 바뀐다).
+        self.send_header('Cache-Control', 'public, max-age=86400')
+        self.end_headers()
+        if head_only or self.command == 'HEAD':
+            return
+        try:
+            with open(target, 'rb') as f:
+                while True:
+                    chunk = f.read(1 << 20)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _put_models_config(self):
+        data = self._read_json()
+        if data is None or not isinstance(data, dict):
+            return self._error(HTTPStatus.BAD_REQUEST, 'invalid json')
+        models_dir = data.get('dir', str(self.config.models_dir))
+        pose_model = data.get('poseModel', self.config.pose_model)
+        if not isinstance(models_dir, str) or not models_dir.strip():
+            return self._error(HTTPStatus.BAD_REQUEST, 'dir must be a non-empty path')
+        if pose_model not in POSE_MODELS:
+            return self._error(HTTPStatus.BAD_REQUEST, f'poseModel must be one of {", ".join(POSE_MODELS)}')
+        candidate = Config(self.config.root, self.config.subdir, self.config.path, self.config.llm,
+                           models_dir.strip(), pose_model)
+        try:
+            candidate.models_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return self._error(HTTPStatus.BAD_REQUEST, f'cannot create {candidate.models_dir}: {e}')
+        type(self).config = candidate
+        candidate.save()
+        return self._json(HTTPStatus.OK, candidate.models_json())
+
+    def _choose_models_dir(self):
+        """폴더 고르기 창을 띄우고, 고른 폴더를 **그 자리에서** 보관 위치로 삼는다.
+        고르고 또 `적용` 을 누르게 하면 한 번 더 실수할 자리가 생긴다."""
+        start = str(self.config.models_dir)
+        if not Path(start).is_dir():
+            start = str(Path.home())
+        path, err = choose_folder(start)
+        if err:
+            return self._error(HTTPStatus.SERVICE_UNAVAILABLE, err)
+        if not path:
+            return self._json(HTTPStatus.OK, {'ok': False, 'canceled': True})
+        candidate = Config(self.config.root, self.config.subdir, self.config.path, self.config.llm,
+                           path, self.config.pose_model)
+        try:
+            candidate.models_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return self._error(HTTPStatus.BAD_REQUEST, f'cannot create {candidate.models_dir}: {e}')
+        type(self).config = candidate
+        candidate.save()
+        return self._json(HTTPStatus.OK, {'ok': True, **candidate.models_json()})
+
+    def _fetch_model(self):
+        """모델 파일 하나를 받아 둔다. 한 번에 하나씩인 이유는 브라우저가 진행률을 보여 줄 수 있게 하려는 것이다."""
+        data = self._read_json()
+        if not isinstance(data, dict):
+            return self._error(HTTPStatus.BAD_REQUEST, 'invalid json')
+        entry = MODEL_BY_KEY.get(str(data.get('key') or ''))
+        if not entry:
+            return self._error(HTTPStatus.BAD_REQUEST, 'unknown model key')
+        target = self.config.models_dir / entry['name']
+        if target.is_file() and not data.get('force'):
+            return self._json(HTTPStatus.OK, {'ok': True, 'key': entry['key'], 'bytes': target.stat().st_size, 'cached': True})
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f'cannot create {target.parent}: {e}')
+        # ⚠ 받다 만 파일을 제자리에 남기지 않는다 — .part 로 받아 끝난 뒤에 이름을 바꾼다.
+        #   중간에 끊긴 11MB 짜리 wasm 이 "있음" 으로 보이면 그 뒤로 영영 고쳐지지 않는다.
+        part = target.with_name(target.name + '.part')
+        try:
+            req = urllib.request.Request(entry['url'], method='GET', headers={'User-Agent': 'choreo-editor'})
+            with urllib.request.urlopen(req, timeout=600) as res, open(part, 'wb') as out:
+                while True:
+                    chunk = res.read(1 << 20)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+            part.replace(target)
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            try:
+                part.unlink()
+            except OSError:
+                pass
+            return self._error(HTTPStatus.BAD_GATEWAY, f'{entry["name"]} 을 받지 못했습니다: {e}')
+        return self._json(HTTPStatus.CREATED, {'ok': True, 'key': entry['key'], 'bytes': target.stat().st_size, 'cached': False})
+
+    def _trim_clip(self):
+        """보관된 클립을 [inSec, outSec) 로 잘라 다시 인코딩한다. 원본은 그대로 두고 같은 폴더에 새 파일이 생긴다."""
+        data = self._read_json()
+        if not isinstance(data, dict):
+            return self._error(HTTPStatus.BAD_REQUEST, 'invalid json')
+        try:
+            in_sec = float(data.get('inSec'))
+            out_sec = float(data.get('outSec'))
+        except (TypeError, ValueError):
+            return self._error(HTTPStatus.BAD_REQUEST, 'inSec/outSec must be numbers')
+        if not (in_sec >= 0 and out_sec > in_sec and out_sec - in_sec >= 0.1):
+            return self._error(HTTPStatus.BAD_REQUEST, 'need 0 <= inSec < outSec (at least 0.1s)')
+        src = self._clip_file(data.get('path'))
+        if not src or not src.is_file():
+            return self._error(HTTPStatus.NOT_FOUND, 'no such clip')
+        if not self.ffmpeg:
+            return self._error(HTTPStatus.NOT_IMPLEMENTED, 'ffmpeg 이 없습니다. 설치하고(brew install ffmpeg) 서버를 다시 켜거나 --ffmpeg 로 경로를 주세요.')
+        name = trimmed_name(src.name, in_sec, out_sec)
+        final, n = name, 2
+        while (src.parent / final).exists():
+            final = numbered_name(name, n)
+            n += 1
+        dst = src.parent / final
+        ok, err = run_trim(self.ffmpeg, src, dst, in_sec, out_sec)
+        if not ok:
+            try:
+                dst.unlink()                  # 반쯤 쓰인 파일을 남기지 않는다
+            except OSError:
+                pass
+            return self._error(HTTPStatus.BAD_GATEWAY, f'ffmpeg 실패: {err}')
+        rel = str(dst.relative_to(self.config.root)).replace(os.path.sep, '/')
+        return self._json(HTTPStatus.CREATED, {
+            'ok': True, 'path': rel, 'name': final, 'url': '/clips/' + rel,
+            'size': dst.stat().st_size, 'durationSec': round(out_sec - in_sec, 3),
+        })
+
     def _list_clips(self, query):
         project = project_dir_name((query.get('project') or [''])[0])
         folder = self.config.dir / project
@@ -757,21 +1184,29 @@ def main(argv=None):
     ap.add_argument('--root', default=None, help='클립 보관 루트(기본: 저장소 폴더). 설정 파일보다 우선한다')
     ap.add_argument('--subdir', default=None, help='루트 아래 하위 폴더(기본: video-clip)')
     ap.add_argument('--config', default=str(CONFIG_FILE), help='설정 파일 경로(기본: 저장소의 .clipserver.json)')
+    ap.add_argument('--models', default=None, help='자세 분석 모델 보관 폴더(기본: 저장소의 models/). 설정에서도 바꾼다')
+    ap.add_argument('--ffmpeg', default=None, help='ffmpeg 실행 파일(기본: 환경 변수 CHOREO_FFMPEG 또는 PATH 의 ffmpeg). 없으면 자르기만 꺼진다')
     ap.add_argument('--quiet', action='store_true')
     args = ap.parse_args(argv)
 
     config = Config.load(str(REPO_DIR), DEFAULT_SUBDIR, Path(args.config))
     if args.root:
-        config = Config(args.root, config.subdir, config.path)
+        config = Config(args.root, config.subdir, config.path, config.llm, config.models_dir, config.pose_model)
     if args.subdir:
-        config = Config(config.root, args.subdir, config.path)
+        config = Config(config.root, args.subdir, config.path, config.llm, config.models_dir, config.pose_model)
+    if args.models:
+        config = Config(config.root, config.subdir, config.path, config.llm, args.models, config.pose_model)
     config.dir.mkdir(parents=True, exist_ok=True)
 
     Handler.config = config
     Handler.quiet = args.quiet
+    Handler.ffmpeg = find_ffmpeg(args.ffmpeg)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     port = httpd.server_address[1]
-    print(f'안무 편집기: http://{args.host}:{port}/   클립 보관: {config.dir}', flush=True)
+    cut = f'자르기: {Handler.ffmpeg}' if Handler.ffmpeg else '자르기: 꺼짐(ffmpeg 없음)'
+    m = config.models_json()
+    pose = f'자세 분석: 준비됨({config.pose_model})' if m['ready'] else f'자세 분석: 모델 {m["missing"]}개 필요 — 설정에서 내려받기'
+    print(f'안무 편집기: http://{args.host}:{port}/   클립 보관: {config.dir}   {cut}   {pose}', flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
