@@ -619,6 +619,12 @@
       transform: translate(-50%, -50%);
     }
 
+    /* ── 좁은 화면 전용 조작 (2026-09-12) ──
+       넓은 화면에서는 **없는 것과 같다**. 자리를 차지하지 않고 탭 순서에도 들어가지 않는다. */
+    .only-stacked { display: none !important; }   /* 사이드바가 위로 접히는 폭(≤1040)에서만 보인다 */
+    .only-compact { display: none !important; }   /* 폰 폭(≤720)에서만 보인다 */
+    .sheet-backdrop { display: none; }
+
     /* ── 스크롤 락 버튼 ── */
     .scroll-locks {
       display: none;
@@ -1445,6 +1451,136 @@
       will-change: transform;
     }
 
+    /* ────────────────────────────────────────────────────────────────────────
+       좁은 화면의 구조 (2026-09-12)
+
+       폰에서 세로 844px 가운데 안무표가 83px(10%)밖에 못 쓰고 있었다 — 앱바 175 ·
+       사이드바 287 · 캔버스 바 138 · 링크바 95 가 위를 다 먹었다. 태블릿(768)도 19% 였다.
+       그래서 **한 번에 하나**로 바꾼다: 안무표가 기본이고 나머지는 눌러서 불러낸다.
+
+       층이 둘이다.
+         ≤1040 (사이드바가 위로 접히는 폭) — 사이드바를 바텀 시트로 내리고, 링크바·비고 칸을
+                접는다. 여기서부터 사이드바가 안무표의 세로를 빼앗기 시작한다.
+         ≤720  (폰) — 앱바까지 한 줄로 줄이고 파일 조작을 `☰` 뒤로 접는다.
+
+       상태는 전부 <body> 의 data-* 이고 ui/layout.js 가 토글한다 — store 에 넣지 않는다
+       (스크롤 락과 같은 화면 상태이지 안무가 아니다). 기본값은 마크업에 적혀 있다.
+       ──────────────────────────────────────────────────────────────────────── */
+    @media (max-width: 1040px) {
+      .only-stacked { display: inline-flex !important; }
+
+      /* 사이드바가 흐름에서 빠지므로 행은 앱바와 작업 영역 둘이다. */
+      .app { grid-template-rows: auto minmax(0, 1fr); }
+
+      /* ── 사이드바 = 바텀 시트 ── */
+      .resize-divider { display: none; }
+      .sidebar {
+        position: fixed;
+        left: 0; right: 0; bottom: 0; top: auto;
+        max-height: 78vh;
+        z-index: 2500;
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -14px 36px rgba(0,0,0,0.55);
+        transform: translateY(101%);
+        transition: transform 0.18s ease-out;
+        will-change: transform;
+      }
+      body[data-sheet="on"] .sidebar { transform: translateY(0); }
+      .sidebar .panel-header { position: relative; padding-right: 44px; }
+      #sheetCloseBtn { position: absolute; right: 8px; top: 6px; padding: 4px 12px; min-height: 32px; }
+      .sheet-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(2,6,23,0.55);
+        z-index: 2400;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.18s ease-out;
+      }
+      body[data-sheet="on"] .sheet-backdrop { opacity: 1; pointer-events: auto; }
+
+      /* ── 링크바·비고는 부를 때만 ── */
+      .links-bar { display: none; }
+      body[data-links="on"] .links-bar { display: flex; }
+      body[data-links="on"] #linksToggleBtn,
+      body[data-notes="on"] #notesToggleBtn,
+      body[data-sheet="on"] #sidebarSheetBtn { background: rgba(34,197,94,0.16); color: var(--accent); }
+      /* ⚠ `--noteW` 는 ui/cssVars 가 렌더마다 인라인으로 쓴다 — !important 라야 이긴다. */
+      body[data-notes="off"] .board-wrap { --noteW: 0px !important; }
+      body[data-notes="off"] .note-header,
+      body[data-notes="off"] .note-cell { display: none; }
+
+      /* ── 손가락 크기 ──
+         이 폭은 대개 터치다. 재 보니 `안무표 크기` 의 −/+ 가 16x13px, 카드의 ★·✕ 가 20x20px,
+         정렬 버튼이 20px 높이였다 — 손끝(권장 44px, 현실적 하한 32px)으로는 못 누른다.
+         자리가 생겼으니(사이드바가 시트로 내려가 안무표가 세로의 8할을 쓴다) 목표를 키운다. */
+      .canvas-actions button,
+      .appbar button,
+      .top-actions button,
+      .sort-mode-btn,
+      .sort-dir-btn { min-height: 32px; }
+      .size-pill button { min-width: 32px; min-height: 32px; font-size: 15px; }
+      .size-pill input[type="number"] { min-height: 32px; }
+      .icon-btn, #categoryManager .icon-btn { width: 30px; height: 30px; font-size: 14px; }
+      .star-btn, #categoryManager .star-btn { min-width: 30px; min-height: 30px; font-size: 15px; padding: 0 4px; }
+      #addRoutineBtn { min-height: 32px; }
+      #categoryManager input[type="text"] { min-height: 30px; }
+      /* ⚠ 색 견본은 인라인 width/height 라 !important 가 아니면 못 이긴다(ui/categoryView 가 쓴다). */
+      #categoryManager input[type="color"] { width: 30px !important; height: 30px !important; }
+      .category-select { min-height: 30px; }
+      .move-card { min-height: 40px; }
+      .link-row input[type="url"], .link-row input[type="text"] { min-height: 32px; }
+
+      /* 스크롤 락은 위가 아니라 엄지 쪽에. 앱바와 영상 헤더를 덮지 않는다. */
+      .scroll-locks { top: auto; bottom: 10px; right: 10px; }
+      /* 시트가 열린 동안은 그 위를 덮지 않게 비킨다. */
+      body[data-sheet="on"] .scroll-locks { display: none; }
+    }
+
+    /* ── 태블릿 폭의 격자 여백 ──
+       이 폭에서 셀 폭 산술(ui/layout.syncCellSize)은 아직 데스크톱 값(76px)을 쓴다. 그대로 두면
+       768px 에서 21px 가 밖으로 나간다. 셀을 건드리는 대신 **주변 여백**만 줄인다 —
+       행 높이·셀 폭은 그대로여서 잡기 편한 크기가 유지된다.
+       ⚠ 폰(≤720)은 제외한다. 거기서는 layout.js 가 여백까지 계산에 넣어 셀 폭을 정하므로
+         (domain/grid.computeCellWidth 가 padding 8 · gap 6 · rowLabel 48 을 가정한다)
+         여기서 여백을 바꾸면 그 계산이 어긋나 가로로 4px 가 새어 나간다. */
+    @media (max-width: 1040px) and (min-width: 721px) {
+      :root { --rowLabelW: 64px; }
+      .board { gap: 8px; }
+      .board-header, .board-row { gap: 8px; }
+      .board-wrap { padding: 10px; }
+    }
+
+    @media (max-width: 720px) {
+      .only-compact { display: inline-flex !important; }
+
+      .app { padding: 6px; gap: 6px; }
+
+      /* ── 앱바 한 줄 ── */
+      .appbar {
+        padding: 4px 6px;
+        gap: 4px;
+        row-gap: 4px;
+        align-items: center;
+      }
+      .appbar h1, .appbar-sub, .appbar-spacer { display: none; }
+      .appbar .appbar-file, .appbar #clearBtn { display: none; }
+      body[data-more="on"] .appbar .appbar-file { display: flex; flex: 1 1 100%; }
+      body[data-more="on"] .appbar #clearBtn { display: inline-flex; }
+      body[data-more="on"] #appbarMoreBtn { background: rgba(34,197,94,0.16); color: var(--accent); }
+      .appbar button { padding: 5px 8px; font-size: 11px; min-height: 32px; }
+      .appbar .appbar-file input { min-width: 0; flex: 1; }
+
+      /* ── 캔버스 바 압축 ── */
+      .canvas-bar { padding: 5px 8px; gap: 4px; }
+      .canvas-bar h2 { font-size: 13px; }
+      .canvas-bar p { display: none; }
+      .size-pill-label { display: none; }
+      .canvas-actions { gap: 4px; }
+      .canvas-actions button { padding: 5px 8px; font-size: 11px; min-height: 32px; }
+    }
+
     @media (max-width: 1040px) {
       /* ⚠ DOM 은 그대로 두고 CSS 로만 위로 올린다. iframe 은 부모가 바뀌면 리로드된다. */
       .boards-container[data-video="on"] { flex-direction: column; }
@@ -1455,22 +1591,30 @@
         border-left: none;
         border-bottom: 2px solid rgba(34,197,94,0.30);
       }
-      /* .scroll-locks(우상단 fixed, z-index 3000)가 헤더 오른쪽을 덮는다 — 그만큼 비운다. */
-      .video-head { padding-right: 96px; }
+      /* ⚠ 예전에는 .scroll-locks(우상단 fixed)가 헤더 오른쪽을 덮어 96px 를 비웠다.
+         2026-09-12 부터 이 폭에서는 락이 화면 아래로 내려가므로 비울 까닭이 없다. */
+      .video-head { padding-right: 10px; }
       .video-body { max-height: 52vh; }
       .video-title-chip { max-width: 140px; }
     }
 
+    /* ⚠ 바로 위 ≤1040 블록보다 **뒤에** 있어야 이긴다(같은 특정도라 순서가 결정한다). */
+    @media (max-width: 720px) {
+      .video-body { max-height: 48vh; }
+    }
+
   </style>
 </head>
-<body>
+<body data-sheet="off" data-more="off" data-links="off" data-notes="off">
   <div class="app">
     <!-- 앱바 — 문서 수준(이 파일)과 앱 수준(도구) 조작만. 안무표 자체를 만지는 것은 캔버스 바에 있다. -->
     <header class="appbar">
+      <!-- 좁은 화면에서만 보인다. 파일 조작과 `전체 초기화` 를 펼치고 접는다(only-compact). -->
+      <button id="appbarMoreBtn" class="ghost only-compact" type="button" aria-expanded="false" title="파일 조작 펼치기">☰</button>
       <h1>안무 편집기</h1>
       <span class="appbar-sub">스윙·재즈 솔로 안무표</span>
 
-      <div class="appbar-group">
+      <div class="appbar-group appbar-file">
         <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
         <button id="saveBtn" class="primary">프로젝트 저장</button>
         <button id="loadFileBtn" class="ghost">전체 불러오기</button>
@@ -1497,6 +1641,7 @@
       <div class="panel-header">
         <h2 style="font-size:12.5px;">넣을 것</h2>
         <p>동작을 끌어다 놓거나, 카드를 눌러 고른 뒤 격자를 쓴다</p>
+        <button id="sheetCloseBtn" class="ghost only-stacked" type="button" title="닫기">✕</button>
       </div>
 
       <div class="sidebar-scroll">
@@ -1577,6 +1722,9 @@
       </div>
     </aside>
 
+    <!-- 좁은 화면에서 사이드바가 바텀 시트로 뜰 때 뒤를 덮는다. 눌러서 닫는다. -->
+    <div class="sheet-backdrop" id="sheetBackdrop"></div>
+
     <div class="resize-divider" id="resizeDivider"></div>
 
     <main class="panel workspace">
@@ -1588,11 +1736,14 @@
               <p>왼쪽 핸들로 이동 · 오른쪽 핸들로 길이 조절</p>
             </div>
             <div class="canvas-actions">
+              <button id="sidebarSheetBtn" class="ghost accent only-stacked" type="button" title="동작 목록을 아래에서 엽니다">≡ 동작</button>
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <button id="quickPlaceBtn" class="ghost">+ 빠른 배치</button>
               <button id="videoPanelBtn" class="ghost" type="button" title="영상을 띄우고 재생 위치를 안무표에 표시합니다">▶ 영상 패널</button>
               <button id="createRoutineFromSelectionBtn" class="primary special" style="font-size:10px;padding:4px 8px;display:none;">루틴으로 편성</button>
+              <button id="linksToggleBtn" class="ghost only-stacked" type="button" title="링크 줄을 보이거나 숨깁니다">🔗</button>
+              <button id="notesToggleBtn" class="ghost only-stacked" type="button" title="비고 칸을 보이거나 숨깁니다">비고</button>
             </div>
           </div>
           <div class="links-bar" id="linksBar">
