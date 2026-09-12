@@ -80,7 +80,20 @@ export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibr
  *   ChoreoVersion.reference 자리로 내려가고 최상위에는 "기본 영상"만 남는다. 그래서 tempo 와
  *   source 를 state 최상위에 평평하게 풀지 않고 블록 하나로 묶어 둔다(옮길 때 한 줄이 되도록).
  */
-export const MEDIA_FIELDS = Object.freeze(['tempo', 'source', 'markers']);
+export const MEDIA_FIELDS = Object.freeze(['activeId', 'clips']);
+
+/**
+ * 영상 하나(`MediaClip`)의 필드. 키 순서가 곧 저장 바이트다.
+ *
+ * ⚠ 2026-09-12 에 `media` 가 **영상 하나**에서 **영상 목록**으로 바뀌었다. 그전에는 tempo·source·
+ *   markers 가 media 바로 아래에 평평하게 있었다. 같은 안무를 여러 번 찍으면 영상이 여러 개
+ *   달리는데, 마커는 "영상의 12.3초"라는 뜻이라 영상이 바뀌면 **그대로 남아 엉뚱한 곳을 가리켰다**
+ *   (지우지도 않았다 — 그게 더 나빴다). 그래서 tempo·markers 를 영상 하나에 묶었다.
+ * ⚠ 옛 모양(`{tempo, source, markers}`)은 normalizeMedia 가 클립 하나로 감싸서 받는다.
+ *   마이그레이션 단계를 새로 만들지 않는 이유는, media 자체가 그렇게 들어왔기 때문이다
+ *   (migrations.js 설계 원칙 1 — 모양 복구는 normalize 의 몫).
+ */
+export const CLIP_FIELDS = Object.freeze(['id', 'name', 'source', 'tempo', 'markers']);
 
 /**
  * v1 프로젝트 파일이 최상위에 평평하게 들고 있는 링크 4필드.
@@ -161,9 +174,18 @@ export const LINK_FIELDS = Object.freeze(['youtubeUrl', 'youtubeTitle', 'clickup
  * 프로젝트의 영상 블록. `tempo` 는 안무의 일부(Undo·파일 대상)이고 `source` 는 어떤 곡인가다.
  * ⚠ 재생 위치·재생 상태·패널 열림 여부는 여기 없다. 전부 휘발성이라 store.session 소유다.
  * @typedef {Object} MediaBlock
- * @property {import('../tempo.js').Tempo} tempo
+ * @property {string} activeId 지금 보고 있는 영상의 id. 클립이 없으면 빈 문자열
+ * @property {MediaClip[]} clips 이 안무에 달린 영상들. 비면 파일에서 media 키째로 빠진다
+ */
+
+/**
+ * 영상 하나. 같은 안무를 여러 번 찍은 테이크가 각각 이것이다.
+ * @typedef {Object} MediaClip
+ * @property {string} id      소스에서 결정론적으로 만든다(clipIdOf). 같은 영상을 두 번 더해도 하나다
+ * @property {string} name    사람이 붙인 이름. **파일 이름과 따로 관리한다**(기본값 `테이크 N`)
  * @property {MediaSourceRef|null} source
- * @property {import('../markers.js').Marker[]} markers 영상 구간 ↔ 안무표 구간 마커(2026-09-10). 비면 파일에서 빠진다
+ * @property {import('../tempo.js').Tempo} tempo   이 영상의 시간축. 영상마다 다르다
+ * @property {import('../markers.js').Marker[]} markers 이 영상의 구간 ↔ 안무표 구간 마커
  */
 
 /**

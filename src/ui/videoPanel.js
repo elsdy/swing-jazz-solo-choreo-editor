@@ -25,10 +25,12 @@
 //   패널 열기/접기/따라가기·탭 한 번 한 번·In/Out 찍기·구간 반복에는 걸지 않는다 — 화면 상태이지 안무가 아니다.
 
 import { CLS, DATA } from './domContract.js';
+import { confirmOnce } from './widgets.js';
 import { isStacked as layoutIsStacked } from './layout.js';
 import { cellOf, clamp, linearOf, rowIndices } from '../domain/grid.js';
 import { isTempoUsable, normalizeTempo } from '../domain/tempo.js';
 import { markersAt, normalizeMarkers } from '../domain/markers.js';
+import { activeClipOf, clipCoverage, normalizeMedia } from '../domain/project/media.js';
 
 /** 메인 보드의 store 상 id. usecases/store.BOARD_MAIN 과 같은 문자열이다(ui 는 usecases 를 import 하지 않는다). */
 const BOARD_MAIN = 'main';
@@ -220,7 +222,7 @@ export function createVideoPanel(deps) {
     render,
     commitHistory = () => {},
     getSourceUrl,
-    getSource = () => (store.media && store.media.source) || null,
+    getSource = () => activeClipOf(store.media).source,
     getFileLoaded = () => false,
     onFileChosen = () => {},
     onOpenFromLibrary = () => {},
@@ -233,6 +235,8 @@ export function createVideoPanel(deps) {
     getTrimError = () => '',
     onTrim = () => {},
     onSync = () => {},
+    // 영상 이름 바꾸기에 쓴다(원본 renameMove 와 같은 idiom). 넓히지 않으려고 promptText 하나만 받는다.
+    dialogs = { promptText: (title, value) => window.prompt(title, value) },
     commands,
     isStacked = layoutIsStacked,
     elements = {}
@@ -290,6 +294,8 @@ export function createVideoPanel(deps) {
   const markerClearBtn = byId('videoMarkerClearBtn');
   const markerHelp = byId('videoMarkerHelp');
   const markerList = byId('videoMarkerList');
+  const clipList = byId('videoClipList');
+  const clipHelp = byId('videoClipHelp');
 
   /** 마지막으로 세운 행 선택지의 `${cols}x${rows}`. 같으면 다시 만들지 않는다(선택·포커스 보존). */
   let rowOptionsSig = null;
@@ -305,8 +311,12 @@ export function createVideoPanel(deps) {
   /** 휘발성 화면 상태. usecases/videoCommands.panelState 와 같은 기본값을 쓴다. */
   const panelState = () => store.get().session.video || DEFAULT_PANEL;
   /** 확정된 Tempo. 손상된 값·없는 값은 normalizeTempo 가 흡수한다(bpm 0 = 미설정). */
-  const tempo = () => normalizeTempo(store.media && store.media.tempo);
-  const markers = () => normalizeMarkers(store.media && store.media.markers);
+  /** 지금 보고 있는 영상. 박자·마커는 **영상마다 따로**다(2026-09-12) — 목록은 clips() 가 준다. */
+  const clip = () => activeClipOf(store.media);
+  /** 이 안무에 달린 영상 전부. */
+  const clips = () => normalizeMedia(store.media);
+  const tempo = () => normalizeTempo(clip().tempo);
+  const markers = () => normalizeMarkers(clip().markers);
   const mainBoard = () => store.board(BOARD_MAIN);
   /** In·Out 이 둘 다 있고 순서가 맞으면 그 구간, 아니면 null. usecases/videoCommands.inOutRange 와 같은 규칙이다. */
   const inOutRange = () => {
@@ -578,6 +588,98 @@ export function createVideoPanel(deps) {
     }
   }
 
+  /**
+   * 영상 목록(2026-09-12). 한 줄이 영상 하나고, 그 영상이 안무표의 어디를 덮는지를 막대로 보여 준다.
+   *
+   * ⚠ 커버리지는 **마커가 말한다.** 마커가 없으면 0% 막대가 아니라 `마커 없음` 이다 — 영상을 올리고
+   *   아직 안 찍었을 뿐일 수 있고, 0% 막대는 "이 영상은 아무 데도 안 맞는다"는 거짓말이 된다.
+   * ⚠ 전체 카운트는 메인 보드에서 읽는다. 안무표 크기를 바꾸면 막대 비율도 함께 달라진다.
+   */
+  function renderClips() {
+    if (!clipList) return;
+    const { clips: list, activeId } = clips();
+    const board = mainBoard();
+    const total = Math.max(1, (board.rows + (board.hasIntroRow ? 1 : 0)) * board.cols);
+    if (clipHelp) {
+      clipHelp.textContent = list.length === 0
+        ? '영상을 고르면 여기 쌓입니다. 같은 안무를 여러 번 찍었으면 영상마다 박자와 마커가 따로 삽니다.'
+        : `영상 ${list.length}개 — 줄을 누르면 그 영상으로 갈아탑니다(박자·마커가 함께 바뀝니다).`;
+    }
+    clipList.innerHTML = '';
+    for (const c of list) {
+      const li = document.createElement('li');
+      li.className = 'video-clip' + (c.id === activeId ? ' is-active' : '');
+      li.dataset.clipId = c.id;
+
+      const pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'video-clip-pick';
+      pick.dataset.act = 'pick';
+      pick.textContent = c.id === activeId ? '◉' : '○';
+      pick.title = c.id === activeId ? '지금 보고 있는 영상' : '이 영상으로 갈아타기';
+
+      const main = document.createElement('div');
+      main.className = 'video-clip-main';
+      const name = document.createElement('div');
+      name.className = 'video-clip-name';
+      name.textContent = c.name;
+      const sub = document.createElement('div');
+      sub.className = 'video-clip-sub';
+      const cov = clipCoverage(c);
+      const src = c.source ? (c.source.kind === 'file' ? c.source.name : '유튜브') : '소스 없음';
+      sub.textContent = cov
+        ? `${src} · ${formatRange(cov.fromCount, cov.toCount - 1, board.cols)} · 마커 ${cov.markers}개`
+        : `${src} · 마커 없음`;
+      sub.title = sub.textContent;
+      main.append(name, sub);
+      if (cov) {
+        const bar = document.createElement('div');
+        bar.className = 'video-clip-bar';
+        const fill = document.createElement('span');
+        const from = clamp(cov.fromCount, 0, total);
+        const to = clamp(cov.toCount, 0, total);
+        fill.style.left = `${(from / total) * 100}%`;
+        fill.style.width = `${Math.max(2, ((to - from) / total) * 100)}%`;
+        bar.appendChild(fill);
+        main.appendChild(bar);
+      }
+
+      const acts = document.createElement('div');
+      acts.className = 'video-clip-acts';
+      const ren = document.createElement('button');
+      ren.type = 'button'; ren.className = CLS.ghost;
+      ren.textContent = '✎'; ren.title = '이름 바꾸기';
+      ren.onclick = () => {
+        if (!commands.renameClip) return;
+        const next = dialogs.promptText('이 영상의 이름', c.name);
+        if (next == null) return;
+        render(commands.renameClip({ id: c.id, name: next }));
+        commitHistory();
+      };
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = CLS.ghost;
+      del.textContent = '✕'; del.title = '이 영상을 목록에서 빼기(찍어 둔 박자·마커도 함께 사라집니다)';
+      // ⚠ 되돌리는 길이 Undo 하나뿐이라 2단계 확인을 받는다(이 저장소의 confirmOnce 관습).
+      del.onclick = () => confirmOnce(del, '✕', () => {
+        if (!commands.removeClip) return;
+        render(commands.removeClip({ id: c.id }));
+        commitHistory();
+      });
+      acts.append(ren, del);
+
+      // 줄 아무 데나 눌러도 갈아탄다 — 작은 ○ 만 과녁이면 손가락으로 못 맞힌다.
+      const pickIt = () => {
+        if (!commands.selectClip) return;
+        render(commands.selectClip({ id: c.id }));
+      };
+      pick.onclick = pickIt;
+      main.onclick = pickIt;
+
+      li.append(pick, main, acts);
+      clipList.appendChild(li);
+    }
+  }
+
   /** 구간 자르기·마커 구획. In/Out 은 화면 상태, 마커는 media 에서 읽는다. */
   function renderCut() {
     const board = mainBoard();
@@ -718,6 +820,7 @@ export function createVideoPanel(deps) {
     if (collapseBtn) collapseBtn.textContent = p.collapsed ? '펼치기' : '접기';
 
     renderStatus();
+    renderClips();
     renderTempo();
     renderCapture();
     renderCut();

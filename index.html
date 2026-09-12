@@ -1436,6 +1436,37 @@
     .video-marker-range { color: #8892a4; }
     .video-marker button { padding: 1px 6px; font-size: 11px; }
 
+    /* ── 영상 목록 (2026-09-12) ──
+       한 줄이 영상 하나다: 고르기(●) · 이름 · 원본 파일 이름 · 커버리지 막대 · ✎ · ✕.
+       커버리지는 그 영상의 마커가 안무표의 어디를 덮는지다 — 전부 덮는 것과 일부만 덮는 것을
+       눈으로 가른다. 마커가 없으면 막대 대신 "마커 없음"이라고 말한다(0% 와 다르다). */
+    .video-clips { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+    .video-clip {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center; gap: 6px;
+      font-size: 11px; color: #dbe4ef;
+      background: rgba(148,163,184,0.06); border: 1px solid rgba(148,163,184,0.16);
+      border-radius: 8px; padding: 5px 6px;
+    }
+    .video-clip.is-active { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.55); }
+    .video-clip-pick { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 4px; }
+    .video-clip.is-active .video-clip-pick { color: var(--accent); }
+    .video-clip-main { min-width: 0; display: grid; gap: 2px; }
+    .video-clip-name { font-weight: 800; color: #eaf2ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .video-clip-sub { font-size: 10px; color: #8892a4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .video-clip-bar {
+      position: relative; height: 6px; border-radius: 3px;
+      background: rgba(148,163,184,0.16); overflow: hidden;
+    }
+    .video-clip-bar > span {
+      position: absolute; top: 0; bottom: 0;
+      background: linear-gradient(90deg, rgba(34,197,94,0.85), rgba(34,197,94,0.55));
+      border-radius: 3px;
+    }
+    .video-clip-acts { display: flex; gap: 2px; }
+    .video-clip-acts button { padding: 2px 6px; font-size: 11px; }
+
     /* ── 재생 헤드 ──
        z-index 6 은 .snap-indicator 와 동급이다 — .placement(3·4) 위, .resize-preview-block(8) 아래.
        ⚠ 이 엘리먼트는 렌더 파이프라인을 타지 않는다. rAF 루프가 transform 만 직접 쓴다(채널 B). */
@@ -1814,6 +1845,9 @@
               <button id="videoFileLibBtn" class="ghost accent" type="button" title="설정에서 지정한 보관 폴더에서 이 안무표의 영상을 다시 읽어 옵니다" hidden>📂 보관 폴더에서 불러오기</button>
               <button id="videoFileClearBtn" class="ghost" type="button" title="영상 파일을 놓고 링크바의 유튜브 주소로 돌아갑니다" hidden>✕ 파일 놓기</button>
             </div>
+            <!-- 이 안무에 달린 영상들(2026-09-12). 같은 안무를 여러 번 찍으면 여기 쌓인다. -->
+            <div class="helper" id="videoClipHelp"></div>
+            <ul class="video-clips" id="videoClipList"></ul>
               </div>
             </details>
             <details class="vstep" open>

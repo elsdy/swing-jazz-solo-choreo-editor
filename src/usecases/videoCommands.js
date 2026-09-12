@@ -22,9 +22,12 @@
 //   Date·performance 를 쓸 수 없다(tools/check-arch.mjs 가 막는다).
 
 import { NONE } from './store.js';
-import { isEmptyMedia, normalizeMedia, normalizeMediaSource } from '../domain/project/media.js';
 import {
-  bpmFromTaps, isTempoUsable, normalizeTempo, reanchor, tempoFromTwoPoints, addTempoPoint as addTempoPointOf, removeTempoPoint as removeTempoPointOf, clearTempoPointsOf, shiftTempo
+  SOURCELESS_CLIP_ID, activeClipOf, clipCoverage, clipIdOf, defaultClipName,
+  isEmptyMedia, normalizeMedia, normalizeMediaSource
+} from '../domain/project/media.js';
+import {
+  DEFAULT_TEMPO, bpmFromTaps, isTempoUsable, normalizeTempo, reanchor, tempoFromTwoPoints, addTempoPoint as addTempoPointOf, removeTempoPoint as removeTempoPointOf, clearTempoPointsOf, shiftTempo
 } from '../domain/tempo.js';
 import { addMarker as addMarkerOf, removeMarker as removeMarkerOf, markerTempoPoints, shiftMarkersForTrim } from '../domain/markers.js';
 
@@ -75,12 +78,34 @@ export function inOutRange(store) {
 }
 
 /**
- * 지금의 영상 블록(`{tempo, source, markers}`). **언제나 세 필드를 채워** 돌려준다.
+ * **지금 보고 있는 영상**(`{id, name, source, tempo, markers}`). 영상이 하나도 없으면 빈 클립이다.
+ *
+ * ⚠ 2026-09-12 이전에는 이것이 media 블록 자체였다(영상이 하나뿐이었다). 지금은 목록에서 활성
+ *   클립 하나를 꺼내 준다 — `{source, tempo, markers}` 세 필드의 모양이 그대로라 이 함수를 거치는
+ *   코드는 한 줄도 바뀌지 않았다. 목록 자체를 보려면 clipList 를 쓴다.
  * @param {object} store
- * @returns {import('../domain/project/schema.js').MediaBlock}
+ * @returns {import('../domain/project/schema.js').MediaClip}
  */
 export function mediaState(store) {
+  return activeClipOf(store.get().media);
+}
+
+/**
+ * 이 안무에 달린 영상 전부. 목록 화면이 읽는다.
+ * @param {object} store
+ * @returns {{ clips: import('../domain/project/schema.js').MediaClip[], activeId: string }}
+ */
+export function clipList(store) {
   return normalizeMedia(store.get().media);
+}
+
+/**
+ * 영상 하나가 안무표의 어디를 덮는가(마커 기준). 마커가 없으면 null — "안 덮는다"가 아니라 "모른다"다.
+ * @param {import('../domain/project/schema.js').MediaClip} clip
+ * @returns {{fromCount:number, toCount:number, markers:number}|null}
+ */
+export function coverageOf(clip) {
+  return clipCoverage(clip);
 }
 
 /**
@@ -107,9 +132,63 @@ function patchPanel(store, values) {
   return VIDEO;
 }
 
-/** media 블록을 통째로 갈아끼운다(부분 갱신이 아니라 교체 — 블록 하나가 값의 단위다). */
+/**
+ * **활성 클립 하나를** 갈아끼운다. 인자는 옛 media 블록과 같은 모양(`{source, tempo, markers}`)이라
+ * 이 함수를 부르는 열몇 곳이 2026-09-12 의 목록화에도 한 줄도 바뀌지 않았다.
+ *
+ * ⚠ 소스가 바뀌면 id 도 바뀐다(clipIdOf). 그때는 **그 자리에서 id 를 갈아 끼우고 activeId 도 함께
+ *   옮긴다** — 보관 폴더에 복사하면서 file:이름 → file:경로 가 되는 경우가 그렇다. 새 클립을
+ *   만들지 않는 이유는, 그것이 같은 영상이기 때문이다(마커를 두고 갈 수 없다).
+ * ⚠ 영상이 하나도 없는데 부르면 클립을 하나 만든다 — 유튜브 주소만 넣고 박자부터 찍는 흐름이 그렇다.
+ */
 function setMedia(store, next) {
-  store.update({ media: normalizeMedia(next) });
+  const cur = normalizeMedia(store.get().media);
+  const active = activeClipOf(cur);
+  const merged = { ...active, ...next };
+  const nextId = clipIdOf(merged.source) || active.id || SOURCELESS_CLIP_ID;
+  const clip = { ...merged, id: nextId, name: merged.name || defaultClipName(cur.clips.length) };
+  const clips = cur.clips.length
+    ? cur.clips.map(c => (c.id === active.id ? clip : c))
+    : [clip];
+  store.update({ media: normalizeMedia({ activeId: clip.id, clips }) });
+  return VIDEO;
+}
+
+/**
+ * 그 소스의 클립으로 **갈아탄다**. 없으면 새로 만들어 붙이고 그것을 활성으로 삼는다.
+ *
+ * 이것이 "영상을 바꾸면 마커가 엉뚱한 곳을 가리키던" 문제의 매듭이다 — 다른 영상은 다른 클립이라
+ * 마커도 박자도 따로 산다. 같은 영상을 다시 고르면 그때 찍어 둔 것이 그대로 붙어 돌아온다.
+ * @param {object} store
+ * @param {import('../domain/project/schema.js').MediaSourceRef|null} source
+ * @returns {import('./store.js').Dirty}
+ */
+function switchToSource(store, source) {
+  const cur = normalizeMedia(store.get().media);
+  const id = clipIdOf(source);
+  if (!id) return NONE;
+  // ⚠ 소스 없이 박자부터 찍어 둔 클립이 활성이면 **그 클립이 이 영상이 된다**(새로 만들지 않는다).
+  //   주소를 나중에 넣는 흐름이라, 새 클립을 만들면 방금 찍은 박자가 빈 클립에 남아 갈라진다.
+  const active = activeClipOf(cur);
+  if (active.id === SOURCELESS_CLIP_ID && !cur.clips.some(c => c.id === id)) {
+    return setMedia(store, { ...active, source });
+  }
+  const found = cur.clips.find(c => c.id === id);
+  if (found) {
+    if (cur.activeId === id) return NONE;
+    store.update({ media: normalizeMedia({ ...cur, activeId: id }) });
+    return VIDEO;
+  }
+  // ⚠ **bpm 은 물려받고 시작 지점은 물려받지 않는다.** bpm·1카운트의 박 수는 *곡*의 성질이라
+  //   같은 안무를 여러 번 찍어도 그대로이고, 앵커(anchorSec)와 보정점은 *그 영상*의 시간축이라
+  //   다른 테이크에서는 거짓말이 된다. 그래서 새 영상은 bpm 만 들고 와서 `지금 여기` 한 번이면 맞는다.
+  const prev = activeClipOf(cur).tempo;
+  const clip = {
+    id, name: defaultClipName(cur.clips.length), source,
+    tempo: { ...DEFAULT_TEMPO, bpm: prev.bpm, beatsPerCount: prev.beatsPerCount },
+    markers: []
+  };
+  store.update({ media: normalizeMedia({ activeId: id, clips: [...cur.clips, clip] }) });
   return VIDEO;
 }
 
@@ -197,7 +276,9 @@ export function setSource(store, args = {}) {
   //   놓은 것이 아니다. 파일을 놓는 것은 clearFileSource 의 몫이다.
   if (!next && cur.source && cur.source.kind === 'file') return NONE;
   if (sameSource(cur.source, next)) return NONE;
-  return setMedia(store, { ...cur, source: next });
+  // 주소를 지운 경우는 지금 클립의 소스만 비운다(클립과 마커는 남긴다).
+  if (!next) return setMedia(store, { ...cur, source: null });
+  return switchToSource(store, next);
 }
 
 /**
@@ -214,7 +295,12 @@ export function setFileSource(store, args = {}) {
   const next = normalizeMediaSource({ kind: 'file', name: args.name, path: args.path });
   if (!next) return NONE;
   if (sameSource(cur.source, next)) return NONE;
-  return setMedia(store, { ...cur, source: next });
+  // ⚠ 같은 파일에 보관 경로만 붙은 경우(폴더에 복사했다)는 **갈아타지 않고 지금 클립을 고친다** —
+  //   같은 영상이므로 찍어 둔 마커를 두고 갈 수 없다.
+  if (cur.source && cur.source.kind === 'file' && cur.source.name === next.name) {
+    return setMedia(store, { ...cur, source: next });
+  }
+  return switchToSource(store, next);
 }
 
 /**
@@ -228,7 +314,10 @@ export function clearFileSource(store) {
   if (!cur.source || cur.source.kind !== 'file') return NONE;
   const url = String((store.get().links || {}).youtubeUrl || '').trim();
   const next = url ? normalizeMediaSource({ kind: 'youtube', url }) : null;
-  return setMedia(store, { ...cur, source: next });
+  // ⚠ 파일 클립을 **지우지 않는다.** 화면에서 내려놓는 것뿐이고, 그 영상에 찍어 둔 마커는 목록에 남는다.
+  //   지우는 것은 removeClip 의 몫이다.
+  if (next) return switchToSource(store, next);
+  return setMedia(store, { ...cur, source: null });
 }
 
 /**
@@ -241,6 +330,73 @@ function sameSource(a, b) {
   if (!a || !b) return a === b;
   if (a.kind !== b.kind) return false;
   return a.kind === 'file' ? (a.name === b.name && (a.path || '') === (b.path || '')) : a.url === b.url;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 영상 목록 — 같은 안무를 여러 번 찍는다 (2026-09-12)
+//
+// 테이크마다 시간축이 다르므로 박자와 마커는 **영상에 붙는다**. 목록에서 하는 일은 셋뿐이다 —
+// 갈아타기 · 이름 붙이기 · 지우기. 올리기는 `① 영상 고르기` 가 그대로 맡는다(파일을 고르면
+// setFileSource 가 새 클립을 만든다).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 그 영상으로 갈아탄다. 박자·마커·In/Out 이 그 영상의 것으로 통째로 바뀐다.
+ * ⚠ In/Out 과 받아 적던 시작점은 **비운다** — 다른 영상의 시각이라 그대로 두면 엉뚱한 구간을 가리킨다.
+ * @param {object} store
+ * @param {{id?: string}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function selectClip(store, args = {}) {
+  const cur = normalizeMedia(store.get().media);
+  const id = String(args.id == null ? '' : args.id);
+  if (!cur.clips.some(c => c.id === id) || cur.activeId === id) return NONE;
+  store.update({ media: normalizeMedia({ ...cur, activeId: id }) });
+  const panel = panelState(store);
+  store.patch('session', { video: { ...panel, inSec: null, outSec: null, loop: false, captureSec: null } });
+  return VIDEO;
+}
+
+/**
+ * 영상에 이름을 붙인다. **파일 이름과 따로 관리하는 이름**이다 — 올라오는 파일 이름은 제각각이라
+ * 목록에서 서로 구분되지 않는다.
+ * ⚠ 빈 이름은 거절한다(기본 이름으로 되돌리려면 그 이름을 직접 적는다). 같은 이름이 둘이어도 막지
+ *   않는다 — 사람이 "9/8 첫 번째"와 "9/8 두 번째"를 그렇게 부르는 것을 도구가 말릴 일이 아니다.
+ * @param {object} store
+ * @param {{id?: string, name?: string}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function renameClip(store, args = {}) {
+  const cur = normalizeMedia(store.get().media);
+  const id = String(args.id == null ? '' : args.id);
+  const name = String(args.name == null ? '' : args.name).trim();
+  if (!name) return NONE;
+  const clip = cur.clips.find(c => c.id === id);
+  if (!clip || clip.name === name) return NONE;
+  store.update({ media: normalizeMedia({ ...cur, clips: cur.clips.map(c => (c.id === id ? { ...c, name } : c)) }) });
+  return VIDEO;
+}
+
+/**
+ * 영상 하나를 목록에서 뺀다. **그 영상에 찍어 둔 박자와 마커가 함께 사라진다** —
+ * 되돌리는 길은 Undo 하나뿐이므로 호출부가 확인을 받아야 한다(뷰의 confirmOnce).
+ * ⚠ 지우는 것은 목록의 항목이지 파일이 아니다. 보관 폴더의 영상 파일은 그대로 남는다.
+ * @param {object} store
+ * @param {{id?: string}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function removeClip(store, args = {}) {
+  const cur = normalizeMedia(store.get().media);
+  const id = String(args.id == null ? '' : args.id);
+  if (!cur.clips.some(c => c.id === id)) return NONE;
+  const clips = cur.clips.filter(c => c.id !== id);
+  const activeId = cur.activeId === id ? (clips[0] ? clips[0].id : '') : cur.activeId;
+  store.update({ media: normalizeMedia({ activeId, clips }) });
+  if (cur.activeId === id) {
+    const panel = panelState(store);
+    store.patch('session', { video: { ...panel, inSec: null, outSec: null, loop: false, captureSec: null } });
+  }
+  return VIDEO;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -486,7 +642,9 @@ export function clearMedia(store) {
   // 찍다 만 점·두드리다 만 탭·In/Out 도 함께 버린다 — 지워진 영상의 시각이라 남겨 두면 다음 한 번의
   // `지금 여기` 가 옛 점과 짝을 이뤄 엉뚱한 bpm 을 만든다.
   if (hasMarks) store.patch('session', { video: { ...cur, tempoPoints: [], taps: [], inSec: null, outSec: null } });
-  if (!wasEmpty) setMedia(store, null);
+  // ⚠ 목록을 통째로 비운다(2026-09-12). `전체 초기화` 는 이 안무에 달린 **영상 전부**를 내려놓는
+  //   조작이라, 활성 클립만 비우면 나머지 테이크가 유령처럼 남는다. Undo 한 번이면 전부 돌아온다.
+  if (!wasEmpty) store.update({ media: normalizeMedia(null) });
   return VIDEO;
 }
 

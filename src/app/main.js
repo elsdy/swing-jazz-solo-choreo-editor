@@ -1162,6 +1162,7 @@ views.video = createVideoPanel({
   getTrimState: trimState,
   getTrimError: () => trimError,
   onTrim: trimCurrentClip,
+  dialogs: browserDialogs,
   // ⚠ 매 렌더 불린다(패널이 열린 채 URL 만 바뀌는 경로가 있다). 아래 셋은 전부 멱등이다.
   onSync: (shown) => {
     if (shown) {
@@ -1209,6 +1210,10 @@ views.video = createVideoPanel({
     removeMarker: (args) => VideoCmd.removeMarker(store, args),
     clearMarkers: () => VideoCmd.clearMarkers(store),
     applyMarkerToTempo: (args) => VideoCmd.applyMarkerToTempo(store, args),
+    // 영상 목록(2026-09-12). 같은 안무를 여러 번 찍으면 영상이 여러 개 달린다.
+    selectClip: (args) => VideoCmd.selectClip(store, args),
+    renameClip: (args) => VideoCmd.renameClip(store, args),
+    removeClip: (args) => VideoCmd.removeClip(store, args),
     // 받아 적기(2026-09-12). 메인 보드에만 놓는다 — 루틴 편집기와 영상 패널은 동시에 열리지 않는다.
     captureToggle: (args) => CaptureCmd.captureToggle(store, args, { ids: browserEnv }),
     cancelCapture: () => CaptureCmd.cancelCapture(store),

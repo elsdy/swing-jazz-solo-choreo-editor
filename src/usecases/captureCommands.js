@@ -24,6 +24,7 @@ import { placeBlockAt } from './boardCommands.js';
 import { isTempoUsable, normalizeTempo, spanToCountRange } from '../domain/tempo.js';
 import { cellOf, linearOf } from '../domain/grid.js';
 import { normalizeMarkers } from '../domain/markers.js';
+import { activeClipOf } from '../domain/project/media.js';
 import { affectedRowsByGroup, isPending, nameGroup, pendingGroupIds } from '../domain/placements.js';
 
 /** 패널이 다시 그려져야 한다는 뜻(videoCommands 의 VIDEO 와 같은 값이다). */
@@ -56,8 +57,8 @@ export function captureStartSec(store) {
  * @returns {boolean}
  */
 export function canCapture(store) {
-  const media = store.get().media;
-  return isTempoUsable(normalizeTempo(media && media.tempo));
+  // ⚠ **지금 보고 있는 영상**의 박자다(2026-09-12). 영상마다 시간축이 달라 박자도 영상에 붙는다.
+  return isTempoUsable(normalizeTempo(activeClipOf(store.get().media).tempo));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ export function captureSpan(store, args, deps = {}) {
   const outSec = Number(args.outSec);
   if (!Number.isFinite(inSec) || !Number.isFinite(outSec) || !(outSec - inSec >= MIN_SPAN_SEC)) return NONE;
   const state = store.get();
-  const tempo = normalizeTempo(state.media && state.media.tempo);
+  const tempo = normalizeTempo(activeClipOf(state.media).tempo);
   if (!isTempoUsable(tempo)) return { ...NONE, needsTempo: true };
   const board = boardOf(state, boardId);
   const { from, to } = spanToCountRange(inSec, outSec, board.cols, tempo);
@@ -157,7 +158,7 @@ export function cancelCapture(store) {
  */
 export function markersToBlocks(store, args = {}, deps = {}) {
   const { boardId = BOARD_MAIN } = args;
-  const markers = normalizeMarkers(store.get().media && store.get().media.markers);
+  const markers = normalizeMarkers(activeClipOf(store.get().media).markers);
   if (!markers.length) return NONE;
   let dirty = NONE;
   let placed = 0;
