@@ -75,9 +75,17 @@
     button.ghost.accent { background: rgba(59,130,246,0.18); border: 1px solid rgba(96,165,250,0.38); color: #dbeafe; font-weight: 800; }
     button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
+    /* ⚠ 접힌 `<details>` 를 **명시적으로** 숨긴다. 브라우저 기본 동작에 기대면, 자식에 `display` 를 주는
+       규칙(`.video-field{display:flex}` 같은 것)이 그것을 이기고, 환경에 따라 아예 안 접히기도 한다
+       (2026-09-12 에 이 자동화 크롬에서 손대지 않은 `<details>` 도 안 접혔다). 규칙으로 못박아 두면
+       어디서나 같게 동작하고 계산된 스타일로 검증할 수 있다 — 개발 원칙 U-12. */
+    details:not([open]) > *:not(summary) { display: none; }
+
     .app {
       display: grid;
       grid-template-columns: 320px 1fr;
+      /* 1행은 앱바(문서·앱 수준 조작), 2행이 작업 영역이다. */
+      grid-template-rows: auto minmax(0, 1fr);
       gap: 10px;
       padding: 10px;
       height: 100vh;
@@ -103,6 +111,44 @@
       overflow-y: auto;
       overflow-x: hidden;
     }
+    /* ── 앱바 (2026-09-12) ──
+       편집기 관례를 따른다: **문서 수준 조작은 위**, 넣을 것은 왼쪽, 캔버스는 가운데.
+       여기 있는 것은 "이 파일에 대한 일"(이름·저장·열기·되돌리기·초기화)과 "앱에 대한 일"(문서·설정)뿐이고,
+       안무표 자체를 만지는 것은 캔버스 바로 위 `.canvas-bar` 로 내려갔다. 자리를 섞지 않는 것이 요점이다. */
+    .appbar {
+      grid-column: 1 / -1;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+      padding: 7px 12px;
+      background: var(--panel);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 14px;
+      box-shadow: var(--shadow, none);
+    }
+    .appbar h1 { margin: 0; font-size: 14px; white-space: nowrap; }
+    .appbar-sub { font-size: 10.5px; color: var(--muted); white-space: nowrap; margin-left: -4px; }
+    /* 묶음 사이를 세로선으로 가른다 — 같은 줄에 있어도 다른 종류의 일이라는 표시다(게슈탈트 공통 영역). */
+    .appbar-group { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .appbar-group + .appbar-group { padding-left: 8px; border-left: 1px solid rgba(148, 163, 184, 0.16); }
+    .appbar-spacer { flex: 1 1 auto; min-width: 0; }
+    .appbar input[type="text"] { width: 11em; }
+    /* 되돌릴 수 없는 것은 맨 오른쪽 끝에 혼자 둔다 — 자주 쓰는 버튼 옆에 두면 잘못 누른다(Fitts). */
+    .appbar .danger { margin-left: 2px; }
+
+    /* 캔버스 바 — 안무표 자체를 만지는 것만. `.top-actions` 와 같은 모양이되 이름을 갈라
+       `document.querySelector('.top-actions')` 가 앱바를 집게 한다(문서·설정이 거기 붙는다). */
+    .canvas-actions { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+
+    /* 사이드바 아래의 파일 서랍. 자주 안 쓰는 것은 접어 둔다(점진적 공개). */
+    .drawer { border-top: 1px solid rgba(148, 163, 184, 0.12); margin-top: 6px; }
+    .drawer > summary {
+      cursor: pointer; list-style: none; padding: 8px 2px;
+      font-size: 11px; font-weight: 800; color: #dbe4ef; user-select: none;
+    }
+    .drawer > summary::-webkit-details-marker { display: none; }
+    .drawer > summary::before { content: '▸ '; color: var(--muted); }
+    .drawer[open] > summary::before { content: '▾ '; }
+    .drawer > .stack, .drawer > .compact-grid { padding-bottom: 8px; }
+
     .panel-header, .section, .toolbar {
       padding: 8px 10px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.10);
@@ -659,7 +705,7 @@
       }
       .app {
         grid-template-columns: 1fr;
-        grid-template-rows: var(--sidebar-h, min(42vh, 420px)) auto minmax(0, 1fr);
+        grid-template-rows: auto var(--sidebar-h, min(42vh, 420px)) auto minmax(0, 1fr);
         height: 100vh;
         min-height: 100vh;
         overflow: hidden;
@@ -709,7 +755,7 @@
         padding: 8px;
         gap: 8px;
         grid-template-columns: 1fr;
-        grid-template-rows: var(--sidebar-h, minmax(220px, 34vh)) auto minmax(0, 1fr);
+        grid-template-rows: auto var(--sidebar-h, minmax(220px, 34vh)) auto minmax(0, 1fr);
         height: 100vh;
         min-height: 100vh;
         overflow: hidden;
@@ -1332,6 +1378,26 @@
       background: rgba(148,163,184,0.18);
     }
     .video-progress > span { display: block; height: 100%; background: rgba(34,197,94,0.85); width: 0; }
+    /* ── 영상 패널의 단계 묶음 (2026-09-12) ──
+       버튼 서른한 개가 한 화면에 평평하게 있던 것을 **하는 순서**로 묶었다(①영상 → ②박자 → ③구간 → ④마커 → ⑤자세).
+       자주 안 쓰는 것(탭 템포·직접 입력·보정점)은 `고급` 뒤로 접었다 — 점진적 공개.
+       ⚠ `<details>` 라 JS 가 없다. 여는 상태는 브라우저가 들고 있고 마크업의 `open` 이 기본값이다. */
+    .vstep { border-top: 1px solid rgba(34,197,94,0.16); padding-top: 6px; }
+    .vstep > summary {
+      cursor: pointer; list-style: none; user-select: none; padding: 2px 0;
+      font-size: 11px; font-weight: 800; color: rgba(134,239,172,0.92); letter-spacing: 0.02em;
+    }
+    .vstep > summary::-webkit-details-marker { display: none; }
+    .vstep > summary::before { content: '▸ '; color: var(--muted); font-weight: 400; }
+    .vstep[open] > summary::before { content: '▾ '; }
+    /* ⚠ **열렸을 때만** display 를 준다. `.vstep > .vstep-body { display: grid }` 로 두면 그 규칙이
+       `<details>` 의 기본 숨김을 이겨서, 접어도 안이 그대로 보인다(2026-09-12 에 실제로 그랬다 —
+       개발 원칙 U-12 가 경고하는 바로 그것이다). 닫힌 동안에는 어떤 display 도 주지 않는다. */
+    .vstep[open] > .vstep-body, .vsub[open] > .vstep-body { display: grid; gap: 6px; padding: 4px 0 2px; }
+    /* 고급은 한 단 더 들어간다 — 같은 꼴이되 색을 낮춰 단계와 구별한다. */
+    .vsub > summary { color: var(--muted); font-weight: 700; }
+    .vsub { border-top: none; padding-top: 0; }
+
     .video-tempo { display: grid; gap: 6px; }
     .video-bpm { font-size: 12px; font-weight: 800; color: #dbe4ef; line-height: 1.4; }
     .video-field { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
@@ -1389,73 +1455,41 @@
 </head>
 <body>
   <div class="app">
+    <!-- 앱바 — 문서 수준(이 파일)과 앱 수준(도구) 조작만. 안무표 자체를 만지는 것은 캔버스 바에 있다. -->
+    <header class="appbar">
+      <h1>안무 편집기</h1>
+      <span class="appbar-sub">스윙·재즈 솔로 안무표</span>
+
+      <div class="appbar-group">
+        <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
+        <button id="saveBtn" class="primary">프로젝트 저장</button>
+        <button id="loadFileBtn" class="ghost">전체 불러오기</button>
+        <button id="mergeFileBtn" class="ghost accent">부분 불러오기</button>
+        <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
+        <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
+      </div>
+
+      <div class="appbar-spacer"></div>
+
+      <div class="appbar-group">
+        <button id="undoBtn" class="ghost">Undo</button>
+        <button id="redoBtn" class="ghost">Redo</button>
+      </div>
+
+      <!-- main.js 가 여기에 `문서`·`⚙ 설정`·`✨ 말로 채우기` 를 붙인다.
+           ⚠ `.top-actions` 는 문서에서 **여기 하나**여야 한다 — querySelector 가 첫 번째를 집는다. -->
+      <div class="top-actions"></div>
+
+      <button id="clearBtn" class="danger">전체 초기화(링크 포함)</button>
+    </header>
+
     <aside class="panel sidebar">
       <div class="panel-header">
-        <h1>안무 편집기</h1>
-        <p>안무표, 카테고리, 동작을 한 번에 관리</p>
+        <h2 style="font-size:12.5px;">넣을 것</h2>
+        <p>동작을 끌어다 놓거나, 카드를 눌러 고른 뒤 격자를 쓴다</p>
       </div>
 
       <div class="sidebar-scroll">
-      <section class="section stack">
-        <div class="soft-card stack">
-          <div style="font-size:11px; font-weight:800; color:#dbe4ef;">프로젝트 저장 / 불러오기</div>
-          <div class="row wrap">
-            <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
-            <button id="saveBtn" class="primary">프로젝트 저장</button>
-            <button id="loadFileBtn" class="ghost">전체 불러오기</button>
-            <button id="mergeFileBtn" class="ghost accent">부분 불러오기</button>
-            <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
-            <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
-          </div>
-          <div class="helper">프로젝트 저장에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다.</div>
-          <div class="row" style="gap:4px;">
-            <button id="savedSortRecentBtn" class="sort-mode-btn active" title="최근 작업순">최근순</button>
-            <button id="savedSortAlphaBtn" class="sort-mode-btn" title="이름순">이름순</button>
-          </div>
-          <div class="saved-list" id="savedList"></div>
-        </div>
-
-        <div class="compact-grid">
-          <div class="soft-card stack">
-            <div style="font-size:11px; font-weight:800; color:#dbe4ef;">동작 저장 / 불러오기</div>
-            <input id="moveListFileNameInput" type="text" placeholder="동작 파일 이름" />
-            <div class="row wrap">
-              <button id="saveMoveListBtn" class="warn">동작 저장</button>
-              <button id="loadMoveListBtn" class="ghost">동작 열기</button>
-              <input id="moveListLoader" class="file-input" type="file" accept=".json,application/json" />
-            </div>
-            <div class="saved-list" id="savedMoveList"></div>
-          </div>
-          <div class="soft-card stack">
-            <div style="font-size:11px; font-weight:800; color:#dbe4ef;">카테고리 저장 / 불러오기</div>
-            <input id="categoryFileNameInput" type="text" placeholder="카테고리 파일 이름" />
-            <div class="row wrap">
-              <button id="saveCategoriesBtn" class="ghost accent">카테고리 저장</button>
-              <button id="loadCategoriesBtn" class="ghost">카테고리 열기</button>
-              <input id="categoryLoader" class="file-input" type="file" accept=".json,application/json" />
-            </div>
-            <div class="saved-list" id="savedCategoryList"></div>
-          </div>
-        </div>
-
-      </section>
-
-      <section class="section stack" style="min-height:0; flex:1;">
-        <div class="row wrap" style="justify-content:space-between; align-items:center;">
-          <h3 style="margin:0; font-size:12px;">루틴 목록</h3>
-          <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;">+ 새 루틴</button>
-        </div>
-        <div class="helper">루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.</div>
-        <div class="palette-list" id="routineList"></div>
-      </section>
-
-      <section class="section stack">
-        <div class="soft-card stack">
-          <div style="font-size:11px; font-weight:800; color:#dbe4ef;">카테고리 관리</div>
-          <div id="categoryManager" class="stack"></div>
-        </div>
-        <div class="helper">동작 카테고리는 팔레트에서 바로 수정되고, 카테고리 이름을 바꾸면 전체 UI에 반영됩니다.</div>
-      </section>
 
       <section class="section stack" style="min-height:0;">
         <div class="soft-card stack">
@@ -1479,6 +1513,57 @@
         </div>
         <div class="palette-list" id="paletteList"></div>
       </section>
+      <section class="section stack" style="min-height:0; flex:1;">
+        <div class="row wrap" style="justify-content:space-between; align-items:center;">
+          <h3 style="margin:0; font-size:12px;">루틴 목록</h3>
+          <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;">+ 새 루틴</button>
+        </div>
+        <div class="helper">루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.</div>
+        <div class="palette-list" id="routineList"></div>
+      </section>
+
+      <section class="section stack">
+        <div class="soft-card stack">
+          <div style="font-size:11px; font-weight:800; color:#dbe4ef;">카테고리 관리</div>
+          <div id="categoryManager" class="stack"></div>
+        </div>
+        <div class="helper">동작 카테고리는 팔레트에서 바로 수정되고, 카테고리 이름을 바꾸면 전체 UI에 반영됩니다.</div>
+      </section>
+
+      <details class="drawer">
+        <summary>파일 — 최근 프로젝트 · 동작 · 카테고리</summary>
+        <div class="stack">
+          <div class="helper">프로젝트 저장에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다. 저장·열기 버튼은 맨 위 줄에 있습니다.</div>
+          <div class="row" style="gap:4px;">
+            <button id="savedSortRecentBtn" class="sort-mode-btn active" title="최근 작업순">최근순</button>
+            <button id="savedSortAlphaBtn" class="sort-mode-btn" title="이름순">이름순</button>
+          </div>
+          <div class="saved-list" id="savedList"></div>
+        </div>
+        <div class="compact-grid">
+          <div class="soft-card stack">
+            <div style="font-size:11px; font-weight:800; color:#dbe4ef;">동작 저장 / 불러오기</div>
+            <input id="moveListFileNameInput" type="text" placeholder="동작 파일 이름" />
+            <div class="row wrap">
+              <button id="saveMoveListBtn" class="warn">동작 저장</button>
+              <button id="loadMoveListBtn" class="ghost">동작 열기</button>
+              <input id="moveListLoader" class="file-input" type="file" accept=".json,application/json" />
+            </div>
+            <div class="saved-list" id="savedMoveList"></div>
+          </div>
+          <div class="soft-card stack">
+            <div style="font-size:11px; font-weight:800; color:#dbe4ef;">카테고리 저장 / 불러오기</div>
+            <input id="categoryFileNameInput" type="text" placeholder="카테고리 파일 이름" />
+            <div class="row wrap">
+              <button id="saveCategoriesBtn" class="ghost accent">카테고리 저장</button>
+              <button id="loadCategoriesBtn" class="ghost">카테고리 열기</button>
+              <input id="categoryLoader" class="file-input" type="file" accept=".json,application/json" />
+            </div>
+            <div class="saved-list" id="savedCategoryList"></div>
+          </div>
+        </div>
+      </details>
+
       </div>
     </aside>
 
@@ -1487,20 +1572,17 @@
     <main class="panel workspace">
       <div class="boards-container" id="boardsContainer">
         <div class="main-board-area">
-          <div class="toolbar">
+          <div class="toolbar canvas-bar">
             <div>
               <h2 id="boardTitle">8x8 안무 테이블</h2>
-              <p>왼쪽 핸들로 이동, 오른쪽 핸들로 길이 조절.</p>
+              <p>왼쪽 핸들로 이동 · 오른쪽 핸들로 길이 조절</p>
             </div>
-            <div class="top-actions">
+            <div class="canvas-actions">
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <button id="quickPlaceBtn" class="ghost">+ 빠른 배치</button>
               <button id="videoPanelBtn" class="ghost" type="button" title="영상을 띄우고 재생 위치를 안무표에 표시합니다">▶ 영상 패널</button>
               <button id="createRoutineFromSelectionBtn" class="primary special" style="font-size:10px;padding:4px 8px;display:none;">루틴으로 편성</button>
-              <button id="undoBtn" class="ghost">Undo</button>
-              <button id="redoBtn" class="ghost">Redo</button>
-              <button id="clearBtn" class="danger">전체 초기화(링크 포함)</button>
             </div>
           </div>
           <div class="links-bar" id="linksBar">
@@ -1561,6 +1643,9 @@
           <div class="video-body" id="videoBody">
             <div class="video-frame" id="videoFrame"><canvas class="video-pose" id="videoPoseCanvas" hidden></canvas></div>
             <div class="video-status" id="videoStatus"></div>
+            <details class="vstep" open>
+              <summary>① 영상 고르기</summary>
+              <div class="vstep-body">
             <div class="video-field video-source">
               <input id="videoFileInput" type="file" accept="video/*" hidden />
               <button id="videoFileBtn" class="ghost" type="button" title="내 컴퓨터의 영상 파일을 안무표 옆에 띄웁니다">📁 영상 파일 열기</button>
@@ -1568,6 +1653,11 @@
               <button id="videoFileLibBtn" class="ghost accent" type="button" title="설정에서 지정한 보관 폴더에서 이 안무표의 영상을 다시 읽어 옵니다" hidden>📂 보관 폴더에서 불러오기</button>
               <button id="videoFileClearBtn" class="ghost" type="button" title="영상 파일을 놓고 링크바의 유튜브 주소로 돌아갑니다" hidden>✕ 파일 놓기</button>
             </div>
+              </div>
+            </details>
+            <details class="vstep" open>
+              <summary>② 박자 맞추기</summary>
+              <div class="vstep-body">
             <div class="video-tempo">
               <div class="video-bpm" id="videoBpmText"></div>
 
@@ -1582,6 +1672,9 @@
               </div>
               <div class="helper" id="videoMarkHelp"></div>
 
+              <details class="vsub">
+                <summary>고급 — 탭 템포 · 직접 입력 · 보정점</summary>
+                <div class="vstep-body">
               <div class="video-field">
                 <button id="videoTapBtn" class="warn" type="button">탭</button>
                 <button id="videoTapCommitBtn" class="ghost accent" type="button">탭으로 BPM 정하기</button>
@@ -1606,11 +1699,17 @@
                 <button id="videoPointClearBtn" class="ghost" type="button">보정점 지우기</button>
               </div>
               <div class="helper" id="videoPointHelp"></div>
+                </div>
+              </details>
             </div>
+              </div>
+            </details>
 
             <!-- 구간 자르기와 마커(2026-09-10). In/Out 은 확정 전 값이라 화면 상태이고, 마커와 잘라 낸 클립은 안무의 일부다. -->
+            <details class="vstep" open>
+              <summary>③ 구간 잡고 잘라내기</summary>
+              <div class="vstep-body">
             <div class="video-cut">
-              <div class="video-section-title">구간 자르기</div>
               <div class="video-field">
                 <button id="videoInBtn" class="ghost accent" type="button" title="지금 영상 시각을 구간의 시작(In)으로 찍습니다">[ In 지금 여기</button>
                 <button id="videoOutBtn" class="ghost accent" type="button" title="지금 영상 시각을 구간의 끝(Out)으로 찍습니다">Out ] 지금 여기</button>
@@ -1624,8 +1723,14 @@
                 <button id="videoTrimBtn" class="primary" type="button" title="In~Out 구간을 잘라 다시 인코딩한 새 클립을 보관 폴더에 만들고 그 클립으로 갈아 끼웁니다. 원본은 그대로 남습니다">✂ 잘라서 새 클립으로</button>
               </div>
               <div class="helper" id="videoTrimHelp"></div>
+            </div>
+              </div>
+            </details>
 
-              <div class="video-section-title">마커 — 영상 구간 ↔ 안무표 구간</div>
+            <details class="vstep" open>
+              <summary>④ 마커 — 영상 구간 ↔ 안무표 구간</summary>
+              <div class="vstep-body">
+            <div class="video-cut" style="border-top:none; padding-top:0;">
               <div class="video-field">
                 <button id="videoMarkerSelBtn" class="ghost accent" type="button" title="In~Out 구간을 안무표에서 선택한 블록들의 카운트 구간에 맵핑하는 마커를 만듭니다">선택한 블록에 맵핑</button>
                 <button id="videoMarkerRowBtn" class="ghost accent" type="button" title="In~Out 구간을 위 '여기가' 칸에서 고른 마디 전체에 맵핑하는 마커를 만듭니다">이 마디에 맵핑</button>
@@ -1634,10 +1739,14 @@
               <div class="helper" id="videoMarkerHelp"></div>
               <ul class="video-markers" id="videoMarkerList"></ul>
             </div>
+              </div>
+            </details>
 
             <!-- 자세 분석(2026-09-12). 영상에서 관절을 찾아 영상 위에 몸을 겹쳐 그린다. -->
-            <div class="video-pose-section">
-              <div class="video-section-title">자세 분석</div>
+            <details class="vstep">
+              <summary>⑤ 자세 분석</summary>
+              <div class="vstep-body">
+            <div class="video-pose-section" style="border-top:none; padding-top:0;">
               <div class="video-field">
                 <button id="videoPoseRunBtn" class="ghost accent" type="button" title="In~Out 구간(없으면 영상 전체)에서 관절을 찾습니다">🧍 자세 분석</button>
                 <button id="videoPoseMeshBtn" class="ghost" type="button" title="관절에 몸을 씌워 그립니다. 끄면 뼈대만 나옵니다">메시</button>
@@ -1652,6 +1761,8 @@
               </div>
               <div class="helper" id="videoPoseHelp"></div>
             </div>
+              </div>
+            </details>
           </div>
         </aside>
       </div>
