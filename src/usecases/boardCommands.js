@@ -72,6 +72,36 @@ export function placeMoveAt(store, args, deps = {}) {
 }
 
 /**
+ * 동작 목록을 거치지 않고 블록 하나를 놓는다(2026-09-12, 받아 적기). 원본에 대응물이 없다.
+ *
+ * placeMoveAt 과 유일하게 다른 점은 **무엇을 놓을지가 id 가 아니라 값으로 들어온다**는 것이다.
+ * 그래서 이름이 없어도 놓을 수 있고(`pending: true`), 그것이 "이름을 먼저 정해야 한다"는 순서를 푸는
+ * 지점이다 — docs/EDITING_FLOWS.md 의 막히는 곳 ②.
+ *
+ * ⚠ 이름을 준 경우에도 동작 목록에 **등록하지 않는다.** 등록은 사람이 이름을 확정하는 순간의 일이고
+ *   (2단계), 여기서 슬쩍 등록하면 받아 적는 동안 목록이 오타로 채워진다.
+ * ⚠ 카테고리가 없거나 모르는 값이면 첫 카테고리로 떨어뜨린다 — normalizePlacements 와 같은 규칙이다.
+ *
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', name?:string, category?:string,
+ *           startRow:number, startIndex:number, totalCount:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+export function placeBlockAt(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, startRow, startIndex, totalCount } = args;
+  const state = store.get();
+  const name = String(args.name == null ? '' : args.name).trim();
+  const category = state.categories[args.category] ? args.category : Object.keys(state.categories)[0];
+  const result = boardOps.place(
+    boardOf(state, boardId),
+    { move: { name, category, pending: !name }, startRow, startIndex, totalCount },
+    deps.ids
+  );
+  return applyBoardResult(store, boardId, result) || NONE;
+}
+
+/**
  * 루틴 블록 하나를 보드에 놓는다. placeRoutineOnBoard(3607-3634) — 원본 호출부는 drop 하나(2430)뿐이고
  * 거기서 `ctx === mainCtx` 를 확인한다. 그 판정은 input/boardInput 이 BOARD_POLICY.allowsRoutineBlocks
  * 로 하고, 여기서는 다시 막지 않는다(이중 판정이 되면 원본과 분기 지점이 달라진다).

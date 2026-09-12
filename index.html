@@ -340,6 +340,16 @@
       touch-action: none;
     }
     .placement.is-dragging { opacity: 1; }
+    /* 이름을 아직 안 붙인 블록(받아 적기). 자리는 잡혔지만 아직 비었다는 것이 한눈에 보여야 하므로
+       채움을 지우고 점선만 남긴다 — 이름을 붙이면 클래스가 떨어지고 보통 블록으로 돌아온다. */
+    .placement.is-pending {
+      background: rgba(148,163,184,0.14) !important;
+      color: #cbd5e1 !important;
+      border: 2px dashed rgba(148,163,184,0.75);
+      box-shadow: none;
+      font-weight: 700;
+    }
+    .placement.is-pending .label { opacity: 0.92; }
     .placement.is-selected {
       outline: 2.5px solid rgba(250,204,21,0.9);
       outline-offset: -1px;
@@ -1705,9 +1715,25 @@
               </div>
             </details>
 
+            <!-- 받아 적기(2026-09-12). 영상을 보면서 표에 바로 놓는 길 — docs/EDITING_FLOWS.md 1단계. -->
+            <details class="vstep" open>
+              <summary>③ 받아 적기 — 보면서 표에 놓기</summary>
+              <div class="vstep-body">
+            <div class="video-cut" style="border-top:none; padding-top:0;">
+              <div class="video-field">
+                <button id="videoCaptureBtn" class="primary" type="button" title="동작이 시작될 때 한 번, 끝날 때 한 번 누르면 그 구간이 이름 없는 블록으로 안무표에 놓입니다 (단축키 B)">● 여기서 시작</button>
+                <button id="videoCaptureCancelBtn" class="ghost" type="button">받아 적기 취소</button>
+                <button id="videoMarkerBlocksBtn" class="ghost accent" type="button" title="찍어 둔 마커를 전부 안무표의 블록으로 옮깁니다. 마커는 그대로 남습니다">마커를 블록으로</button>
+                <button id="videoNameSelBtn" class="ghost accent" type="button" title="안무표에서 고른 이름 없는 블록에 이름을 붙입니다">고른 블록에 이름 붙이기</button>
+              </div>
+              <div class="helper" id="videoCaptureHelp"></div>
+            </div>
+              </div>
+            </details>
+
             <!-- 구간 자르기와 마커(2026-09-10). In/Out 은 확정 전 값이라 화면 상태이고, 마커와 잘라 낸 클립은 안무의 일부다. -->
             <details class="vstep" open>
-              <summary>③ 구간 잡고 잘라내기</summary>
+              <summary>④ 구간 잡고 잘라내기</summary>
               <div class="vstep-body">
             <div class="video-cut">
               <div class="video-field">
@@ -1728,7 +1754,7 @@
             </details>
 
             <details class="vstep" open>
-              <summary>④ 마커 — 영상 구간 ↔ 안무표 구간</summary>
+              <summary>⑤ 마커 — 영상 구간 ↔ 안무표 구간</summary>
               <div class="vstep-body">
             <div class="video-cut" style="border-top:none; padding-top:0;">
               <div class="video-field">
@@ -1744,7 +1770,7 @@
 
             <!-- 자세 분석(2026-09-12). 영상에서 관절을 찾아 영상 위에 몸을 겹쳐 그린다. -->
             <details class="vstep">
-              <summary>⑤ 자세 분석</summary>
+              <summary>⑥ 자세 분석</summary>
               <div class="vstep-body">
             <div class="video-pose-section" style="border-top:none; padding-top:0;">
               <div class="video-field">

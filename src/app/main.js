@@ -29,6 +29,7 @@ import * as RoutineCmd from '../usecases/routineCommands.js';
 import * as ProjectCmd from '../usecases/projectCommands.js';
 import * as LinkCmd from '../usecases/linkCommands.js';
 import * as VideoCmd from '../usecases/videoCommands.js';
+import * as CaptureCmd from '../usecases/captureCommands.js';
 import * as PoseCmd from '../usecases/poseCommands.js';
 
 import * as Grid from '../domain/grid.js';
@@ -556,6 +557,9 @@ bindControls({
     setSortDir: (dir) => PaletteCmd.setSortDir(paletteCtx, dir),
     addMove: (rawName, category) => PaletteCmd.addMove(paletteCtx, rawName, category),
     cancelActivePaletteMove: () => PaletteCmd.cancelActivePaletteMove(paletteCtx),
+    // 받아 적기 단축키 `B`. ⚠ 늦게 묶는다 — bindControls 가 views.video 보다 먼저 돌기 때문에
+    //   여기서 views.video 를 바로 읽으면 undefined 다. 키를 누르는 시점에는 이미 만들어져 있다.
+    captureToggle: () => Boolean(views.video && views.video.captureToggle()),
     commitHistory,
     undo,
     redo,
@@ -1199,7 +1203,12 @@ views.video = createVideoPanel({
     addMarker: (args) => VideoCmd.addMarker(store, args),
     removeMarker: (args) => VideoCmd.removeMarker(store, args),
     clearMarkers: () => VideoCmd.clearMarkers(store),
-    applyMarkerToTempo: (args) => VideoCmd.applyMarkerToTempo(store, args)
+    applyMarkerToTempo: (args) => VideoCmd.applyMarkerToTempo(store, args),
+    // 받아 적기(2026-09-12). 메인 보드에만 놓는다 — 루틴 편집기와 영상 패널은 동시에 열리지 않는다.
+    captureToggle: (args) => CaptureCmd.captureToggle(store, args, { ids: browserEnv }),
+    cancelCapture: () => CaptureCmd.cancelCapture(store),
+    markersToBlocks: () => CaptureCmd.markersToBlocks(store, {}, { ids: browserEnv }),
+    nameSelected: () => CaptureCmd.nameSelected(store, {}, { dialogs: browserDialogs })
   }
 });
 

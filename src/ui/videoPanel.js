@@ -40,7 +40,7 @@ const POINTS_NEEDED = 2;
 const SECOND_POINT_ROW_GAP = 4;
 
 /** session.video 가 없을 때의 기본값(옛 스냅샷 복원 뒤에도 안전하도록). */
-const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false });
+const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null });
 
 /** 잘라내기가 안 되는 이유 → 안내 문구. 어댑터·서버는 코드/사실만 주고 문구는 여기서 만든다. */
 const TRIM_TEXT = Object.freeze({
@@ -278,6 +278,11 @@ export function createVideoPanel(deps) {
   const loopBtn = byId('videoLoopBtn');
   const inOutClearBtn = byId('videoInOutClearBtn');
   const inOutText = byId('videoInOutText');
+  const captureBtn = byId('videoCaptureBtn');
+  const captureCancelBtn = byId('videoCaptureCancelBtn');
+  const markerBlocksBtn = byId('videoMarkerBlocksBtn');
+  const nameSelBtn = byId('videoNameSelBtn');
+  const captureHelp = byId('videoCaptureHelp');
   const trimBtn = byId('videoTrimBtn');
   const trimHelp = byId('videoTrimHelp');
   const markerSelBtn = byId('videoMarkerSelBtn');
@@ -307,6 +312,12 @@ export function createVideoPanel(deps) {
   const inOutRange = () => {
     const p = panelState();
     return Number.isFinite(p.inSec) && Number.isFinite(p.outSec) && p.outSec > p.inSec ? { inSec: p.inSec, outSec: p.outSec } : null;
+  };
+
+  /** 지금 고른 것 가운데 **이름 없는** 블록이 몇 그룹인가. `고른 블록에 이름 붙이기` 의 활성 판정. */
+  const pendingSelected = () => {
+    const placements = mainBoard().placements;
+    return [...(store.selection || [])].filter(gid => placements.some(p => p.groupId === gid && p.pending)).length;
   };
 
   // ── 앵커 입력 읽기/쓰기 ───────────────────────────────────────────────────
@@ -532,6 +543,41 @@ export function createVideoPanel(deps) {
     }
   }
 
+  /**
+   * 받아 적기 구획(2026-09-12). 버튼 하나가 두 뜻을 번갈아 가진다 — 시작을 안 찍었으면 `● 여기서 시작`,
+   * 찍었으면 `■ 여기서 끝`. 두 버튼으로 나누면 눈이 영상을 떠나 어느 쪽을 누를지 고르게 된다.
+   *
+   * ⚠ 진행 중 표시는 store 의 captureSec 에서 재도출한다(뷰가 따로 기억하지 않는다) — 패널을 접었다
+   *   펴거나 다른 렌더가 끼어들어도 표시가 어긋나지 않는다.
+   */
+  function renderCapture() {
+    const start = panelState().captureSec;
+    const running = Number.isFinite(start);
+    const ready = isTempoUsable(tempo());
+    if (captureBtn) {
+      captureBtn.textContent = running ? '■ 여기서 끝' : '● 여기서 시작';
+      captureBtn.className = running ? CLS.warn : CLS.primary;
+      captureBtn.disabled = !ready;
+    }
+    if (captureCancelBtn) captureCancelBtn.disabled = !running;
+    if (markerBlocksBtn) markerBlocksBtn.disabled = markers().length === 0;
+    const pending = pendingSelected();
+    if (nameSelBtn) {
+      nameSelBtn.disabled = pending === 0;
+      nameSelBtn.textContent = pending > 1 ? `고른 블록 ${pending}개에 이름 붙이기` : '고른 블록에 이름 붙이기';
+    }
+    if (captureHelp) {
+      if (!ready) {
+        captureHelp.textContent = '먼저 `② 박자 맞추기` 에서 BPM 을 정하세요 — 영상의 초를 안무표의 카운트로 바꾸는 데 박자가 필요합니다.';
+      } else if (running) {
+        captureHelp.textContent = `${formatClock(start)} 부터 받아 적는 중 — 동작이 끝나는 순간에 한 번 더 누르세요(단축키 B).`;
+      } else {
+        captureHelp.textContent = '영상을 보다가 동작이 시작될 때 누르고, 끝날 때 다시 누르면 그 구간이 이름 없는 블록(`?`)으로 안무표에 놓입니다. 이름은 나중에 붙입니다.';
+      }
+      captureHelp.classList.toggle(CLS.isError, false);
+    }
+  }
+
   /** 구간 자르기·마커 구획. In/Out 은 화면 상태, 마커는 media 에서 읽는다. */
   function renderCut() {
     const board = mainBoard();
@@ -673,6 +719,7 @@ export function createVideoPanel(deps) {
 
     renderStatus();
     renderTempo();
+    renderCapture();
     renderCut();
 
     // ⚠ **매번** 부른다. 값이 바뀔 때만 부르면 "패널이 열린 채로 URL 만 바뀌는" 경로가 통째로
@@ -845,13 +892,57 @@ export function createVideoPanel(deps) {
     };
   }
 
+  // ── 받아 적기 ─────────────────────────────────────────────────────────────
+  // ⚠ 커밋은 **블록이 실제로 놓인 때만** 한다. 시작을 찍은 것은 화면 상태이고(안무가 아직 안 바뀌었다),
+  //   거기에 커밋하면 Undo 한 번이 아무것도 되돌리지 않는 빈 칸이 된다.
+
+  /**
+   * 받아 적기 키를 한 번 눌렀다(버튼도 단축키도 여기로 온다).
+   * @returns {boolean} 블록이 놓였는가
+   */
+  function captureToggle() {
+    if (!commands.captureToggle) return false;
+    const { started, placed, needsTempo, ...dirty } = commands.captureToggle({ sec: getCurrentSec() }) || {};
+    render(dirty);
+    renderCapture();
+    if (needsTempo) return false;
+    if (placed) commitHistory();
+    return !!placed;
+  }
+
+  if (captureBtn) captureBtn.onclick = () => captureToggle();
+  if (nameSelBtn && commands.nameSelected) {
+    nameSelBtn.onclick = () => {
+      const { named, ...dirty } = commands.nameSelected() || {};
+      render(dirty);
+      renderCapture();
+      if (named) commitHistory();
+    };
+  }
+  if (captureCancelBtn && commands.cancelCapture) {
+    captureCancelBtn.onclick = () => { render(commands.cancelCapture()); renderCapture(); };
+  }
+  if (markerBlocksBtn && commands.markersToBlocks) {
+    markerBlocksBtn.onclick = () => {
+      const { placed, ...dirty } = commands.markersToBlocks() || {};
+      render(dirty);
+      if (placed) commitHistory();
+    };
+  }
+
   return {
     render: renderPanel,
     renderStatus,
     /** 잘라내기 상태(대기·진행·실패)가 바뀌었다 — 구획만 다시 그린다(store 를 거치지 않는 값이다). */
     renderCut,
+    /**
+     * 받아 적기 한 번(단축키 B). 패널이 닫혀 있거나 박자가 없으면 아무것도 하지 않는다 —
+     * 판정을 여기 두는 이유는 input 계층이 재생 시각을 모르기 때문이다.
+     * @returns {boolean} 블록이 놓였는가
+     */
+    captureToggle: () => (panelState().open ? captureToggle() : false),
     /** 선택이 바뀌었다 — `선택한 블록이 여기서 시작`·`선택한 블록에 맵핑` 의 활성 여부만 다시 잰다(패널이 닫혀 있으면 값만 바뀌고 안 보인다). */
-    syncSelection: () => { renderTempo(); renderCut(); },
+    syncSelection: () => { renderTempo(); renderCapture(); renderCut(); },
     /** YT.Player 가 iframe 으로 갈아치울 자리. app/main 이 여기에 컨테이너를 만든다. */
     playerHost: () => frame
   };

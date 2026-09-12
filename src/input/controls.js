@@ -230,6 +230,12 @@ export function bindControls(deps) {
  *      (HOTKEY_ACTIVE_BOARD 플래그를 켜는 날 이 함수만 바꾸면 된다).
  * ⚠ Escape 의 cancelActivePaletteMove 는 dragstart 경로와 달리 **Dirty 를 그린다**(2802 renderPalette).
  *
+ * ⚠ `B` (받아 적기, 2026-09-12)는 위 결함 1)의 예외다 — **입력 필드 안에서는 듣지 않는다.**
+ *   조합 없는 홑글쇠라 가드가 없으면 동작 이름을 타이핑하는 동안 블록이 쌓인다. 오래된 Ctrl 조합
+ *   단축키의 가드 없음은 보존 대상이라 그대로 두고, 새 글쇠에만 가드를 둔다.
+ * ⚠ `B` 는 Dirty 를 여기서 그리지 않는다. 지금 몇 초인지는 영상 패널만 알아서(재생기는 뷰가 쥔다)
+ *   commands.captureToggle 이 패널의 메서드이고, 그리기와 히스토리 커밋까지 그쪽에서 끝낸다.
+ *
  * @param {Object} deps
  * @param {Object} deps.commands
  * @param {(dirty: object) => void} deps.render
@@ -241,9 +247,21 @@ export function bindHotkeys(deps) {
   const { commands, render, activeBoardId = () => 'main', doc = document } = deps;
   const apply = (dirty) => { if (dirty) render(dirty); };
 
+  /** 지금 글자를 치고 있는가. 홑글쇠 단축키는 여기서 막힌다. */
+  const typing = (target) => {
+    const el = target;
+    if (!el || !el.tagName) return false;
+    if (el.isContentEditable) return true;
+    return ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
+  };
+
   doc.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
     if (e.key === 'Escape') { apply(commands.cancelActivePaletteMove()); return; }
+    if (key === 'b' && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) {
+      if (typeof commands.captureToggle === 'function' && commands.captureToggle()) e.preventDefault();
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'z') {
       e.preventDefault();
       apply(commands.undo(activeBoardId()));

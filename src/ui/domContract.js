@@ -37,6 +37,7 @@ export const CLS = Object.freeze({
 
   // ── 배치 블록의 상태 클래스 ──
   isRoutine: 'is-routine',    // 3423 — 루틴 블록
+  isPending: 'is-pending',    // 이름을 아직 안 붙인 블록(받아 적기, 2026-09-12). 점선 테두리에 `?`
   isSelected: 'is-selected',  // 3424 · 2463 · 4537 — 선택. ⚠ 메인 보드에만 붙는다
   isDragging: 'is-dragging',  // 3425 · 3746 · 3893
   isResizing: 'is-resizing',  // 3746 — is-dragging 과 **함께** 붙고 따로 떨어진다(3771)

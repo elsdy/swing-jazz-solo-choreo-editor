@@ -63,6 +63,8 @@ import { nameKey, matchMove, normalizePlan, cellLabel } from '../../src/domain/c
 import * as PlanCmd from '../../src/usecases/planCommands.js';
 import { createLlmServer } from '../../src/adapters/llmServer.js';
 import * as VideoCmd from '../../src/usecases/videoCommands.js';
+import * as CaptureCmd from '../../src/usecases/captureCommands.js';
+import { isPending, pendingGroupIds, nameGroup } from '../../src/domain/placements.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
 import {
@@ -1276,8 +1278,9 @@ test('videoCommands: 재생 위치·재생 상태는 store 어디에도 없다',
     assert.ok(!text.includes(banned), `${banned} 가 store 에 들어왔다 — 초당 60회 재렌더가 된다`);
   }
   // In/Out·loop(2026-09-10)도 화면 상태다 — 시각이 아니라 "찍어 둔 지점"이고 확정 전 값이라 여기 산다.
+  // captureSec(2026-09-12, 받아 적기)도 같은 성격이다 — 끝을 찍는 순간 블록이 되고 그때부터 안무다.
   assert.deepEqual(Object.keys(store.get().session.video).sort(),
-    ['collapsed', 'follow', 'inSec', 'loop', 'open', 'outSec', 'taps', 'tempoPoints']);
+    ['captureSec', 'collapsed', 'follow', 'inSec', 'loop', 'open', 'outSec', 'taps', 'tempoPoints']);
 });
 
 test('videoCommands: 두 점을 찍으면 bpm 과 앵커가 동시에 정해진다', () => {
@@ -3101,4 +3104,169 @@ test('modelServer: 폴더 고르기는 취소와 실패를 구분해서 돌려�
   const st = await make({ ok: true, status: 200, json: async () => ({ ok: true, ...base }) }).getStatus();
   assert.equal(st.canChoose, true);
   assert.deepEqual(st.suggestions, []);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 받아 적기 (2026-09-12) — docs/EDITING_FLOWS.md 1단계
+//
+// 여기서 지키는 것은 "이름이 맨 나중"이라는 순서 뒤집기다. 도메인이 이름 없는 배치를 허용하는지,
+// 초 구간이 카운트 구간으로 제대로 접히는지, 그리고 그 블록이 저장·불러오기를 살아서 건너는지.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** bpm 120, 1카운트 = 0.5초, 0카운트 = 0초인 표본. 초 ↔ 카운트가 암산되는 값으로 고른다. */
+function captureStore() {
+  const store = createStore({ ids: counterEnv() });
+  VideoCmd.setTempo(store, { tempo: { bpm: 120, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 } });
+  return store;
+}
+
+test('받아 적기: 시작·끝을 번갈아 누르면 이름 없는 블록이 그 카운트 구간에 놓인다', () => {
+  const store = captureStore();
+  const first = CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
+  assert.equal(first.started, true, '첫 번째는 시작만 찍는다');
+  assert.equal(CaptureCmd.captureStartSec(store), 4);
+  assert.deepEqual(store.board(BOARD_MAIN).placements, [], '아직 표는 그대로다');
+
+  const second = CaptureCmd.captureToggle(store, { sec: 8 }, { ids: counterEnv() });
+  assert.equal(second.placed, true);
+  assert.equal(CaptureCmd.captureStartSec(store), null, '끝을 찍으면 시작점은 비워진다');
+
+  const placed = store.board(BOARD_MAIN).placements;
+  // 4초 = 8카운트 = 8x2의 1, 8초 = 16카운트(배타적)이므로 8카운트짜리 한 블록.
+  assert.equal(placed.length, 1);
+  assert.equal(placed[0].row, 2);
+  assert.equal(placed[0].startIndex, 0);
+  assert.equal(placed[0].length, 8);
+  assert.equal(placed[0].name, '', '이름은 아직 없다');
+  assert.equal(isPending(placed[0]), true);
+});
+
+test('받아 적기: 순서가 뒤집혀 들어와도 앞선 시각이 시작이 된다', () => {
+  const store = captureStore();
+  CaptureCmd.captureToggle(store, { sec: 8 }, { ids: counterEnv() });
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
+  const placed = store.board(BOARD_MAIN).placements;
+  assert.equal(placed.length, 1);
+  assert.equal(placed[0].row, 2, '4초(8카운트)에서 시작한다');
+  assert.equal(placed[0].length, 8);
+});
+
+test('받아 적기: 너무 짧으면 블록을 만들지 않고 시작점만 지운다', () => {
+  const store = captureStore();
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
+  const out = CaptureCmd.captureToggle(store, { sec: 4.01 }, { ids: counterEnv() });
+  assert.equal(out.placed, undefined);
+  assert.equal(CaptureCmd.captureStartSec(store), null);
+  assert.deepEqual(store.board(BOARD_MAIN).placements, []);
+});
+
+test('받아 적기: 박자가 없으면 시작조차 찍히지 않는다(초를 카운트로 바꿀 수 없다)', () => {
+  const store = createStore({ ids: counterEnv() });
+  const out = CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
+  assert.equal(out.needsTempo, true);
+  assert.equal(CaptureCmd.captureStartSec(store), null);
+  assert.equal(CaptureCmd.canCapture(store), false);
+});
+
+test('받아 적기: 받아 적던 것을 물릴 수 있다', () => {
+  const store = captureStore();
+  assert.deepEqual(CaptureCmd.cancelCapture(store), NONE, '찍은 것이 없으면 무동작');
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
+  assert.deepEqual(CaptureCmd.cancelCapture(store), { video: true });
+  assert.equal(CaptureCmd.captureStartSec(store), null);
+});
+
+test('받아 적기: 보정점이 있으면 흔들리는 템포를 따라 자리가 잡힌다', () => {
+  const store = captureStore();
+  // 8카운트가 4초가 아니라 6초에 온다고 보정점을 찍는다 — 그 구간은 느려진 셈이다.
+  VideoCmd.addTempoPoint(store, { count: 8, sec: 6 });
+  CaptureCmd.captureToggle(store, { sec: 6 }, { ids: counterEnv() });
+  CaptureCmd.captureToggle(store, { sec: 10 }, { ids: counterEnv() });
+  const placed = store.board(BOARD_MAIN).placements;
+  assert.equal(placed[0].row, 2, '보정점 덕에 6초가 8카운트(8x2의 1)로 떨어진다');
+  assert.equal(placed[0].startIndex, 0);
+});
+
+test('받아 적기: 찍어 둔 마커를 전부 블록으로 옮긴다(이름표가 있으면 그 이름으로)', () => {
+  const store = captureStore();
+  VideoCmd.addMarkerAt(store, { inSec: 0, outSec: 4, fromCount: 0, toCount: 8, label: '찰스턴' });
+  VideoCmd.addMarkerAt(store, { inSec: 4, outSec: 8, fromCount: 8, toCount: 16, label: '' });
+  const out = CaptureCmd.markersToBlocks(store, {}, { ids: counterEnv() });
+  assert.equal(out.placed, 2);
+  const groups = [...new Set(store.board(BOARD_MAIN).placements.map(p => p.groupId))];
+  assert.equal(groups.length, 2);
+  const named = store.board(BOARD_MAIN).placements.filter(p => p.name === '찰스턴');
+  assert.equal(named.length, 1);
+  assert.equal(named[0].pending, undefined, '이름이 있으면 이름 없는 블록이 아니다');
+  assert.equal(named[0].length, 8);
+  assert.equal(pendingGroupIds(store.board(BOARD_MAIN).placements).length, 1, '이름표 없는 마커 하나가 이름 없는 블록이 된다');
+  assert.equal(VideoCmd.mediaState(store).markers.length, 2, '마커는 그대로 남는다');
+  assert.deepEqual(CaptureCmd.markersToBlocks(createStore({ ids: counterEnv() }), {}, { ids: counterEnv() }), NONE);
+});
+
+test('이름 없는 블록: 저장·불러오기를 살아서 건너고 이름을 붙이면 pending 이 사라진다', () => {
+  const store = captureStore();
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
+  CaptureCmd.captureToggle(store, { sec: 8 }, { ids: counterEnv() });
+  const board = store.board(BOARD_MAIN);
+  const state = store.get();
+  const file = buildProjectFile({
+    rows: board.rows, cols: board.cols, categories: state.categories,
+    moveLibrary: state.library, placements: board.placements, routines: state.routines,
+    ...state.links, media: state.media
+  });
+
+  const back = normalizeProject(JSON.parse(JSON.stringify(file)), { ids: counterEnv() });
+  assert.equal(back.placements.length, 1);
+  assert.equal(back.placements[0].pending, true, '이름 없는 블록은 버려지지 않는다');
+  assert.equal(back.placements[0].name, '');
+
+  // pending 표시가 없는 빈 이름은 예전대로 버린다(손상된 파일과 구분하는 유일한 수단이다).
+  const damaged = normalizeProject({ ...file, placements: [{ ...file.placements[0], pending: undefined }] }, { ids: counterEnv() });
+  assert.equal(damaged.placements.length, 0);
+
+  const named = nameGroup(back.placements, back.placements[0].groupId, '  찰스턴  ');
+  assert.equal(named[0].name, '찰스턴');
+  assert.equal(named[0].pending, undefined);
+  assert.equal(isPending(named[0]), false);
+  assert.equal(nameGroup(back.placements, back.placements[0].groupId, '   '), back.placements, '빈 이름은 아무것도 바꾸지 않는다');
+});
+
+test('이름 있는 배치의 JSON 바이트는 그대로다(pending 키는 참일 때만 붙는다)', () => {
+  const ids = counterEnv();
+  const board = { rows: 8, cols: 8, hasIntroRow: true, placements: [] };
+  const withName = place(board, { move: { name: '찰스턴', category: 'basic' }, startRow: 1, startIndex: 0, totalCount: 4 }, ids);
+  assert.equal(Object.keys(withName.placements[0]).includes('pending'), false);
+  const nameless = place(board, { move: { name: '', category: 'basic', pending: true }, startRow: 1, startIndex: 0, totalCount: 4 }, ids);
+  assert.deepEqual(Object.keys(nameless.placements[0]),
+    ['id', 'groupId', 'name', 'category', 'pending', 'row', 'startIndex', 'length', 'subRow']);
+});
+
+test('받아 적기: 고른 블록에 이름을 붙이면 이름 있는 블록만 남는다(이름 있던 것은 안 건드린다)', () => {
+  const store = captureStore();
+  const capIds = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids: capIds });
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids: capIds });
+  // 이름 있는 블록도 하나 놓고 둘 다 고른다.
+  const board = store.board(BOARD_MAIN);
+  // ⚠ counterEnv() 는 부를 때마다 1부터 다시 센다 — 같은 보드에 두 번 놓을 때는 **하나를 돌려 써야**
+  //   groupId 가 겹치지 않는다(겹치면 두 블록이 한 그룹이 되어 이름이 함께 바뀐다).
+  const named = place(board, { move: { name: '킥볼체인지', category: Object.keys(store.get().categories)[0] }, startRow: 3, startIndex: 0, totalCount: 2 }, capIds);
+  store.setBoard(BOARD_MAIN, { placements: named.placements });
+  const groups = [...new Set(store.board(BOARD_MAIN).placements.map(p => p.groupId))];
+  store.update({ selection: new Set(groups) });
+
+  assert.equal(CaptureCmd.pendingCount(store), 1);
+  const dialogs = { promptText: () => '찰스턴' };
+  const out = CaptureCmd.nameSelected(store, {}, { dialogs });
+  assert.equal(out.named, 1, '이름 없는 블록만 바뀐다');
+  const after = store.board(BOARD_MAIN).placements;
+  assert.equal(CaptureCmd.pendingCount(store), 0);
+  assert.deepEqual([...new Set(after.map(p => p.name))].sort(), ['찰스턴', '킥볼체인지']);
+  assert.equal(after.every(p => p.pending === undefined), true);
+
+  // 취소와 빈 이름은 아무것도 바꾸지 않는다.
+  store.update({ selection: new Set(groups) });
+  assert.deepEqual(CaptureCmd.nameSelected(store, {}, { dialogs: { promptText: () => null } }), NONE);
+  assert.deepEqual(CaptureCmd.nameSelected(store, {}, { dialogs: { promptText: () => '  ' } }), NONE);
 });

@@ -45,7 +45,7 @@ export const TEMPO_POINTS_NEEDED = 2;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** session.video 의 기본값. store.js 의 초기 상태와 같은 값이다(옛 스냅샷 복원 뒤에도 안전하도록 여기서도 채운다). */
-const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false });
+const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null });
 
 /**
  * 영상 패널의 휘발성 화면 상태. 없는 키는 기본값으로 채운다(In/Out·loop 은 나중에 생긴 키라 옛 세션에 없다).

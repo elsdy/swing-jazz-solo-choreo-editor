@@ -30,6 +30,10 @@ function uidOf(ids) {
  *    merge 는 length 클립 → filter 이고 merge 에만 `length > 0` 조건이 있다(4136 vs 4361).
  *    그래서 startIndex 가 cols 경계에 걸린 배치의 생존 여부가 두 경로에서 다르다 — 원본 그대로 둔다.
  *
+ * ⚠ 이름이 빈 배치를 **버리지 않는 유일한 예외**가 `pending: true` 다(2026-09-12, 받아 적기).
+ *    이름 없이 자리부터 잡은 블록이라 살려야 하고, 그 표시가 없는 빈 이름은 예전처럼 버린다 —
+ *    손상된 파일에서 이름이 날아간 배치와 구분하려고 일부러 플래그를 요구한다.
+ *
  * @see index.html:4349
  * @param {any[]} rawPlacements
  * @param {{rows:number, cols:number}} board  ⚠ rows 는 마지막 행 인덱스다(행 개수 아님)
@@ -40,11 +44,12 @@ function uidOf(ids) {
 export function normalizePlacements(rawPlacements, board, categories, ids) {
   const uid = uidOf(ids);
   const fallback = Object.keys(categories)[0];
-  return (Array.isArray(rawPlacements) ? rawPlacements : []).filter(p => p && p.name).map(p => ({
+  return (Array.isArray(rawPlacements) ? rawPlacements : []).filter(p => p && (p.name || p.pending)).map(p => ({
     id: p.id || uid(),
     groupId: p.groupId || uid(),
-    name: String(p.name),
+    name: String(p.name || ''),
     category: categories[p.category] ? p.category : fallback,
+    ...(p.name ? {} : { pending: true }),
     row: Math.max(0, p.row != null ? Number(p.row) : 1),
     startIndex: Math.max(0, Number(p.startIndex) || 0),
     length: Math.max(1, Number(p.length) || 1),

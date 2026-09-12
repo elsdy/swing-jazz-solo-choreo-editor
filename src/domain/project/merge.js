@@ -122,14 +122,15 @@ export function mergePlacements(current, incoming, board, categories, ids) {
 
   // 들어오는 배치 정규화 — groupId 를 새로 생성하여 기존 배치와 충돌 방지
   const groupIdRemap = new Map(); // 원본 groupId → 새 groupId
-  const rawIncoming = (incoming || []).filter(p => p && p.name).map(p => {
+  const rawIncoming = (incoming || []).filter(p => p && (p.name || p.pending)).map(p => {
     const origGid = p.groupId || uid();
     if (!groupIdRemap.has(origGid)) groupIdRemap.set(origGid, uid());
     return {
       id: uid(),
       groupId: groupIdRemap.get(origGid),
-      name: String(p.name),
+      name: String(p.name || ''),
       category: categories[p.category] ? p.category : fallback,
+      ...(p.name ? {} : { pending: true }),
       row: Math.max(0, p.row != null ? Number(p.row) : 1),
       startIndex: Math.max(0, Number(p.startIndex) || 0),
       length: Math.max(1, Number(p.length) || 1),

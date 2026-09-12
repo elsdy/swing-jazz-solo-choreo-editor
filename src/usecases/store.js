@@ -271,8 +271,9 @@ function createInitialState(ids) {
       //   taps      탭 템포로 누른 시각(초). 확정되면 비워진다
       //   inSec/outSec  In·Out 지점(초, 없으면 null). 잘라내기와 마커 만들기의 재료이고 확정 전 값이라 휘발성이다
       //   loop      In~Out 구간을 반복 재생하는가
+      //   captureSec 받아 적는 중인 구간의 시작(초, 아니면 null). 끝을 찍는 순간 블록이 되고 비워진다
       // ⚠ 여기에도 재생 위치(currentSec)는 없다. 있으면 초당 60번 store 가 바뀐다.
-      video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false },
+      video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null },
       // 자세 분석의 **요약만** 둔다(2026-09-12). 관절점 수만 개는 app/main.js 가 모듈 변수로 들고 있다 —
       // store 에 넣으면 undo 스냅샷이 그만큼 불어나고, 되돌릴 값도 아니다(usecases/poseCommands.js 경계 ①).
       pose: { state: 'idle', done: 0, total: 0, error: '', frames: 0, maxSubjects: 0,

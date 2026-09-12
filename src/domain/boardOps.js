@@ -168,9 +168,13 @@ function finish(placements, rows, renderRows, policy) {
  * (paletteCommands/boardCommands) 몫이고 여기서는 찾은 결과를 받는다. move 가 없으면 원본의
  * `if (!move) return;`(3580)과 같이 아무것도 하지 않는다.
  *
+ * ⚠ move 는 **동작 목록의 항목이 아니어도 된다.** 이름 없이 자리부터 잡는 받아 적기(2026-09-12)가
+ *   `{name:'', category, pending:true}` 를 그대로 넘긴다 — 여기서 목록을 다시 조회하지 않기 때문에
+ *   가능한 일이고, 그 덕에 "이름을 먼저 정해야 놓을 수 있다"는 순서가 풀린다.
+ *
  * @see index.html:3578
  * @param {{rows:number,cols:number,hasIntroRow?:boolean,placements:object[]}} board
- * @param {{ move: {name:string,category:string}|null|undefined, startRow:number, startIndex:number, totalCount:number }} args
+ * @param {{ move: {name:string,category:string,pending?:boolean}|null|undefined, startRow:number, startIndex:number, totalCount:number }} args
  * @param {(()=>string)|{uid:()=>string}} ids
  * @param {Partial<typeof PLACE_POLICY>} [opt]
  * @returns {{placements:object[], renderRows:number[]|'all'|null, changedRows:number[]}}
@@ -189,7 +193,7 @@ export function place(board, args, ids, opt) {
   const groupId = uidOf(ids)();                                                   // 3597: groupId 가 세그먼트 id 보다 먼저다
   const added = makeSegmentPlacements(
     segments,
-    { groupId, name: move.name, category: move.category },
+    { groupId, name: move.name, category: move.category, pending: move.pending },
     ids,
     { subRow }
   );                                                                              // 3598-3603
