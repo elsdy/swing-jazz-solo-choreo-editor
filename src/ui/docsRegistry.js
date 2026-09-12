@@ -66,6 +66,13 @@ export const DOCS = [
     desc: '안무표를 채우는 길 스무 가지와, 그중 막힌 것을 여는 계획',
   },
   {
+    id: 'video-to-chart',
+    group: 'changes',
+    title: '영상에서 안무표로',
+    path: 'docs/VIDEO_TO_CHART.md',
+    desc: '영상을 연 뒤의 순서 — 간격·기준·범위 셋을 가르는 계획',
+  },
+  {
     id: 'architecture',
     group: 'dev',
     title: '아키텍처',
