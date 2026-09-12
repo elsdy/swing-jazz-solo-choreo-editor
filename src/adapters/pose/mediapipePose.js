@@ -132,6 +132,8 @@ export function createMediapipePose(options = {}) {
   let landmarker = null;
   let loadState = 'idle';
   let error = '';
+  /** 어느 연산 장치로 섰는가('GPU' | 'CPU' | ''). 속도가 6배 갈리므로 결과와 함께 남긴다. */
+  let delegateUsed = '';
   /** detectForVideo 에 넘긴 마지막 타임스탬프. **반드시 커져야 한다**(경계 ③). */
   let lastStamp = -1;
 
@@ -139,11 +141,11 @@ export function createMediapipePose(options = {}) {
     id: `mediapipe/${modelFile.replace(/^pose_landmarker_|\.task$/g, '')}`,
 
     describe() {
-      return { name: 'MediaPipe Pose Landmarker', model: modelFile, space: 'world', maxSubjects: numPoses };
+      return { name: 'MediaPipe Pose Landmarker', model: modelFile, space: 'world', maxSubjects: numPoses, delegate: delegateUsed };
     },
 
     getState() {
-      return { load: loadState, error };
+      return { load: loadState, error, delegate: delegateUsed };
     },
 
     /** ★ 던지지 않는다. 모델이 없거나 못 읽으면 `{ok:false, error}` 다. */
@@ -154,20 +156,34 @@ export function createMediapipePose(options = {}) {
       try {
         const mod = await importModule(`${baseUrl}/vision_bundle.mjs`);
         const fileset = await mod.FilesetResolver.forVisionTasks(`${baseUrl}/wasm`);
-        landmarker = await mod.PoseLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: `${baseUrl}/${modelFile}` },
+        const build = (delegate) => mod.PoseLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: `${baseUrl}/${modelFile}`, delegate },
           runningMode: 'VIDEO',
           numPoses,
           minPoseDetectionConfidence: minConfidence,
           minPosePresenceConfidence: minConfidence,
           minTrackingConfidence: minConfidence
         });
+        // ⚠ **GPU 를 먼저 쓴다**(2026-09-13). 이 값을 안 주면 MediaPipe 는 CPU 로 돈다. 실측(맥북,
+        //   pose_landmarker_full, 1020x990, numPoses 2)으로 CPU 5.6fps · GPU 36.6fps — **6.5배**다.
+        //   재생하며 따라 그리려면 30fps 를 넘겨야 하므로, 이 한 줄이 "미리 분석해 두는 기능"과
+        //   "보면서 따라 그리는 기능"을 가른다.
+        // ⚠ 안 되는 기기가 있다(WebGL 차단·오래된 GPU·원격 데스크톱). 그때는 **조용히 CPU 로 떨어진다** —
+        //   느릴 뿐 결과는 같으므로 기능을 끄는 것보다 낫다. 어느 쪽으로 섰는지는 delegate 에 남는다.
+        try {
+          landmarker = await build('GPU');
+          delegateUsed = 'GPU';
+        } catch (gpuErr) {
+          landmarker = await build('CPU');
+          delegateUsed = 'CPU';
+        }
         loadState = 'ready';
         return { ok: true, error: '' };
       } catch (e) {
         loadState = 'error';
         error = String(e && e.message ? e.message : e);
         landmarker = null;
+        delegateUsed = '';
         return { ok: false, error };
       }
     },

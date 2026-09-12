@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>영상 위 관절 CG 검사 — 고른 사람만 따라 그리기</title>
+<style>
+  body { margin: 0; padding: 18px; background: #0b1220; color: #e5e7eb;
+    font-family: Inter, Pretendard, system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  .sub { color: #94a3b8; font-size: 12.5px; line-height: 1.7; margin-bottom: 12px; max-width: 900px; }
+  code { background: rgba(148,163,184,0.12); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  /* 앱의 `.video-frame` 과 같은 모양으로 둔다 — 오버레이가 재는 대상이 이 칸이다. */
+  .video-frame { position: relative; width: 640px; height: 480px; background: #000;
+    border: 1px solid rgba(148,163,184,0.2); border-radius: 10px; overflow: hidden; }
+  .video-frame canvas.plate { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .video-pose { position: absolute; }
+  .row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .log { font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.7;
+    color: #94a3b8; white-space: pre-wrap; margin-top: 12px; }
+  button { font: inherit; font-weight: 700; background: #0b1220; color: #e5e7eb;
+    border: 1px solid rgba(148,163,184,0.3); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>영상 위 관절 CG 검사 — 고른 사람만 따라 그리기</h1>
+<div class="sub">
+  앱의 <code>src/ui/poseOverlay.js</code> 를 **그대로 써서** 재생 중에 겹쳐 그린다. 베낀 코드가 아니라
+  앱이 쓰는 그 코드다 — 그래야 여기서 도는 것이 앱에서도 돈다는 말이 된다.
+  이 자동화 브라우저는 <code>&lt;video&gt;</code> 를 디코드하지 못하므로, ffmpeg 으로 뽑은 프레임을
+  캔버스에 15fps 로 그려 재생을 흉내 낸다(앱에서는 그 자리가 <code>&lt;video&gt;</code> 다).
+  <br><b>프레임 만들기</b>:
+  <code>ffmpeg -ss 55 -t 8 -i &lt;영상&gt; -vf "crop=680:660:680:280,fps=15,scale=1020:-2" -q:v 3 video-clip/_romtest/f_%03d.jpg</code>
+</div>
+<div class="row">
+  <div>
+    <div class="video-frame" id="frame">
+      <canvas class="plate" id="plate"></canvas>
+      <canvas class="video-pose" id="overlay"></canvas>
+    </div>
+    <div style="margin-top:8px; display:flex; gap:8px;">
+      <button id="mesh">메시 ↔ 뼈대</button>
+      <button id="who">다른 사람 따라가기</button>
+    </div>
+  </div>
+  <div id="out" class="log">준비 중…</div>
+</div>
+
+<script type="module">
+import { normalizePoseFrames } from '../src/ports/pose.js';
+import { buildTracks, framesOfTrack, pickSubjectAt } from '../src/domain/poseTracks.js';
+import { boxOf, centroidOf } from '../src/domain/pose.js';
+import { createMediapipePose } from '../src/adapters/pose/mediapipePose.js';
+import { createPoseOverlay } from '../src/ui/poseOverlay.js';
+
+const out = document.getElementById('out');
+const log = (s) => { out.textContent += '\n' + s; };
+window.RESULT = { state: 'running' };
+
+const FPS = 15;
+const COUNT = 120;
+const PLAY_FPS = 30;      // 재생은 30fps 로 돌린다 — 분석이 15fps 이므로 한 분석 프레임을 두 번 보여 준다
+
+function loadImage(i) {
+  return new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error(`f_${String(i).padStart(3, '0')}.jpg 없음`));
+    el.src = `/video-clip/_romtest/f_${String(i).padStart(3, '0')}.jpg`;
+  });
+}
+
+try {
+  out.textContent = '프레임 읽는 중…';
+  const shots = [];
+  for (let i = 1; i <= COUNT; i++) shots.push({ sec: (i - 1) / FPS, el: await loadImage(i) });
+  const vw = shots[0].el.naturalWidth, vh = shots[0].el.naturalHeight;
+  log(`프레임 ${shots.length}장 (${vw}x${vh})`);
+
+  const est = createMediapipePose({ baseUrl: '/models', numPoses: 8 });
+  const loaded = await est.load();
+  if (!loaded.ok) throw new Error(loaded.error);
+  const res = await est.analyze({ images: shots }, { fromSec: 0, toSec: COUNT / FPS, fps: FPS, maxSubjects: 8 });
+  if (!res.ok) throw new Error(res.error);
+  const frames = normalizePoseFrames(res.frames);
+  log(`분석 끝 — 프레임 ${frames.length}`);
+
+  // 가운데 둘을 앵커로. rom-accel-check 와 같은 규칙이다.
+  let anchorIdx = frames.findIndex(f => f.subjects.length >= 2);
+  if (anchorIdx < 0) anchorIdx = 0;
+  const first = frames[anchorIdx];
+  const people = first.subjects.map((s, i) => ({ i, c: centroidOf(s), box: boxOf(s) }))
+    .filter(p => p.c && p.box)
+    .sort((a, b) => Math.abs(a.c.x - 0.5) - Math.abs(b.c.x - 0.5));
+  const seeds = people.slice(0, 2)
+    .map((p, k) => ({ sec: first.sec, subject: pickSubjectAt(first, p.c), id: `t${k + 1}` }))
+    .filter(a => Number.isInteger(a.subject));
+  const tracks = buildTracks(frames, seeds);
+  log(`궤적 ${JSON.stringify(tracks.ids)} (앵커 프레임 #${anchorIdx})`);
+
+  // ── 재생 흉내 ──
+  const plate = document.getElementById('plate');
+  const frameEl = document.getElementById('frame');
+  plate.width = vw; plate.height = vh;
+  const pctx = plate.getContext('2d');
+
+  let playSec = 0;
+  let showMesh = true;
+  let whoIdx = 0;                       // 따라갈 궤적
+  const stat = { drawn: 0, drawMs: [], activeHit: 0, activeMiss: 0, noFrame: 0 };
+
+  /** 분석 프레임 가운데 이 시각에 가장 가까운 것 + 지금 따라가는 사람 번호. 앱의 게터와 같은 계약이다. */
+  function getFrameAt(sec) {
+    let best = null, bestD = Infinity;
+    for (const f of frames) {
+      const d = Math.abs(f.sec - sec);
+      if (d < bestD) { bestD = d; best = f; }
+    }
+    if (!best) return null;
+    const id = tracks.ids[whoIdx];
+    const i = frames.indexOf(best);
+    const activeIndex = id && tracks.byFrame[i] && Number.isInteger(tracks.byFrame[i][id]) ? tracks.byFrame[i][id] : -1;
+    return { sec: best.sec, subjects: best.subjects, activeIndex };
+  }
+
+  const overlay = createPoseOverlay({
+    canvas: document.getElementById('overlay'),
+    frame: frameEl,
+    getVideoSize: () => ({ w: vw, h: vh }),
+    getCurrentSec: () => playSec,
+    isActive: () => true,
+    getFrameAt: (sec) => {
+      const r = getFrameAt(sec);
+      if (!r) stat.noFrame++;
+      else if (r.activeIndex >= 0) stat.activeHit++;
+      else stat.activeMiss++;
+      return r;
+    },
+    getShowMesh: () => showMesh
+  });
+  document.getElementById('mesh').onclick = () => { showMesh = !showMesh; };
+  document.getElementById('who').onclick = () => { whoIdx = (whoIdx + 1) % Math.max(1, tracks.ids.length); };
+
+  // ⚠ 앱에서는 overlay.start() 의 rAF 루프가 스스로 돈다. 이 검사 브라우저는 **숨은 탭에서 rAF 가
+  //   아예 멎어** 그 루프를 잴 수 없으므로, 같은 함수(overlay.draw)를 setInterval 로 직접 돌린다.
+  //   재는 대상(그리는 비용·따라가기 정확도)은 같고, 스케줄러만 다르다.
+  overlay.invalidate();
+  let tick = 0;
+  const timer = setInterval(() => {
+    playSec = (tick / PLAY_FPS) % (COUNT / FPS);
+    tick += 1;
+    const i = Math.min(shots.length - 1, Math.floor(playSec * FPS));
+    const t0 = performance.now();
+    pctx.drawImage(shots[i].el, 0, 0);
+    overlay.draw();
+    stat.drawn++;
+    stat.drawMs.push(performance.now() - t0);
+  }, 1000 / PLAY_FPS);
+
+  // ⚠ 자동화용 손잡이. 숨은 탭에서는 타이머도 초당 1회로 묶여서(rAF 는 아예 멎는다) 재생을
+  //   흉내 내는 것만으로는 성능을 잴 수 없다. 그래서 **꽉 찬 루프로 draw 를 N 번 부르는** 길을 연다.
+  window.DEBUG = {
+    frames, tracks,
+    setTime: (sec) => { playSec = sec; },
+    setWho: (i) => { whoIdx = i % Math.max(1, tracks.ids.length); },
+    setMesh: (v) => { showMesh = !!v; },
+    /** 그 시각을 그리고 화면에 남긴다(스크린샷용). */
+    drawAt: (sec) => { playSec = sec; const i = Math.min(shots.length - 1, Math.floor(sec * FPS)); pctx.drawImage(shots[i].el, 0, 0); overlay.invalidate(); overlay.draw(); },
+    /** draw 만 N 번. 그림판은 건드리지 않는다 — 오버레이의 비용만 잰다. */
+    bench: (n = 200, mesh = true) => {
+      showMesh = mesh;
+      const t0 = performance.now();
+      for (let k = 0; k < n; k++) { playSec = (k % 120) / FPS; overlay.draw(); }
+      return (performance.now() - t0) / n;
+    },
+    /** 고른 사람을 프레임마다 찾았는가. 전 구간을 훑는다. */
+    trackAudit: (who = 0) => {
+      const id = tracks.ids[who];
+      let hit = 0;
+      for (let i = 0; i < frames.length; i++) if (Number.isInteger(tracks.byFrame[i][id])) hit++;
+      return { id, hit, total: frames.length };
+    }
+  };
+
+  // 3초쯤 돌린 뒤 통계를 남긴다.
+  setTimeout(() => {
+    clearInterval(timer);
+    const ms = stat.drawMs.slice().sort((a, b) => a - b);
+    const pct = (p) => ms.length ? ms[Math.min(ms.length - 1, Math.floor(ms.length * p))] : null;
+    window.RESULT = {
+      state: 'ok',
+      tracks: tracks.ids,
+      playedFrames: stat.drawn,
+      overlayCalls: stat.activeHit + stat.activeMiss + stat.noFrame,
+      activeHit: stat.activeHit, activeMiss: stat.activeMiss, noFrame: stat.noFrame,
+      msMedian: pct(0.5), ms95: pct(0.95), msMax: ms.length ? ms[ms.length - 1] : null,
+      analysisFps: FPS, playFps: PLAY_FPS
+    };
+    log(`재생 3초: 그린 프레임 ${stat.drawn}, 오버레이 호출 ${window.RESULT.overlayCalls}`);
+    log(`고른 사람을 찾은 비율 ${(stat.activeHit / Math.max(1, stat.activeHit + stat.activeMiss) * 100).toFixed(0)}%`);
+    log(`한 프레임 처리 중앙값 ${pct(0.5).toFixed(2)}ms · 95% ${pct(0.95).toFixed(2)}ms`);
+  }, 3000);
+} catch (e) {
+  window.RESULT = { state: 'error', error: String(e && e.message || e) };
+  log(`오류: ${e && e.message || e}`);
+}
+</script>
+</body>
+</html>

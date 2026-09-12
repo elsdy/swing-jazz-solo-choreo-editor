@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>가동 범위·가속도 검사 — 실제 영상, 사람 여럿</title>
+<style>
+  body { margin: 0; padding: 18px; background: #0b1220; color: #e5e7eb;
+    font-family: Inter, Pretendard, system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  .sub { color: #94a3b8; font-size: 12.5px; line-height: 1.7; margin-bottom: 12px; }
+  .stage { position: relative; display: inline-block; background: #000; border: 1px solid rgba(148,163,184,0.2); border-radius: 10px; overflow: hidden; }
+  .stage canvas { display: block; max-width: 100%; }
+  .log { font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.65;
+    color: #94a3b8; white-space: pre-wrap; margin-top: 12px; }
+  table { border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+  th, td { text-align: right; padding: 4px 9px; border-bottom: 1px solid rgba(148,163,184,0.16); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: #94a3b8; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>가동 범위·가속도 검사 — 실제 영상, 사람 여럿</h1>
+<div class="sub">
+  ffmpeg 으로 뽑아 둔 프레임을 <code>&lt;img&gt;</code> 로 넣어 자세를 잡고, 고른 사람의
+  가동 범위(<code>domain/rom.js</code>)와 속도·가속도(<code>domain/kinematics.js</code>)를 잰다.
+  이 자동화 브라우저는 <code>&lt;video&gt;</code> 를 디코드하지 못해 프레임을 밖에서 넣는다.
+</div>
+<div class="sub">
+  <b>쓰는 법</b> — 프레임을 먼저 만들어야 한다(저장소에 두지 않는다. <code>video-clip/</code> 은 gitignore 다):
+  <br><code>ffmpeg -ss 55 -t 8 -i &lt;영상&gt; -vf "crop=680:660:680:280,fps=15,scale=1020:-2" -q:v 3 video-clip/_romtest/f_%03d.jpg</code>
+  <br>그리고 <code>python3 server.py</code> 로 띄운 뒤 이 페이지를 연다.
+  <b>자르기가 중요하다</b> — 여러 명이 나오는 넓은 화면을 통째로 넣으면 사람이 작아
+  MediaPipe 가 한 명만 잡는다(실측: 1920→960 축소 전체 화면에서 10명 중 1명).
+  볼 사람 둘이 들어가게 잘라 키우면 세 명까지 잡혔다.
+</div>
+<div class="stage"><canvas id="plate"></canvas><canvas id="overlay" style="position:absolute;inset:0"></canvas></div>
+<div id="out" class="log">준비 중…</div>
+
+<script type="module">
+import { normalizePoseFrames } from '../src/ports/pose.js';
+import { buildTracks, framesOfTrack, subjectCounts, pickSubjectAt } from '../src/domain/poseTracks.js';
+import { summarize, findings } from '../src/domain/rom.js';
+import { summarizeMotion, pointLabel, MOTION_POINTS } from '../src/domain/kinematics.js';
+import { boxOf, centroidOf, measureLabel, MEASURE_KEYS } from '../src/domain/pose.js';
+import { createMediapipePose } from '../src/adapters/pose/mediapipePose.js';
+
+const out = document.getElementById('out');
+const plate = document.getElementById('plate');
+const overlay = document.getElementById('overlay');
+const log = (s) => { out.textContent += '\n' + s; };
+/** 자동화가 읽어 갈 자리. 사람이 보는 화면과 별도로 값을 그대로 남긴다. */
+window.RESULT = { state: 'running' };
+
+const FPS = 15;
+const START_SEC = 55;   // 자른 자리: crop=680:660:680:280 (원본 1920x1080)          // 프레임을 뽑은 구간의 시작(ffmpeg -ss). 표시용 절대 시각에 더한다
+const COUNT = 120;
+
+/** 프레임 한 장을 <img> 로 받는다. */
+function loadImage(i) {
+  return new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error(`f_${String(i).padStart(3, '0')}.jpg 를 못 읽었다`));
+    el.src = `/video-clip/_romtest/f_${String(i).padStart(3, '0')}.jpg`;
+  });
+}
+
+try {
+  out.textContent = '프레임 읽는 중…';
+  const shots = [];
+  for (let i = 1; i <= COUNT; i++) {
+    const el = await loadImage(i);
+    shots.push({ sec: (i - 1) / FPS, el });
+  }
+  log(`프레임 ${shots.length}장 (${shots[0].el.naturalWidth}x${shots[0].el.naturalHeight}, ${FPS}fps)`);
+
+  const est = createMediapipePose({ baseUrl: '/models', numPoses: 8 });
+  const loaded = await est.load();
+  if (!loaded.ok) throw new Error(`모델을 쓸 수 없다: ${loaded.error}`);
+  log('모델 준비됨. 분석 시작…');
+
+  const t0 = performance.now();
+  const res = await est.analyze({ images: shots }, {
+    fromSec: 0, toSec: COUNT / FPS, fps: FPS, maxSubjects: 8,
+    onProgress: (d, t) => { if (d % 20 === 0) out.textContent = out.textContent.replace(/\n분석 \d+\/\d+.*$/, '') + `\n분석 ${d}/${t}`; }
+  });
+  const took = (performance.now() - t0) / 1000;
+  if (!res.ok) throw new Error(`분석 실패: ${res.error}`);
+
+  const frames = normalizePoseFrames(res.frames);
+  const counts = subjectCounts(frames);
+  log(`분석 끝 — ${took.toFixed(1)}초, 프레임 ${frames.length}, 한 프레임당 사람 수 최대 ${Math.max(...frames.map(f => f.subjects.length))}`);
+
+  // ── 앵커 프레임은 **사람이 둘 이상 잡힌 첫 프레임**이다 ──
+  // 첫 프레임에 한 명만 잡히는 일이 흔하다(가려짐·모션블러). 거기서 앵커를 만들면 궤적이 하나만 선다.
+  let anchorIdx = frames.findIndex(f => f.subjects.length >= 2);
+  if (anchorIdx < 0) anchorIdx = 0;
+  const img = shots[anchorIdx].el;
+  plate.width = img.naturalWidth; plate.height = img.naturalHeight;
+  overlay.width = img.naturalWidth; overlay.height = img.naturalHeight;
+  plate.getContext('2d').drawImage(img, 0, 0);
+  const ctx = overlay.getContext('2d');
+  ctx.lineWidth = 3; ctx.font = 'bold 26px system-ui';
+  const first = frames[anchorIdx];
+  const people = first.subjects.map((s, i) => {
+    const b = boxOf(s);
+    const c = centroidOf(s);
+    return { i, box: b, cx: c ? c.x : null, cy: c ? c.y : null };
+  }).filter(p => p.box);
+  // 화면 중앙에 가까운 순서로 번호를 매긴다 — "가운데 두 명" 을 고르기 쉽게.
+  people.sort((a, b) => Math.abs(a.cx - 0.5) - Math.abs(b.cx - 0.5));
+  people.forEach((p, rank) => {
+    const x = p.box.x * overlay.width, y = p.box.y * overlay.height;
+    const w = p.box.w * overlay.width, h = p.box.h * overlay.height;
+    ctx.strokeStyle = rank < 2 ? '#22c55e' : 'rgba(148,163,184,0.65)';
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = rank < 2 ? '#22c55e' : 'rgba(148,163,184,0.85)';
+    ctx.fillText(String(rank + 1), x + 4, y - 6);
+  });
+  log(`앵커 프레임 #${anchorIdx}(${(anchorIdx / FPS).toFixed(2)}초)에서 잡은 사람 ${people.length}명 — 화면 중앙에 가까운 순서로 번호를 찍었다(초록 둘이 '가운데 두 명').`);
+
+  // ── 가운데 둘을 앵커로 삼아 궤적을 잇는다 ──
+  const anchors = people.slice(0, 2).map((p, k) => ({
+    sec: first.sec, point: { x: p.cx, y: p.cy }, id: `t${k + 1}`
+  }));
+  // ⚠ 앵커의 키는 `subject`(사람 번호)이고 pickSubjectAt 은 **숫자**를 돌려준다(객체가 아니다).
+  const seeds = anchors.map(a => ({ sec: a.sec, subject: pickSubjectAt(first, a.point), id: a.id }))
+                       .filter(a => Number.isInteger(a.subject));
+  const tracks = buildTracks(frames, seeds);
+  log(`앵커: ${JSON.stringify(seeds.map(s => ({ id: s.id, subject: s.subject })))}`);
+  log(`궤적: ${JSON.stringify(tracks.ids)}`);
+
+  const report = {
+    state: 'ok', took, frames: frames.length, people: people.length, counts,
+    anchorFrame: anchorIdx,
+    // 두 사람이 스쳐 지나가 궤적이 흔들린 자리. 많으면 사람이 바뀌어 섞였을 수 있다는 뜻이다.
+    ambiguous: tracks.ambiguous.length, lost: tracks.lost.length,
+    tracks: {}
+  };
+  const tableRows = [];
+  for (const id of tracks.ids) {
+    const only = framesOfTrack(frames, tracks, id);
+    const seen = only.filter(f => f.subjects.length > 0).length;
+    const rom = summarize(only);
+    const motion = summarizeMotion(only);
+    report.tracks[id] = {
+      frames: only.length, seen, seenRatio: only.length ? seen / only.length : 0,
+      space: rom.space,
+      rom: Object.fromEntries(MEASURE_KEYS.map(k => [k, {
+        range: rom.measures[k].range, min: rom.measures[k].min, max: rom.measures[k].max,
+        coverage: rom.measures[k].coverage, samples: rom.measures[k].samples
+      }])),
+      findings: findings(rom).map(f => f.text || f),
+      motion: {
+        space: motion.space, smoothing: motion.smoothing, unit: motion.unit,
+        points: Object.fromEntries(MOTION_POINTS.map(p => [p, motion.points[p]])),
+        angles: Object.fromEntries(MEASURE_KEYS.map(k => [k, motion.angles[k]]))
+      }
+    };
+    tableRows.push({ id, rom, motion, seen, total: only.length });
+  }
+  window.RESULT = report;
+
+  // 화면 표
+  for (const r of tableRows) {
+    const t = document.createElement('table');
+    const head = `<tr><th>${r.id} (${r.seen}/${r.total}프레임)</th><th>가동범위</th><th>최고 각속도</th>` +
+      `<th>최고 속도</th><th>최고 가속도</th></tr>`;
+    const body = MEASURE_KEYS.map(k => {
+      const a = r.motion.angles[k];
+      return `<tr><td>${measureLabel(k)}</td>` +
+        `<td>${r.rom.measures[k].range === null ? '—' : r.rom.measures[k].range.toFixed(1) + '°'}</td>` +
+        `<td>${a.peakDegPerSec === null ? '—' : a.peakDegPerSec.toFixed(0) + '°/s'}</td><td></td><td></td></tr>`;
+    }).join('');
+    const pts = MOTION_POINTS.map(p => {
+      const m = r.motion.points[p];
+      return `<tr><td>${pointLabel(p)}</td><td></td><td></td>` +
+        `<td>${m.peakSpeed === null ? '—' : m.peakSpeed.toFixed(2) + ' ' + r.motion.unit.speed}</td>` +
+        `<td>${m.peakAccel === null ? '—' : m.peakAccel.toFixed(1) + ' ' + r.motion.unit.accel}</td></tr>`;
+    }).join('');
+    t.innerHTML = head + body + pts;
+    document.body.appendChild(t);
+  }
+  log('끝. window.RESULT 에 값이 있다.');
+} catch (e) {
+  window.RESULT = { state: 'error', error: String(e && e.message || e) };
+  log(`오류: ${e && e.message || e}`);
+}
+</script>
+</body>
+</html>

@@ -67,6 +67,7 @@ import * as VideoCmd from '../../src/usecases/videoCommands.js';
 const { clipList } = VideoCmd;
 import * as CaptureCmd from '../../src/usecases/captureCommands.js';
 import { isPending, pendingGroupIds, nameGroup } from '../../src/domain/placements.js';
+import * as Kin from '../../src/domain/kinematics.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
 import {
@@ -3441,4 +3442,155 @@ test('영상 목록: 옛 파일(영상 하나)은 클립 하나로 들어오고 
   assert.deepEqual(activeClipOf(m).markers, old.markers);
   // 새 모양으로 다시 읽어도 같은 값이다(왕복이 멱등이다).
   assert.deepEqual(normalizeMedia(serializeMedia(m)), m);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 속도·가속도 (2026-09-12, domain/kinematics.js)
+//
+// 여기서 지키는 것은 하나다 — **답을 아는 신호를 넣어 그 답이 나오는가.** 실제 영상에서 나온 숫자가
+// "그럴듯해 보인다"는 것은 검증이 아니다. 등속·등가속·원운동은 손으로 답을 낼 수 있으므로,
+// 미분이 맞는지는 그 셋으로 못박고, 잡음·끊긴 구간은 성질로 못박는다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 3차원 점 시계열을 만든다. fn(t) → {x,y,z}. */
+function pointSamples(fn, { fps = 30, seconds = 2 } = {}) {
+  const out = [];
+  const n = Math.round(fps * seconds);
+  for (let i = 0; i < n; i++) {
+    const sec = i / fps;
+    out.push({ sec, ...fn(sec) });
+  }
+  return out;
+}
+
+/** 가장자리(미분이 null 인 자리)를 뺀 가운데 값들. */
+function middle(rows, key) {
+  return rows.map(r => r[key]).filter(v => v !== null && Number.isFinite(v));
+}
+
+test('kinematics: 등속 운동은 속도가 일정하고 가속도가 0 이다', () => {
+  const s = pointSamples(t => ({ x: 2 * t, y: 0, z: 0 }));      // 2 m/s
+  const rows = Kin.derive(s);
+  const speeds = middle(rows, 'speed');
+  const accels = middle(rows, 'accel');
+  assert.ok(speeds.length > 50);
+  for (const v of speeds) assert.ok(Math.abs(v - 2) < 1e-9, `속도가 2 가 아니다: ${v}`);
+  for (const a of accels) assert.ok(Math.abs(a) < 1e-9, `가속도가 0 이 아니다: ${a}`);
+});
+
+test('kinematics: 등가속 운동은 가속도가 그 값으로 나온다', () => {
+  // x = ½at², a = 6 m/s². 중앙차분은 등가속에서 **정확하다**(2차항까지 맞다).
+  const s = pointSamples(t => ({ x: 0.5 * 6 * t * t, y: 0, z: 0 }));
+  const rows = Kin.derive(s);
+  for (const a of middle(rows, 'accel')) assert.ok(Math.abs(a - 6) < 1e-6, `가속도가 6 이 아니다: ${a}`);
+  // 속도는 시각에 비례해 자란다(v = at).
+  const last = rows[rows.length - 2];
+  assert.ok(Math.abs(last.speed - 6 * last.sec) < 1e-6);
+});
+
+test('kinematics: 원운동의 구심가속도는 ω²r 이다', () => {
+  const r = 0.5, w = 4;                                          // 반지름 0.5m, 4 rad/s
+  const s = pointSamples(t => ({ x: r * Math.cos(w * t), y: r * Math.sin(w * t), z: 0 }), { fps: 120, seconds: 2 });
+  const rows = Kin.derive(s, { maxGapSec: 1 });
+  const speeds = middle(rows, 'speed');
+  const accels = middle(rows, 'accel');
+  const avgSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+  const avgAccel = accels.reduce((a, b) => a + b, 0) / accels.length;
+  assert.ok(Math.abs(avgSpeed - w * r) < 0.01, `속도 ${avgSpeed} ≠ ωr ${w * r}`);
+  assert.ok(Math.abs(avgAccel - w * w * r) < 0.05, `가속도 ${avgAccel} ≠ ω²r ${w * w * r}`);
+});
+
+test('kinematics: 끊긴 구간을 건너뛰며 미분하지 않는다', () => {
+  // 1초 동안 가만히 있다가 **0.5초를 놓치고** 저만치 가 있다. 이어 붙이면 없던 급가속이 생긴다.
+  const s = [
+    { sec: 0.0, x: 0, y: 0, z: 0 }, { sec: 0.1, x: 0, y: 0, z: 0 }, { sec: 0.2, x: 0, y: 0, z: 0 },
+    { sec: 0.8, x: 3, y: 0, z: 0 }, { sec: 0.9, x: 3, y: 0, z: 0 }, { sec: 1.0, x: 3, y: 0, z: 0 }
+  ];
+  const rows = Kin.derive(s, { maxGapSec: 0.25 });
+  assert.equal(rows[2].speed, null, '0.6초 벌어진 자리를 이어 미분했다');
+  assert.equal(rows[3].speed, null);
+  // 간격을 넉넉히 잡으면 이어 붙는다(규칙이 값이지 우연이 아님을 보인다).
+  const loose = Kin.derive(s, { maxGapSec: 1 });
+  assert.ok(loose[2].speed > 0);
+});
+
+test('kinematics: 평활화가 잡음이 만든 가짜 가속도를 걷어낸다', () => {
+  // 가만히 있는 점에 ±2mm 떨림. 참 가속도는 0 인데, 날것으로 두 번 미분하면 큰 값이 나온다.
+  // ⚠ 떨림을 `+1,-1,+1,-1…` 로 만들면 안 된다 — 중앙차분은 앞뒤 표본을 보는데 그 둘이 언제나
+  //   같은 값이라 속도가 **정확히 0** 으로 나온다(나이퀴스트 주파수에서 중앙차분은 눈이 먼다).
+  //   실제 랜드마크 떨림은 그렇게 규칙적이지 않으므로, 결정론적이되 폭넓은 수열을 쓴다.
+  const jitter = [0.3, -1, 0.8, 0.1, -0.6, 1, -0.2, -0.9, 0.5, 0.7,
+                  -1, 0.2, 0.9, -0.4, -0.7, 0.6, 1, -0.3, -0.8, 0.4];
+  const s = jitter.map((j, i) => ({ sec: i / 30, x: j * 0.002, y: 0, z: 0 }));
+  const raw = Kin.derive(s);
+  const smoothed = Kin.derive(Kin.smooth(s, ['x', 'y', 'z'], 5));
+  const peak = (rows) => Math.max(...middle(rows, 'accel'));
+  // 재 보면 ±2mm·30fps 의 떨림만으로 **1.6 m/s² 쯤의 가짜 가속도**가 선다(가만히 있는 점인데도).
+  // 평활화 창 5 면 0.4 쯤으로 내려간다. 실제 춤의 봉우리가 20 m/s² 대이므로 그 위에서는 읽을 수
+  // 있지만, 이 바닥값을 모르면 작은 값을 동작으로 착각하게 된다.
+  assert.ok(peak(raw) > 1, `가만히 있는 점인데 가짜 가속도가 안 생겼다: ${peak(raw)}`);
+  assert.ok(peak(smoothed) < peak(raw) / 3, `평활화가 잡음을 못 걷어냈다: ${peak(raw)} → ${peak(smoothed)}`);
+  assert.ok(peak(smoothed) < 1, `평활화 뒤에도 바닥값이 1 m/s² 를 넘으면 작은 동작을 못 읽는다: ${peak(smoothed)}`);
+});
+
+test('kinematics: 평활화는 시각을 건드리지 않고 가장자리에서 값을 버리지 않는다', () => {
+  const s = pointSamples(t => ({ x: t, y: 0, z: 0 }), { fps: 10, seconds: 1 });
+  const out = Kin.smooth(s, ['x'], 5);
+  assert.equal(out.length, s.length);
+  assert.deepEqual(out.map(r => r.sec), s.map(r => r.sec));
+  for (const r of out) assert.ok(Number.isFinite(r.x));
+  assert.deepEqual(Kin.smooth(s, ['x'], 1), s, '창이 1 이면 그대로다');
+});
+
+test('kinematics: 각속도는 도/초로 나오고 부호가 아니라 크기다', () => {
+  // 90도에서 180도로 1초에 걸쳐 편다 → 90°/s.
+  const s = [];
+  for (let i = 0; i <= 30; i++) s.push({ sec: i / 30, deg: 90 + 90 * (i / 30) });
+  const rows = Kin.deriveAngle(s);
+  for (const v of middle(rows, 'degPerSec')) assert.ok(Math.abs(v - 90) < 1e-6);
+  // 되감아도(줄어들어도) 크기는 같다.
+  const back = s.map((p, i) => ({ sec: p.sec, deg: 180 - 90 * (i / 30) }));
+  for (const v of middle(Kin.deriveAngle(back), 'degPerSec')) assert.ok(Math.abs(v - 90) < 1e-6);
+});
+
+test('kinematics: 요약은 어떻게 쟀는지를 함께 돌려준다(단위·평활화·커버리지)', () => {
+  // world 좌표를 가진 사람 하나. 오른손목만 2 m/s 로 움직인다.
+  const frames = [];
+  for (let i = 0; i < 45; i++) {
+    const t = i / 15;
+    const pt = (x, y) => ({ x, y, z: 0, score: 0.9 });
+    frames.push({
+      sec: t,
+      subjects: [{
+        score: 0.9,
+        points: { rightWrist: pt(0.5, 0.5), leftWrist: pt(0.4, 0.5) },
+        world: { rightWrist: { x: 2 * t, y: 0, z: 0, score: 0.9 }, leftWrist: { x: 0, y: 0, z: 0, score: 0.9 } }
+      }]
+    });
+  }
+  const sum = Kin.summarizeMotion(frames, { points: ['rightWrist', 'leftWrist'], keys: [] });
+  assert.equal(sum.space, 'world');
+  assert.deepEqual(sum.unit, { speed: 'm/s', accel: 'm/s²' });
+  assert.equal(sum.smoothing, 5, '평활화 창을 값으로 돌려줘야 다른 요약과 견줄 수 있다');
+  assert.ok(Math.abs(sum.points.rightWrist.peakSpeed - 2) < 0.01);
+  assert.ok(Math.abs(sum.points.leftWrist.peakSpeed) < 1e-9, '안 움직인 점은 0 이다');
+  assert.equal(sum.points.rightWrist.coverage, 1);
+
+  // 신뢰도가 낮은 프레임은 표본에서 빠지고 **커버리지가 그 사실을 말한다**.
+  const half = frames.map((f, i) => i % 2 ? f : {
+    ...f, subjects: [{ ...f.subjects[0], points: { ...f.subjects[0].points, rightWrist: { x: 0.5, y: 0.5, z: 0, score: 0.1 } } }]
+  });
+  const partial = Kin.summarizeMotion(half, { points: ['rightWrist'], keys: [] });
+  assert.ok(partial.points.rightWrist.coverage < 0.6);
+});
+
+test('kinematics: 재는 방법이 다르면 견주기를 거절한다', () => {
+  const a = { space: 'world', smoothing: 5, points: { rightWrist: { peakSpeed: 2, peakAccel: 10 } } };
+  const b = { space: 'screen', smoothing: 5, points: { rightWrist: { peakSpeed: 3, peakAccel: 12 } } };
+  assert.deepEqual(Kin.compareMotion(a, b), { ok: false, reason: 'space' });
+  assert.deepEqual(Kin.compareMotion(a, { ...a, smoothing: 9 }), { ok: false, reason: 'smoothing' });
+  const ok = Kin.compareMotion(a, { ...a, points: { rightWrist: { peakSpeed: 3, peakAccel: 12 } } });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.points.rightWrist.deltaPeakSpeed, 1);
+  assert.equal(ok.points.rightWrist.deltaPeakAccel, 2);
 });
