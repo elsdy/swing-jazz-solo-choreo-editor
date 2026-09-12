@@ -300,6 +300,14 @@
       box-shadow: 0 0 10px rgba(250,204,21,0.4), 0 8px 18px rgba(0,0,0,0.2);
       z-index: 4;
     }
+    /* 재생 위치가 지나가는 블록. ⚠ 렌더가 아니라 ui/playhead 의 rAF 루프가 붙였다 뗀다(채널 B).
+       선택(노랑)·리사이즈(파랑)와 겹칠 수 있어 색은 재생 헤드와 같은 초록이고 z-index 는 올리지 않는다. */
+    .placement.is-playing {
+      outline: 2.5px solid rgba(34,197,94,0.95);
+      outline-offset: -1px;
+      box-shadow: 0 0 14px rgba(34,197,94,0.55), 0 8px 18px rgba(0,0,0,0.2);
+      filter: brightness(1.12);
+    }
     .placement.is-resizing {
       outline: 2px solid rgba(96,165,250,0.85);
       outline-offset: -1px;
@@ -1211,6 +1219,172 @@
     .link-del-btn:hover { color: #f87171; background: rgba(239,68,68,0.15); }
     .link-add-btn { font-size: 11px !important; padding: 2px 8px !important; }
 
+    /* ── 영상 패널 (2026-09 신설) ──
+       ⚠ 켜야 보이는 기능이다. #videoPanel 에 `hidden` 이 붙어 있는 동안은 이 블록의 어떤 규칙도
+         화면에 나타나지 않는다 — 끈 상태의 화면은 이 기능이 들어오기 전과 한 픽셀도 다르지 않다.
+       ⚠ 기존 규칙은 한 줄도 고치지 않았다. 좁은 화면의 세로 배치도 `.boards-container` 를
+         고쳐 쓰는 대신 [data-video="on"] 이 붙었을 때만 걸리는 새 규칙으로 더했다. */
+    .video-panel {
+      display: flex;
+      flex-direction: column;
+      flex: 0 0 clamp(280px, 32%, 460px);
+      max-width: 46%;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border-left: 2px solid rgba(34,197,94,0.30);
+      background: linear-gradient(180deg, rgba(34,197,94,0.05), rgba(34,197,94,0.02));
+    }
+    /* `.video-panel`(0,1,0) 보다 강하므로 !important 없이 이긴다. */
+    .video-panel[hidden] { display: none; }
+    /* 루틴 편집기와 동시에 열지 않는다 — 편집 패널이 폭의 절반을 가져가면 안무표가 짜부라진다.
+       좁은 화면에서는 편집기가 전체화면 오버레이라 어차피 가려지므로 폭을 나누지 않았다.
+       ⚠ 숨기는 자리는 반드시 player.pause() 를 함께 부른다(app/main.js) — display:none 인
+         iframe 도 오디오는 계속 나온다. */
+    .boards-container[data-routine="on"] .video-panel { display: none; }
+
+    .video-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(34,197,94,0.20);
+      background: rgba(34,197,94,0.06);
+    }
+    .video-head h2 { margin: 0; font-size: 13px; color: rgba(134,239,172,0.95); white-space: nowrap; }
+    .video-head-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .video-head-actions { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    .video-title-chip {
+      font-size: 11px; color: #a7f3d0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.25);
+      border-radius: 5px; padding: 2px 8px; max-width: 220px;
+    }
+    .video-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .video-panel.is-collapsed .video-body { display: none; }
+
+    /* ⚠ aspect-ratio 는 선택이 아니라 **필수**다. 조상(.app → .panel → .workspace →
+       .boards-container)이 전부 overflow:hidden + min-height:0 이라 비율이 없으면 0 높이로 붕괴한다. */
+    .video-frame {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #000;
+      border: 1px solid rgba(148,163,184,0.16);
+    }
+    /* YT.Player 는 넘겨받은 <div> 를 <iframe> 으로 **갈아치운다** — 둘 다 프레임을 꽉 채워야 한다
+       (어댑터는 width/height 를 넘기지 않아 iframe 기본값이 640x390 이다). */
+    .video-frame > * { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+    .video-status { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .video-status.is-error { color: #fca5a5; }
+    .video-cut .helper.is-error { color: #fca5a5; }
+    /* 로컬 파일 줄. 파일명 칩은 제목 칩과 같은 톤이다(둘 다 "지금 무엇이 소스인가"를 말한다). */
+    .video-source { gap: 6px; }
+    .video-file-name {
+      font-size: 11px; color: #a7f3d0; min-width: 0; max-width: 100%;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.25);
+      border-radius: 999px; padding: 2px 8px;
+    }
+    /* <video> 도 iframe 과 같이 프레임에 맞춰 들어간다. 검은 레터박스는 영상 비율의 몫이다.
+       ⚠ **자손 선택자여야 한다.** app/main.js 는 재생기마다 host <div> 를 하나 만들어 그 안에 넘기고
+         파일 재생기는 그 <div> 안에 <video> 를 넣으므로, <video> 는 프레임의 **손자**다
+         (유튜브만 YT.Player 가 그 <div> 를 <iframe> 으로 갈아치워 자식이 된다).
+         `> video` 로 적으면 규칙이 하나도 안 걸려 영상이 제 원본 크기로 펼쳐지고, 프레임의
+         overflow:hidden 이 그것을 잘라 **"일부만 확대된 것처럼"** 보인다 — 2026-09-11 에 실제로 그랬다
+         (945x531 프레임에 480x640 영상이 들어가 세로 109px 이 잘렸다. 1080x1920 촬영본이면 훨씬 크다). */
+    .video-frame video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+
+    /* 자세 오버레이. ⚠ 프레임이 아니라 **영상이 실제로 그려진 칸**에 맞춰야 한다 — 영상은 레터박스와 함께
+       가운데에 들어가므로, 프레임을 꽉 채우면 관절이 검은 띠 쪽으로 밀린다. 자리와 크기는
+       ui/poseOverlay.js 가 재서 인라인으로 넣는다(그래서 여기서는 width/height 를 풀어 준다).
+       z-index 는 <video> 위이고, 클릭은 받아야 한다(인물 고르기). */
+    .video-frame > .video-pose {
+      position: absolute; width: auto; height: auto; z-index: 2;
+      cursor: crosshair; touch-action: none;
+    }
+    .video-frame > .video-pose[hidden] { display: none; }
+
+    /* 자세 분석 구획. 구간 자르기와 같은 톤이다. */
+    .video-pose-section { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(34,197,94,0.16); }
+    /* ⚠ `.video-field` 의 `display:flex` 가 브라우저 기본 `[hidden]{display:none}` 를 이긴다 —
+       숨기려고 hidden 을 붙여도 그대로 보인다(`.video-panel[hidden]` 이 같은 이유로 이미 있다).
+       이 줄이 없으면 `인물` 줄이 분석 전에도 떠 있는다. */
+    .video-field[hidden] { display: none; }
+    .video-people { display: flex; flex-wrap: wrap; gap: 4px; }
+    .video-people button { padding: 2px 8px; font-size: 11px; }
+    .video-progress {
+      height: 4px; border-radius: 999px; overflow: hidden;
+      background: rgba(148,163,184,0.18);
+    }
+    .video-progress > span { display: block; height: 100%; background: rgba(34,197,94,0.85); width: 0; }
+    .video-tempo { display: grid; gap: 6px; }
+    .video-bpm { font-size: 12px; font-weight: 800; color: #dbe4ef; line-height: 1.4; }
+    .video-field { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+    .video-label { font-size: 11px; color: #8892a4; white-space: nowrap; }
+    .video-num { width: 4.6em; text-align: center; flex: 0 0 auto; }
+    .video-pick { width: auto; min-width: 5.5em; flex: 0 0 auto; }
+
+    /* ── 구간 자르기·마커(2026-09-10) ── 템포 구획과 같은 톤이고, 구획 제목 한 줄로만 나눈다. */
+    .video-cut { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(34,197,94,0.16); }
+    .video-section-title { font-size: 11px; font-weight: 800; color: rgba(134,239,172,0.9); letter-spacing: 0.02em; }
+    .video-markers { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+    .video-marker {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+      font-size: 11px; color: #dbe4ef; line-height: 1.35;
+      background: rgba(34,197,94,0.07); border: 1px solid rgba(34,197,94,0.18);
+      border-radius: 7px; padding: 4px 6px;
+    }
+    .video-marker.is-current { border-color: rgba(34,197,94,0.7); background: rgba(34,197,94,0.16); }
+    .video-marker-label { font-weight: 700; color: #a7f3d0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .video-marker-range { color: #8892a4; }
+    .video-marker button { padding: 1px 6px; font-size: 11px; }
+
+    /* ── 재생 헤드 ──
+       z-index 6 은 .snap-indicator 와 동급이다 — .placement(3·4) 위, .resize-preview-block(8) 아래.
+       ⚠ 이 엘리먼트는 렌더 파이프라인을 타지 않는다. rAF 루프가 transform 만 직접 쓴다(채널 B). */
+    .playhead {
+      position: absolute;
+      top: 0; bottom: 0; left: 0;
+      width: 2px;
+      margin-left: -1px;
+      background: rgba(34,197,94,0.95);
+      box-shadow: 0 0 8px rgba(34,197,94,0.65);
+      z-index: 6;
+      pointer-events: none;
+      will-change: transform;
+    }
+
+    @media (max-width: 1040px) {
+      /* ⚠ DOM 은 그대로 두고 CSS 로만 위로 올린다. iframe 은 부모가 바뀌면 리로드된다. */
+      .boards-container[data-video="on"] { flex-direction: column; }
+      .video-panel {
+        order: -1;
+        flex: 0 0 auto;
+        max-width: none;
+        border-left: none;
+        border-bottom: 2px solid rgba(34,197,94,0.30);
+      }
+      /* .scroll-locks(우상단 fixed, z-index 3000)가 헤더 오른쪽을 덮는다 — 그만큼 비운다. */
+      .video-head { padding-right: 96px; }
+      .video-body { max-height: 52vh; }
+      .video-title-chip { max-width: 140px; }
+    }
+
   </style>
 </head>
 <body>
@@ -1322,6 +1496,7 @@
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <button id="quickPlaceBtn" class="ghost">+ 빠른 배치</button>
+              <button id="videoPanelBtn" class="ghost" type="button" title="영상을 띄우고 재생 위치를 안무표에 표시합니다">▶ 영상 패널</button>
               <button id="createRoutineFromSelectionBtn" class="primary special" style="font-size:10px;padding:4px 8px;display:none;">루틴으로 편성</button>
               <button id="undoBtn" class="ghost">Undo</button>
               <button id="redoBtn" class="ghost">Redo</button>
@@ -1366,6 +1541,119 @@
           </div>
           <div class="board-wrap" id="reBoardWrap"><div class="board" id="reBoard"></div></div>
         </div>
+
+        <!-- 영상 패널 (기본 숨김 — 툴바의 `▶ 영상 패널` 로 켠다)
+             ⚠ 이 자리를 옮기지 마라. iframe 은 DOM 에서 부모가 바뀌면 리로드되어 재생이 끊긴다.
+               "데스크톱은 안무표 오른쪽, 좁은 화면은 위"는 CSS(flex-direction + order)로만 만든다.
+             ⚠ URL 입력창을 여기 만들지 않는다. 위 링크바의 `YouTube URL 입력...` 칸이 그대로 소스다. -->
+        <aside class="video-panel" id="videoPanel" hidden>
+          <div class="video-head">
+            <div class="video-head-main">
+              <h2>영상</h2>
+              <span class="video-title-chip" id="videoTitleChip" hidden></span>
+            </div>
+            <div class="video-head-actions">
+              <button id="videoFollowBtn" class="ghost" type="button" title="재생 위치를 안무표가 따라 스크롤합니다">따라가기</button>
+              <button id="videoCollapseBtn" class="ghost" type="button">접기</button>
+              <button id="videoCloseBtn" class="ghost" type="button">✕ 닫기</button>
+            </div>
+          </div>
+          <div class="video-body" id="videoBody">
+            <div class="video-frame" id="videoFrame"><canvas class="video-pose" id="videoPoseCanvas" hidden></canvas></div>
+            <div class="video-status" id="videoStatus"></div>
+            <div class="video-field video-source">
+              <input id="videoFileInput" type="file" accept="video/*" hidden />
+              <button id="videoFileBtn" class="ghost" type="button" title="내 컴퓨터의 영상 파일을 안무표 옆에 띄웁니다">📁 영상 파일 열기</button>
+              <span class="video-file-name" id="videoFileName" hidden></span>
+              <button id="videoFileLibBtn" class="ghost accent" type="button" title="설정에서 지정한 보관 폴더에서 이 안무표의 영상을 다시 읽어 옵니다" hidden>📂 보관 폴더에서 불러오기</button>
+              <button id="videoFileClearBtn" class="ghost" type="button" title="영상 파일을 놓고 링크바의 유튜브 주소로 돌아갑니다" hidden>✕ 파일 놓기</button>
+            </div>
+            <div class="video-tempo">
+              <div class="video-bpm" id="videoBpmText"></div>
+
+              <div class="video-field">
+                <span class="video-label">여기가</span>
+                <select id="videoAnchorRow" class="video-pick"></select>
+                <span class="video-label">의</span>
+                <input id="videoAnchorCount" class="video-num" type="number" min="1" value="1" />
+                <span class="video-label">카운트</span>
+                <button id="videoMarkBtn" class="primary" type="button">지금 여기</button>
+                <button id="videoMarkCancelBtn" class="ghost" type="button">취소</button>
+              </div>
+              <div class="helper" id="videoMarkHelp"></div>
+
+              <div class="video-field">
+                <button id="videoTapBtn" class="warn" type="button">탭</button>
+                <button id="videoTapCommitBtn" class="ghost accent" type="button">탭으로 BPM 정하기</button>
+                <button id="videoTapClearBtn" class="ghost" type="button">탭 지우기</button>
+              </div>
+
+              <div class="video-field">
+                <span class="video-label">BPM</span>
+                <input id="videoBpmInput" class="video-num" type="number" min="20" max="400" step="0.1" />
+                <span class="video-label">1카운트 =</span>
+                <input id="videoBeatsPerCount" class="video-num" type="number" min="0.125" max="8" step="0.5" />
+                <span class="video-label">박</span>
+              </div>
+              <div class="video-field">
+                <button id="videoReanchorBtn" class="ghost" type="button">여기로 다시 맞추기</button>
+                <button id="videoTempoClearBtn" class="ghost" type="button">템포 지우기</button>
+              </div>
+
+              <div class="video-field">
+                <button id="videoPointBtn" class="ghost accent" type="button" title="위의 행·카운트가 지금 영상 시각에서 시작한다고 기록합니다. 템포가 흔들리는 영상에서 구간마다 찍어 두면 그 사이가 저절로 맞습니다">보정점 추가</button>
+                <button id="videoPointSelBtn" class="ghost accent" type="button" title="안무표에서 선택한 블록이 지금 영상 시각에서 시작한다고 기록합니다">선택한 블록이 여기서 시작</button>
+                <button id="videoPointClearBtn" class="ghost" type="button">보정점 지우기</button>
+              </div>
+              <div class="helper" id="videoPointHelp"></div>
+            </div>
+
+            <!-- 구간 자르기와 마커(2026-09-10). In/Out 은 확정 전 값이라 화면 상태이고, 마커와 잘라 낸 클립은 안무의 일부다. -->
+            <div class="video-cut">
+              <div class="video-section-title">구간 자르기</div>
+              <div class="video-field">
+                <button id="videoInBtn" class="ghost accent" type="button" title="지금 영상 시각을 구간의 시작(In)으로 찍습니다">[ In 지금 여기</button>
+                <button id="videoOutBtn" class="ghost accent" type="button" title="지금 영상 시각을 구간의 끝(Out)으로 찍습니다">Out ] 지금 여기</button>
+                <button id="videoInGoBtn" class="ghost" type="button" title="영상을 In 지점으로 옮깁니다">In 으로</button>
+                <button id="videoOutGoBtn" class="ghost" type="button" title="영상을 Out 지점으로 옮깁니다">Out 으로</button>
+                <button id="videoLoopBtn" class="ghost" type="button" title="재생이 Out 에 닿으면 In 으로 되감습니다">구간 반복</button>
+                <button id="videoInOutClearBtn" class="ghost" type="button">In/Out 지우기</button>
+              </div>
+              <div class="helper" id="videoInOutText"></div>
+              <div class="video-field">
+                <button id="videoTrimBtn" class="primary" type="button" title="In~Out 구간을 잘라 다시 인코딩한 새 클립을 보관 폴더에 만들고 그 클립으로 갈아 끼웁니다. 원본은 그대로 남습니다">✂ 잘라서 새 클립으로</button>
+              </div>
+              <div class="helper" id="videoTrimHelp"></div>
+
+              <div class="video-section-title">마커 — 영상 구간 ↔ 안무표 구간</div>
+              <div class="video-field">
+                <button id="videoMarkerSelBtn" class="ghost accent" type="button" title="In~Out 구간을 안무표에서 선택한 블록들의 카운트 구간에 맵핑하는 마커를 만듭니다">선택한 블록에 맵핑</button>
+                <button id="videoMarkerRowBtn" class="ghost accent" type="button" title="In~Out 구간을 위 '여기가' 칸에서 고른 마디 전체에 맵핑하는 마커를 만듭니다">이 마디에 맵핑</button>
+                <button id="videoMarkerClearBtn" class="ghost" type="button">마커 지우기</button>
+              </div>
+              <div class="helper" id="videoMarkerHelp"></div>
+              <ul class="video-markers" id="videoMarkerList"></ul>
+            </div>
+
+            <!-- 자세 분석(2026-09-12). 영상에서 관절을 찾아 영상 위에 몸을 겹쳐 그린다. -->
+            <div class="video-pose-section">
+              <div class="video-section-title">자세 분석</div>
+              <div class="video-field">
+                <button id="videoPoseRunBtn" class="ghost accent" type="button" title="In~Out 구간(없으면 영상 전체)에서 관절을 찾습니다">🧍 자세 분석</button>
+                <button id="videoPoseMeshBtn" class="ghost" type="button" title="관절에 몸을 씌워 그립니다. 끄면 뼈대만 나옵니다">메시</button>
+                <button id="videoPoseClearBtn" class="ghost" type="button">분석 지우기</button>
+              </div>
+              <div class="video-progress" id="videoPoseProgress" hidden><span></span></div>
+              <div class="video-field" id="videoPosePeopleRow" hidden>
+                <span class="video-label">인물</span>
+                <span class="video-people" id="videoPosePeople"></span>
+                <button id="videoPoseAddBtn" class="ghost" type="button" title="영상에서 한 사람을 더 고릅니다">+ 사람 추가</button>
+                <button id="videoPosePickClearBtn" class="ghost" type="button">고른 것 지우기</button>
+              </div>
+              <div class="helper" id="videoPoseHelp"></div>
+            </div>
+          </div>
+        </aside>
       </div>
     </main>
   </div>

@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>자세 분석 검사 — 관절 표시와 가동 범위</title>
+<style>
+  :root {
+    --bg: #0b1220; --panel: rgba(17,24,39,0.94); --line: rgba(148,163,184,0.16);
+    --text: #e5e7eb; --muted: #94a3b8; --ok: #22c55e; --bad: #ef4444; --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 20px 60px; background: linear-gradient(180deg,#0b1220,#111827);
+    color: var(--text); font-family: Inter, Pretendard, system-ui, -apple-system, sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; line-height: 1.7; margin-bottom: 16px; }
+  code { background: rgba(148,163,184,0.12); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+  select, button, input { font: inherit; background: #0b1220; color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  button { cursor: pointer; font-weight: 700; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .tally { font-weight: 800; font-size: 15px; }
+  .tally .n { padding: 2px 8px; border-radius: 999px; margin-right: 6px; }
+  .n.pass { background: rgba(34,197,94,0.16); color: var(--ok); }
+  .n.fail { background: rgba(239,68,68,0.16); color: var(--bad); }
+  .cols { display: grid; grid-template-columns: minmax(320px, 480px) 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .stage { position: relative; background: #000; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  /* 바탕 그림(#plate)은 흐름 안에 있어야 무대의 높이가 잡히고, 관절(#overlay)만 그 위에 겹친다. */
+  .stage canvas { display: block; width: 100%; }
+  .stage #overlay { position: absolute; inset: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.ok { color: var(--ok); font-weight: 700; }
+  td.bad { color: var(--bad); font-weight: 700; }
+  .log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.7;
+    color: var(--muted); white-space: pre-wrap; margin-top: 12px; }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.7; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>자세 분석 검사 — 관절 표시와 가동 범위</h1>
+  <p class="sub">
+    관절 위치를 <b>미리 정해서 그린</b> 합성 영상으로 분석이 맞는지 본다. 실제 춤 영상에는 "이 순간 팔꿈치가 몇 도" 라는
+    정답이 없으므로, 각도를 넣어 그림을 그리고 그 각도를 다시 재 본다. 재 온 값이 넣은 값과 다르면 계산이 틀린 것이다.
+    영상은 <code>python3 tools/make-pose-clip.py video-clip/_posecheck</code> 로 만들고 정답은 같은 폴더의 <code>pose-truth.json</code> 이다
+    (만들어진 것은 <code>video-clip/</code> 아래라 커밋되지 않는다).
+    분석은 <b>뽑아 둔 프레임 이미지</b>로 돈다 — <code>&lt;video&gt;</code> 는 탭이 보일 때만 디코드해서 자동화에서는 영원히 비어 있기 때문이다.
+    실제 앱에서는 같은 추정기에 <code>&lt;video&gt;</code> 를 그대로 넘긴다.
+  </p>
+
+  <div class="bar">
+    <label>관절점 출처
+      <select id="source">
+        <option value="truth">정답(합성) — 그릴 때 쓴 좌표를 그대로 돌려준다</option>
+        <option value="mediapipe">MediaPipe — 받아 둔 모델로 영상에서 찾는다</option>
+      </select>
+    </label>
+    <label>초당 <input id="fps" type="number" value="15" min="1" max="60" style="width: 5em"> 장</label>
+    <button id="run">분석 실행</button>
+    <button id="photo" title="실제 사람 사진 한 장으로 모델이 관절을 찾는지 본다">실제 사진으로 확인</button>
+    <label style="font-size:12px; color:var(--muted);"><input id="meshOn" type="checkbox" style="vertical-align:-2px;"> 메시 입히기</label>
+    <span class="tally" id="tally"></span>
+  </div>
+
+  <div class="cols">
+    <div>
+      <div class="stage">
+        <canvas id="plate"></canvas>
+        <canvas id="overlay"></canvas>
+      </div>
+      <div class="card" style="margin-top: 12px;">
+        <div style="font-size:12px; color:var(--muted); line-height:1.7; margin-bottom:8px;">
+          <b>3D 보기</b> — 같은 관절을 world(미터) 좌표로 놓고 세로축 둘레로 돌려 본다.
+          정면에서 찍은 영상 하나로 옆모습을 만드는 것이라, <b>깊이는 거칠다</b>. 몸이 어느 쪽을 보는지 정도는 읽히지만
+          옆모습의 각도를 그대로 믿을 수는 없다.
+        </div>
+        <canvas id="view3d" width="420" height="320" style="width:100%; background:#0b1220; border:1px solid var(--line); border-radius:10px;"></canvas>
+        <canvas id="mesh3d" width="420" height="320" style="width:100%; background:#0b1220; border:1px solid var(--line); border-radius:10px; display:none;"></canvas>
+        <div class="bar" style="margin-top:8px; padding:8px 10px;">
+          <span class="settings-label" style="font-size:11px; color:var(--muted);">돌리기</span>
+          <input id="yaw" type="range" min="-180" max="180" value="0" style="flex:1; min-width:120px;">
+          <span id="yawText" style="font-size:12px; color:var(--muted); min-width:3.5em;">0°</span>
+        </div>
+      </div>
+
+      <div class="bar" style="margin-top: 12px;">
+        <button id="play">▶ 재생</button>
+        <input id="scrub" type="range" min="0" max="119" value="0" style="flex: 1; min-width: 120px;">
+        <span id="clock" style="font-size: 12px; color: var(--muted);">0.00s</span>
+      </div>
+      <div class="legend">
+        <span class="dot" style="background:#22c55e"></span>관절(동그라미) ·
+        <span class="dot" style="background:#38bdf8"></span>뼈대 ·
+        <span class="dot" style="background:#f59e0b"></span>각을 재는 관절에는 그 자리에 각도를 적는다.
+        재생하거나 슬라이더를 끌면 그 시각의 관절이 영상 위에 그대로 얹힌다.
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <table id="table">
+          <thead><tr><th>관절</th><th>넣은 범위</th><th>잰 범위</th><th>차이</th><th>표본</th><th>판정</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="log" id="log">아직 분석하지 않았다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { jointAngles, JOINT_SPECS, measureLabel } from '../src/domain/pose.js';
+import { normalizePoseFrames } from '../src/ports/pose.js';
+import { buildTracks, framesOfTrack, subjectCounts } from '../src/domain/poseTracks.js';
+import { summarize, findings, symmetry } from '../src/domain/rom.js';
+import { createMediapipePose } from '../src/adapters/pose/mediapipePose.js';
+import { meshOfSubject } from '../src/domain/bodyMesh.js';
+import { createMeshView } from '../src/ui/meshView.js';
+
+const $ = (id) => document.getElementById(id);
+const plate = $('plate'), pctx = plate.getContext('2d');
+const canvas = $('overlay'), ctx = canvas.getContext('2d');
+const log = (msg) => { $('log').textContent = msg; };
+
+/** 정답 파일. 그릴 때 쓴 좌표와 "넣은 각도" 가 들어 있다. */
+let truth = null;
+/** 합성 영상에서 뽑아 둔 프레임 이미지 `[{sec, el}]`. 한 번 읽어 두고 계속 쓴다. */
+let clipShots = [];
+/** 지금 화면과 분석이 보는 프레임. 합성 영상이거나 실제 사진 한 장이다.
+ * ⚠ 둘을 한 변수로 두면 사진을 본 뒤 합성 분석을 돌렸을 때 **사진 한 장만** 분석하고도 표는 그대로
+ *   그려진다(2026-09-12 에 실제로 그랬다 — 표본 1/1 인데 판정이 나왔다). 그래서 원본을 따로 들고 있다가
+ *   분석 직전에 되돌린다. */
+let shots = [];
+let cursor = 0;
+let timer = null;
+
+/** 마지막 분석 결과의 프레임(그리기에 쓴다). */
+let drawn = [];
+
+const ready = (async () => {
+  truth = await fetch('../video-clip/_posecheck/pose-truth.json').then(r => r.json());
+  const total = truth.frames.length;
+  const load = (i) => new Promise((res, rej) => {
+    const el = new Image();
+    el.onload = () => res({ sec: truth.frames[i].sec, el });
+    el.onerror = () => rej(new Error(`frames/${String(i).padStart(4, '0')}.png`));
+    el.src = `../video-clip/_posecheck/frames/${String(i).padStart(4, '0')}.png`;
+  });
+  const out = [];
+  for (let i = 0; i < total; i++) {
+    out.push(await load(i));
+    if (i % 20 === 0) log(`프레임 ${i + 1}/${total} 읽는 중…`);
+  }
+  clipShots = out;
+  shots = clipShots;
+  $('scrub').max = String(shots.length - 1);
+  plate.width = truth.width; plate.height = truth.height;
+  canvas.width = truth.width; canvas.height = truth.height;
+  log(`프레임 ${shots.length}장 준비됐다. \`분석 실행\` 을 누른다.`);
+  show(0);
+  return true;
+})().catch(e => { log(`준비 실패: ${e.message}\n\n먼저 만들어야 한다:  python3 tools/make-pose-clip.py video-clip/_posecheck`); return false; });
+
+// ── 정답을 그대로 돌려주는 추정기. 계약(ports/pose.js)을 똑같이 채운다 ─────────
+function createTruthPose() {
+  return {
+    id: 'truth/synthetic',
+    describe: () => ({ name: '정답(합성)', model: 'pose-truth.json', space: 'screen', maxSubjects: 1 }),
+    getState: () => ({ load: truth ? 'ready' : 'idle', error: '' }),
+    load: async () => (await ready) ? { ok: true, error: '' } : { ok: false, error: 'pose-truth.json 없음' },
+    async analyze(_source, req = {}) {
+      const step = 1 / (req.fps || 15);
+      const to = req.toSec ?? (truth.frames[truth.frames.length - 1].sec + step);
+      const picked = [];
+      let want = req.fromSec || 0;
+      for (const f of truth.frames) {
+        if (f.sec + 1e-9 < (req.fromSec || 0) || f.sec >= to) continue;
+        if (f.sec + 1e-9 < want) continue;
+        picked.push({ sec: f.sec, subjects: [{ points: f.points, world: null, score: 1, aspect: truth.width / truth.height }] });
+        want += step;
+      }
+      return { ok: true, frames: normalizePoseFrames(picked), space: 'screen', error: '' };
+    },
+    destroy() {}
+  };
+}
+
+// ── 그리기 ──────────────────────────────────────────────────────────────────
+const BONES = [
+  ['leftShoulder','rightShoulder'], ['leftShoulder','leftHip'], ['rightShoulder','rightHip'], ['leftHip','rightHip'],
+  ['leftShoulder','leftElbow'], ['leftElbow','leftWrist'], ['rightShoulder','rightElbow'], ['rightElbow','rightWrist'],
+  ['leftHip','leftKnee'], ['leftKnee','leftAnkle'], ['leftAnkle','leftFootIndex'],
+  ['rightHip','rightKnee'], ['rightKnee','rightAnkle'], ['rightAnkle','rightFootIndex']
+];
+/** 각도를 그 관절 자리에 적는다 — 숫자가 관절 위에 서야 "제대로 찍혔나" 를 눈으로 본다. */
+const LABELLED = ['leftElbow', 'rightElbow', 'leftKnee', 'rightKnee'];
+
+function frameNear(sec) {
+  let best = null, gap = Infinity;
+  for (const f of drawn) { const d = Math.abs(f.sec - sec); if (d < gap) { gap = d; best = f; } }
+  return gap <= 0.12 ? best : null;
+}
+
+/** 그 번호의 프레임을 화면에 올리고 그 위에 관절을 얹는다. */
+function show(i) {
+  if (!shots.length) return;
+  cursor = Math.max(0, Math.min(shots.length - 1, i));
+  const shot = shots[cursor];
+  pctx.drawImage(shot.el, 0, 0, plate.width, plate.height);
+  $('scrub').value = String(cursor);
+  $('clock').textContent = `${shot.sec.toFixed(2)}s`;
+  drawOverlay(shot.sec);
+  draw3d();
+}
+
+function drawOverlay(sec) {
+  const w = canvas.width, h = canvas.height;
+  const frame = frameNear(sec);
+  // 메시를 켜면 **먼저** 그린다(meshView 가 캔버스를 지우므로) — 그 위에 각도 숫자를 얹는다.
+  if (meshOn() && frame) {
+    ctx.clearRect(0, 0, w, h);
+    for (const subject of frame.subjects) {
+      const mesh = meshOfSubject(subject, { space: 'screen' });
+      if (!mesh.vertices.length) continue;
+      const aspect = Number.isFinite(subject.aspect) && subject.aspect > 0 ? subject.aspect : 1;
+      // 등방 공간에서 만든 메시를 다시 눌러 영상의 사람과 맞춘다. direct 라 화면을 채우지 않고 제자리에 놓인다.
+      overlayMesh.render(mesh, { xScale: 1 / aspect, flipY: false, direct: true, lineWidth: Math.max(1, w / 500) });
+    }
+  } else {
+    ctx.clearRect(0, 0, w, h);
+  }
+  if (!frame) return;
+  for (const subject of frame.subjects) {
+    const p = subject.points;
+    const at = (n) => (p[n] ? [p[n].x * w, p[n].y * h] : null);
+    if (!meshOn()) {
+      ctx.lineWidth = Math.max(2, w / 160);
+      ctx.strokeStyle = 'rgba(56,189,248,0.95)';
+      for (const [a, b] of BONES) {
+        const A = at(a), B = at(b);
+        if (!A || !B) continue;
+        ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke();
+      }
+      const r = Math.max(4, w / 90);
+      for (const name of Object.keys(p)) {
+        const P = at(name);
+        if (!P) continue;
+        ctx.beginPath(); ctx.arc(P[0], P[1], r, 0, Math.PI * 2);
+        ctx.fillStyle = '#22c55e'; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(6,10,20,0.9)'; ctx.stroke();
+      }
+    }
+    const r = Math.max(4, w / 90);
+    const { angles } = jointAngles(subject);
+    ctx.font = `700 ${Math.round(w / 26)}px ui-monospace, Menlo, monospace`;
+    ctx.fillStyle = '#f59e0b';
+    ctx.strokeStyle = 'rgba(6,10,20,0.95)';
+    ctx.lineWidth = 4;
+    for (const name of LABELLED) {
+      const P = at(name);
+      if (!P || angles[name] === null) continue;
+      const text = `${Math.round(angles[name])}°`;
+      const x = P[0] + r * 1.6, y = P[1] - r * 1.2;
+      ctx.strokeText(text, x, y); ctx.fillText(text, x, y);
+    }
+  }
+}
+
+// ── 3D 보기 ─────────────────────────────────────────────────────────────────
+// 라이브러리를 쓰지 않는다. world 좌표를 세로축 둘레로 돌려 평행 투영하는 것뿐이라 삼각함수 두 줄이면 된다.
+// ⚠ MediaPipe 의 world 좌표는 y 가 **아래로** 자라고 캔버스도 아래로 자란다 — 그대로 그리면 맞다.
+const view3d = $('view3d'), v3 = view3d.getContext('2d');
+const mesh3dView = createMeshView({ canvas: $('mesh3d') });
+const overlayMesh = createMeshView({ canvas });
+let yaw = 0;
+const meshOn = () => $('meshOn').checked;
+
+/** 지금 화면에 있는 사람 하나. 3D 보기와 오버레이가 같은 것을 본다. */
+function currentSubject() {
+  const frame = frameNear(shots.length ? shots[cursor].sec : 0) || drawn[0];
+  return frame && frame.subjects[0];
+}
+
+function draw3d() {
+  const w = view3d.width, h = view3d.height;
+  const subject = currentSubject();
+
+  // 메시 모드: 관절에 몸을 씌워 돌려 본다. 뼈대 캔버스는 숨긴다.
+  $('view3d').style.display = meshOn() ? 'none' : 'block';
+  $('mesh3d').style.display = meshOn() ? 'block' : 'none';
+  if (meshOn()) {
+    const mesh = subject ? meshOfSubject(subject) : null;
+    if (!mesh || !mesh.vertices.length) { mesh3dView.clear(); return; }
+    mesh3dView.render(mesh, { yaw, pad: 22, joints: Object.values(subject.world || {}).filter(Boolean) });
+    const c = $('mesh3d').getContext('2d');
+    c.fillStyle = '#64748b';
+    c.font = '12px ui-monospace, Menlo, monospace';
+    c.fillText(`${yaw > 0 ? '+' : ''}${yaw}°  꼭짓점 ${mesh.vertices.length} · 면 ${mesh.quads.length} · 부위 ${mesh.parts.length}`, 12, $('mesh3d').height - 12);
+    return;
+  }
+
+  v3.clearRect(0, 0, w, h);
+  const pts = subject && subject.world;
+  if (!pts || !Object.values(pts).some(p => p)) {
+    v3.fillStyle = '#64748b';
+    v3.font = '13px system-ui';
+    v3.fillText('world(미터) 좌표가 없다 — MediaPipe 로 분석하면 나온다.', 16, 28);
+    return;
+  }
+  const a = (yaw * Math.PI) / 180;
+  const cos = Math.cos(a), sin = Math.sin(a);
+  const at = {};
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [name, p] of Object.entries(pts)) {
+    if (!p) continue;
+    const x = p.x * cos - p.z * sin;      // 세로축 둘레 회전
+    const y = p.y;                        // 아래로 자라는 축끼리라 그대로 쓴다
+    at[name] = { x, y, depth: p.x * sin + p.z * cos };
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  const pad = 28;
+  const scale = Math.min((w - pad * 2) / Math.max(maxX - minX, 0.001), (h - pad * 2) / Math.max(maxY - minY, 0.001));
+  const px = (q) => ({
+    x: w / 2 + (q.x - (minX + maxX) / 2) * scale,
+    y: h / 2 + (q.y - (minY + maxY) / 2) * scale
+  });
+  // 뒤에 있는 뼈를 흐리게 그려 깊이가 눈에 보이게 한다.
+  const depths = Object.values(at).map(q => q.depth);
+  const dMin = Math.min(...depths), dMax = Math.max(...depths);
+  const fade = (d) => 0.35 + 0.65 * (dMax === dMin ? 1 : 1 - (d - dMin) / (dMax - dMin));
+  v3.lineWidth = 4;
+  for (const [b1, b2] of BONES) {
+    if (!at[b1] || !at[b2]) continue;
+    const A = px(at[b1]), B = px(at[b2]);
+    v3.strokeStyle = `rgba(56,189,248,${fade((at[b1].depth + at[b2].depth) / 2).toFixed(2)})`;
+    v3.beginPath(); v3.moveTo(A.x, A.y); v3.lineTo(B.x, B.y); v3.stroke();
+  }
+  for (const [name, q] of Object.entries(at)) {
+    const P = px(q);
+    v3.beginPath(); v3.arc(P.x, P.y, 4.5, 0, Math.PI * 2);
+    v3.fillStyle = `rgba(34,197,94,${fade(q.depth).toFixed(2)})`;
+    v3.fill();
+  }
+  v3.fillStyle = '#64748b';
+  v3.font = '12px ui-monospace, Menlo, monospace';
+  v3.fillText(`${yaw > 0 ? '+' : ''}${yaw}°  (0° = 영상에서 본 방향)`, 12, h - 12);
+}
+
+$('yaw').oninput = () => { yaw = Number($('yaw').value); $('yawText').textContent = `${yaw}°`; draw3d(); };
+$('meshOn').onchange = () => show(cursor);
+
+// ── 분석 ────────────────────────────────────────────────────────────────────
+async function run() {
+  $('run').disabled = true;
+  const which = $('source').value;
+  const fps = Number($('fps').value) || 15;
+  try {
+    if (!(await ready)) { $('run').disabled = false; return; }
+    // ★ 사진을 보고 온 뒤라도 합성 영상 전체를 다시 본다(위 shots 주석).
+    if (shots !== clipShots) {
+      shots = clipShots;
+      cursor = 0;
+      $('scrub').max = String(shots.length - 1);
+      plate.width = truth.width; plate.height = truth.height;
+      canvas.width = truth.width; canvas.height = truth.height;
+    }
+    const estimator = which === 'truth' ? createTruthPose() : createMediapipePose({ baseUrl: '/models', numPoses: 2 });
+    log(`${estimator.describe().name} 준비 중…`);
+    const loaded = await estimator.load();
+    if (!loaded.ok) { log(`모델을 쓸 수 없다: ${loaded.error}\n\n설정의 '자세 분석 모델' 에서 먼저 내려받아야 한다.`); $('run').disabled = false; return; }
+
+    const lastSec = shots[shots.length - 1].sec;
+    const t0 = performance.now();
+    const res = await estimator.analyze({ images: shots }, {
+      fromSec: 0, toSec: lastSec + 1 / fps, fps, maxSubjects: 2,
+      onProgress: (d, t) => { if (d % 5 === 0 || d === t) log(`${d}/${t} 프레임 분석 중…`); }
+    });
+    const took = (performance.now() - t0) / 1000;
+    if (!res.ok) { log(`분석 실패: ${res.error}`); $('run').disabled = false; return; }
+
+    drawn = res.frames;
+    const counts = subjectCounts(res.frames);
+    const tracks = buildTracks(res.frames, []);          // 한 사람이면 앵커 없이 저절로 이어진다
+    const id = tracks.ids[0];
+    const only = id ? framesOfTrack(res.frames, tracks, id) : res.frames;
+    const sum = summarize(only);
+
+    // 넣은 값과 잰 값을 나란히 놓는다. 이것이 이 페이지의 전부다.
+    const rows = [];
+    let pass = 0, fail = 0;
+    const TOL = which === 'truth' ? 0.5 : 12;           // 정답 경로는 계산 오차만, 모델 경로는 추정 오차를 허용한다
+    for (const key of ['leftElbow', 'rightElbow', 'leftKnee', 'rightKnee']) {
+      const want = truth.expected[key];
+      const got = sum.measures[key];
+      const diff = got.range === null ? null : Math.abs(got.range - want.range);
+      const ok = diff !== null && diff <= TOL;
+      if (ok) pass++; else fail++;
+      rows.push({ key, want, got, diff, ok });
+    }
+    $('table').querySelector('tbody').innerHTML = rows.map(r => `
+      <tr>
+        <td>${measureLabel(r.key)}</td>
+        <td>${r.want.range.toFixed(1)}°</td>
+        <td>${r.got.range === null ? '—' : r.got.range.toFixed(1) + '°'}</td>
+        <td>${r.diff === null ? '—' : r.diff.toFixed(1) + '°'}</td>
+        <td>${r.got.samples}/${sum.frames}</td>
+        <td class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '맞음' : '틀림'}</td>
+      </tr>`).join('');
+    $('tally').innerHTML = `<span class="n ${fail ? 'fail' : 'pass'}">${pass}</span>맞음 <span class="n ${fail ? 'fail' : 'pass'}">${fail}</span>틀림`;
+
+    const asym = symmetry(sum).filter(s => s.flagged).map(s => `${s.label} 좌우 차 ${s.diff.toFixed(0)}°`);
+    log([
+      `추정기      ${estimator.id}`,
+      `좌표계      ${sum.space}  (world = 미터, screen = 화면 평면에 투영)`,
+      `프레임      ${res.frames.length}장 · ${took.toFixed(1)}초 걸림 · 초당 ${(res.frames.length / took).toFixed(1)}장`,
+      `사람        한 프레임 최대 ${counts.max}명 · 둘 이상 잡힌 프레임 ${counts.framesWithMultiple}장`,
+      `궤적        ${tracks.ids.length ? tracks.ids.join(', ') : '(없음)'} · 헷갈린 구간 ${tracks.ambiguous.length}곳 · 놓친 구간 ${tracks.lost.length}곳`,
+      `허용 오차   ±${TOL}°`,
+      `좌우 차     ${asym.length ? asym.join(' · ') : '없음'}`,
+      `짚은 것     ${findings(sum).map(f => `${f.label}(${f.kind})`).join(' · ') || '없음'}`,
+      ``,
+      `영상 위 숫자가 관절 자리에 제대로 서는지 재생하거나 슬라이더를 끌어서 본다.`
+    ].join('\n'));
+    show(cursor);
+  } catch (e) {
+    log(`오류: ${e && e.message ? e.message : e}`);
+  }
+  $('run').disabled = false;
+}
+
+// ── 화면 조작 ───────────────────────────────────────────────────────────────
+/**
+ * 실제 사람 사진 한 장으로 모델이 관절을 찾는지 본다.
+ *
+ * ⚠ 합성 뼈대(위)는 **MediaPipe 가 사람으로 보지 않는다** — 실제 사람으로 학습된 모델이라 선 그림에는
+ *   아무도 없다고 답한다(0명). 그러니 합성 영상으로는 "우리 계산이 맞는가" 만 볼 수 있고,
+ *   "모델이 도는가" 는 실제 사람으로 따로 봐야 한다. 이 버튼이 그 자리다.
+ * ⚠ 사진은 구글이 자세 모델 예제용으로 공개한 것이고 `video-clip/`(gitignore) 아래에 둔다.
+ */
+async function runPhoto() {
+  $('photo').disabled = true;
+  try {
+    const el = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error('real-person.jpg 가 없다'));
+      i.src = '../video-clip/_posecheck/real-person.jpg';
+    });
+    const est = createMediapipePose({ baseUrl: '/models', numPoses: 2 });
+    log('모델 준비 중…');
+    const loaded = await est.load();
+    if (!loaded.ok) { log(`모델을 쓸 수 없다: ${loaded.error}`); $('photo').disabled = false; return; }
+    const res = await est.analyze({ images: [{ sec: 0, el }] }, { fromSec: 0, toSec: 1, fps: 1 });
+    est.destroy();
+    if (!res.ok || !res.frames.length) { log(`분석 실패: ${res.error}`); $('photo').disabled = false; return; }
+
+    // 무대를 사진으로 갈아 끼우고 그 위에 관절을 얹는다.
+    shots = [{ sec: 0, el }];
+    plate.width = el.naturalWidth; plate.height = el.naturalHeight;
+    canvas.width = el.naturalWidth; canvas.height = el.naturalHeight;
+    drawn = res.frames;
+    $('scrub').max = '0';
+    show(0);
+
+    const subject = res.frames[0].subjects[0];
+    if (!subject) { log('사진에서 사람을 찾지 못했다.'); $('photo').disabled = false; return; }
+    const { space, angles, scores } = jointAngles(subject);
+    const lines = Object.keys(angles).filter(k => angles[k] !== null)
+      .map(k => `  ${measureLabel(k).padEnd(12)} ${String(Math.round(angles[k])).padStart(4)}°   신뢰도 ${scores[k].toFixed(2)}`);
+    $('table').querySelector('tbody').innerHTML = '';
+    $('tally').innerHTML = `<span class="n pass">${res.frames[0].subjects.length}</span>명 찾음`;
+    log([
+      `사진        ${el.naturalWidth}x${el.naturalHeight} · 사람 ${res.frames[0].subjects.length}명 · 이름 붙은 점 ${Object.keys(subject.points).length}개`,
+      `좌표계      ${space}  (world 면 미터 좌표라 가로세로비 보정이 필요 없다)`,
+      '',
+      ...lines,
+      '',
+      '정답이 없는 사진이라 "맞다/틀리다" 를 가릴 수 없다. 이 버튼이 보는 것은 모델이 실제 사람에게서',
+      '관절을 찾아 우리 이름으로 들어오는가까지다. 계산이 맞는지는 위의 합성 영상이 본다.'
+    ].join('\n'));
+  } catch (e) {
+    log(`오류: ${e && e.message ? e.message : e}\n실제 사진이 없으면 이 검사는 건너뛴다.`);
+  }
+  $('photo').disabled = false;
+}
+
+$('run').onclick = run;
+$('photo').onclick = runPhoto;
+$('play').onclick = () => {
+  if (timer) { clearInterval(timer); timer = null; $('play').textContent = '▶ 재생'; return; }
+  $('play').textContent = '⏸ 멈춤';
+  timer = setInterval(() => show((cursor + 1) % shots.length), 1000 / 30);
+};
+$('scrub').oninput = () => show(Number($('scrub').value));
+
+window.poseCheck = { run, runPhoto, show, ready, draw3d, setMesh(on) { $('meshOn').checked = !!on; show(cursor); }, setYaw(d) { yaw = d; $('yaw').value = String(d); $('yawText').textContent = `${d}°`; draw3d(); }, get frames() { return drawn; }, get truth() { return truth; }, get shots() { return shots; } };
+</script>
+</body>
+</html>

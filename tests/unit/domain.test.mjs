@@ -11,6 +11,8 @@
 //   · domain/grid 의 카운트 축   — linearOf/cellOf 는 신설이고 tempo 가 그 위에 서 있다
 //   · domain/boardOps 의 충돌 규칙 — 2026-09-07 에 **의도적으로** 원본과 갈라졌다. 골든은 시나리오별
 //     결과만 못박지만, 여기서는 그 결과를 낳는 성질("네 조작이 하나의 규칙")을 직접 단언한다
+//   · 영상 패널(2026-09) — adapters/media 의 YouTube 어댑터가 포트 계약을 채우는지, pickPlayer 의
+//     URL 분기, videoCommands 의 두 점 앵커·탭 템포, 그리고 **media 가 없는 옛 파일의 왕복**
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +23,8 @@ import {
 } from '../../src/domain/grid.js';
 import {
   DEFAULT_TEMPO, cellToTime, countToTime, isTempoUsable, normalizeTempo,
-  placementToSpan, secondsPerCount, tempoFromTwoPoints, timeToCell, timeToCount
+  placementToSpan, secondsPerCount, tempoFromTwoPoints, timeToCell, timeToCount,
+  tempoPoints, addTempoPoint, removeTempoPoint, clearTempoPointsOf, reanchor, normalizeTempoPoints
 } from '../../src/domain/tempo.js';
 import {
   MEDIA_PLAYER_MEMBERS, assertMediaPlayer, isMediaPlayer, normalizeClipSegments
@@ -46,6 +49,20 @@ import { clearBoard } from '../../src/usecases/boardCommands.js';
 import { serializeLinks } from '../../src/domain/links.js';
 import { CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
+import {
+  DEFAULT_MEDIA, isEmptyMedia, normalizeMedia, normalizeMediaSource, serializeMedia
+} from '../../src/domain/project/media.js';
+import { buildProjectFile } from '../../src/domain/project/serialize.js';
+import { createYouTubePlayer, YT_CAPABILITIES } from '../../src/adapters/media/youtubePlayer.js';
+import { mediaSourceFromUrl, pickPlayer, pickPlayerKind, toMediaSource } from '../../src/adapters/media/pickPlayer.js';
+import { createFilePlayer, FILE_CAPABILITIES } from '../../src/adapters/media/filePlayer.js';
+import { createClipLibrary } from '../../src/adapters/clipLibrary.js';
+import { safeSegment, projectDirName, clipDirParts, joinClipPath, splitClipPath, numberedName } from '../../src/domain/clips.js';
+import { DEFAULT_CLIP_SUBDIR, CLIP_UNFILED_DIR } from '../../src/ports/clips.js';
+import { nameKey, matchMove, normalizePlan, cellLabel } from '../../src/domain/choreoPlan.js';
+import * as PlanCmd from '../../src/usecases/planCommands.js';
+import { createLlmServer } from '../../src/adapters/llmServer.js';
+import * as VideoCmd from '../../src/usecases/videoCommands.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
 import {
@@ -489,14 +506,17 @@ test('resolvePlacementColor 는 루틴 색을 실제로 칠하고 글자색을 �
 // DOM 도 어댑터도 쓰지 않는다 — usecases + domain 만으로 돌아간다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 링크가 undo 로 되돌아오려면 스냅샷 필드여야 한다. 루틴 보드에는 링크바가 아예 없다. */
-test('schema: UNDO_FIELDS 에 links 가 있고 ROUTINE_UNDO_FIELDS 에는 없다', () => {
+/** 링크·템포가 undo 로 되돌아오려면 스냅샷 필드여야 한다. 루틴 보드에는 링크바도 영상도 없다. */
+test('schema: UNDO_FIELDS 에 links·media 가 있고 ROUTINE_UNDO_FIELDS 에는 없다', () => {
   assert.ok(UNDO_FIELDS.includes('links'), 'links 가 빠지면 전체 초기화한 링크가 Undo 로 안 돌아온다');
+  assert.ok(UNDO_FIELDS.includes('media'), 'media 가 빠지면 애써 찍은 템포·앵커가 Undo 로 안 돌아온다');
   assert.ok(!ROUTINE_UNDO_FIELDS.includes('links'), '루틴 편집기에는 링크바가 없다');
+  assert.ok(!ROUTINE_UNDO_FIELDS.includes('media'), '루틴 보드에는 시간 매핑이 없다');
   // 두 목록의 집합이 같아야 한다 — 한쪽에만 있으면 "파일엔 있는데 Undo 는 못 하는" 결함이 다시 생긴다.
   assert.deepEqual([...UNDO_FIELDS].sort(), [...DOC_FIELDS].sort());
-  // 키 순서 = 스냅샷 JSON 바이트 순서. 앞 6개는 원본 리터럴 순서 그대로여야 한다.
-  assert.deepEqual([...UNDO_FIELDS], ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links']);
+  // 키 순서 = 스냅샷 JSON 바이트 순서. 앞 6개는 원본 리터럴 순서 그대로이고 신설은 꼬리에 붙는다.
+  assert.deepEqual([...UNDO_FIELDS],
+    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media']);
   assert.deepEqual([...ROUTINE_UNDO_FIELDS], ['rows', 'cols', 'placements']);
 });
 
@@ -997,4 +1017,2088 @@ test('boardOps: 루틴 보드에서도 겹치면 그룹 전체가 한 레인 아
   ]);
   assert.equal(laneOfGroup(result.placements, 'STEP'), 1, '두 행에 걸친 그룹의 레인이 조각마다 달라졌다');
   assert.equal(laneOfGroup(result.placements, 'TURN'), 0, '겹친 턴이 지워졌거나 밀려났다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 영상 패널 (2026-09) — adapters/media · usecases/videoCommands · media 저장 블록
+//
+// 골든이 한 줄도 못 덮는다(원본 index.html 에 대응물이 없다). 여기서 지키는 것은 넷이다.
+//   ① YouTube 어댑터가 MediaPlayer 계약을 실제로 만족하는가 — DOM 없이도 검사된다
+//   ② pickPlayer 가 URL 하나로 어댑터를 고르는가(못 알아보면 널 재생기, 오류가 아니다)
+//   ③ 두 점 앵커·탭 템포가 store 를 어떻게 바꾸는가, 그리고 **재생 위치가 들어가지 않는가**
+//   ④ media 가 없는 옛 파일이 지금과 똑같이 열리고, 빈 media 가 저장 바이트를 늘리지 않는가
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * YT IFrame API 의 최소 스텁. **onReady 를 생성자 안에서 동기로** 부른다 —
+ * 실제 YT 는 비동기로 부르지만, 어댑터가 두 순서를 모두 견디는지 확인하는 편이 더 강한 검사다
+ * (어댑터는 `ev.target` 으로 플레이어를 붙잡는다).
+ */
+function fakeYT() {
+  const made = [];
+  function Player(container, cfg) {
+    const self = this;
+    made.push(self);
+    self.container = container;
+    self.cfg = cfg;
+    self.sec = Number(cfg.playerVars && cfg.playerVars.start) || 0;
+    self.rate = 1;
+    self.destroyed = false;
+    self.muted = false;
+    self.cued = null;
+    self.getCurrentTime = () => self.sec;
+    self.getDuration = () => 120;
+    self.getPlaybackRate = () => self.rate;
+    self.setPlaybackRate = (r) => { self.rate = r; };
+    self.playVideo = () => cfg.events.onStateChange({ data: 1, target: self });
+    self.pauseVideo = () => cfg.events.onStateChange({ data: 2, target: self });
+    // ⚠ 일부러 요청보다 0.4초 앞에 착지한다 — YT 의 키프레임 스냅을 흉내낸 것이고,
+    //   그 오차가 capabilities.seekToleranceSec(0.5) 안이라는 것이 계약이다.
+    self.seekTo = (sec) => { self.sec = Math.max(0, sec - 0.4); };
+    self.cueVideoById = (arg) => { self.cued = arg; self.sec = arg.startSeconds || 0; };
+    self.mute = () => { self.muted = true; };
+    self.unMute = () => { self.muted = false; };
+    self.destroy = () => { self.destroyed = true; };
+    cfg.events.onReady({ target: self });
+  }
+  return { YT: { Player }, made };
+}
+
+/** container 스텁. destroy 가 "컨테이너를 비운 채 남긴다"를 검사하려면 innerHTML 이 필요하다. */
+const fakeContainer = () => ({ innerHTML: '<p>자리표시</p>' });
+
+/** 어댑터가 API 스크립트를 실제로 받아왔다고 치는 주입점. 네트워크를 한 번도 타지 않는다. */
+function stubbedPlayer(extra = {}) {
+  const yt = fakeYT();
+  const container = fakeContainer();
+  const player = createYouTubePlayer({
+    container,
+    win: { location: { origin: 'http://localhost:8000' } },
+    doc: {},
+    loadApi: () => Promise.resolve({ ok: true, YT: yt.YT }),
+    playConfirmMs: 20,
+    sampleIntervalMs: 10,
+    ...extra
+  });
+  return { player, yt, container };
+}
+
+test('youtubePlayer: 생성만으로 MediaPlayer 계약을 만족한다(DOM 도 네트워크도 없이)', () => {
+  // 인자 하나 없이 node 에서 만들어도 던지지 않아야 한다 — 계약 검사가 곧 이 어댑터의 자기검증이다.
+  const bare = createYouTubePlayer();
+  assert.equal(assertMediaPlayer(bare, 'youtubePlayer'), bare);
+  assert.ok(isMediaPlayer(bare));
+  assert.equal(bare.kind, 'youtube');
+  for (const key of MEDIA_PLAYER_MEMBERS) assert.ok(bare[key] != null, `${key} 가 없다`);
+
+  // capabilities 는 불변이고 seekToleranceSec 은 옵셔널이 아니다(YT 는 키프레임에 스냅한다).
+  assert.equal(Object.isFrozen(bare.capabilities), true);
+  assert.equal(bare.capabilities.seekToleranceSec, 0.5);
+  assert.equal(bare.capabilities.needsUserGesture, true);
+  assert.equal(bare.capabilities.canSeek, true);
+  assert.ok(Array.isArray(YT_CAPABILITIES.rates) && YT_CAPABILITIES.rates.includes(1));
+
+  // 소스가 없을 때의 상태는 오류가 아니라 정상이다.
+  assert.deepEqual(bare.getState(), { load: 'idle', play: 'unstarted', error: null });
+  assert.equal(bare.getDuration(), null, '0 을 돌려주면 "0초짜리"라는 거짓말이 된다');
+  assert.equal(bare.getTimeSample(), null);
+  bare.destroy();
+  bare.destroy();   // 멱등
+});
+
+test('youtubePlayer: API 로드 실패는 던지지 않고 {load:"error"} 로 드러난다', async () => {
+  const player = createYouTubePlayer({
+    container: fakeContainer(),
+    win: {}, doc: {},
+    loadApi: () => Promise.resolve({ ok: false, code: 'network', message: 'blocked' })
+  });
+  await player.load({ kind: 'youtube', videoId: 'abc' });   // reject 하지 않는다
+  const state = player.getState();
+  assert.equal(state.load, 'error');
+  assert.equal(state.error.code, 'network', '뷰는 이 코드를 보고 한국어 문구를 고른다');
+
+  // 오류 상태에서도 play 는 던지지 않고 결과 문자열을 준다.
+  assert.equal(await player.play(), 'error');
+  player.destroy();
+});
+
+test('youtubePlayer: 준비되면 재생·탐색이 되고 seek 은 실제 착지 시각을 돌려준다', async () => {
+  // ⚠ 아래 테스트들이 destroy 를 반드시 부르는 이유: 재생 중이면 폴링 인터벌이 돌고 있어서
+  //   그걸 안 걷으면 node 의 테스트 러너가 종료되지 않는다.
+  const { player, yt, container } = stubbedPlayer();
+  await player.load({ kind: 'youtube', videoId: 'abc', startSec: 5 });
+
+  assert.equal(player.getState().load, 'ready');
+  assert.equal(player.getDuration(), 120);
+  assert.equal(yt.made.length, 1);
+  assert.equal(yt.made[0].cfg.playerVars.enablejsapi, 1);
+  assert.equal(yt.made[0].cfg.playerVars.origin, 'http://localhost:8000');
+
+  assert.equal(await player.play(), 'started');
+  assert.equal(player.getState().play, 'playing');
+
+  // ★ 요청 30 → 착지 29.6. "요청 ≠ 결과"를 타입으로 인정하는 자리이며, 오차가 허용치 안이다.
+  const landed = await player.seek(30);
+  assert.equal(landed, 29.6);
+  assert.ok(Math.abs(landed - 30) <= player.capabilities.seekToleranceSec);
+
+  // seek 직후 표본이 갱신되어 있어야 한다(계약 3보장 중 하나).
+  assert.equal(player.getTimeSample().sec, 29.6);
+  assert.equal(player.getTimeSample().playing, true);
+
+  player.pause();
+  assert.equal(player.getState().play, 'paused');
+
+  player.setRate(1.5);
+  assert.equal(yt.made[0].rate, 1.5);
+  player.setMuted(true);
+  assert.equal(yt.made[0].muted, true);
+
+  player.destroy();
+  assert.equal(yt.made[0].destroyed, true, 'destroy 가 iframe 을 안 걷었다');
+  assert.equal(container.innerHTML, '', 'destroy 는 컨테이너를 비운 채로 남긴다');
+  player.destroy();   // 멱등
+});
+
+test('youtubePlayer: onTime 은 구독 즉시 1회 보내고 해제하면 끊긴다', async () => {
+  const { player } = stubbedPlayer();
+  await player.load({ kind: 'youtube', videoId: 'abc' });
+
+  const seen = [];
+  const off = player.onTime(s => seen.push(s));
+  assert.equal(seen.length, 1, '구독 즉시 1회 보장이 깨졌다');
+  assert.ok(Number.isFinite(seen[0].atMs) && Number.isFinite(seen[0].sec));
+
+  await player.seek(10);
+  assert.equal(seen.length, 2, 'seek 직후 1회 보장이 깨졌다');
+
+  off();
+  await player.seek(20);
+  assert.equal(seen.length, 2, '해제한 구독자에게 계속 보냈다');
+  player.destroy();
+});
+
+test('youtubePlayer: 같은 kind 의 소스 교체는 iframe 을 다시 만들지 않는다', async () => {
+  const { player, yt } = stubbedPlayer();
+  await player.load({ kind: 'youtube', videoId: 'abc' });
+  await player.load({ kind: 'youtube', videoId: 'def', startSec: 12 });
+
+  assert.equal(yt.made.length, 1, 'iframe 을 다시 만들면 재생이 눈에 띄게 끊긴다');
+  assert.deepEqual(yt.made[0].cued, { videoId: 'def', startSeconds: 12 });
+  assert.equal(player.getState().load, 'ready');
+
+  // 소스를 비우는 것은 오류가 아니라 정상 경로다.
+  await player.load(null);
+  assert.deepEqual(player.getState(), { load: 'idle', play: 'unstarted', error: null });
+  player.destroy();
+});
+
+test('youtubePlayer: 준비 전 play/seek 은 던지지 않고 마지막 의도 1개만 큐잉된다', async () => {
+  // ⚠ API 로드를 **손으로 열어야** 하는 게이트로 막는다. 즉시 resolve 하는 스텁을 쓰면 첫 await 에서
+  //   로딩이 끝나 버려 "준비 전"이라는 상황 자체가 만들어지지 않는다(그러면 이 테스트는 아무것도 안 지킨다).
+  const yt = fakeYT();
+  let openGate;
+  const gate = new Promise((resolve) => { openGate = resolve; });
+  const player = createYouTubePlayer({
+    container: fakeContainer(),
+    win: { location: { origin: 'http://localhost:8000' } },
+    doc: {},
+    loadApi: () => gate.then(() => ({ ok: true, YT: yt.YT })),
+    playConfirmMs: 20,
+    sampleIntervalMs: 10
+  });
+  try {
+    assert.equal(await player.play(), 'no-source', '소스가 없는 것과 준비가 안 된 것은 다른 말이다');
+
+    // 로딩이 끝나기 전에 seek → play 순서로 눌렀다면, 이뤄지는 것은 **마지막 하나**다.
+    const loading = player.load({ kind: 'youtube', videoId: 'abc' });
+    assert.equal(player.getState().load, 'loading');
+    assert.equal(await player.seek(50), 50, '준비 전 seek 은 요청값을 그대로 돌려준다(던지지 않는다)');
+    assert.equal(await player.play(), 'not-ready');
+
+    openGate();
+    await loading;
+    assert.equal(player.getState().play, 'playing', '큐잉된 마지막 의도(play)가 적용되지 않았다');
+    assert.equal(yt.made[0].sec, 0, 'seek 은 마지막 의도가 아니므로 적용되면 안 된다');
+  } finally {
+    // ⚠ finally 로 감싼다. 단언이 실패한 채 destroy 를 건너뛰면 폴링 인터벌이 살아남아
+    //   테스트 러너가 영영 끝나지 않는다(실패가 "느린 테스트"로 둔갑한다).
+    player.destroy();
+  }
+});
+
+test('pickPlayer: URL 을 알아보면 YouTube, 못 알아보면 널 재생기다', () => {
+  assert.deepEqual(mediaSourceFromUrl('https://youtu.be/dQw4w9WgXcQ'), { kind: 'youtube', videoId: 'dQw4w9WgXcQ' });
+  assert.deepEqual(mediaSourceFromUrl('https://www.youtube.com/watch?v=abc123&t=1m30s'),
+    { kind: 'youtube', videoId: 'abc123', startSec: 90 });
+  // startSec 0 은 키를 만들지 않는다(비교·저장이 단순해진다).
+  assert.deepEqual(Object.keys(mediaSourceFromUrl('https://www.youtube.com/watch?v=abc123')), ['kind', 'videoId']);
+
+  for (const bad of [null, undefined, '', '   ', '그냥 글자', 'https://example.com/a.mp4', 'https://vimeo.com/1']) {
+    assert.equal(mediaSourceFromUrl(bad), null, `${bad} 를 소스로 인정했다`);
+    assert.equal(pickPlayerKind(bad), 'null');
+  }
+  assert.equal(pickPlayerKind('https://youtu.be/abc'), 'youtube');
+
+  // 못 알아본 URL 이어도 **완전한 MediaPlayer** 가 나온다 — 호출부에 `player?.` 가 생기지 않는다.
+  const nullish = pickPlayer('그냥 글자');
+  assert.equal(nullish.kind, 'null');
+  assert.ok(isMediaPlayer(nullish));
+  const yt = pickPlayer('https://youtu.be/abc');
+  assert.equal(yt.kind, 'youtube');
+  yt.destroy();
+});
+
+// ── videoCommands ───────────────────────────────────────────────────────────
+
+test('videoCommands: 패널 상태는 휘발성이고 media 를 건드리지 않는다', () => {
+  const store = createStore();
+  assert.deepEqual(VideoCmd.panelState(store).open, false, '켜야 보이는 기능이므로 기본은 닫힘이다');
+
+  assert.deepEqual(VideoCmd.togglePanel(store), { video: true });
+  assert.equal(VideoCmd.panelState(store).open, true);
+  assert.deepEqual(VideoCmd.openPanel(store), NONE, '값이 안 바뀌면 헛렌더를 만들지 않는다');
+  assert.deepEqual(VideoCmd.setCollapsed(store), { video: true });
+  assert.equal(VideoCmd.panelState(store).collapsed, true);
+  assert.deepEqual(VideoCmd.setFollow(store, { follow: false }), { video: true });
+  assert.equal(VideoCmd.panelState(store).follow, false);
+
+  // 화면 상태를 아무리 만져도 안무(media)는 그대로다 = undo 스택에 아무 일도 없다.
+  assert.deepEqual(store.get().media, DEFAULT_MEDIA);
+  assertDirty(VideoCmd.closePanel(store));
+});
+
+test('videoCommands: 재생 위치·재생 상태는 store 어디에도 없다', () => {
+  const store = createStore();
+  VideoCmd.openPanel(store);
+  const text = JSON.stringify({ media: store.get().media, video: store.get().session.video });
+  for (const banned of ['currentSec', 'playing', 'playhead', 'currentTime']) {
+    assert.ok(!text.includes(banned), `${banned} 가 store 에 들어왔다 — 초당 60회 재렌더가 된다`);
+  }
+  // In/Out·loop(2026-09-10)도 화면 상태다 — 시각이 아니라 "찍어 둔 지점"이고 확정 전 값이라 여기 산다.
+  assert.deepEqual(Object.keys(store.get().session.video).sort(),
+    ['collapsed', 'follow', 'inSec', 'loop', 'open', 'outSec', 'taps', 'tempoPoints']);
+});
+
+test('videoCommands: 두 점을 찍으면 bpm 과 앵커가 동시에 정해진다', () => {
+  const store = createStore();
+  // "여기가 8x1 의 1"(선형 0, 2초) — 아직 확정이 아니므로 히스토리 커밋 신호가 없다.
+  const first = VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  assert.deepEqual(first, { video: true });
+  assert.equal(first.committed, undefined);
+  assert.equal(VideoCmd.isTempoReady(store), false, '한 점만으로는 변환하면 안 된다');
+
+  // "여기가 8x5 의 1"(선형 32, 12초) → 32카운트 / 10초 = 192bpm
+  const second = VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  assert.equal(second.committed, true, '확정 신호가 없으면 호출부가 히스토리를 커밋할 자리를 모른다');
+  assert.equal(VideoCmd.isTempoReady(store), true);
+
+  const tempo = VideoCmd.mediaState(store).tempo;
+  assert.equal(tempo.bpm, 192);
+  assert.equal(tempo.anchorSec, 2, '앞선 점이 앵커가 된다');
+  assert.equal(tempo.anchorCount, 0);
+  assert.deepEqual(VideoCmd.panelState(store).tempoPoints, [], '확정 뒤에는 찍던 점이 남지 않는다');
+
+  // 카운트 0 은 2초, 카운트 32 는 12초 — 찍은 두 점을 그대로 되돌려준다.
+  assert.equal(countToTime(0, tempo), 2);
+  assert.ok(Math.abs(countToTime(32, tempo) - 12) < 1e-9);
+});
+
+test('videoCommands: 뒤집힌 두 점은 거부하고 마지막 점부터 다시 센다', () => {
+  const store = createStore();
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  const bad = VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });   // 순서가 뒤집혔다
+  assert.equal(bad.committed, undefined);
+  assert.equal(VideoCmd.isTempoReady(store), false, '뒤집힌 두 점으로 음수 bpm 이 만들어졌다');
+  assert.deepEqual(VideoCmd.panelState(store).tempoPoints, [{ count: 0, sec: 2 }],
+    '실수로 뒤쪽을 먼저 찍었을 때 마지막 점에서 다시 셀 수 있어야 한다');
+
+  // 이어서 뒤쪽 점을 찍으면 정상 확정된다.
+  assert.equal(VideoCmd.markTempoPoint(store, { count: 16, sec: 7 }).committed, true);
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 192);
+
+  // 취소는 찍던 점만 버린다.
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 0 });
+  assert.deepEqual(VideoCmd.clearTempoPoints(store), { video: true });
+  assert.deepEqual(VideoCmd.clearTempoPoints(store), NONE);
+});
+
+test('videoCommands: 탭 템포는 확정할 때만 media 에 쓰고 간격이 벌어지면 새로 센다', () => {
+  const store = createStore();
+  assert.deepEqual(VideoCmd.commitTaps(store), NONE, '탭 2개 미만은 아무 일도 하지 않는다');
+
+  for (const at of [10, 10.5, 11, 11.5]) VideoCmd.tapTempo(store, { atSec: at });
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 0, '두드리는 동안 media 가 바뀌면 undo 가 쌓인다');
+
+  const done = VideoCmd.commitTaps(store);
+  assert.equal(done.committed, true);
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 120, '평균 간격 0.5초 = 120bpm');
+  assert.deepEqual(VideoCmd.panelState(store).taps, []);
+
+  // TAP_RESET_SEC 보다 벌어지면 앞의 탭을 버린다(딴짓하다 돌아와 다시 두드린 경우).
+  VideoCmd.tapTempo(store, { atSec: 100 });
+  VideoCmd.tapTempo(store, { atSec: 100 + VideoCmd.TAP_RESET_SEC + 1 });
+  assert.deepEqual(VideoCmd.panelState(store).taps, [100 + VideoCmd.TAP_RESET_SEC + 1]);
+  assert.deepEqual(VideoCmd.clearTaps(store), { video: true });
+
+  // 앵커는 탭이 건드리지 않는다 — 탭은 "얼마나 빠른가"만 답한다.
+  assert.equal(VideoCmd.mediaState(store).tempo.anchorSec, 0);
+});
+
+test('videoCommands: 소스는 링크바 URL 그대로이고 템포를 건드리지 않는다', () => {
+  const store = createStore();
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+
+  assert.deepEqual(VideoCmd.setSource(store, { url: '  https://youtu.be/abc  ' }), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).source, { kind: 'youtube', url: 'https://youtu.be/abc' });
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 192, '소스만 바꿨는데 애써 찍은 템포가 날아갔다');
+  assert.deepEqual(VideoCmd.setSource(store, { url: 'https://youtu.be/abc' }), NONE);
+
+  // 빈 URL 은 "소스 없음"이지 오류가 아니다.
+  assert.deepEqual(VideoCmd.setSource(store, { url: '' }), { video: true });
+  assert.equal(VideoCmd.mediaState(store).source, null);
+
+  // 재앵커는 bpm 을 그대로 두고 앵커만 옮긴다.
+  VideoCmd.reanchorTo(store, { count: 64, sec: 25 });
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 192);
+  assert.equal(VideoCmd.mediaState(store).tempo.anchorCount, 64);
+  assert.deepEqual(VideoCmd.reanchorTo(store, { count: NaN, sec: 1 }), NONE);
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 로컬 영상 파일(2026-09-09) — <video> 어댑터가 계약을 채우는지, 파일 소스가 이름만 남기는지
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * <video> 의 최소 스텁. 이벤트를 **동기로** 쏜다(실제는 비동기) — 어댑터가 두 순서를 다 견뎌야 한다.
+ * `load()` 를 부르면 loadedmetadata 가, src 가 'bad' 로 끝나면 error 가 온다.
+ */
+function fakeVideoDoc() {
+  const made = [];
+  function createElement(tag) {
+    const listeners = new Map();
+    const el = {
+      tag, src: '', currentTime: 0, duration: 90, playbackRate: 1, muted: false, paused: true, ended: false,
+      error: null, controls: false, playsInline: false, preload: '',
+      addEventListener(type, fn) { listeners.set(type, fn); },
+      removeEventListener(type) { listeners.delete(type); },
+      removeAttribute(name) { if (name === 'src') el.src = ''; },
+      emit(type) { const fn = listeners.get(type); if (fn) fn({ type, target: el }); },
+      load() {
+        if (!el.src) return;
+        if (el.src.endsWith('bad')) { el.error = { code: 4, message: 'no supported source' }; el.emit('error'); }
+        else el.emit('loadedmetadata');
+      },
+      play() { el.paused = false; el.emit('play'); return el.blockPlay ? Promise.reject(Object.assign(new Error('x'), { name: 'NotAllowedError' })) : Promise.resolve(); },
+      pause() { el.paused = true; el.emit('pause'); }
+    };
+    made.push(el);
+    return el;
+  }
+  return { doc: { createElement }, made };
+}
+
+/** container 스텁. appendChild 로 들어온 것을 기억하고 innerHTML='' 로 비운다. */
+function fakeVideoContainer() {
+  const c = { children: [], innerHTML: '<p>자리표시</p>', appendChild(el) { c.children.push(el); } };
+  return c;
+}
+
+function stubbedFilePlayer(extra = {}) {
+  const env = fakeVideoDoc();
+  const container = fakeVideoContainer();
+  const player = createFilePlayer({ container, doc: env.doc, sampleIntervalMs: 10, ...extra });
+  return { player, env, container };
+}
+
+test('filePlayer: 생성만으로 MediaPlayer 계약을 만족한다(DOM 없이)', () => {
+  const bare = createFilePlayer();
+  assert.equal(assertMediaPlayer(bare, 'filePlayer'), bare);
+  assert.ok(isMediaPlayer(bare));
+  assert.equal(bare.kind, 'file');
+  for (const key of MEDIA_PLAYER_MEMBERS) assert.ok(bare[key] != null, `${key} 가 없다`);
+  assert.equal(Object.isFrozen(bare.capabilities), true);
+  // <video> 는 키프레임 스냅이 없다 — YouTube(0.5)보다 10배 정확하고, 180bpm 의 1카운트(0.333s) 안에 든다.
+  assert.equal(bare.capabilities.seekToleranceSec, 0.05);
+  assert.ok(FILE_CAPABILITIES.seekToleranceSec < YT_CAPABILITIES.seekToleranceSec);
+  assert.equal(bare.capabilities.needsUserGesture, true);
+  assert.deepEqual(bare.getState(), { load: 'idle', play: 'unstarted', error: null });
+  assert.equal(bare.getDuration(), null);
+  assert.equal(bare.getTimeSample(), null);
+  bare.destroy();
+  bare.destroy();   // 멱등
+});
+
+test('filePlayer: 소스 없이 만든 재생기는 컨테이너 없이 load 하면 오류 상태다(던지지 않는다)', async () => {
+  const player = createFilePlayer({ doc: fakeVideoDoc().doc });
+  await player.load({ kind: 'file', url: 'blob:x' });
+  assert.equal(player.getState().load, 'error');
+  assert.equal(player.getState().error.code, 'unsupported');
+  assert.equal(await player.play(), 'error');
+  // 유튜브 소스를 파일 재생기에 넣는 것도 예외가 아니라 상태다.
+  const other = stubbedFilePlayer().player;
+  await other.load({ kind: 'youtube', videoId: 'abc' });
+  assert.equal(other.getState().error.code, 'unsupported');
+  other.destroy();
+});
+
+test('filePlayer: 준비되면 재생·탐색이 되고 seek 은 실제 착지 시각을 돌려준다', async () => {
+  const { player, env, container } = stubbedFilePlayer();
+  await player.load({ kind: 'file', url: 'blob:good', name: 'a.mp4' });
+
+  assert.equal(player.getState().load, 'ready');
+  assert.equal(player.getDuration(), 90);
+  assert.equal(env.made.length, 1, '<video> 는 하나만 만든다');
+  assert.equal(container.children[0], env.made[0], '컨테이너 **안에** 넣는다(갈아치우지 않는다)');
+  assert.equal(env.made[0].controls, true, '재생·정지는 브라우저 기본 컨트롤이다');
+
+  assert.equal(await player.play(), 'started');
+  assert.equal(player.getState().play, 'playing');
+  assert.equal(player.getTimeSample().playing, true);
+
+  // 착지는 요청 그대로다. 길이를 넘는 요청은 길이에서 멈춘다.
+  assert.equal(await player.seek(12.34), 12.34);
+  assert.equal(await player.seek(500), 90);
+  assert.equal(await player.seek(-3), 0);
+
+  // 같은 kind 의 다른 소스 — <video> 를 다시 만들지 않고 src 만 바꾼다(계약).
+  await player.load({ kind: 'file', url: 'blob:other' });
+  assert.equal(env.made.length, 1);
+  assert.equal(env.made[0].src, 'blob:other');
+
+  player.pause();
+  assert.equal(player.getState().play, 'paused');
+
+  // 배속은 표본에만 들어간다.
+  player.setRate(1.5);
+  assert.equal(env.made[0].playbackRate, 1.5);
+  assert.equal(player.getTimeSample().rate, 1.5);
+  player.setRate(-1);
+  assert.equal(player.getTimeSample().rate, 1.5, '이상한 배속은 무시한다');
+
+  player.destroy();
+  assert.equal(container.innerHTML, '', 'destroy 는 컨테이너를 비운 채 남긴다');
+  assert.equal(env.made[0].src, '', 'src 를 비워 디코더를 놓는다');
+});
+
+test('filePlayer: 디코드 실패는 {load:"error"} 로, 자동재생 차단은 "blocked" 로 드러난다', async () => {
+  const bad = stubbedFilePlayer();
+  await bad.player.load({ kind: 'file', url: 'blob:bad' });
+  assert.equal(bad.player.getState().load, 'error');
+  assert.equal(bad.player.getState().error.code, 'unsupported', '뷰는 이 코드를 보고 한국어 문구를 고른다');
+  bad.player.destroy();
+
+  const blocked = stubbedFilePlayer();
+  await blocked.player.load({ kind: 'file', url: 'blob:good' });
+  blocked.env.made[0].blockPlay = true;
+  assert.equal(await blocked.player.play(), 'blocked');
+  blocked.player.destroy();
+});
+
+test('filePlayer: 준비 전의 play/seek 은 마지막 의도 하나만 큐잉되고 onTime 은 구독 즉시 1회다', async () => {
+  const { player, env } = stubbedFilePlayer();
+  // load 가 resolve 하기 전(loadedmetadata 전)에 의도를 넣는다 — 스텁은 load() 안에서 동기로 준비되므로
+  // src 를 비워 두고 직접 흉내낸다.
+  assert.equal(await player.play(), 'no-source');
+  const loading = player.load({ kind: 'file', url: '' });     // 빈 url = unsupported
+  await loading;
+  assert.equal(player.getState().load, 'error');
+
+  const fresh = stubbedFilePlayer();
+  await fresh.player.load({ kind: 'file', url: 'blob:good' });
+  const seen = [];
+  const off = fresh.player.onTime((s) => seen.push(s.sec));
+  assert.equal(seen.length, 1, '구독 즉시 1회');
+  fresh.env.made[0].currentTime = 7;
+  fresh.env.made[0].emit('timeupdate');
+  assert.deepEqual(seen.slice(-1), [7], 'timeupdate 도 표본을 뜨는 계기다');
+  off();
+  fresh.env.made[0].emit('timeupdate');
+  assert.equal(seen.length, 2, '해제한 뒤에는 오지 않는다');
+  fresh.player.destroy();
+  player.destroy();
+  void env;
+});
+
+test('pickPlayer: 파일 소스 객체를 알아보고 <video> 어댑터를 고른다', () => {
+  assert.equal(pickPlayerKind({ kind: 'file', url: 'blob:x', name: 'a.mp4' }), 'file');
+  assert.equal(pickPlayerKind({ kind: 'file', name: 'a.mp4' }), 'null', 'blob URL 이 없는 파일 참조는 아직 실을 수 없다');
+  assert.equal(pickPlayerKind({ kind: 'youtube', videoId: 'abc' }), 'youtube');
+  assert.equal(pickPlayerKind({ kind: '???' }), 'null');
+  assert.equal(pickPlayerKind(null), 'null');
+  assert.deepEqual(toMediaSource('https://youtu.be/abc'), { kind: 'youtube', videoId: 'abc' });
+  assert.equal(toMediaSource(42), null);
+
+  const file = pickPlayer({ kind: 'file', url: 'blob:x' });
+  assert.equal(file.kind, 'file');
+  assert.ok(isMediaPlayer(file));
+  file.destroy();
+});
+
+test('media: 파일 소스는 파일명만 남고 blob URL 은 버린다', () => {
+  assert.deepEqual(normalizeMediaSource({ kind: 'file', name: ' a.mp4 ', url: 'blob:http://x/1' }), { kind: 'file', name: 'a.mp4' });
+  assert.equal(normalizeMediaSource({ kind: 'file', url: 'blob:http://x/1' }), null, '이름 없는 파일 참조는 소스 없음이다');
+  assert.equal(normalizeMediaSource({ kind: 'file', name: '' }), null);
+  assert.deepEqual(normalizeMediaSource({ kind: 'youtube', url: 'u', name: 'ignored' }), { kind: 'youtube', url: 'u' });
+  assert.equal(isEmptyMedia({ source: { kind: 'file', name: 'a.mp4' } }), false);
+});
+
+test('videoCommands: 파일 소스는 유튜브보다 우선하고, 놓으면 링크바 주소로 돌아간다', () => {
+  const store = createStore();
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  store.patch('links', { ...store.get().links, youtubeUrl: 'https://youtu.be/abc' });
+  VideoCmd.setSource(store, { url: 'https://youtu.be/abc' });
+
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'practice.mp4' }), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).source, { kind: 'file', name: 'practice.mp4' });
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 192, '파일로 바꿨는데 템포가 날아갔다');
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'practice.mp4' }), NONE, '같은 이름은 바뀐 게 없다');
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: '' }), NONE);
+
+  // 링크바만 비우는 것은 파일을 놓는 것이 아니다.
+  assert.deepEqual(VideoCmd.setSource(store, { url: '' }), NONE);
+  assert.equal(VideoCmd.mediaState(store).source.kind, 'file');
+  // 유튜브 주소를 새로 넣으면 그것이 마지막에 고른 것이다.
+  assert.deepEqual(VideoCmd.setSource(store, { url: 'https://youtu.be/zzz' }), { video: true });
+  assert.equal(VideoCmd.mediaState(store).source.kind, 'youtube');
+
+  VideoCmd.setFileSource(store, { name: 'b.mp4' });
+  assert.deepEqual(VideoCmd.clearFileSource(store), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).source, { kind: 'youtube', url: 'https://youtu.be/abc' }, '링크바의 주소로 돌아온다');
+  assert.deepEqual(VideoCmd.clearFileSource(store), NONE, '파일 소스가 아니면 할 일이 없다');
+
+  store.patch('links', { ...store.get().links, youtubeUrl: '' });
+  VideoCmd.setFileSource(store, { name: 'c.mp4' });
+  VideoCmd.clearFileSource(store);
+  assert.equal(VideoCmd.mediaState(store).source, null, '링크바가 비어 있으면 소스 없음이다');
+
+  // 저장 포맷: 파일 소스는 이름만 들어간다.
+  VideoCmd.setFileSource(store, { name: 'd.mp4' });
+  assert.deepEqual(serializeMedia(store.get().media).source, { kind: 'file', name: 'd.mp4' });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 템포 지도(2026-09-09) — 보정점이 있으면 구간별 선형, 없으면 옛 선형식 그대로
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('tempo: 보정점이 없으면 countToTime 은 옛 선형식과 한 자리도 다르지 않다', () => {
+  for (const tempo of TEMPOS) {
+    const spc = secondsPerCount(tempo);
+    for (let count = -100; count <= 100; count += 3) {
+      const expected = tempo.anchorSec + (count - tempo.anchorCount) * spc;
+      assert.equal(countToTime(count, tempo), expected);
+    }
+    assert.deepEqual(tempoPoints(tempo), [{ count: tempo.anchorCount, sec: tempo.anchorSec }]);
+  }
+});
+
+test('tempo: 보정점 사이는 구간별 선형이고 양 끝 밖은 bpm 기울기로 뻗으며 왕복이 성립한다', () => {
+  const base = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 10, anchorCount: 0 });   // spc 0.5
+  // 8카운트가 4초가 아니라 5초 걸리는(느려진) 구간, 그 다음 8카운트는 3초(빨라진) 구간.
+  const t = addTempoPoint(addTempoPoint(base, { count: 8, sec: 15 }), { count: 16, sec: 18 });
+  assert.ok(t);
+  assert.deepEqual(t.points, [{ count: 8, sec: 15 }, { count: 16, sec: 18 }]);
+  assert.deepEqual(tempoPoints(t), [{ count: 0, sec: 10 }, { count: 8, sec: 15 }, { count: 16, sec: 18 }]);
+
+  assert.equal(countToTime(0, t), 10);
+  assert.equal(countToTime(4, t), 12.5, '느려진 구간의 중간');
+  assert.equal(countToTime(8, t), 15);
+  assert.equal(countToTime(12, t), 16.5, '빨라진 구간의 중간');
+  assert.equal(countToTime(16, t), 18);
+  assert.equal(countToTime(24, t), 22, '마지막 점 뒤는 bpm 기울기(0.5s/카운트)');
+  assert.equal(countToTime(-8, t), 6, '첫 점 앞도 bpm 기울기');
+
+  for (let count = -40; count <= 40; count += 0.25) {
+    const back = timeToCount(countToTime(count, t), t);
+    assert.ok(Math.abs(back - count) < 1e-9, `count=${count} 왕복 실패: ${back}`);
+  }
+  // 격자 변환도 그대로 따라온다.
+  const cell = timeToCell(16.5, 8, t);
+  assert.equal(linearOf(cell.row, cell.index, 8), 12);
+  assert.ok(cell.fraction < 1e-9);
+});
+
+test('tempo: 되감기는 보정점은 null 로 거부하고, 같은 카운트는 갈아 끼우며, 앵커와 같은 카운트는 앵커를 덮는다', () => {
+  const base = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 10, anchorCount: 0 });
+  const t = addTempoPoint(base, { count: 8, sec: 15 });
+  assert.equal(addTempoPoint(t, { count: 12, sec: 14 }), null, '뒤 카운트인데 앞 시각');
+  assert.equal(addTempoPoint(t, { count: 4, sec: 16 }), null, '앞 카운트인데 뒤 시각');
+  assert.equal(addTempoPoint(t, { count: -4, sec: 11 }), null, '앵커보다 앞 카운트인데 앵커보다 뒤 시각');
+  assert.equal(addTempoPoint(t, { count: 8, sec: 15 }).points.length, 1, '같은 카운트는 개수가 늘지 않는다');
+  assert.equal(addTempoPoint(t, { count: 8, sec: 14 }).points[0].sec, 14, '같은 카운트는 갈아 끼운다');
+  assert.equal(addTempoPoint(t, { count: 8, sec: NaN }), null);
+
+  const overridden = addTempoPoint(t, { count: 0, sec: 9 });
+  assert.deepEqual(tempoPoints(overridden), [{ count: 0, sec: 9 }, { count: 8, sec: 15 }], '앵커 카운트의 보정점이 앵커를 덮는다');
+  assert.equal(countToTime(0, overridden), 9);
+
+  assert.deepEqual(removeTempoPoint(t, 8).points, []);
+  assert.deepEqual(removeTempoPoint(t, 99).points, t.points, '없는 점을 빼도 그대로다');
+  assert.deepEqual(clearTempoPointsOf(overridden).points, []);
+  assert.equal(clearTempoPointsOf(overridden).bpm, 120);
+});
+
+test('tempo: reanchor 는 보정점을 지우지 않고 지도 전체를 같은 만큼 민다', () => {
+  const base = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 10, anchorCount: 0 });
+  const t = addTempoPoint(base, { count: 8, sec: 15 });
+  // 카운트 8 이 실제로는 17초였다 — 2초 늦게 시작한 것이다. 전체가 2초 밀린다.
+  const moved = reanchor(t, { count: 8, sec: 17 });
+  assert.equal(moved.anchorSec, 17);
+  assert.equal(moved.anchorCount, 8);
+  assert.deepEqual(moved.points, [{ count: 0, sec: 12 }], '옛 앵커는 보정점으로 남고 새 앵커 자리의 점은 앵커가 대신한다');
+  assert.deepEqual(reanchor(base, { count: 8, sec: 17 }).points, [], '보정점이 없었으면 여전히 없다');
+  assert.equal(countToTime(0, moved), 12, '앵커 앞 구간도 같이 밀렸다');
+  assert.equal(countToTime(4, moved), 14.5, '느려진 구간의 모양이 그대로다');
+});
+
+test('tempo: normalizeTempoPoints 는 손상된 입력을 오름차순 무겹침 배열로 만든다', () => {
+  assert.deepEqual(normalizeTempoPoints(undefined), []);
+  assert.deepEqual(normalizeTempoPoints('x'), []);
+  assert.deepEqual(normalizeTempoPoints([{ count: 8, sec: 15 }, { count: 0, sec: 10 }, null, { count: 'a', sec: 1 }, { count: 4, sec: 20 }, { count: 8, sec: 16 }]),
+    [{ count: 0, sec: 10 }, { count: 4, sec: 20 }], '정렬하고, 같은 카운트는 뒤가 이기고, 앞 점보다 되감기는 뒤 점은 버린다');
+  // 앵커보다 앞 카운트인데 초는 뒤인 점은 tempoPoints 가 합칠 때 버린다.
+  const t = normalizeTempo({ bpm: 120, anchorSec: 10, anchorCount: 0, points: [{ count: -8, sec: 12 }, { count: 8, sec: 15 }] });
+  assert.deepEqual(tempoPoints(t), [{ count: 0, sec: 10 }, { count: 8, sec: 15 }]);
+  const tail = normalizeTempo({ bpm: 120, anchorSec: 10, anchorCount: 16, points: [{ count: 0, sec: 5 }, { count: 8, sec: 12 }] });
+  assert.deepEqual(tempoPoints(tail), [{ count: 0, sec: 5 }, { count: 16, sec: 10 }], '앵커가 맨 뒤면 되감기는 앞 점을 버린다');
+});
+
+test('media: 빈 보정점은 파일에 쓰이지 않고, 있는 보정점은 왕복한다', () => {
+  const plain = serializeMedia({ tempo: { bpm: 180, beatsPerCount: 1, anchorSec: 2, anchorCount: 0 }, source: null });
+  assert.equal('points' in plain.tempo, false, '보정점을 안 쓴 파일에 points 키가 생기면 바이트가 는다');
+  const withPts = serializeMedia({ tempo: { bpm: 180, anchorSec: 2, anchorCount: 0, points: [{ count: 8, sec: 5 }] }, source: null });
+  assert.deepEqual(withPts.tempo.points, [{ count: 8, sec: 5 }]);
+  assert.deepEqual(normalizeMedia(withPts).tempo.points, [{ count: 8, sec: 5 }]);
+});
+
+test('videoCommands: 보정점은 undo 를 타고, 거부는 rejected 로 알리며, 두 점 찍기는 보정점을 새로 시작한다', () => {
+  const store = createStore();
+  assert.deepEqual(VideoCmd.addTempoPoint(store, { count: 8, sec: 5 }), NONE, 'bpm 미설정이면 넣지 않는다');
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });     // 192bpm, spc 0.3125
+
+  assert.deepEqual(VideoCmd.addTempoPoint(store, { count: 8, sec: 5 }), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, [{ count: 8, sec: 5 }]);
+  const rejected = VideoCmd.addTempoPoint(store, { count: 16, sec: 4 });
+  assert.equal(rejected.rejected, true);
+  assert.equal(rejected.video, undefined, '거부는 Dirty 가 아니다');
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, [{ count: 8, sec: 5 }], '거부되면 아무것도 바뀌지 않는다');
+  assert.deepEqual(VideoCmd.addTempoPoint(store, { count: NaN, sec: 1 }), NONE);
+
+  assert.deepEqual(VideoCmd.removeTempoPoint(store, { count: 99 }), NONE);
+  VideoCmd.addTempoPoint(store, { count: 16, sec: 8 });
+  assert.deepEqual(VideoCmd.removeTempoPoint(store, { count: 8 }), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, [{ count: 16, sec: 8 }]);
+
+  // undo: media 는 UNDO_FIELDS 안이다.
+  const hist = History.createHistory(store);
+  History.commit(hist, BOARD_MAIN);
+  VideoCmd.addTempoPoint(store, { count: 24, sec: 11 });
+  History.commit(hist, BOARD_MAIN);
+  assert.equal(VideoCmd.mediaState(store).tempo.points.length, 2);
+  History.undo(hist, BOARD_MAIN);
+  assert.equal(VideoCmd.mediaState(store).tempo.points.length, 1, '보정점이 Undo 로 되돌아오지 않았다');
+  History.redo(hist, BOARD_MAIN);
+  assert.equal(VideoCmd.mediaState(store).tempo.points.length, 2);
+  History.undo(hist, BOARD_MAIN);
+
+  assert.deepEqual(VideoCmd.clearTempoMap(store), { video: true });
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, []);
+  assert.deepEqual(VideoCmd.clearTempoMap(store), NONE);
+
+  // 두 점으로 bpm 을 새로 재면 옛 보정점은 그 bpm 과 어긋난 값이라 비운다.
+  VideoCmd.addTempoPoint(store, { count: 8, sec: 5 });
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 1 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 21 });
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, []);
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 영상 보관 폴더(2026-09-09) — 경로 규칙은 순수 함수, 어댑터는 가짜 핸들·가짜 IndexedDB 로 검사한다
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('clips: 경로 조각은 파일 시스템에 못 쓰는 글자를 바꾸고 빈 조각은 대체 이름으로 떨어진다', () => {
+  assert.equal(safeSegment(' a/b:c*d?e"f<g>h|i '), 'a_b_c_d_e_f_g_h_i');
+  assert.equal(safeSegment(''), CLIP_UNFILED_DIR);
+  assert.equal(safeSegment(null, 'x'), 'x');
+  assert.equal(safeSegment('..hidden'), 'hidden', '앞의 점은 뗀다(숨김 폴더·상위 폴더 탈출 방지)');
+  assert.equal(projectDirName('내 안무.json'), '내 안무');
+  assert.equal(projectDirName(''), CLIP_UNFILED_DIR);
+  assert.deepEqual(clipDirParts('', 'demo'), [DEFAULT_CLIP_SUBDIR, 'demo'], '하위 폴더가 비면 기본 이름');
+  assert.deepEqual(clipDirParts('clips', ''), ['clips', CLIP_UNFILED_DIR]);
+  assert.equal(joinClipPath(['video-clip', 'demo'], 'take 1.mp4'), 'video-clip/demo/take 1.mp4');
+  assert.deepEqual(splitClipPath('video-clip/../demo//a.mp4'), ['video-clip', 'demo', 'a.mp4'], '.. 과 빈 조각은 버린다');
+  assert.deepEqual(splitClipPath(null), []);
+  assert.equal(numberedName('a.mp4', 2), 'a (2).mp4');
+  assert.equal(numberedName('noext', 3), 'noext (3)');
+});
+
+test('media: 파일 소스의 path 는 있을 때만 남고 setFileSource 는 path 가 바뀌면 다른 소스로 본다', () => {
+  assert.deepEqual(normalizeMediaSource({ kind: 'file', name: 'a.mp4', path: ' video-clip/x/a.mp4 ' }), { kind: 'file', name: 'a.mp4', path: 'video-clip/x/a.mp4' });
+  assert.deepEqual(normalizeMediaSource({ kind: 'file', name: 'a.mp4', path: '' }), { kind: 'file', name: 'a.mp4' });
+  const store = createStore();
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'a.mp4' }), { video: true });
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'a.mp4', path: 'video-clip/x/a.mp4' }), { video: true }, '복사가 끝나 경로가 붙는 것은 변경이다');
+  assert.deepEqual(VideoCmd.setFileSource(store, { name: 'a.mp4', path: 'video-clip/x/a.mp4' }), NONE);
+  assert.deepEqual(serializeMedia(store.get().media).source, { kind: 'file', name: 'a.mp4', path: 'video-clip/x/a.mp4' });
+});
+
+/**
+ * File System Access API 의 최소 가짜. 디렉터리는 중첩 Map 이고 파일은 {name, chunks} 다.
+ * requestPermission 은 interactive 없이도 'granted' 를 주는지 검사할 수 있게 상태를 노출한다.
+ */
+function fakeDirHandle(name, perm = 'granted') {
+  const dirs = new Map();
+  const files = new Map();
+  const h = {
+    kind: 'directory', name, dirs, files, perm,
+    queryPermission: async () => h.perm,
+    requestPermission: async () => { h.asked = true; return h.perm === 'prompt' ? (h.perm = 'granted') : h.perm; },
+    getDirectoryHandle: async (n, o = {}) => {
+      if (!dirs.has(n)) { if (!o.create) throw new Error('NotFound'); dirs.set(n, fakeDirHandle(n)); }
+      return dirs.get(n);
+    },
+    getFileHandle: async (n, o = {}) => {
+      if (!files.has(n)) {
+        if (!o.create) throw new Error('NotFound');
+        const f = { name: n, chunks: [] };
+        files.set(n, { kind: 'file', name: n,
+          createWritable: async () => ({ write: async (b) => { f.chunks.push(b); }, close: async () => {} }),
+          getFile: async () => ({ name: n, type: 'video/mp4', size: f.chunks.reduce((a, b) => a + (b.size || 0), 0) }) });
+      }
+      return files.get(n);
+    }
+  };
+  return h;
+}
+
+/** IndexedDB 의 최소 가짜. 요청 콜백을 마이크로태스크로 부른다(실제와 같이 비동기). */
+function fakeIndexedDb() {
+  const data = new Map();
+  const mkReq = (fn) => {
+    const req = {};
+    queueMicrotask(() => { try { req.result = fn(); req.onsuccess && req.onsuccess(); } catch (e) { req.error = e; req.onerror && req.onerror(); } });
+    return req;
+  };
+  const db = {
+    objectStoreNames: { contains: () => true },
+    transaction: () => {
+      const tx = {};
+      queueMicrotask(() => queueMicrotask(() => tx.oncomplete && tx.oncomplete()));
+      tx.objectStore = () => ({
+        get: (k) => mkReq(() => data.get(k)),
+        put: (v, k) => mkReq(() => { data.set(k, v); }),
+        delete: (k) => mkReq(() => { data.delete(k); })
+      });
+      return tx;
+    },
+    close() {}
+  };
+  return { data, open: () => mkReq(() => db) };
+}
+
+test('clipLibrary: 지원하지 않는 브라우저에서는 모든 호출이 없음으로 답하고 던지지 않는다', async () => {
+  const lib = createClipLibrary({ win: {} });
+  assert.equal(lib.isSupported(), false);
+  assert.equal(await lib.getFolder(), null);
+  assert.equal(await lib.pickFolder(), null);
+  assert.equal(await lib.ensurePermission(true), false);
+  assert.equal(await lib.openClip('video-clip/x/a.mp4'), null);
+  await lib.forgetFolder();
+  await assert.rejects(() => lib.saveClip({}, ['video-clip'], 'a.mp4'), '폴더가 없으면 복사는 실패로 알린다(호출부가 조용히 삼킨다)');
+});
+
+test('clipLibrary: 폴더를 고르면 핸들이 남고, 복사는 하위 폴더를 만들며 같은 이름에 (2) 를 붙이고, 경로로 다시 읽는다', async () => {
+  const root = fakeDirHandle('내 문서');
+  const idb = fakeIndexedDb();
+  const win = { indexedDB: idb, showDirectoryPicker: async () => root };
+  const lib = createClipLibrary({ win });
+  assert.equal(lib.isSupported(), true);
+  assert.equal(await lib.getFolder(), null, '아직 안 골랐다');
+
+  assert.deepEqual(await lib.pickFolder(), { name: '내 문서' });
+  assert.equal(idb.data.get('folder'), root, '핸들이 IndexedDB 에 남는다');
+
+  const file = { name: 'take.mp4', size: 3 };
+  const a = await lib.saveClip(file, ['video-clip', 'demo'], 'take.mp4');
+  assert.equal(a.path, 'video-clip/demo/take.mp4');
+  const b = await lib.saveClip(file, ['video-clip', 'demo'], 'take.mp4');
+  assert.equal(b.path, 'video-clip/demo/take (2).mp4', '이미 있는 파일은 건드리지 않는다');
+  assert.ok(root.dirs.get('video-clip').dirs.get('demo').files.has('take (2).mp4'));
+
+  const opened = await lib.openClip('video-clip/demo/take.mp4');
+  assert.equal(opened && opened.name, 'take.mp4');
+  assert.equal(await lib.openClip('video-clip/demo/없음.mp4'), null, '없는 파일은 null 이지 예외가 아니다');
+  assert.equal(await lib.openClip('../etc/passwd'), null, '폴더 밖으로 나가지 않는다');
+
+  // 새 세션: 핸들은 IndexedDB 에서 돌아오고, 권한이 prompt 면 조용한 확인은 거짓·대화형은 참이다.
+  root.perm = 'prompt';
+  const again = createClipLibrary({ win });
+  assert.deepEqual(await again.getFolder(), { name: '내 문서' });
+  assert.equal(await again.ensurePermission(false), false, '조용한 확인은 묻지 않는다');
+  assert.equal(root.asked, undefined);
+  assert.equal(await again.ensurePermission(true), true);
+  assert.equal(root.asked, true);
+
+  await again.forgetFolder();
+  assert.equal(await again.getFolder(), null);
+  assert.equal(idb.data.has('folder'), false);
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 말로 채우기(2026-09-09) — LLM 플랜을 격자 항목으로, 격자 항목을 기존 배치 경로로
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LIB = [
+  { id: 'm1', name: 'Jazz Square', category: 'step' },
+  { id: 'm2', name: 'Charleston', category: 'step' },
+  { id: 'm3', name: '킥볼체인지', category: 'jump' }
+];
+const CATS = { step: { label: 'step', color: '#0f0' }, jump: { label: 'jump', color: '#f00' } };
+
+test('choreoPlan: 이름은 느슨하게 맞추되 짧은 조각으로는 아무 데나 걸리지 않는다', () => {
+  assert.equal(nameKey(' Jazz  Square '), 'jazzsquare');
+  assert.equal(matchMove(LIB, 'Jazz Square').id, 'm1', '정확히 같은 것');
+  assert.equal(matchMove(LIB, 'jazz square').id, 'm1', '대소문자·공백 무시');
+  assert.equal(matchMove(LIB, '킥볼 체인지').id, 'm3');
+  assert.equal(matchMove(LIB, '킥볼체인지 두 번').id, 'm3', '포함 관계(3글자 이상)');
+  assert.equal(matchMove(LIB, 'ab'), null, '두 글자로는 포함 매칭을 하지 않는다');
+  assert.equal(matchMove(LIB, 'Shorty George'), null);
+  assert.equal(matchMove([], 'x'), null);
+});
+
+test('choreoPlan: normalizePlan 은 마디·카운트를 격자 좌표로 바꾸고 넘치는 카운트는 다음 마디로 넘긴다', () => {
+  const plan = {
+    title: '연습', notes: ['둘째 동작 길이는 임의'],
+    moves: [
+      { bar: 1, count: 1, length: 8, name: 'charleston', category: '', note: '' },
+      { bar: 1, count: 12, length: 4, name: 'Jazz Square', category: 'step', note: '오른쪽' },
+      { bar: 3, count: 5, length: 6, name: 'Shorty George', category: 'nope', note: '' },
+      { bar: 0, count: 3, length: 2, name: '킥볼체인지', category: '', note: '' },
+      { bar: -1, count: 1, length: 1, name: 'x', category: '', note: '' },
+      { bar: 2, count: 'a', length: 1, name: 'y', category: '', note: '' },
+      { bar: 2, count: 1, length: 0, name: '', category: '', note: '' }
+    ]
+  };
+  const p = normalizePlan(plan, { cols: 8, rows: 2, library: LIB, categories: CATS });
+  assert.equal(p.title, '연습');
+  assert.deepEqual(p.notes, ['둘째 동작 길이는 임의']);
+  assert.equal(p.items.length, 4);
+  assert.deepEqual(p.items[0], { row: 1, index: 0, length: 8, name: 'Charleston', category: 'step', note: '', moveId: 'm2', created: false }, '느슨히 맞춘 이름은 목록 표기로');
+  assert.deepEqual([p.items[1].row, p.items[1].index], [2, 3], '8x1 의 12카운트 = 8x2 의 4카운트');
+  assert.equal(p.items[1].note, '오른쪽');
+  assert.equal(p.items[2].created, true);
+  assert.equal(p.items[2].category, 'step', '모르는 카테고리는 첫 카테고리로');
+  assert.deepEqual([p.items[3].row, p.items[3].index], [0, 2], 'intro 행');
+  assert.deepEqual(p.newMoves, ['Shorty George']);
+  assert.equal(p.dropped.length, 3);
+  assert.equal(p.rowsNeeded, 4, '8x3 의 5카운트부터 6카운트면 8x4 의 2카운트까지 걸친다');
+  assert.equal(normalizePlan({ moves: [{ bar: 2, count: 8, length: 2, name: 'Charleston' }] }, { cols: 8, rows: 1, library: LIB, categories: CATS }).rowsNeeded, 3, '마디를 넘어가는 길이는 다음 행까지 요구한다');
+  assert.equal(cellLabel(0, 2, 8), 'intro · 3');
+  assert.equal(cellLabel(2, 0, 8), '8x2 · 1');
+  assert.deepEqual(normalizePlan(null, { cols: 8, rows: 8, library: [], categories: {} }).items, []);
+});
+
+test('planCommands: applyPlan 은 기존 배치 경로로 놓고, 행을 늘리고, replace 는 배치만 비운다', () => {
+  const store = createStore({ ids: counterEnv() });
+  const ctx = { store, ids: counterEnv(), dialogs: {}, storage: {} };
+  const plan = { title: '', notes: [], moves: [
+    { bar: 1, count: 1, length: 8, name: 'Charleston', category: '', note: '' },
+    { bar: 10, count: 1, length: 4, name: '새 동작', category: 'turn', note: '' }
+  ] };
+  const before = store.board('main').rows;
+  const d = PlanCmd.applyPlan(ctx, plan);
+  assert.equal(d.placed, 2);
+  assert.equal(d.skipped, 0);
+  assert.ok(d.boards && d.boards.main, 'Dirty 에 보드가 있다');
+  assert.equal(d.palette, true, '새 동작이 생겨 팔레트를 다시 그린다');
+  assert.equal(store.board('main').rows, 10, `행이 ${before} → 10 으로 늘었다`);
+  assert.ok(store.get().library.some(m => m.name === '새 동작'), '새 동작이 목록에 생겼다');
+  assert.equal(store.board('main').placements.filter(p => p.row === 1).length, 1);
+
+  // 두 번 놓으면 겹쳐 쌓인다(지우지 않는다) — 손으로 놓을 때와 같은 규칙.
+  PlanCmd.applyPlan(ctx, plan);
+  assert.equal(store.board('main').placements.filter(p => p.row === 1).length, 2);
+
+  // replace: 배치만 비우고 새로. 행은 줄이지 않는다.
+  store.patch('links', { ...store.get().links, youtubeUrl: 'https://youtu.be/abc' });
+  const r = PlanCmd.applyPlan(ctx, { moves: [{ bar: 1, count: 1, length: 2, name: 'Charleston' }] }, { mode: 'replace' });
+  assert.equal(r.placed, 1);
+  assert.equal(store.board('main').placements.length, 1);
+  assert.equal(store.get().links.youtubeUrl, 'https://youtu.be/abc', '링크는 그대로다(전체 초기화가 아니다)');
+  assert.equal(store.board('main').rows, 10);
+
+  assert.deepEqual(PlanCmd.applyPlan(ctx, { moves: [] }), NONE);
+  const pv = PlanCmd.previewPlan(store, plan);
+  assert.equal(pv.items.length, 2);
+});
+
+test('llmServer: 서버가 없으면 404 를 알아듣는 문구로, 있으면 결과를 그대로 준다', async () => {
+  const calls = [];
+  const fake = (bodyFor) => async (url, init) => {
+    calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : null });
+    const r = bodyFor(url);
+    return { ok: r.status < 400, status: r.status, json: async () => r.json };
+  };
+  const gone = createLlmServer({ fetchImpl: fake(() => ({ status: 404, json: null })) });
+  assert.equal(await gone.getConfig(), null);
+  const rf = await gone.refine('x', {});
+  assert.equal(rf.ok, false);
+  assert.match(rf.error, /server\.py/);
+
+  const up = createLlmServer({ fetchImpl: fake((url) => {
+    if (url.endsWith('/api/llm/config')) return { status: 200, json: { provider: 'ollama', model: 'm', baseUrl: 'b', hasKey: false, keyFromEnv: false, available: true } };
+    if (url.endsWith('/api/llm/refine')) return { status: 200, json: { ok: true, prompt: '8x1 1카운트부터 8카운트: Charleston' } };
+    if (url.endsWith('/api/llm/compose')) return { status: 200, json: { ok: true, plan: { title: '', moves: [], notes: [] } } };
+    return { status: 502, json: { ok: false, error: '모델이 답하지 않았습니다' } };
+  }) });
+  assert.equal((await up.getConfig()).provider, 'ollama');
+  assert.deepEqual(await up.refine('찰스턴 여덟', { cols: 8 }), { ok: true, prompt: '8x1 1카운트부터 8카운트: Charleston' });
+  assert.deepEqual(calls[calls.length - 1].body, { text: '찰스턴 여덟', context: { cols: 8 } });
+  assert.equal((await up.compose('p', {})).ok, true);
+  assert.equal((await up.setConfig({ provider: 'openai' })).provider, 'ollama', 'PUT 도 같은 가짜 응답을 받는다');
+  const none = createLlmServer({ fetchImpl: null });
+  assert.equal((await none.refine('x', {})).ok, false);
+});
+
+test('videoCommands: 템포가 undo 스냅샷을 타고 되돌아온다', () => {
+  const store = createStore();
+  const hist = History.createHistory(store);
+  History.commit(hist, BOARD_MAIN);                        // 템포 미설정 상태
+
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  History.commit(hist, BOARD_MAIN);                        // 확정 시점에만 커밋한다
+  assert.equal(store.get().media.tempo.bpm, 192);
+
+  History.undo(hist, BOARD_MAIN);
+  assert.equal(store.get().media.tempo.bpm, 0, '템포가 Undo 로 되돌아오지 않았다');
+  History.redo(hist, BOARD_MAIN);
+  assert.equal(store.get().media.tempo.bpm, 192);
+  assert.equal(store.get().media.tempo.anchorSec, 2);
+});
+
+test('videoCommands: 전체 초기화가 링크와 함께 영상 소스·템포도 비운다', () => {
+  // 회귀(2026-09): `전체 초기화(링크 포함)` 가 링크바의 youtubeUrl 만 비우고 media.source 를
+  // 남겼다. 그러면 링크바는 비었는데 패널은 옛 영상을 계속 싣고, 다음 저장이 사용자가 지운
+  // 주소를 파일에 다시 썼다 — 같은 사실이 두 곳에서 갈라지는 상태다.
+  const saved = [];
+  const storage = { saveLinks: (next) => saved.push(next) };
+  const store = createStore();
+  store.update({ links: LINKS_SAMPLE() });
+  VideoCmd.setSource(store, { url: 'https://www.youtube.com/watch?v=abc' });
+  VideoCmd.markTempoPoint(store, { count: 0, sec: 2 });
+  VideoCmd.markTempoPoint(store, { count: 32, sec: 12 });
+  assert.equal(store.get().media.tempo.bpm, 192);
+
+  const hist = History.createHistory(store, { storage });
+  History.commit(hist, BOARD_MAIN);
+
+  const dirty = clearBoard(store, { storage });
+  assert.equal(dirty.video, true, 'Dirty.video 가 없으면 패널이 안 다시 그려져 iframe 이 그대로 남는다');
+  assert.equal(store.get().media.source, null, '링크를 비웠는데 영상 소스가 남았다');
+  assert.equal(store.get().media.tempo.bpm, 0, '지운 영상의 앵커가 다음 영상에 조용히 적용된다');
+  assert.equal(isEmptyMedia(store.get().media), true);
+
+  // 되돌리면 배치처럼 함께 살아난다(media 는 undo 스냅샷 안에 있다).
+  History.commit(hist, BOARD_MAIN);
+  History.undo(hist, BOARD_MAIN);
+  assert.equal(store.get().media.tempo.bpm, 192, 'Undo 로 템포가 안 돌아왔다');
+  assert.deepEqual(store.get().media.source, { kind: 'youtube', url: 'https://www.youtube.com/watch?v=abc' });
+});
+
+test('videoCommands: 영상을 한 번도 안 쓴 전체 초기화는 Dirty 가 예전과 같다', () => {
+  // 이 기능이 들어오기 전과 글자 하나 달라지면 안 된다 — 골든 150 이 이 Dirty 를 재생한다.
+  const store = createStore();
+  store.update({ links: LINKS_SAMPLE() });
+  const dirty = clearBoard(store, { storage: { saveLinks() {} } });
+  assert.equal('video' in dirty, false, '영상을 안 쓴 사용자에게 video 플래그가 새어 나갔다');
+  assert.deepEqual(VideoCmd.clearMedia(store), NONE);
+});
+
+// ── 저장 포맷 ───────────────────────────────────────────────────────────────
+
+test('media: 빈 블록은 저장 바이트를 한 글자도 늘리지 않는다', () => {
+  const source = {
+    rows: 8, cols: 8, categories: {}, moveLibrary: [], placements: [], routines: [],
+    youtubeUrl: '', youtubeTitle: '', clickupUrl: '', customLinks: []
+  };
+  const before = JSON.stringify(buildProjectFile(source, { fileName: 'a', savedAt: 'S' }));
+  const withEmpty = JSON.stringify(
+    buildProjectFile({ ...source, media: normalizeMedia(null) }, { fileName: 'a', savedAt: 'S' }));
+  assert.equal(withEmpty, before, '빈 media 가 파일에 새어 나갔다');
+  assert.ok(!before.includes('"media"'));
+
+  // 값이 있으면 customLinks 뒤에 붙는다(키 순서 = 바이트 순서).
+  const filled = buildProjectFile(
+    { ...source, media: { tempo: { bpm: 180, beatsPerCount: 1, anchorSec: 2, anchorCount: 0 }, source: null } },
+    { fileName: 'a', savedAt: 'S' });
+  assert.deepEqual(Object.keys(filled).slice(-2), ['customLinks', 'media']);
+  assert.equal(filled.media.tempo.bpm, 180);
+  assert.deepEqual(Object.keys(filled.media), ['tempo', 'source']);
+
+  // passthrough 로 남의 media 가 되살아나면 안 된다.
+  const guarded = buildProjectFile(source, { passthrough: { media: { tempo: { bpm: 999 } }, 미래필드: 1 } });
+  assert.equal('media' in guarded, false);
+  assert.equal(guarded.미래필드, 1, '알 수 없는 키는 여전히 왕복해야 한다');
+});
+
+test('media: normalizeMedia 는 손상된 입력을 기본값으로 접고 isEmptyMedia 가 그것을 알아본다', () => {
+  for (const bad of [null, undefined, 42, '문자열', [], { tempo: 'x', source: 7 }]) {
+    assert.deepEqual(normalizeMedia(bad), DEFAULT_MEDIA, `${JSON.stringify(bad)} 가 기본값으로 안 접혔다`);
+    assert.equal(isEmptyMedia(bad), true);
+    assert.equal(serializeMedia(bad), null);
+  }
+  // 모르는 kind·빈 url 은 소스 없음이다(오류가 아니다).
+  assert.equal(normalizeMediaSource({ kind: 'vimeo', url: 'x' }), null);
+  assert.equal(normalizeMediaSource({ kind: 'youtube', url: '' }), null);
+  assert.deepEqual(normalizeMediaSource({ kind: 'youtube', url: 'u', 잡음: 1 }), { kind: 'youtube', url: 'u' });
+
+  // bpm 0(미설정)이어도 앵커를 옮겼으면 비어 있지 않다 — 사용자가 찍은 값이라 저장해야 한다.
+  assert.equal(isEmptyMedia({ tempo: { anchorSec: 3 } }), false);
+  assert.equal(isEmptyMedia({ source: { kind: 'youtube', url: 'u' } }), false);
+  // 언제나 새 객체다(스냅샷이 store 와 객체를 공유하면 undo 가 죽는다).
+  const src = { tempo: { bpm: 100 }, source: { kind: 'youtube', url: 'u' } };
+  assert.notEqual(normalizeMedia(src).tempo, src.tempo);
+  assert.notEqual(normalizeMedia(src).source, src.source);
+});
+
+test('media: media 가 없는 옛 파일이 지금과 똑같이 열리고 왕복해도 커지지 않는다', () => {
+  // V1_FILE 에는 media 가 아예 없다 — 이 기능이 들어오기 전의 파일이다.
+  assert.equal('media' in V1_FILE, false);
+
+  const res = migrateProjectFile(V1_FILE, { now: () => '1970-01-01T00:00:00.000Z' });
+  assert.equal(res.ok, true);
+  assert.equal(res.value.doc.media, null, '없던 것을 날조하지 않는다');
+
+  const flat = { ...res.value, ...res.value.doc };
+  const normalized = normalizeProject(flat, { ids: counterEnv() });
+  assert.notEqual(normalized, null, '옛 파일이 열리지 않았다');
+  assert.deepEqual(normalized.media, DEFAULT_MEDIA, 'media 가 없으면 미설정으로 떨어져야 한다');
+
+  // 열었다 다시 저장했을 때 media 키가 생기지 않아야 한다(= 바이트가 안 늘어난다).
+  const resaved = buildProjectFile({
+    rows: normalized.rows, cols: normalized.cols, categories: normalized.categories,
+    moveLibrary: normalized.moveLibrary, placements: normalized.placements, routines: normalized.routines,
+    ...toLinkBundle(flat), media: normalized.media
+  }, { fileName: 'demo', savedAt: 'S' });
+  assert.equal('media' in resaved, false);
+});
+
+test('media: 우리가 쓴 media 블록은 v1→v2 왕복에서 살아남는다', () => {
+  const withMedia = {
+    ...V1_FILE,
+    media: { tempo: { bpm: 180, beatsPerCount: 2, anchorSec: 1.5, anchorCount: 8 }, source: { kind: 'youtube', url: 'https://youtu.be/abc' } }
+  };
+  const res = migrateProjectFile(withMedia, { now: () => '1970-01-01T00:00:00.000Z' });
+  assert.deepEqual(res.value.doc.media, withMedia.media, '최상위 media:[] 가 우리 블록을 덮어썼다');
+  assert.deepEqual(res.value.media, [], '최상위 자리는 MediaRef 목록 그대로다(이름만 같다)');
+
+  // readProjectData 의 되펼치기에서는 doc 쪽이 이긴다 — 우리가 읽고 싶은 값이 나온다.
+  const flat = { ...res.value, ...res.value.doc };
+  // 메모리 안의 Tempo 는 언제나 points 를, MediaBlock 은 언제나 markers 를 가진다(비어 있으면 []).
+  // 파일에는 빈 points·markers 가 쓰이지 않는다(아래 테스트).
+  assert.deepEqual(normalizeProject(flat, { ids: counterEnv() }).media,
+    { ...withMedia.media, tempo: { ...withMedia.media.tempo, points: [] }, markers: [] });
+});
+
+test('snapshot: applySnapshot(main) 은 media 가 없는 옛 스냅샷도 미설정으로 되돌린다', () => {
+  const legacy = JSON.stringify({ rows: 8, cols: 8, placements: [], moveLibrary: [], categories: {}, routines: [] });
+  assert.deepEqual(applySnapshot(legacy, { kind: 'main' }).media, DEFAULT_MEDIA);
+  // 루틴 패치에는 media 가 없어야 한다(루틴 보드에는 시간 매핑이 없다).
+  const routineSnap = JSON.stringify({ rows: 4, cols: 8, placements: [] });
+  assert.equal('media' in applySnapshot(routineSnap, { kind: 'routine' }), false);
+
+  // pickUndoFields 는 media 를 **값으로 복제**한다(스냅샷이 지금 값을 따라가면 undo 가 죽는다).
+  const state = {
+    rows: 8, cols: 8, placements: [], moveLibrary: [], categories: {}, routines: [],
+    links: LINKS_SAMPLE(), media: { tempo: { bpm: 120, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 }, source: null }
+  };
+  const picked = pickUndoFields(state);
+  state.media.tempo.bpm = 999;
+  assert.equal(picked.media.tempo.bpm, 120, '스냅샷이 현재 상태를 따라 변했다 — 얕은 복제다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// In/Out · 마커 · 잘라내기(2026-09-10) — 마커는 안무의 일부(media), In/Out 은 화면 상태(session)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { normalizeMarkers, addMarker as addMarkerOf, removeMarker as removeMarkerOf, shiftMarkersForTrim, markerIdOf, markersAt } from '../../src/domain/markers.js';
+import { shiftTempo } from '../../src/domain/tempo.js';
+import { createClipServer } from '../../src/adapters/clipServer.js';
+import { formatRange } from '../../src/ui/videoPanel.js';
+
+test('markers: normalizeMarkers 는 쓰레기를 거르고 뒤집힌 구간을 세우며 inSec 순으로 정렬한다', () => {
+  const out = normalizeMarkers([
+    null, 'x', { inSec: 'a', outSec: 2, fromCount: 0, toCount: 8 },           // 숫자 아님
+    { inSec: 5, outSec: 5, fromCount: 0, toCount: 8 },                        // 길이 0 (초)
+    { inSec: 1, outSec: 2, fromCount: 8, toCount: 8 },                        // 길이 0 (카운트)
+    { inSec: 20, outSec: 10, fromCount: 16, toCount: 8, label: 7 },           // 뒤집힘 → 세운다
+    { inSec: 2, outSec: 4.5, fromCount: 0.4, toCount: 7.6 }                   // 카운트는 정수로
+  ]);
+  assert.deepEqual(out.map(m => [m.inSec, m.outSec, m.fromCount, m.toCount, m.label]),
+    [[2, 4.5, 0, 8, ''], [10, 20, 8, 16, '7']]);
+  assert.equal(out[0].id, markerIdOf(out[0]), 'id 는 값에서 결정론적으로 만든다');
+  // 같은 id(같은 구간·같은 시각)는 뒤의 것이 이긴다.
+  const dup = normalizeMarkers([{ inSec: 1, outSec: 2, fromCount: 0, toCount: 8, label: 'a' }, { inSec: 1, outSec: 3, fromCount: 0, toCount: 8, label: 'b' }]);
+  assert.equal(dup.length, 1);
+  assert.equal(dup[0].label, 'b');
+});
+
+test('markers: addMarker 는 모양이 틀리면 null 이고 removeMarker·markersAt 이 짝을 이룬다', () => {
+  assert.equal(addMarkerOf([], { inSec: 1 }), null);
+  const one = addMarkerOf([], { inSec: 1, outSec: 3, fromCount: 0, toCount: 8, label: '찰스턴' });
+  const two = addMarkerOf(one, { inSec: 3, outSec: 6, fromCount: 8, toCount: 16 });
+  assert.equal(two.length, 2);
+  assert.deepEqual(markersAt(two, 2.5).map(m => m.label), ['찰스턴']);
+  assert.deepEqual(markersAt(two, 3), [two[1]], 'outSec 은 배타적');
+  assert.deepEqual(markersAt(two, 'x'), []);
+  assert.equal(removeMarkerOf(two, one[0].id).length, 1);
+  assert.equal(removeMarkerOf(two, 'nope').length, 2);
+});
+
+test('markers: shiftMarkersForTrim 은 잘린 구간 밖은 버리고 걸친 것은 잘라 넣은 뒤 In 만큼 당긴다', () => {
+  const list = normalizeMarkers([
+    { inSec: 0, outSec: 5, fromCount: 0, toCount: 8 },      // 앞에서 걸침 → [10,5)? 아니, 겹치지 않음(out 5 <= in 10) → 버림
+    { inSec: 8, outSec: 14, fromCount: 8, toCount: 16 },    // 앞에 걸침 → [10,14) → [0,4)
+    { inSec: 15, outSec: 20, fromCount: 16, toCount: 24 },  // 안 → [5,10)
+    { inSec: 28, outSec: 35, fromCount: 24, toCount: 32 },  // 뒤에 걸침 → [28,30) → [18,20)
+    { inSec: 40, outSec: 50, fromCount: 32, toCount: 40 }   // 뒤 → 버림
+  ]);
+  const out = shiftMarkersForTrim(list, 10, 30);
+  assert.deepEqual(out.map(m => [m.inSec, m.outSec, m.fromCount, m.toCount]), [[0, 4, 8, 16], [5, 10, 16, 24], [18, 20, 24, 32]]);
+  assert.notEqual(out[1].id, list[2].id, '시각이 바뀌었으니 다른 마커다');
+  assert.deepEqual(shiftMarkersForTrim(list, 30, 10), list, '뒤집힌 인자는 아무것도 하지 않는다');
+});
+
+test('tempo: shiftTempo 는 앵커와 보정점의 초만 같은 만큼 밀고 bpm·카운트는 그대로다', () => {
+  const t = normalizeTempo({ bpm: 120, beatsPerCount: 2, anchorSec: 12, anchorCount: 0, points: [{ count: 8, sec: 20 }, { count: 16, sec: 28.5 }] });
+  const s = shiftTempo(t, -10);
+  assert.equal(s.bpm, 120);
+  assert.equal(s.beatsPerCount, 2);
+  assert.equal(s.anchorSec, 2);
+  assert.equal(s.anchorCount, 0);
+  assert.deepEqual(s.points, [{ count: 8, sec: 10 }, { count: 16, sec: 18.5 }]);
+  // 미설정(bpm 0)이어도 앵커 초는 민다.
+  assert.equal(shiftTempo({ anchorSec: 5 }, -3).anchorSec, 2);
+  assert.equal(shiftTempo(t, 'x').anchorSec, 12, '유한하지 않은 delta 는 0');
+});
+
+test('media: 마커는 media 에 살고, 비어 있으면 파일에 쓰이지 않으며, 있으면 왕복한다', () => {
+  assert.deepEqual(normalizeMedia(null).markers, []);
+  assert.equal(isEmptyMedia({ markers: [] }), true);
+  assert.equal(isEmptyMedia({ markers: [{ inSec: 0, outSec: 1, fromCount: 0, toCount: 8 }] }), false);
+  const plain = serializeMedia({ tempo: { bpm: 120 }, source: null });
+  assert.equal('markers' in plain, false, '빈 마커는 키째로 빠진다');
+  const withMk = serializeMedia({ tempo: { bpm: 120 }, source: null, markers: [{ inSec: 1, outSec: 2, fromCount: 0, toCount: 8, label: 'a' }] });
+  assert.equal(Object.keys(withMk).join(','), 'tempo,source,markers', 'MEDIA_FIELDS 순서');
+  assert.deepEqual(normalizeMedia(withMk).markers, withMk.markers);
+});
+
+test('videoCommands: In/Out·반복은 화면 상태라 media 를 건드리지 않고, 뒤집힌 지점은 반대편을 비운다', () => {
+  const store = createStore();
+  const before = JSON.stringify(store.get().media);
+  assert.deepEqual(VideoCmd.setInPoint(store, { sec: 10 }), { video: true });
+  assert.equal(VideoCmd.inOutRange(store), null, 'Out 이 없다');
+  VideoCmd.setOutPoint(store, { sec: 20 });
+  assert.deepEqual(VideoCmd.inOutRange(store), { inSec: 10, outSec: 20 });
+  // Out 보다 뒤에 In 을 찍으면 Out 이 비워진다(조용히 뒤집지 않는다).
+  VideoCmd.setInPoint(store, { sec: 25 });
+  assert.equal(VideoCmd.panelState(store).outSec, null);
+  assert.equal(VideoCmd.panelState(store).inSec, 25);
+  VideoCmd.setOutPoint(store, { sec: 5 });
+  assert.equal(VideoCmd.panelState(store).inSec, null, 'In 보다 앞에 Out 을 찍으면 In 이 비워진다');
+  assert.deepEqual(VideoCmd.setInOut(store, { inSec: 3, outSec: 1 }), NONE);
+  VideoCmd.setInOut(store, { inSec: 1, outSec: 3 });
+  assert.deepEqual(VideoCmd.setLoop(store), { video: true });
+  assert.equal(VideoCmd.panelState(store).loop, true);
+  assert.deepEqual(VideoCmd.setLoop(store, { loop: true }), NONE, '같은 값은 헛렌더가 없다');
+  VideoCmd.clearInOut(store);
+  assert.equal(VideoCmd.inOutRange(store), null);
+  assert.equal(JSON.stringify(store.get().media), before, 'media 는 그대로');
+  assert.deepEqual(VideoCmd.setInPoint(store, { sec: NaN }), NONE);
+});
+
+test('videoCommands: 마커는 In~Out 과 카운트 구간으로 만들어 media 에 들어가고 undo 를 탄다', () => {
+  const store = createStore();
+  const hist = History.createHistory(store, { storage: fakeLinkStorage() });
+  assert.deepEqual(VideoCmd.addMarker(store, { fromCount: 0, toCount: 8 }), NONE, 'In/Out 이 없으면 만들지 않는다');
+  VideoCmd.setInOut(store, { inSec: 10, outSec: 14 });
+  History.commit(hist, 'main');
+  assert.deepEqual(VideoCmd.addMarker(store, { fromCount: 0, toCount: 8, label: '찰스턴' }), { video: true });
+  History.commit(hist, 'main');
+  const [m] = VideoCmd.mediaState(store).markers;
+  assert.deepEqual([m.inSec, m.outSec, m.fromCount, m.toCount, m.label], [10, 14, 0, 8, '찰스턴']);
+  assert.equal(VideoCmd.inOutRange(store).inSec, 10, 'In/Out 은 마커를 만든 뒤에도 남는다(같은 구간을 다른 마디에도 맵핑할 수 있다)');
+  // 소스·템포를 바꿔도 마커는 살아남는다(setMedia 가 블록을 통째로 갈아 끼우므로 실수하기 쉬운 자리다).
+  VideoCmd.setSource(store, { url: 'https://youtu.be/x' });
+  VideoCmd.setTempo(store, { tempo: { bpm: 120 } });
+  VideoCmd.reanchorTo(store, { count: 0, sec: 1 });
+  VideoCmd.clearTempo(store);
+  assert.equal(VideoCmd.mediaState(store).markers.length, 1);
+  // 되돌리기 — 소스·템포 변경은 커밋하지 않았으므로 마커를 넣기 전 스냅샷으로 돌아간다.
+  History.undo(hist, 'main');
+  assert.equal(VideoCmd.mediaState(store).markers.length, 0);
+  History.redo(hist, 'main');
+  assert.equal(VideoCmd.mediaState(store).markers.length, 1);
+  assert.deepEqual(VideoCmd.removeMarker(store, { id: 'nope' }), NONE);
+  assert.deepEqual(VideoCmd.removeMarker(store, { id: m.id }), { video: true });
+  assert.deepEqual(VideoCmd.clearMarkers(store), NONE);
+  // 저장 파일에는 마커가 실리고, 없으면 키가 없다.
+  VideoCmd.addMarkerAt(store, { inSec: 1, outSec: 2, fromCount: 8, toCount: 16 });
+  assert.equal(serializeMedia(store.get().media).markers.length, 1);
+  VideoCmd.clearMarkers(store);
+  assert.equal('markers' in (serializeMedia(store.get().media) || {}), false);
+});
+
+test('videoCommands: applyMarkerToTempo 는 bpm 이 없으면 두 점 앵커로, 있으면 보정점 둘로 넣고 어긋나면 둘 다 넣지 않는다', () => {
+  const store = createStore();
+  // 8카운트가 4초 → 1카운트 0.5초 → 120bpm(1카운트 = 1박).
+  VideoCmd.addMarkerAt(store, { inSec: 10, outSec: 14, fromCount: 0, toCount: 8 });
+  const [m] = VideoCmd.mediaState(store).markers;
+  assert.deepEqual(VideoCmd.applyMarkerToTempo(store, { id: m.id }), { video: true });
+  let t = VideoCmd.mediaState(store).tempo;
+  assert.equal(t.bpm, 120);
+  assert.equal(t.anchorSec, 10);
+  assert.equal(t.anchorCount, 0);
+  assert.deepEqual(t.points, []);
+  // 이제 bpm 이 있으니 다음 마커는 보정점 둘이 된다.
+  VideoCmd.addMarkerAt(store, { inSec: 20, outSec: 25, fromCount: 16, toCount: 24 });
+  const m2 = VideoCmd.mediaState(store).markers[1];
+  assert.deepEqual(VideoCmd.applyMarkerToTempo(store, { id: m2.id }), { video: true });
+  t = VideoCmd.mediaState(store).tempo;
+  assert.deepEqual(t.points, [{ count: 16, sec: 20 }, { count: 24, sec: 25 }]);
+  // 어긋난 마커(앞 카운트인데 뒤 시각) — 둘 다 넣지 않고 rejected.
+  VideoCmd.addMarkerAt(store, { inSec: 30, outSec: 33, fromCount: 8, toCount: 12 });
+  const m3 = VideoCmd.mediaState(store).markers.find(x => x.fromCount === 8);
+  const res = VideoCmd.applyMarkerToTempo(store, { id: m3.id });
+  assert.equal(res.rejected, true);
+  assert.deepEqual(VideoCmd.mediaState(store).tempo.points, t.points, '반만 들어가지 않았다');
+  assert.deepEqual(VideoCmd.applyMarkerToTempo(store, { id: 'nope' }), NONE);
+});
+
+test('videoCommands: applyTrim 은 새 클립을 소스로 삼고 템포·마커의 시각을 In 만큼 당기며 In/Out 을 비운다', () => {
+  const store = createStore();
+  VideoCmd.setFileSource(store, { name: 'take.mov', path: 'video-clip/p/take.mov' });
+  VideoCmd.setTempo(store, { tempo: { bpm: 120, anchorSec: 12, anchorCount: 0 } });
+  VideoCmd.addTempoPoint(store, { count: 16, sec: 21 });
+  VideoCmd.addMarkerAt(store, { inSec: 12, outSec: 16, fromCount: 0, toCount: 8, label: 'a' });
+  VideoCmd.addMarkerAt(store, { inSec: 40, outSec: 44, fromCount: 32, toCount: 40, label: '밖' });
+  VideoCmd.setInOut(store, { inSec: 10, outSec: 30 });
+  assert.deepEqual(VideoCmd.applyTrim(store, { name: 'x.mp4', path: 'p', inSec: 30, outSec: 10 }), NONE, '뒤집힌 구간은 거부');
+  const dirty = VideoCmd.applyTrim(store, { name: 'take [0m10.0s-0m30.0s].mp4', path: 'video-clip/p/take [0m10.0s-0m30.0s].mp4', inSec: 10, outSec: 30 });
+  assert.deepEqual(dirty, { video: true });
+  const media = VideoCmd.mediaState(store);
+  assert.deepEqual(media.source, { kind: 'file', name: 'take [0m10.0s-0m30.0s].mp4', path: 'video-clip/p/take [0m10.0s-0m30.0s].mp4' });
+  assert.equal(media.tempo.bpm, 120);
+  assert.equal(media.tempo.anchorSec, 2);
+  assert.deepEqual(media.tempo.points, [{ count: 16, sec: 11 }]);
+  assert.deepEqual(media.markers.map(m => [m.inSec, m.outSec, m.label]), [[2, 6, 'a']], '잘린 구간 밖의 마커는 버린다');
+  assert.equal(VideoCmd.inOutRange(store), null);
+  assert.equal(VideoCmd.panelState(store).loop, false);
+});
+
+test('clipServer: probe 는 ffmpeg 유무를 알리고 trim 은 성공·실패를 ok 로 돌려준다(던지지 않는다)', async () => {
+  const calls = [];
+  const fake = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (url.endsWith('/api/health')) return { ok: true, json: async () => ({ ok: true, mode: 'server', root: '/r', subdir: 'video-clip', dir: '/r/video-clip', ffmpeg: true }) };
+    if (url.endsWith('/api/clips/trim')) {
+      const body = JSON.parse(init.body);
+      if (body.inSec >= body.outSec) return { ok: false, status: 400, json: async () => ({ ok: false, error: 'bad range' }) };
+      return { ok: true, status: 201, json: async () => ({ ok: true, path: 'video-clip/p/a [0m1.0s-0m2.0s].mp4', name: 'a [0m1.0s-0m2.0s].mp4', url: '/clips/x', durationSec: 1 }) };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  const api = createClipServer({ fetchImpl: fake });
+  const cfg = await api.probe();
+  assert.equal(cfg.ffmpeg, true);
+  const good = await api.trim('video-clip/p/a.mov', 1, 2);
+  assert.equal(good.ok, true);
+  assert.equal(good.name, 'a [0m1.0s-0m2.0s].mp4');
+  assert.equal(calls[1].init.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[1].init.body), { path: 'video-clip/p/a.mov', inSec: 1, outSec: 2 });
+  const bad = await api.trim('video-clip/p/a.mov', 2, 1);
+  assert.deepEqual(bad, { ok: false, error: 'bad range' });
+  const boom = await createClipServer({ fetchImpl: async () => { throw new Error('down'); } }).trim('p', 0, 1);
+  assert.equal(boom.ok, false);
+  assert.equal((await createClipServer({ fetchImpl: null }).trim('p', 0, 1)).ok, false);
+  // ffmpeg 필드가 없는 옛 서버는 false 다.
+  const old = createClipServer({ fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, mode: 'server', root: '/r', subdir: 's', dir: '/r/s' }) }) });
+  assert.equal((await old.probe()).ffmpeg, false);
+});
+
+test('videoPanel: formatRange 는 같은 행이면 짧게, 행을 넘으면 양 끝을 말한다', () => {
+  assert.equal(formatRange(0, 8, 8), '8x1의 1~8카운트');
+  assert.equal(formatRange(2, 3, 8), '8x1의 3카운트');
+  assert.equal(formatRange(6, 12, 8), '8x1의 7카운트 ~ 8x2의 4카운트');
+  assert.equal(formatRange(-8, 0, 8), 'intro의 1~8카운트');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 자세 분석(2026-09-10) — 관절 각도 · 인물 잇기 · 가동 범위.
+// 모델(MediaPipe 등)은 어댑터의 몫이라 여기 없다. 아래는 전부 "점이 주어졌을 때" 의 순수 계산이다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import {
+  angleAt, torsoTilt, jointAngles, spaceOf, boxOf, centroidOf,
+  JOINT_SPECS, JOINT_PAIRS, MEASURE_KEYS, TORSO_TILT, measureLabel
+} from '../../src/domain/pose.js';
+import {
+  assertPoseEstimator, isPoseEstimator, POSE_ESTIMATOR_MEMBERS,
+  normalizePosePoint, normalizePoseFrame, normalizePoseFrames
+} from '../../src/ports/pose.js';
+import {
+  subjectCounts, isSinglePerson, autoAnchors, pickSubjectAt, buildTracks, framesOfTrack,
+  trackIdOf, MAX_JUMP, COAST_FRAMES
+} from '../../src/domain/poseTracks.js';
+import {
+  summarize, summarizeByCount, seriesOf, symmetry, findings, compare, framesIn, DEFAULT_RULES
+} from '../../src/domain/rom.js';
+
+/** 점 하나. [x, y, z, score] → PosePoint. */
+const pt = (x, y, z = 0, score = 1) => ({ x, y, z, score });
+
+/** 상자만 있으면 되는 사람(추적 테스트용). 중심 (cx, cy), 높이 h. */
+function personAt(cx, cy, h = 0.4, score = 1) {
+  const half = h / 2;
+  return {
+    points: {
+      leftShoulder: pt(cx - 0.05, cy - half, 0, score), rightShoulder: pt(cx + 0.05, cy - half, 0, score),
+      leftHip: pt(cx - 0.05, cy + half, 0, score), rightHip: pt(cx + 0.05, cy + half, 0, score)
+    },
+    world: null,
+    score
+  };
+}
+
+/** 팔꿈치 각이 원하는 값이 되도록 만든 사람. world 좌표로 준다. */
+function armSubject(elbowDeg, score = 1) {
+  const rad = (elbowDeg * Math.PI) / 180;
+  return {
+    points: {
+      leftShoulder: pt(0, 0, 0, score), leftElbow: pt(0, 1, 0, score), leftWrist: pt(0, 2, 0, score),
+      leftHip: pt(0, 2, 0, score), rightShoulder: pt(1, 0, 0, score), rightHip: pt(1, 2, 0, score)
+    },
+    world: {
+      leftShoulder: pt(0, 0, 0), leftElbow: pt(0, 1, 0),
+      // 팔꿈치에서 어깨 쪽 벡터는 (0,-1,0). 손목을 그 벡터에서 elbowDeg 만큼 돌린 자리에 둔다.
+      leftWrist: pt(Math.sin(rad), 1 - Math.cos(rad), 0)
+    },
+    score
+  };
+}
+
+test('pose: angleAt 은 직각·일직선·겹친 점을 각각 90°·180°·null 로 낸다', () => {
+  assert.equal(Math.round(angleAt(pt(0, 0), pt(0, 1), pt(1, 1))), 90);
+  assert.equal(Math.round(angleAt(pt(0, 0), pt(0, 1), pt(0, 2))), 180);
+  assert.equal(Math.round(angleAt(pt(0, 0), pt(0, 1), pt(0, 0))), 0, '되접히면 0°');
+  // 3차원에서도 같다 — z 만 다른 두 벡터의 직각.
+  assert.equal(Math.round(angleAt(pt(1, 0, 0), pt(0, 0, 0), pt(0, 0, 1))), 90);
+  assert.equal(angleAt(pt(0, 0), pt(0, 0), pt(1, 1)), null, '길이 0 인 변은 각이 없다(0 이 아니다)');
+  assert.equal(angleAt(null, pt(0, 1), pt(1, 1)), null);
+  assert.equal(angleAt(pt(0, 0), pt(0, 1), undefined), null);
+});
+
+test('pose: torsoTilt 는 y 축 방향 규약과 무관하게 곧추선 자세를 0° 로 낸다', () => {
+  const upright = (yShoulder, yHip) => torsoTilt({
+    leftShoulder: pt(-0.1, yShoulder), rightShoulder: pt(0.1, yShoulder),
+    leftHip: pt(-0.1, yHip), rightHip: pt(0.1, yHip)
+  });
+  assert.equal(Math.round(upright(0, 1)), 0, 'y 가 아래로 자라는 모델');
+  assert.equal(Math.round(upright(1, 0)), 0, 'y 가 위로 자라는 모델 — 같은 답이어야 한다');
+  // 45° 기운 몸통.
+  const leaned = torsoTilt({
+    leftShoulder: pt(0.9, 0), rightShoulder: pt(1.1, 0),
+    leftHip: pt(-0.1, 1), rightHip: pt(0.1, 1)
+  });
+  assert.equal(Math.round(leaned), 45);
+  assert.equal(torsoTilt({ leftShoulder: pt(0, 0), rightShoulder: pt(1, 0) }), null, '엉덩이가 없으면 못 잰다');
+});
+
+test('pose: jointAngles 는 world 를 먼저 쓰고 신뢰도는 세 점 중 가장 낮은 값이다', () => {
+  const s = armSubject(90);
+  const { space, angles, scores } = jointAngles(s);
+  assert.equal(space, 'world');
+  assert.equal(Math.round(angles.leftElbow), 90);
+  assert.equal(angles.rightElbow, null, 'world 에 오른팔이 없으면 각이 없다');
+  assert.equal(scores.leftElbow, 1);
+
+  // world 가 없으면 화면 좌표로 떨어지고 그 사실이 space 에 드러난다.
+  const flat = { points: s.points, world: null, score: 1 };
+  assert.equal(spaceOf(flat).space, 'screen');
+  assert.equal(Math.round(jointAngles(flat).angles.leftElbow), 180, '화면 좌표의 팔은 일직선이다');
+
+  // 세 점 중 하나만 흐려도 그 각의 신뢰도가 내려간다 — 평균에 넣을지 호출부가 이걸로 정한다.
+  const dim = armSubject(90);
+  dim.points.leftWrist = pt(0, 2, 0, 0.2);
+  assert.equal(jointAngles(dim).scores.leftElbow, 0.2);
+  assert.equal(MEASURE_KEYS.length, Object.keys(JOINT_SPECS).length + 1, '관절 + 몸통 기울기');
+  assert.equal(measureLabel(TORSO_TILT), '상체 기울기');
+  assert.equal(measureLabel('leftKnee'), '왼 무릎');
+  assert.deepEqual(JOINT_PAIRS.map(([l]) => l).sort(),
+    Object.keys(JOINT_SPECS).filter(k => JOINT_SPECS[k].side === 'left').sort());
+});
+
+test('pose: boxOf·centroidOf 는 흐린 점을 빼고 재고, 쓸 점이 없으면 null 이다', () => {
+  const s = personAt(0.5, 0.5, 0.4);
+  assert.deepEqual(centroidOf(s), { x: 0.5, y: 0.5 });
+  assert.equal(Math.round(boxOf(s).h * 100), 40);
+  // 화면 밖으로 나간 점(score 0)은 상자를 늘리지 않는다.
+  s.points.leftWrist = pt(9, 9, 0, 0);
+  assert.equal(Math.round(boxOf(s).h * 100), 40);
+  assert.equal(boxOf({ points: { a: pt(0, 0, 0, 0) } }), null);
+  assert.equal(centroidOf({ points: {} }), null);
+});
+
+test('ports/pose: 계약 검사와 정규화가 쓰레기를 전부 흡수한다', () => {
+  const ok = { id: 'x', describe() {}, getState() {}, load() {}, analyze() {}, destroy() {} };
+  assert.equal(isPoseEstimator(ok), true);
+  for (const key of POSE_ESTIMATOR_MEMBERS) {
+    const broken = { ...ok };
+    delete broken[key];
+    assert.equal(isPoseEstimator(broken), false, `${key} 를 빼도 통과했다`);
+  }
+  assert.throws(() => assertPoseEstimator({}, '가짜'), /가짜 계약 위반/);
+
+  assert.equal(normalizePosePoint({ x: 'a', y: 1 }), null, '좌표가 숫자가 아니면 없는 점이다');
+  assert.deepEqual(normalizePosePoint({ x: 1, y: 2 }), { x: 1, y: 2, z: 0, score: 1 });
+  assert.equal(normalizePosePoint({ x: 1, y: 2, visibility: 0.4 }).score, 0.4, 'MediaPipe 의 visibility 도 받는다');
+  assert.equal(normalizePosePoint({ x: 1, y: 2, score: 5 }).score, 1, '0..1 로 가둔다');
+
+  assert.equal(normalizePoseFrame({ subjects: [] }), null, 'sec 이 없으면 프레임이 아니다');
+  assert.deepEqual(normalizePoseFrame({ sec: 1, subjects: [{ points: {} }, null, 'x'] }).subjects, [],
+    '점이 하나도 없는 사람은 목록에서 뺀다');
+  // 시각 오름차순으로 세우고 같은 시각은 뒤의 것이 이긴다.
+  const frames = normalizePoseFrames([
+    { sec: 2, subjects: [{ points: { nose: { x: 0, y: 0 } } }] },
+    { sec: 1, subjects: [{ points: { nose: { x: 1, y: 1 } } }] },
+    { sec: 2, subjects: [{ points: { nose: { x: 9, y: 9 } } }] },
+    'nope'
+  ]);
+  assert.deepEqual(frames.map(f => f.sec), [1, 2]);
+  assert.equal(frames[1].subjects[0].points.nose.x, 9);
+  assert.deepEqual(normalizePoseFrames(null), []);
+});
+
+test('poseTracks: 한 사람만 나오면 사용자가 아무것도 고르지 않아도 궤적이 선다', () => {
+  const frames = [0, 1, 2].map(i => ({ sec: i, subjects: [personAt(0.3 + i * 0.05, 0.5)] }));
+  assert.equal(isSinglePerson(frames), true);
+  assert.deepEqual(subjectCounts(frames), { max: 1, framesWithMultiple: 0, total: 3 });
+  assert.deepEqual(autoAnchors(frames), [{ sec: 0, subject: 0, id: 'p1' }]);
+
+  const tracks = buildTracks(frames, []);         // 앵커 없이 불러도 자동으로 채운다
+  assert.deepEqual(tracks.ids, ['p1']);
+  assert.deepEqual(tracks.byFrame, [{ p1: 0 }, { p1: 0 }, { p1: 0 }]);
+  assert.deepEqual(tracks.ambiguous, []);
+  assert.deepEqual(tracks.lost, []);
+});
+
+test('poseTracks: 한 프레임이라도 둘이 잡히면 자동으로 고르지 않는다', () => {
+  const frames = [
+    { sec: 0, subjects: [personAt(0.3, 0.5)] },
+    { sec: 1, subjects: [personAt(0.35, 0.5), personAt(0.9, 0.5)] }   // 뒤로 누가 지나갔다
+  ];
+  assert.equal(isSinglePerson(frames), false);
+  assert.deepEqual(autoAnchors(frames), [], '누구인지 알 수 없으므로 아무도 고르지 않는다');
+  assert.deepEqual(buildTracks(frames, []).ids, [], '앵커가 없으면 궤적도 없다');
+});
+
+test('poseTracks: 화면을 누르면 그 자리의 사람이 골라지고, 아무도 없으면 null 이다', () => {
+  const frame = { sec: 0, subjects: [personAt(0.25, 0.5), personAt(0.75, 0.5)] };
+  assert.equal(pickSubjectAt(frame, { x: 0.75, y: 0.45 }), 1, '상자 안이면 그 사람');
+  assert.equal(pickSubjectAt(frame, { x: 0.25, y: 0.55 }), 0);
+  assert.equal(pickSubjectAt(frame, { x: 0.3, y: 0.5 }), 0, '상자 밖이어도 가까우면 잡아 준다');
+  assert.equal(pickSubjectAt(frame, { x: 0.5, y: 0.99 }), null, '너무 멀면 아무도 아니다');
+  assert.equal(pickSubjectAt(null, { x: 0, y: 0 }), null);
+});
+
+test('poseTracks: 중간에서 한 번 찍으면 앞뒤로 이어지고, 두 사람이 스치면 그 구간을 헷갈렸다고 말한다', () => {
+  // A 는 왼→오른쪽, B 는 오른→왼쪽. sec 2 에서 거의 겹친다.
+  const xs = [0.2, 0.35, 0.5, 0.65, 0.8];
+  const frames = xs.map((x, i) => ({
+    sec: i,
+    subjects: [personAt(x, 0.5), personAt(xs[xs.length - 1 - i], 0.52)]
+  }));
+  // 사용자가 sec 2 가 아니라 sec 0 에서 왼쪽 사람을 찍었다고 하자.
+  const tracks = buildTracks(frames, [{ sec: 0, subject: 0, id: 'p1' }, { sec: 0, subject: 1, id: 'p2' }]);
+  assert.deepEqual(tracks.ids, ['p1', 'p2']);
+  assert.equal(tracks.byFrame.length, 5);
+  for (const f of tracks.byFrame) {
+    assert.notEqual(f.p1, undefined);
+    assert.notEqual(f.p2, undefined);
+    assert.notEqual(f.p1, f.p2, '한 사람이 두 궤적일 수는 없다');
+  }
+  // 스치는 대목이 ambiguous 로 드러난다 — 숨기지 않는다.
+  assert.ok(tracks.ambiguous.length > 0, '겹치는 구간을 조용히 넘어갔다');
+  const span = tracks.ambiguous.find(s => s.id === 'p1');
+  assert.ok(span.fromSec <= 2 && span.toSec >= 2, `헷갈린 구간이 교차 시점을 안 덮는다: ${JSON.stringify(span)}`);
+
+  // 중간 앵커에서 거슬러 올라가기: sec 3 에서 찍어도 sec 0 까지 이어진다.
+  const back = buildTracks(frames, [{ sec: 3, subject: 0, id: 'p1' }]);
+  assert.equal(back.byFrame[0].p1, 0, '앞쪽으로도 이어야 한다');
+  assert.equal(back.byFrame[4].p1, 0);
+});
+
+test('poseTracks: 뒤 앵커가 그 지점부터 이긴다 — 궤적이 남에게 옮겨 붙었을 때의 복구 경로', () => {
+  const frames = [0, 1, 2, 3].map(i => ({
+    sec: i, subjects: [personAt(0.2 + i * 0.02, 0.5), personAt(0.8 - i * 0.02, 0.5)]
+  }));
+  const one = buildTracks(frames, [{ sec: 0, subject: 0, id: 'p1' }]);
+  assert.deepEqual(one.byFrame.map(f => f.p1), [0, 0, 0, 0]);
+  // sec 2 에서 "아니다, 저 사람이다" 로 다시 찍으면 그 뒤가 바뀐다(템포의 `여기로 다시 맞추기` 와 같은 규약).
+  const fixed = buildTracks(frames, [{ sec: 0, subject: 0, id: 'p1' }, { sec: 2, subject: 1, id: 'p1' }]);
+  assert.deepEqual(fixed.byFrame.map(f => f.p1), [0, 0, 1, 1]);
+});
+
+test('poseTracks: 잠깐 가려지면 기다렸다 다시 잡고, 오래 사라지면 포기하며 그 구간을 남긴다', () => {
+  const seen = (i) => ({ sec: i, subjects: [personAt(0.5, 0.5)] });
+  const gone = (i) => ({ sec: i, subjects: [] });
+  const short = [seen(0), gone(1), gone(2), seen(3)];
+  const t1 = buildTracks(short, [{ sec: 0, subject: 0, id: 'p1' }]);
+  assert.equal(t1.byFrame[3].p1, 0, `${COAST_FRAMES} 프레임 안의 가려짐은 견뎌야 한다`);
+  assert.deepEqual(t1.lost, [{ id: 'p1', fromSec: 1, toSec: 2 }]);
+
+  const long = [seen(0), ...Array.from({ length: COAST_FRAMES + 2 }, (_, k) => gone(k + 1)), seen(COAST_FRAMES + 3)];
+  const t2 = buildTracks(long, [{ sec: 0, subject: 0, id: 'p1' }]);
+  assert.equal(t2.byFrame[t2.byFrame.length - 1].p1, undefined, '오래 사라지면 포기한다');
+
+  // 놓친 프레임은 버리지 않고 "사람 없음" 으로 남는다 — 커버리지가 부풀지 않게.
+  const only = framesOfTrack(short, t1, 'p1');
+  assert.deepEqual(only.map(f => f.subjects.length), [1, 0, 0, 1]);
+  assert.equal(only.length, short.length);
+});
+
+test('poseTracks: 몸 크기로 나눈 거리를 쓰므로 줌이 달라도 같게 동작한다', () => {
+  // 같은 "몸 하나만큼" 의 이동을, 작게 찍힌 사람과 크게 찍힌 사람 양쪽에서.
+  const small = [{ sec: 0, subjects: [personAt(0.2, 0.5, 0.1)] }, { sec: 1, subjects: [personAt(0.2 + 0.1, 0.5, 0.1)] }];
+  const big = [{ sec: 0, subjects: [personAt(0.2, 0.5, 0.4)] }, { sec: 1, subjects: [personAt(0.2 + 0.4, 0.5, 0.4)] }];
+  for (const frames of [small, big]) {
+    const t = buildTracks(frames, [{ sec: 0, subject: 0, id: 'p1' }]);
+    assert.equal(t.byFrame[1].p1, 0, '몸 하나만큼의 이동은 따라가야 한다');
+  }
+  // 몸 크기의 MAX_JUMP 배를 넘으면 다른 사람으로 본다.
+  const jump = [{ sec: 0, subjects: [personAt(0.1, 0.5, 0.1)] }, { sec: 1, subjects: [personAt(0.1 + 0.1 * (MAX_JUMP + 1), 0.5, 0.1)] }];
+  assert.equal(buildTracks(jump, [{ sec: 0, subject: 0, id: 'p1' }]).byFrame[1].p1, undefined);
+  assert.equal(trackIdOf(2), 'p2');
+});
+
+test('rom: 가동 범위는 max-min 이고, 못 본 프레임은 분모에 남아 커버리지로 드러난다', () => {
+  // 팔꿈치가 60° → 120° 로 움직인 6프레임 중 둘은 흐려서(신뢰도 0.1) 표본에서 빠진다.
+  const frames = [
+    { sec: 0, subjects: [armSubject(60)] },
+    { sec: 1, subjects: [armSubject(90)] },
+    { sec: 2, subjects: [armSubject(120)] },
+    { sec: 3, subjects: [armSubject(170, 0.1)] },     // 흐림 — 값이 튀지만 안 쓴다
+    { sec: 4, subjects: [] },                          // 놓침
+    { sec: 5, subjects: [armSubject(100)] }
+  ];
+  const s = summarize(frames);
+  const elbow = s.measures.leftElbow;
+  assert.equal(Math.round(elbow.min), 60);
+  assert.equal(Math.round(elbow.max), 120, '신뢰도 낮은 170° 는 최대값이 되면 안 된다');
+  assert.equal(Math.round(elbow.range), 60);
+  assert.equal(Math.round(elbow.median), 95, '중앙값은 60·90·100·120 의 가운데');
+  assert.equal(elbow.samples, 4);
+  assert.equal(s.frames, 6);
+  assert.equal(Math.round(elbow.coverage * 100), 67, '6프레임 중 4개만 봤다는 사실이 남아야 한다');
+  assert.equal(s.space, 'world');
+  assert.equal(s.measures.rightElbow.range, null, '한 번도 못 잰 관절은 null 이지 0 이 아니다');
+
+  // 구간 자르기는 toSec 배타적(마커·배치와 같은 규약).
+  assert.deepEqual(framesIn(frames, { fromSec: 1, toSec: 3 }).map(f => f.sec), [1, 2]);
+  assert.equal(summarize(frames, { fromSec: 0, toSec: 3 }).frames, 3);
+  assert.equal(summarize([]).frames, 0);
+});
+
+test('rom: 카운트별로 나누고 시계열은 걸러 낸 자리를 null 로 남긴다', () => {
+  const frames = [0, 1, 2, 3].map(i => ({ sec: i, subjects: [armSubject(60 + i * 20)] }));
+  // 2초가 1카운트인 곡이라고 하자 — 변환은 주입받는다(rom.js 는 Tempo 를 모른다).
+  const rows = summarizeByCount(frames, (sec) => Math.floor(sec / 2));
+  assert.deepEqual(rows.map(r => r.count), [0, 1]);
+  assert.equal(Math.round(rows[0].summary.measures.leftElbow.min), 60);
+  assert.equal(Math.round(rows[1].summary.measures.leftElbow.max), 120);
+
+  const dim = [{ sec: 0, subjects: [armSubject(90)] }, { sec: 1, subjects: [armSubject(90, 0.1)] }, { sec: 2, subjects: [] }];
+  assert.deepEqual(seriesOf(dim, 'leftElbow').map(p => p.value === null ? null : Math.round(p.value)), [90, null, null]);
+});
+
+test('rom: 좌우 차와 눈에 띄는 대목을 고르되 못 본 관절에 대고 말하지 않는다', () => {
+  // 왼 무릎은 크게, 오른 무릎은 거의 안 움직인 기록을 손으로 만든다.
+  const knee = (l, r, score = 1) => ({
+    points: {
+      leftHip: pt(0, 0, 0, score), leftKnee: pt(0, 1, 0, score), leftAnkle: pt(0, 2, 0, score),
+      rightHip: pt(1, 0, 0, score), rightKnee: pt(1, 1, 0, score), rightAnkle: pt(1, 2, 0, score)
+    },
+    world: {
+      leftHip: pt(0, 0, 0), leftKnee: pt(0, 1, 0), leftAnkle: pt(Math.sin(l * Math.PI / 180), 1 - Math.cos(l * Math.PI / 180), 0),
+      rightHip: pt(1, 0, 0), rightKnee: pt(1, 1, 0), rightAnkle: pt(1 + Math.sin(r * Math.PI / 180), 1 - Math.cos(r * Math.PI / 180), 0)
+    },
+    score
+  });
+  const s = summarize([
+    { sec: 0, subjects: [knee(100, 175)] },
+    { sec: 1, subjects: [knee(160, 178)] }
+  ]);
+  const pair = symmetry(s).find(x => x.left === 'leftKnee');
+  assert.equal(Math.round(pair.leftRange), 60);
+  assert.equal(Math.round(pair.rightRange), 3);
+  assert.equal(Math.round(pair.diff), 57);
+  assert.equal(pair.flagged, true, '좌우 차가 크면 표시한다');
+  assert.equal(pair.label, '무릎', '좌우를 뗀 이름으로 말한다');
+
+  const f = findings(s);
+  assert.ok(f.some(x => x.kind === 'asymmetry' && x.key === 'leftKnee'));
+  assert.ok(f.some(x => x.kind === 'still' && x.key === 'rightKnee'), '거의 안 움직인 관절을 짚어야 한다');
+  // 커버리지가 낮으면 'still' 대신 'low-coverage' 하나만 낸다 — 못 본 것을 안 움직였다고 하지 않는다.
+  const dark = summarize([{ sec: 0, subjects: [knee(100, 100, 0.1)] }, { sec: 1, subjects: [] }]);
+  const df = findings(dark);
+  assert.ok(df.some(x => x.kind === 'low-coverage' && x.key === 'leftKnee'));
+  assert.equal(df.some(x => x.kind === 'still'), false);
+  assert.equal(df.some(x => x.kind === 'asymmetry'), false);
+  // 눈금은 밖에서 갈아 끼운다.
+  assert.equal(symmetry(s, { asymmetryDeg: 90 }).find(x => x.left === 'leftKnee').flagged, false);
+  assert.equal(DEFAULT_RULES.minScore, 0.5);
+});
+
+test('rom: 좌표계가 다른 두 기록은 비교를 거절한다', () => {
+  const worldRun = summarize([{ sec: 0, subjects: [armSubject(60)] }, { sec: 1, subjects: [armSubject(120)] }]);
+  const flat = (deg) => ({ points: armSubject(deg).points, world: null, score: 1 });
+  const screenRun = summarize([{ sec: 0, subjects: [flat(60)] }, { sec: 1, subjects: [flat(120)] }]);
+  assert.equal(worldRun.space, 'world');
+  assert.equal(screenRun.space, 'screen');
+  assert.deepEqual(compare(worldRun, screenRun), { ok: false, reason: 'space-mismatch' });
+  assert.equal(compare(null, worldRun).ok, false);
+
+  // 같은 좌표계면 관절마다 얼마나 늘었는지를 낸다 — 이것이 "좋아지고 있는가" 의 답이다.
+  const better = summarize([{ sec: 0, subjects: [armSubject(40)] }, { sec: 1, subjects: [armSubject(160)] }]);
+  const res = compare(worldRun, better);
+  assert.equal(res.ok, true);
+  const elbow = res.items.find(i => i.key === 'leftElbow');
+  assert.equal(Math.round(elbow.before), 60);
+  assert.equal(Math.round(elbow.after), 120);
+  assert.equal(Math.round(elbow.delta), 60, '가동 범위가 60° 늘었다');
+  assert.equal(elbow.trusted, true);
+  // 한 번도 못 잰 관절은 delta 가 null 이고 믿을 수 없다고 표시된다.
+  const right = res.items.find(i => i.key === 'rightElbow');
+  assert.equal(right.delta, null);
+  assert.equal(right.trusted, false);
+});
+
+import { createModelServer } from '../../src/adapters/modelServer.js';
+
+test('modelServer: 서버가 없거나 답이 이상하면 null 이고, 받기 실패는 이유를 돌려준다(던지지 않는다)', async () => {
+  const calls = [];
+  const status = { dir: '/m', poseModel: 'full', ready: false, missing: 1, missingBytes: 9398198, version: '1.0.1', sizes: {}, files: [] };
+  const fake = async (url, init = {}) => {
+    calls.push({ url, method: init.method || 'GET', body: init.body });
+    if (url.endsWith('/api/models')) return { ok: true, json: async () => status };
+    if (url.endsWith('/api/models/config')) return { ok: true, json: async () => ({ ...status, poseModel: JSON.parse(init.body).poseModel || 'full' }) };
+    if (url.endsWith('/api/models/fetch')) {
+      const key = JSON.parse(init.body).key;
+      return key === 'nope'
+        ? { ok: false, status: 400, json: async () => ({ ok: false, error: 'unknown model key' }) }
+        : { ok: true, status: 201, json: async () => ({ ok: true, key, bytes: 155439, cached: false }) };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  const api = createModelServer({ fetchImpl: fake });
+  assert.deepEqual(await api.getStatus(), status);
+  assert.equal((await api.setConfig({ poseModel: 'lite' })).poseModel, 'lite');
+  assert.equal(calls[1].method, 'PUT');
+  assert.deepEqual(await api.fetchOne('bundle'), { ok: true, key: 'bundle', bytes: 155439, cached: false });
+  assert.deepEqual(await api.fetchOne('nope'), { ok: false, error: 'unknown model key' });
+
+  // 정적 호스팅이면 /api/models 에 index.html 이 온다 — 모양으로 가려 null 로 접는다.
+  const staticServer = createModelServer({ fetchImpl: async () => ({ ok: true, json: async () => ({ hello: 'world' }) }) });
+  assert.equal(await staticServer.getStatus(), null);
+  const down = createModelServer({ fetchImpl: async () => { throw new Error('down'); } });
+  assert.equal(await down.getStatus(), null);
+  assert.equal((await down.fetchOne('bundle')).ok, false);
+  assert.equal(await createModelServer({ fetchImpl: null }).getStatus(), null);
+  assert.equal((await createModelServer({ fetchImpl: null }).fetchOne('bundle')).ok, false);
+
+  // 파일 주소는 조각마다 인코딩한다 — 슬래시는 살리고 한글·공백은 감싼다.
+  assert.equal(api.urlFor('wasm/vision_wasm_internal.wasm'), '/models/wasm/vision_wasm_internal.wasm');
+  assert.equal(createModelServer({ fetchImpl: null, base: 'http://x' }).urlFor('a b/c.task'), 'http://x/models/a%20b/c.task');
+});
+
+test('pose: 정규 좌표의 가로 눌림을 되돌려야 각이 실제와 맞는다(2026-09-11 합성 영상이 잡은 결함)', () => {
+  // 480x640 그림에서 픽셀로 그린 직각. 정규 좌표로 옮기면 가로가 0.75배로 눌린다.
+  const W = 480, H = 640;
+  const px = (x, y) => ({ x: x / W, y: y / H, z: 0, score: 1 });
+  const bent = {
+    points: { leftShoulder: px(240, 100), leftElbow: px(240, 200), leftWrist: px(340, 200) },
+    world: null, score: 1
+  };
+  // aspect 를 모르면 정사각형으로 쳐서 90° 가 나온다(가로·세로 길이가 같은 이 예는 그대로다).
+  assert.equal(Math.round(jointAngles(bent).angles.leftElbow), 90);
+
+  // 45° 로 그린 팔. 정규 좌표 그대로 재면 일그러지고, aspect 를 주면 정확히 돌아온다.
+  const deg = 45;
+  const r = 120;
+  // 팔꿈치(240,200)에서 어깨(240,100) 쪽 벡터 (0,-1) 을 45° 돌린 자리가 손목이다.
+  const wx = 240 + r * Math.sin((deg * Math.PI) / 180);
+  const wy = 200 - r * Math.cos((deg * Math.PI) / 180);
+  const arm = (aspect) => ({
+    points: { leftShoulder: px(240, 100), leftElbow: px(240, 200), leftWrist: px(wx, wy) },
+    world: null, score: 1, aspect
+  });
+  const raw = jointAngles(arm(1)).angles.leftElbow;
+  const fixed = jointAngles(arm(W / H)).angles.leftElbow;
+  assert.notEqual(Math.round(raw), deg, '눌린 채로 재면 실제 각이 아니다');
+  assert.equal(Math.round(fixed), deg, 'aspect 를 주면 그린 각이 그대로 돌아온다');
+
+  // 되돌린 좌표는 각도 계산에만 쓴다 — 오버레이·클릭 판정은 원래 좌표 그대로여야 화면과 맞는다.
+  assert.equal(spaceOf(arm(W / H)).pts.leftWrist.x, (wx / W) * (W / H));
+  assert.equal(centroidOf(arm(W / H)).x, boxOf(arm(W / H)).x + boxOf(arm(W / H)).w / 2);
+  assert.deepEqual(centroidOf(arm(W / H)), centroidOf(arm(1)), '중심점은 aspect 에 흔들리지 않는다');
+
+  // world 가 있으면 aspect 는 무시된다(이미 미터 공간이다).
+  const withWorld = { ...arm(W / H), world: { leftShoulder: px(0, 0), leftElbow: px(0, 1), leftWrist: px(1, 1) } };
+  assert.equal(spaceOf(withWorld).space, 'world');
+  assert.equal(spaceOf(withWorld).pts, withWorld.world);
+
+  // 포트가 이상한 aspect 를 흡수한다.
+  const frame = (aspect) => normalizePoseFrame({ sec: 0, subjects: [{ points: { nose: { x: 0.5, y: 0.5 } }, aspect }] });
+  assert.equal(frame(0).subjects[0].aspect, 1, '0 은 나눗셈을 깨뜨린다');
+  assert.equal(frame(-2).subjects[0].aspect, 1);
+  assert.equal(frame('x').subjects[0].aspect, 1);
+  assert.equal(frame(undefined).subjects[0].aspect, 1, '모르면 정사각형으로 친다(옛 동작)');
+  assert.equal(frame(0.75).subjects[0].aspect, 0.75);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 몸 메시(2026-09-12) — 관절에 몸을 씌운다. 몸매 복원이 아니라 평균 몸을 관절 길이에 맞춰 늘리는 것이다
+// ─────────────────────────────────────────────────────────────────────────────
+
+import {
+  buildBodyMesh, meshOfSubject, projectVertices, rotatePoint, frameFor, LIMBS, RADII, TORSO_SIDES
+} from '../../src/domain/bodyMesh.js';
+
+/** 똑바로 선 사람. y 는 **아래로** 자란다(MediaPipe 규약) — 코가 가장 작고 발목이 가장 크다. */
+function standing(extra = {}) {
+  const p = (x, y, z = 0) => ({ x, y, z, score: 1 });
+  return {
+    points: {
+      nose: p(0, -0.60), leftShoulder: p(0.18, -0.50), rightShoulder: p(-0.18, -0.50),
+      leftElbow: p(0.22, -0.22), rightElbow: p(-0.22, -0.22),
+      leftWrist: p(0.24, 0.05), rightWrist: p(-0.24, 0.05),
+      leftHip: p(0.11, 0), rightHip: p(-0.11, 0),
+      leftKnee: p(0.12, 0.42), rightKnee: p(-0.12, 0.42),
+      leftAnkle: p(0.12, 0.84), rightAnkle: p(-0.12, 0.84),
+      leftFootIndex: p(0.12, 0.92, 0.12), rightFootIndex: p(-0.12, 0.92, 0.12),
+      ...extra
+    },
+    world: null, score: 1, aspect: 1
+  };
+}
+
+test('bodyMesh: 몸통 네 점이 있어야 몸을 세우고, 없으면 빈 메시다', () => {
+  const full = buildBodyMesh(standing().points);
+  assert.ok(full.vertices.length > 100, `꼭짓점이 ${full.vertices.length} 개뿐이다`);
+  assert.ok(full.quads.length > 50);
+  assert.ok(full.parts.includes('torso'));
+  assert.ok(full.parts.includes('head'));
+  assert.equal(Math.round(full.scale * 1000), 500, '몸통 길이는 어깨 중점 ~ 엉덩이 중점이다');
+
+  for (const missing of ['leftShoulder', 'rightShoulder', 'leftHip', 'rightHip']) {
+    const pts = { ...standing().points };
+    delete pts[missing];
+    assert.deepEqual(buildBodyMesh(pts).parts, [], `${missing} 없이 몸을 세웠다`);
+  }
+  assert.deepEqual(buildBodyMesh(null).vertices, []);
+  // 같은 자리에 어깨와 엉덩이가 겹치면 크기가 0이라 세울 수 없다.
+  const flat = standing().points;
+  assert.deepEqual(buildBodyMesh({ ...flat, leftShoulder: { ...flat.leftHip }, rightShoulder: { ...flat.rightHip } }).parts, []);
+});
+
+test('bodyMesh: 없는 관절의 부위는 지어내지 않는다', () => {
+  const pts = { ...standing().points };
+  delete pts.leftWrist;                       // 손목이 가려진 프레임
+  delete pts.rightAnkle;
+  const mesh = buildBodyMesh(pts);
+  assert.equal(mesh.parts.includes('leftElbow-leftWrist'), false, '없는 손목으로 아래팔을 만들었다');
+  assert.equal(mesh.parts.includes('rightKnee-rightAnkle'), false);
+  assert.equal(mesh.parts.includes('rightAnkle-rightFootIndex'), false, '발목이 없으면 발도 없다');
+  assert.ok(mesh.parts.includes('leftShoulder-leftElbow'), '있는 부위는 그대로 만든다');
+  assert.ok(mesh.parts.includes('torso'));
+  // 코가 없으면 머리와 목이 없다.
+  const noHead = { ...standing().points };
+  delete noHead.nose;
+  assert.equal(buildBodyMesh(noHead).parts.includes('head'), false);
+});
+
+test('bodyMesh: 굵기는 몸통 길이에 비례한다 — 멀리 찍혀도 같은 모양이다', () => {
+  const base = standing().points;
+  const scaled = {};
+  for (const [k, v] of Object.entries(base)) scaled[k] = { ...v, x: v.x * 3, y: v.y * 3, z: v.z * 3 };
+  const a = buildBodyMesh(base);
+  const b = buildBodyMesh(scaled);
+  assert.equal(a.vertices.length, b.vertices.length);
+  assert.equal(Math.round(b.scale / a.scale), 3);
+  // 꼭짓점이 통째로 3배면 모양이 같다는 뜻이다.
+  for (let i = 0; i < a.vertices.length; i++) {
+    assert.ok(Math.abs(b.vertices[i].x - a.vertices[i].x * 3) < 1e-9, `${i}번 꼭짓점이 비례하지 않는다`);
+  }
+  // 굵기 표를 바꾸면 그만큼 굵어진다.
+  const fat = buildBodyMesh(base, { radii: { thigh: [RADII.thigh[0] * 2, RADII.thigh[1] * 2] } });
+  assert.equal(fat.vertices.length, a.vertices.length, '굵기만 바뀌고 꼭짓점 수는 그대로다');
+});
+
+test('bodyMesh: 팔을 위로 들어도 통이 무너지지 않는다(축이 나란해지는 자리)', () => {
+  // 위팔이 몸의 위쪽 축과 정확히 나란한 자세 — 수직 벡터를 기준으로 고르면 여기서 길이 0이 된다.
+  const up = { x: 0, y: -1, z: 0 };
+  const [u, v] = frameFor(up, up);
+  assert.ok(u && v, '나란한 기준에서도 축을 세워야 한다');
+  assert.ok(Math.abs(u.x * up.x + u.y * up.y + u.z * up.z) < 1e-9, '고른 축은 방향에 수직이어야 한다');
+
+  const pts = { ...standing().points };
+  pts.leftElbow = { x: 0.18, y: -0.80, z: 0, score: 1 };   // 어깨 바로 위
+  pts.leftWrist = { x: 0.18, y: -1.10, z: 0, score: 1 };
+  const mesh = buildBodyMesh(pts);
+  assert.ok(mesh.parts.includes('leftShoulder-leftElbow'));
+  for (const q of mesh.vertices) {
+    assert.ok(Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z), 'NaN 꼭짓점이 생겼다');
+  }
+});
+
+test('bodyMesh: 그릴 때 머리가 위로 간다 — y 축 규약을 못박는다', () => {
+  // ⚠ 2026-09-12 에 여기를 뒤집어 두어 사람이 물구나무로 그려졌다. 규약은 추측하지 않고 테스트가 지킨다.
+  const subject = standing();
+  const mesh = meshOfSubject(subject);
+  const view = { width: 400, height: 600, pad: 10 };
+  const nose = projectVertices([subject.points.nose], view).points[0];
+  const ankle = projectVertices([subject.points.leftAnkle], view).points[0];
+  // 같은 상자에 맞춰야 비교가 된다 — 둘을 함께 투영한다.
+  const both = projectVertices([subject.points.nose, subject.points.leftAnkle], view).points;
+  assert.ok(both[0].y < both[1].y, `코(${both[0].y})가 발목(${both[1].y})보다 아래에 그려진다 — 물구나무다`);
+  assert.ok(nose && ankle);
+
+  const projected = projectVertices(mesh.vertices, view);
+  assert.equal(projected.points.length, mesh.vertices.length);
+  for (const p of projected.points) {
+    assert.ok(p.x >= -1 && p.x <= view.width + 1, `가로가 상자를 넘었다: ${p.x}`);
+    assert.ok(p.y >= -1 && p.y <= view.height + 1, `세로가 상자를 넘었다: ${p.y}`);
+  }
+});
+
+test('bodyMesh: 돌리기와 직접 대응 투영', () => {
+  const p = { x: 1, y: 2, z: 0 };
+  const turned = rotatePoint(p, 90, 0);
+  assert.ok(Math.abs(turned.x) < 1e-9, '90도 돌리면 x 가 z 로 간다');
+  assert.ok(Math.abs(turned.z - 1) < 1e-9);
+  assert.equal(turned.y, 2, '세로축 회전은 y 를 건드리지 않는다');
+  assert.deepEqual(rotatePoint(p, 0, 0), { x: 1, y: 2, z: 0 });
+
+  // direct 는 맞추지 않고 0..1 을 그대로 곱한다 — 영상 위에 겹칠 때의 대응이다.
+  const direct = projectVertices([{ x: 0.25, y: 0.5, z: 0 }], { width: 400, height: 200, direct: true });
+  assert.deepEqual([direct.points[0].x, direct.points[0].y], [100, 100]);
+  // xScale 로 가로 눌림을 되돌린다.
+  const squeezed = projectVertices([{ x: 0.5, y: 0.5, z: 0 }], { width: 400, height: 200, direct: true, xScale: 0.5 });
+  assert.equal(squeezed.points[0].x, 100);
+  assert.deepEqual(projectVertices([], { width: 10, height: 10 }).points, []);
+});
+
+test('bodyMesh: world 가 있으면 world 로, screen 을 고르면 화면 좌표로 만든다', () => {
+  const subject = standing();
+  subject.world = Object.fromEntries(Object.entries(subject.points).map(([k, v]) => [k, { ...v, x: v.x * 10 }]));
+  assert.equal(meshOfSubject(subject).space, 'world');
+  assert.equal(meshOfSubject(subject, { space: 'screen' }).space, 'screen');
+  // 화면 좌표를 고르면 가로 눌림이 되돌려진 값이 쓰인다.
+  // ⚠ 몸통 길이(scale)로는 확인할 수 없다 — 어깨·엉덩이 중점의 x 가 같아 세로 길이뿐이라 가로를 눌러도 안 변한다.
+  //   실제로 달라지는 것은 어깨 **너비**이므로 꼭짓점으로 본다.
+  const plain = meshOfSubject({ ...subject, aspect: 1 }, { space: 'screen' });
+  subject.aspect = 0.5;
+  const screen = meshOfSubject(subject, { space: 'screen' });
+  const world = meshOfSubject(subject);
+  assert.equal(screen.vertices.length, plain.vertices.length, '좌표계가 달라도 모양의 구성은 같다');
+  assert.equal(screen.vertices.length, world.vertices.length);
+  const widest = (m) => Math.max(...m.vertices.map(v => Math.abs(v.x)));
+  assert.ok(widest(screen) < widest(plain) * 0.75, `가로 눌림이 반영되지 않았다: ${widest(screen)} vs ${widest(plain)}`);
+  assert.equal(LIMBS.length, 10);
+  assert.equal(TORSO_SIDES, 10);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 자세 분석의 화면 상태(2026-09-12) — 관절점은 store 밖이고 여기에는 요약만 산다
+// ─────────────────────────────────────────────────────────────────────────────
+
+import * as PoseCmd from '../../src/usecases/poseCommands.js';
+import { createPoseOverlay } from '../../src/ui/poseOverlay.js';
+
+test('poseCommands: 분석 상태는 휘발성이고 undo 스냅샷에 관절점이 들어가지 않는다', () => {
+  const store = createStore();
+  assert.equal(PoseCmd.poseState(store).state, 'idle');
+  assert.equal(PoseCmd.hasOverlay(store), false);
+
+  assert.deepEqual(PoseCmd.startAnalysis(store, { fromSec: 2, toSec: 8 }), { video: true });
+  assert.equal(PoseCmd.poseState(store).state, 'running');
+  assert.deepEqual([PoseCmd.poseState(store).fromSec, PoseCmd.poseState(store).toSec], [2, 8]);
+
+  assert.deepEqual(PoseCmd.setProgress(store, { done: 5, total: 40 }), { video: true });
+  assert.deepEqual(PoseCmd.setProgress(store, { done: 5, total: 40 }), NONE, '같은 값은 헛렌더가 없다');
+  assert.equal(PoseCmd.hasOverlay(store), false, '아직 도는 중이면 그릴 것이 없다');
+
+  PoseCmd.finishAnalysis(store, { frames: 40, maxSubjects: 1, trackIds: ['p1'], ambiguous: 0, lost: 2 });
+  const done = PoseCmd.poseState(store);
+  assert.equal(done.state, 'done');
+  assert.equal(done.frames, 40);
+  assert.equal(done.activeId, 'p1', '궤적이 하나면 저절로 그것을 본다');
+  assert.equal(done.lost, 2);
+  assert.equal(PoseCmd.hasOverlay(store), true);
+
+  // ⚠ 관절점이 store 에 새어 들어가면 undo 스냅샷이 통째로 불어난다.
+  const text = JSON.stringify(store.get().session.pose);
+  for (const banned of ['leftShoulder', 'points', 'world', 'vertices']) {
+    assert.ok(!text.includes(banned), `${banned} 가 store 에 들어왔다`);
+  }
+  assert.ok(text.length < 400, `요약이 ${text.length}자나 된다 — 결과를 통째로 넣은 것 아닌가`);
+  // media(안무)는 건드리지 않는다 — 분석은 undo 를 타지 않는다.
+  assert.equal(isEmptyMedia(store.get().media), true);
+});
+
+test('poseCommands: 실패와 지우기, 그리고 메시 토글', () => {
+  const store = createStore();
+  PoseCmd.startAnalysis(store, { fromSec: 0, toSec: 3 });
+  PoseCmd.failAnalysis(store, { error: '모델 없음' });
+  assert.equal(PoseCmd.poseState(store).state, 'error');
+  assert.equal(PoseCmd.poseState(store).error, '모델 없음');
+  assert.equal(PoseCmd.failAnalysis(store, {}).video, true);
+  assert.equal(PoseCmd.poseState(store).error, '알 수 없는 오류');
+
+  assert.equal(PoseCmd.poseState(store).showMesh, true);
+  PoseCmd.setMesh(store);
+  assert.equal(PoseCmd.poseState(store).showMesh, false);
+  assert.deepEqual(PoseCmd.setMesh(store, { on: false }), NONE);
+
+  PoseCmd.clearAnalysis(store);
+  assert.equal(PoseCmd.poseState(store).state, 'idle');
+  assert.equal(PoseCmd.poseState(store).showMesh, false, '지워도 메시 선호는 남긴다 — 화면 취향이지 결과가 아니다');
+  assert.deepEqual(PoseCmd.clearAnalysis(store), NONE);
+});
+
+test('poseCommands: 앵커는 지금 보는 궤적에 붙고, 같은 시각은 갈아 끼운다', () => {
+  const store = createStore();
+  PoseCmd.startAnalysis(store, { fromSec: 0, toSec: 10 });
+  PoseCmd.finishAnalysis(store, { frames: 20, maxSubjects: 2, trackIds: ['p1'] });
+
+  PoseCmd.addAnchor(store, { sec: 1, subject: 0 });
+  assert.deepEqual(PoseCmd.poseState(store).anchors, [{ sec: 1, subject: 0, id: 'p1' }]);
+  // 같은 시각·같은 궤적을 다시 찍으면 갈아 끼워진다(둘로 늘지 않는다).
+  PoseCmd.addAnchor(store, { sec: 1, subject: 1 });
+  assert.deepEqual(PoseCmd.poseState(store).anchors, [{ sec: 1, subject: 1, id: 'p1' }]);
+  // 다른 시각은 쌓이고 시각 순으로 선다.
+  PoseCmd.addAnchor(store, { sec: 0.5, subject: 0 });
+  assert.deepEqual(PoseCmd.poseState(store).anchors.map(a => a.sec), [0.5, 1]);
+
+  // 사람을 하나 더 고르면 새 궤적이 생기고 그 뒤 앵커는 그쪽에 붙는다.
+  PoseCmd.addTrack(store);
+  assert.deepEqual(PoseCmd.poseState(store).trackIds, ['p1', 'p2']);
+  assert.equal(PoseCmd.poseState(store).activeId, 'p2');
+  PoseCmd.addAnchor(store, { sec: 2, subject: 1 });
+  assert.equal(PoseCmd.poseState(store).anchors.find(a => a.sec === 2).id, 'p2');
+
+  assert.deepEqual(PoseCmd.setActiveTrack(store, { id: '없는것' }), NONE);
+  assert.deepEqual(PoseCmd.setActiveTrack(store, { id: 'p1' }), { video: true });
+  assert.deepEqual(PoseCmd.addAnchor(store, { sec: NaN, subject: 0 }), NONE);
+  assert.deepEqual(PoseCmd.addAnchor(store, { sec: 1, subject: -1 }), NONE);
+
+  PoseCmd.clearAnchors(store);
+  assert.deepEqual(PoseCmd.poseState(store).anchors, []);
+  assert.deepEqual(PoseCmd.poseState(store).trackIds, [], '앵커가 곧 궤적의 근거다');
+});
+
+test('poseOverlay: 캔버스를 프레임이 아니라 영상이 그려진 칸에 맞춘다', () => {
+  // 가짜 DOM. 레터박스 계산만 보는 것이므로 필요한 속성만 갖춘다.
+  const style = {};
+  const canvas = {
+    width: 0, height: 0, hidden: false, style,
+    getContext: () => ({
+      clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, fill() {}, arc() {},
+      closePath() {}, fillText() {}, strokeText() {}, set lineWidth(v) {}, set strokeStyle(v) {},
+      set fillStyle(v) {}, set font(v) {}, set lineJoin(v) {}
+    }),
+    addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: canvas.width, height: canvas.height })
+  };
+  const frame = { clientWidth: 400, clientHeight: 225 };          // 16:9 프레임
+  let videoSize = { w: 480, h: 640 };                              // 세로 영상
+  const overlay = createPoseOverlay({
+    canvas, frame,
+    getVideoSize: () => videoSize,
+    getCurrentSec: () => 0,
+    isActive: () => true,
+    getFrameAt: () => null,
+    win: { requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }
+  });
+
+  overlay.draw();
+  // contain: 높이에 맞춰 들어가므로 225 높이, 가로는 480/640*225 = 168.75 → 169.
+  assert.equal(canvas.height, 225);
+  assert.equal(canvas.width, 169);
+  assert.equal(style.top, '0px');
+  assert.equal(style.left, `${Math.round((400 - 169) / 2)}px`, '좌우 가운데에 놓여야 한다');
+
+  // 가로 영상이면 폭에 맞춰 들어가고 위아래에 여백이 생긴다.
+  videoSize = { w: 1920, h: 1080 };
+  overlay.invalidate();
+  overlay.draw();
+  assert.equal(canvas.width, 400);
+  assert.equal(canvas.height, 225);
+  assert.equal(style.top, '0px');
+  assert.equal(style.left, '0px');
+
+  // 원본 크기를 모르면 그리지 않는다 — 0으로 나누지 않는다.
+  videoSize = { w: 0, h: 0 };
+  overlay.invalidate();
+  overlay.draw();
+  assert.equal(canvas.hidden, true);
+
+  // 멈춰 있으면 루프가 돌지 않는다.
+  assert.equal(overlay.isRunning(), false);
+  overlay.start();
+  assert.equal(overlay.isRunning(), true);
+  overlay.stop();
+  assert.equal(overlay.isRunning(), false);
+  assert.equal(canvas.hidden, true);
+});
+
+test('modelServer: 폴더 고르기는 취소와 실패를 구분해서 돌려준다(던지지 않는다)', async () => {
+  const base = { dir: '/m', poseModel: 'full', ready: false, missing: 1, missingBytes: 9398198,
+                 version: '1.0.1', sizes: {}, canChoose: true, suggestions: [], files: [] };
+  const make = (reply) => createModelServer({ fetchImpl: async (url, init = {}) => {
+    if (url.endsWith('/api/models/choose')) { assert.equal(init.method, 'POST'); return reply; }
+    return { ok: true, json: async () => base };
+  } });
+
+  // 골랐다 — 서버가 그 자리에서 보관 위치로 삼고 새 상태를 준다.
+  const picked = await make({ ok: true, status: 200, json: async () => ({ ok: true, ...base, dir: '/새폴더' }) }).chooseDir();
+  assert.equal(picked.ok, true);
+  assert.equal(picked.status.dir, '/새폴더');
+
+  // 취소는 오류가 아니다.
+  const canceled = await make({ ok: true, status: 200, json: async () => ({ ok: false, canceled: true }) }).chooseDir();
+  assert.deepEqual(canceled, { ok: false, canceled: true, error: '' });
+
+  // 창을 못 띄우는 환경은 오류이고 이유가 온다.
+  const unsupported = await make({ ok: false, status: 503, json: async () => ({ ok: false, error: '이 운영체제에서는…' }) }).chooseDir();
+  assert.equal(unsupported.ok, false);
+  assert.equal(unsupported.canceled, false);
+  assert.equal(unsupported.error, '이 운영체제에서는…');
+
+  // 서버가 죽었거나 fetch 자체가 없어도 던지지 않는다.
+  const down = createModelServer({ fetchImpl: async () => { throw new Error('down'); } });
+  assert.equal((await down.chooseDir()).ok, false);
+  assert.equal((await createModelServer({ fetchImpl: null }).chooseDir()).ok, false);
+
+  // 상태에 새 필드가 실려 온다.
+  const st = await make({ ok: true, status: 200, json: async () => ({ ok: true, ...base }) }).getStatus();
+  assert.equal(st.canChoose, true);
+  assert.deepEqual(st.suggestions, []);
 });

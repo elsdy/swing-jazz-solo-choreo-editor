@@ -70,7 +70,7 @@ export const DOCS = [
     group: 'dev',
     title: '포트 계약',
     path: 'docs/PORTS.md',
-    desc: '동영상·시퀀스 엔진·버전 저장소가 들어올 자리',
+    desc: '동영상 재생기의 계약, 시퀀스 엔진·버전 저장소가 들어올 자리',
   },
   {
     id: 'principles',

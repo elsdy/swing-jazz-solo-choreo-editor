@@ -2,11 +2,13 @@
 //
 // 원본 index.html 의 snapshotState·restoreSnapshot·saveHistory·undo·redo(2833-2886)와
 // 그 루틴 편집기 복제본 snapshotStateRe·saveHistoryRe·undoRe·redoRe(2900-2936)를 HistoryStack
-// 한 벌로 합쳤다. 두 벌의 유일한 차이인 **스냅샷 필드 집합**(메인 7필드 / 루틴 3필드)만
+// 한 벌로 합쳤다. 두 벌의 유일한 차이인 **스냅샷 필드 집합**(메인 8필드 / 루틴 3필드)만
 // SNAPSHOT_SPEC[boardId] 로 갈린다. 렌더 호출 7종이 있던 자리에는 Dirty 를 돌려준다.
 //
 // ⚠ 메인 스냅샷의 7번째 필드가 links 다(2026-09). 링크는 상태 말고 localStorage 에도 살기 때문에
 //   이 모듈이 유일하게 어댑터를 **주입받는다** — createHistory(store, { storage }) 의 saveLinks.
+// ⚠ 8번째는 media(템포·소스)다. 링크와 달리 localStorage 에 살지 않으므로 되쓰기가 없다 —
+//   상태만 되돌리면 끝이다. 반대로 **재생 위치는 스냅샷에 들어오지 않는다**(휘발성 채널 B).
 
 import { UNDO_FIELDS, ROUTINE_UNDO_FIELDS } from '../domain/project/schema.js';
 import { snapshotMain, snapshotRoutine, applySnapshot } from '../domain/project/snapshot.js';
@@ -26,7 +28,7 @@ import { BOARD_MAIN, BOARD_ROUTINE, BOARD_IDS, boardOf, NONE } from './store.js'
 export const SNAPSHOT_SPEC = Object.freeze({
   [BOARD_MAIN]: Object.freeze({
     kind: 'main',            // applySnapshot 의 kind 인자 (= BOARD_POLICY.snapshotKind)
-    fields: UNDO_FIELDS,     // ['rows','cols','placements','moveLibrary','categories','routines','links']
+    fields: UNDO_FIELDS,     // ['rows','cols','placements','moveLibrary','categories','routines','links','media']
     limit: 100               // 2869
   }),
   [BOARD_ROUTINE]: Object.freeze({
@@ -45,7 +47,8 @@ export const SNAPSHOT_SPEC = Object.freeze({
 
 /**
  * snapshotState(2834-2839)가 보던 그대로의 평평한 뷰. 키 순서는 snapshotMain 이 UNDO_FIELDS 로 고정한다.
- * ⚠ links 는 원본에 없던 필드다(2026-09). 복제는 snapshot.pickUndoFields 가 한다 — 여기서는 참조만 넘긴다.
+ * ⚠ links·media 는 원본에 없던 필드다(2026-09). 복제는 snapshot.pickUndoFields 가 한다 — 여기서는 참조만 넘긴다.
+ * ⚠ media 는 `{tempo, source}` 뿐이다. 재생 위치·재생 상태는 store 에 아예 없으므로 스냅샷에도 없다.
  */
 function mainSnapshotView(state) {
   const board = boardOf(state, BOARD_MAIN);
@@ -56,7 +59,8 @@ function mainSnapshotView(state) {
     moveLibrary: state.library,
     categories: state.categories,
     routines: state.routines,
-    links: state.links
+    links: state.links,
+    media: state.media   // 2026-09 — UNDO_FIELDS 의 8번째. 값 복제는 snapshot.pickUndoFields 가 한다
   };
 }
 
@@ -84,6 +88,7 @@ function takeSnapshot(state, boardId) {
  *   그리고 **localStorage 에도 되쓴다**: `전체 초기화`(clearLinks)가 saveLinks 로 즉시 썼기 때문에
  *   상태만 되돌리면 새로고침에서 지워진 값이 되살아난다. saveLinks 는 주입이며, 없으면 건너뛴다
  *   (골든 어댑터·단위 테스트는 주입하지 않는다 — usecases 는 어댑터를 import 하지 않는다).
+ * ⚠ media 도 links 처럼 **언제나** 통째로 갈아끼운다. 되쓸 저장소가 없어 한 줄로 끝난다.
  * ⚠ 제목 조회 상태(session.youtubeTitleFetch)도 함께 맞춘다. 안 맞추면 조회 중에 Undo 했을 때
  *   '제목 불러오는 중…' 스피너가 남는다(응답은 URL 동등 비교에서 걸러져 영영 안 온다).
  */
@@ -102,6 +107,7 @@ function restoreMain(store, snapshot, storage) {
     library: patch.moveLibrary,   // state.moveLibrary (2848)
     categories: patch.categories, // 2849
     links: patch.links,           // 2026-09 — UNDO_FIELDS 에 links 가 들어온 자리
+    media: patch.media,           // 2026-09 — 템포·소스. 재생 위치는 여기 없다(휘발성)
     selection: new Set()          // state.selectedGroupIds.clear() (2851)
   };
   if ('routines' in patch) top.routines = patch.routines; // 2850
@@ -140,6 +146,8 @@ function restoreRoutine(store, snapshot) {
  *   updateHistoryButtons(2859)                → history
  * ⚠ links 는 원본에 없던 항목이다(2026-09). 켜지 않으면 상태만 바뀌고 입력창은 옛 값을 그대로
  *   보여 준다 — renderLinksBar(5207-5215)가 #youtubeUrlInput.value 를 store 값으로 덮는 자리다.
+ * ⚠ video 도 같은 이유다(2026-09). media(템포·소스)가 스냅샷에 있으므로 되돌린 값이 패널에 보여야 한다.
+ *   패널이 닫혀 있으면 뷰가 알아서 아무것도 하지 않는다 — 켜야 보이는 기능이라 끈 화면은 그대로다.
  */
 function mainRestoreDirty() {
   return {
@@ -152,7 +160,8 @@ function mainRestoreDirty() {
     routineList: true,
     links: true,
     toolbar: true,
-    history: true
+    history: true,
+    video: true
   };
 }
 

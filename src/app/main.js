@@ -28,16 +28,21 @@ import * as CategoryCmd from '../usecases/categoryCommands.js';
 import * as RoutineCmd from '../usecases/routineCommands.js';
 import * as ProjectCmd from '../usecases/projectCommands.js';
 import * as LinkCmd from '../usecases/linkCommands.js';
+import * as VideoCmd from '../usecases/videoCommands.js';
+import * as PoseCmd from '../usecases/poseCommands.js';
 
 import * as Grid from '../domain/grid.js';
 import { normalizeLinks } from '../domain/links.js';
+import { groupToSpan, secondsPerCount } from '../domain/tempo.js';
 
 import { STORAGE_KEYS } from '../ports/storage.js';
+import { projectTime } from '../ports/media.js';
 import { browserEnv, browserDialogs, browserFileIO, debounce, longPress } from '../adapters/browser.js';
 import {
   createRecentList, createFavoritesRepo, loadLocalMeta, loadLinksRaw, saveLinksRaw
 } from '../adapters/localStore.js';
 import { fetchTitle } from '../adapters/youtubeOembed.js';
+import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/media/pickPlayer.js';
 
 import { createBoardView } from '../ui/boardView.js';
 import { createOverlays, ensureOverlaySingletons } from '../ui/overlays.js';
@@ -51,6 +56,22 @@ import { createRoutineListView } from '../ui/routineListView.js';
 import { createRoutineEditorView } from '../ui/routineEditorView.js';
 import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createDocsHub } from '../ui/docsHub.js';
+import { createSettingsView } from '../ui/settingsView.js';
+import { createClipLibrary } from '../adapters/clipLibrary.js';
+import { createClipServer } from '../adapters/clipServer.js';
+import { createModelServer } from '../adapters/modelServer.js';
+import { createLlmServer } from '../adapters/llmServer.js';
+import { createComposeView } from '../ui/composeView.js';
+import * as PlanCmd from '../usecases/planCommands.js';
+import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
+import { clipDirParts } from '../domain/clips.js';
+import { createVideoPanel } from '../ui/videoPanel.js';
+import { createPoseView } from '../ui/poseView.js';
+import { createPoseOverlay } from '../ui/poseOverlay.js';
+import { createMediapipePose } from '../adapters/pose/mediapipePose.js';
+import { buildTracks, framesOfTrack, pickSubjectAt } from '../domain/poseTracks.js';
+import { createPlayhead } from '../ui/playhead.js';
+import { SEL, DATA } from '../ui/domContract.js';
 import { confirmOnce } from '../ui/widgets.js';
 import { readCellW } from '../ui/cssVars.js';
 import { initLayout, syncCellSize } from '../ui/layout.js';
@@ -395,6 +416,9 @@ views.linksBar = createLinksBarView({
   // 2026-09 — 링크 편집의 커밋 지점(change·✕·추가·삭제)은 뷰가 소유한다. 커맨드는 히스토리를
   // 쌓지 않는다(usecases 규약). Dirty.history 는 Undo/Redo 버튼만 건드리므로 입력 중에도 안전하다.
   commitHistory: () => render(commitHistory(BOARD_MAIN)),
+  // 2026-09 — 링크바의 YouTube 칸이 그대로 영상 소스다(새 입력창을 만들지 않는다).
+  // ⚠ 확정(change · ✕)에만 불린다. 반환 Dirty 를 그려야 패널이 새 소스를 싣는다.
+  onYoutubeUrlCommit: (rawUrl) => render(VideoCmd.setSource(store, { url: rawUrl })),
   debounce,
   fetchTitle,
   commands: {
@@ -596,7 +620,692 @@ makeBoardController(BOARD_ROUTINE);
 views.routineEditor.sync();   // 패널은 마크업이 이미 display:none 이라 무동작이다(상태와 한 번 맞춘다)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 16. 문서 허브 — 상단 액션 줄에 '문서' 버튼을 붙인다
+// 16. 영상 패널 — 재생기(어댑터) · 패널 뷰 · 재생 헤드 (2026-09 신설)
+//
+// ⚠ **어댑터를 아는 자리는 여기 하나다.** 뷰는 MediaPlayer 계약만 보고, 유스케이스는 초만 받는다.
+// ⚠ 재생기는 **패널이 실제로 보이는 순간에** 만든다. 한 번도 안 연 사용자에게 유튜브 요청이
+//   나가면 안 된다(createYouTubePlayer 는 생성만으로는 DOM·네트워크를 건드리지 않고,
+//   첫 load(source) 에서 <script> 가 붙는다).
+// ⚠ kind 가 같으면 pickPlayer 를 **다시 부르지 않는다** — load() 만 불러야 iframe 이 재로드되지 않는다.
+// ⚠ 재생 위치·재생 상태는 store 에 넣지 않는다. 시각은 어댑터의 표본을 rAF 에서 보간해 쓴다(채널 B).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const videoFrameEl = byId('videoFrame');
+/** 자세 오버레이 캔버스. 재생기를 갈아 끼워도 이것만은 프레임 안에 남는다. */
+const videoPoseCanvasEl = byId('videoPoseCanvas');
+
+/**
+ * 지금 실제로 쓰는 영상 URL(유튜브). 링크바가 원본이고 `media.source` 는 그 확정 사본이다.
+ * ⚠ 폴백이 있는 이유: 이 기능 이전에 저장한 프로젝트 파일에는 media 블록이 아예 없다.
+ *   그런 파일을 열면 링크바에는 주소가 있는데 media.source 는 null 이므로, 그때는 링크바를 읽는다.
+ * ⚠ 파일 소스면 빈 문자열이다 — 파일에는 URL 이 없다(아래 localFile 이 그 실물이다).
+ */
+function videoSourceUrl() {
+  const source = VideoCmd.mediaState(store).source;
+  if (source && source.kind === 'file') return '';
+  return source ? source.url : (store.links.youtubeUrl || '');
+}
+
+/**
+ * 이 세션에서 실제로 고른 로컬 영상 파일. **store 에 들어가지 않는다** — blob URL 은 이 실행에서만 살고,
+ * 파일 객체는 직렬화할 수 없다. store 에는 파일명만 남는다(usecases/videoCommands.setFileSource).
+ * ⚠ blob URL 은 만든 쪽이 revoke 한다. 갈아 끼울 때 앞의 것을 놓지 않으면 파일 크기만큼 메모리가 샌다.
+ * @type {{name: string, url: string}|null}
+ */
+let localFile = null;
+
+/** 저장된 파일 소스와 이 세션에서 고른 파일이 같은가. 다시 열었을 때는 이름만 있고 파일이 없다. */
+function localFileLoaded() {
+  const source = VideoCmd.mediaState(store).source;
+  return !!(source && source.kind === 'file' && localFile && localFile.name === source.name);
+}
+
+/** 파일 소스가 실제로 재생 가능한가 — 이 세션에서 고른 파일이거나, 서버가 그 경로를 가지고 있거나. */
+function fileSourceReady() {
+  const source = VideoCmd.mediaState(store).source;
+  if (!source || source.kind !== 'file') return false;
+  return localFileLoaded() || !!(clipServerConfig && source.path && serverClipOk === source.path);
+}
+
+/**
+ * 재생기에 실을 MediaSource. store 의 소스 참조(파일명/URL)를 이 세션의 실물(blob URL/videoId)로 바꾼다.
+ * 파일 소스인데 아직 안 골랐으면 null — 소스 없음과 같이 널 재생기로 간다(패널은 "다시 골라 달라"고 안내한다).
+ * @returns {import('../ports/media.js').MediaSource|null}
+ */
+function currentMediaSource() {
+  const source = VideoCmd.mediaState(store).source;
+  if (source && source.kind === 'file') {
+    if (localFileLoaded()) return { kind: 'file', url: localFile.url, name: localFile.name };
+    // 서버 모드: 보관 경로가 있으면 서버가 스트리밍한다(Range 지원). 파일을 다시 고를 필요가 없다.
+    if (clipServerConfig && source.path && serverClipOk === source.path) {
+      return { kind: 'file', url: clipServer.urlFor(source.path), name: source.name };
+    }
+    return null;
+  }
+  return mediaSourceFromUrl(videoSourceUrl());
+}
+
+/** 재생기에 실을 것이 있는가. 재생 헤드는 이것이 거짓이면 그리지 않는다. */
+const hasMediaSource = () => currentMediaSource() != null;
+
+/** 소스 없음 = 널 재생기. 덕분에 아래 어느 줄에도 `player?.` 가 생기지 않는다. */
+let player = pickPlayer(null, {});
+let playerKind = 'null';
+/** 마지막으로 load() 에 넘긴 소스의 식별자(videoId 나 blob URL). 같으면 다시 싣지 않는다(iframe 재로드 방지). */
+let loadedVideoKey = '';
+/** 길이는 상태가 바뀔 때만 다시 읽는다 — getDuration 폴링은 iframe 경계를 넘는다. */
+let videoDurationSec = null;
+let unsubscribeVideoState = () => {};
+let unsubscribeVideoTime = () => {};
+
+/**
+ * In~Out 구간 반복. 표본이 Out 을 넘으면 In 으로 되감는다 — 뜻(loop·inSec·outSec)은 store 의 화면 상태이고
+ * 실행은 어댑터를 아는 이 자리의 몫이다. 표본은 재생 중 100ms 마다 오므로 최대 0.1초 넘어간 뒤 돌아온다.
+ * ⚠ seek 은 표본을 동기로 다시 쏘지만 그때는 sec 이 In 이라 이 조건에 다시 걸리지 않는다(재귀 없음).
+ * @param {import('../ports/media.js').TimeSample} sample
+ */
+function enforceLoop(sample) {
+  if (!sample || !sample.playing) return;
+  const p = VideoCmd.panelState(store);
+  if (!p.loop || !Number.isFinite(p.inSec) || !Number.isFinite(p.outSec) || !(p.outSec > p.inSec)) return;
+  if (sample.sec >= p.outSec) player.seek(p.inSec);
+}
+
+/** 소스 하나를 "같은 것을 또 싣지 않기" 위한 문자열로 접는다. */
+function mediaSourceKey(source) {
+  if (!source) return '';
+  return source.kind === 'file' ? `file:${source.url}` : `yt:${source.videoId}:${source.startSec || 0}`;
+}
+
+/** 지금 소스에 맞는 재생기를 준비한다. 멱등이며, 바뀐 것이 없으면 아무 일도 하지 않는다. */
+function ensurePlayer() {
+  const source = currentMediaSource();
+  const kind = pickPlayerKind(source);
+
+  if (kind !== playerKind) {
+    unsubscribeVideoState();
+    unsubscribeVideoTime();
+    player.destroy();
+    // ⚠ YT.Player 는 넘겨받은 <div> 를 <iframe> 으로 **갈아치운다** — 새로 만들 때마다 빈 자리를
+    //   다시 마련해야 한다(먼젓번 컨테이너는 이미 사라졌다). 파일 재생기는 그 안에 <video> 를 넣는다.
+    // ⚠ innerHTML 로 비우면 **자세 오버레이 캔버스까지 지워진다**(index.html 이 프레임 안에 두었다).
+    //   재생기가 남긴 것만 걷어내고 캔버스는 남긴다 — YT 는 host <div> 를 <iframe> 으로 갈아치우므로
+    //   "우리가 만든 host" 를 기억해 두는 것으로는 부족하고, 캔버스가 아닌 것을 전부 걷는 편이 확실하다.
+    for (const child of [...videoFrameEl.children]) {
+      if (child !== videoPoseCanvasEl) child.remove();
+    }
+    const host = document.createElement('div');
+    videoFrameEl.appendChild(host);
+    // preload:'auto' — 로컬 파일·로컬 서버가 소스라 대역폭이 아깝지 않고, 끝까지 미리 받아 두어야 In/Out 탐색과
+    // 구간 반복이 끊기지 않는다("영상을 통째로 불러온다"). 유튜브 어댑터는 이 옵션을 모른 채 무시한다.
+    player = pickPlayer(source, { container: host, preload: 'auto' });
+    playerKind = kind;
+    loadedVideoKey = '';
+    // 재생 상태는 도메인이 아니라 store 를 거치지 않는다 — 문구만 직접 다시 그린다.
+    unsubscribeVideoState = player.onState(() => {
+      videoDurationSec = player.getDuration();
+      views.video?.renderStatus();
+    });
+    unsubscribeVideoTime = player.onTime(enforceLoop);
+  }
+
+  const key = mediaSourceKey(source);
+  if (key !== loadedVideoKey) {
+    // ⚠ 영상이 바뀌면 옛 관절은 거짓이 된다 — 다른 영상 위에 남의 자세를 그리게 된다.
+    if (loadedVideoKey && poseFrames.length) dropPoseAnalysis();
+    loadedVideoKey = key;
+    player.load(source);
+  }
+}
+
+/**
+ * 영상 보관 — 두 가지 길이 있고 시작할 때 서버를 한 번 찔러 보고 고른다.
+ *   서버 모드   `python3 server.py` 가 떠 있으면 업로드는 서버가 `<root>/<subdir>/<프로젝트>/` 에 저장하고
+ *              재생은 `/clips/<path>` 스트리밍이다. 설정의 폴더는 서버의 것이다.
+ *   브라우저 모드 정적 호스팅이면 File System Access API 로 사용자가 고른 폴더에 복사한다(크롬 계열).
+ * 두 길의 path 모양이 같아서 프로젝트 파일은 어느 쪽에서 열어도 통한다.
+ */
+const clipLibrary = createClipLibrary();
+const clipServer = createClipServer();
+/** 서버가 있으면 그 설정, 없으면 null. probe 가 끝나기 전에는 null 이라 브라우저 모드처럼 군다. */
+let clipServerConfig = null;
+/** 서버에 있다고 확인한 경로. 소스가 바뀌면 다시 확인한다. */
+let serverClipOk = '';
+/** 서버에 없다고 확인한 경로. 패널이 "없다"고 말하는 근거다. */
+let serverClipMissing = '';
+/** 마지막 보관 폴더 읽기 시도의 결과. 패널이 "파일이 없다"와 "권한만 다시 받으면 된다"를 구분해 말한다. */
+let libraryState = 'idle';
+
+/** 실물 파일을 이 세션의 소스로 붙인다. blob URL 은 여기서만 만들고, 앞의 것은 놓는다. */
+function attachLocalFile(file) {
+  if (localFile) URL.revokeObjectURL(localFile.url);
+  localFile = { name: file.name, url: URL.createObjectURL(file) };
+}
+
+/** 지금 프로젝트 이름(파일 이름 칸). 보관 폴더 아래 프로젝트별 하위 폴더 이름이 된다. */
+const projectNameForClips = () => (byId('fileNameInput')?.value || '').trim();
+
+/**
+ * 사용자가 영상 파일을 골랐다. 보관 폴더가 지정돼 있으면 거기 복사하고 그 상대 경로까지 소스에 남긴다.
+ * 복사는 비동기라 먼저 blob 으로 바로 띄우고(기다리게 하지 않는다), 복사가 끝나면 path 만 덧붙인다.
+ * ⚠ 여기가 URL.createObjectURL 을 부르는 자리다 — 만든 곳이 revoke 까지 책임진다.
+ * @param {File} file
+ */
+function chooseLocalFile(file) {
+  if (!file) return;
+  attachLocalFile(file);
+  libraryState = 'idle';
+  trimError = '';
+  // 같은 이름을 다시 골라도(다시 열었을 때가 그렇다) 소스는 그대로라 NONE 이 온다 — 그래도 재생기는 새 blob 을 실어야 한다.
+  render(VideoCmd.setFileSource(store, { name: file.name }));
+  views.video?.render();
+
+  // 보관 — 서버가 있으면 서버로 올리고, 아니면 브라우저 폴더에 복사한다. 어느 쪽이든 끝나면 path 만 덧붙인다.
+  const stillCurrent = () => {
+    const cur = VideoCmd.mediaState(store).source;
+    return !!(cur && cur.kind === 'file' && cur.name === file.name && localFile && localFile.name === file.name);
+  };
+  const attachPath = (path) => {
+    if (!stillCurrent()) return;                 // 그 사이 사용자가 다른 소스로 바꿨으면 낡은 결과다
+    serverClipOk = clipServerConfig ? path : serverClipOk;
+    render(VideoCmd.setFileSource(store, { name: file.name, path }));
+    commitHistoryAndRender();
+  };
+  if (clipServerConfig) {
+    clipServer.upload(file, projectNameForClips(), file.name).then((saved) => { if (saved) attachPath(saved.path); });
+    return;
+  }
+  // 브라우저 모드. 권한은 조용히 확인만 한다(파일 선택 대화상자가 닫힌 뒤라 제스처가 끝났을 수 있다).
+  clipLibrary.ensurePermission(false).then(async (ok) => {
+    if (!ok) return;
+    const { subdir } = loadClipSetting();
+    let saved;
+    try {
+      saved = await clipLibrary.saveClip(file, clipDirParts(subdir, projectNameForClips()), file.name);
+    } catch {
+      return;                                    // 복사 실패는 조용히 — blob 으로는 이미 재생 중이다
+    }
+    attachPath(saved.path);
+  });
+}
+
+/** 파일 경로를 덧붙인 것도 되돌릴 수 있게 히스토리를 한 단계 남긴다. */
+function commitHistoryAndRender() {
+  render(commitHistory(BOARD_MAIN));
+}
+
+/**
+ * 보관 폴더에서 저장된 경로의 파일을 읽어 소스로 붙인다.
+ * @param {boolean} interactive 참이면 권한을 묻는다(클릭 콜스택 안에서만 의미가 있다)
+ */
+async function openFromLibrary(interactive) {
+  const source = VideoCmd.mediaState(store).source;
+  if (!source || source.kind !== 'file' || !source.path) return;
+  if (fileSourceReady()) return;
+  if (clipServerConfig) {
+    // 서버 모드: 있는지 물어보고, 있으면 URL 로 바로 싣는다(파일을 내려받지 않는다).
+    const ok = await clipServer.exists(source.path);
+    const now = VideoCmd.mediaState(store).source;
+    if (!now || now.kind !== 'file' || now.path !== source.path) return;
+    if (ok) { serverClipOk = source.path; serverClipMissing = ''; libraryState = 'idle'; }
+    else { serverClipMissing = source.path; libraryState = 'missing'; }
+    views.video?.render();
+    return;
+  }
+  if (!(await clipLibrary.ensurePermission(interactive))) return;
+  const file = await clipLibrary.openClip(source.path);
+  // 그 사이 소스가 바뀌었으면 낡은 결과다.
+  const now = VideoCmd.mediaState(store).source;
+  if (!now || now.kind !== 'file' || now.path !== source.path) return;
+  if (!file) {
+    libraryState = 'missing';
+    views.video?.renderStatus();
+    return;
+  }
+  libraryState = 'idle';
+  attachLocalFile(new File([file], source.name, { type: file.type }));
+  views.video?.render();
+}
+
+/** 소스에 보관 경로가 있고 아직 못 읽었으면 조용히 시도한다. 권한이 이미 있으면 대화상자 없이 붙는다. */
+let libraryAutoTriedFor = '';
+function tryLibraryQuietly() {
+  const source = VideoCmd.mediaState(store).source;
+  const key = source && source.kind === 'file' && source.path ? source.path : '';
+  if (!key || fileSourceReady() || key === libraryAutoTriedFor) return;
+  libraryAutoTriedFor = key;
+  openFromLibrary(false);
+}
+
+/** 잘라내기 진행 상태. store 를 거치지 않는 값이라(안무가 아니다) 패널의 renderCut 이 게터로 읽는다. */
+let trimBusy = false;
+/** 마지막 잘라내기 실패 이유(서버 문구). 다음 시도나 소스 변경이 지운다. */
+let trimError = '';
+
+/**
+ * 지금 잘라낼 수 있는가, 안 되면 왜인가. In/Out 유무는 패널이 스스로 본다.
+ * @returns {'ready'|'busy'|'not-file'|'no-server'|'no-ffmpeg'|'not-stored'}
+ */
+function trimState() {
+  if (trimBusy) return 'busy';
+  const source = VideoCmd.mediaState(store).source;
+  if (!source || source.kind !== 'file') return 'not-file';
+  if (!clipServerConfig) return 'no-server';
+  if (!clipServerConfig.ffmpeg) return 'no-ffmpeg';
+  if (!source.path || (serverClipOk !== source.path && !localFileLoaded())) return 'not-stored';
+  return 'ready';
+}
+
+/**
+ * In~Out 을 잘라 다시 인코딩한 새 클립을 서버에 만들게 하고, 끝나면 그 클립으로 소스를 갈아 끼운다.
+ * 원본은 서버에 그대로 남는다. 템포·마커의 시각은 applyTrim 커맨드가 In 만큼 당긴다.
+ * ⚠ 기다리는 동안 사용자가 다른 소스로 바꿨으면 결과를 버린다(낡은 결과). 파일은 이미 만들어졌으니 보관 폴더에는 남는다.
+ * @param {{inSec:number, outSec:number}} range
+ */
+async function trimCurrentClip(range) {
+  const source = VideoCmd.mediaState(store).source;
+  if (trimState() !== 'ready' || !source || !source.path) return;
+  trimBusy = true;
+  trimError = '';
+  views.video?.renderCut();
+  player.pause();
+  const res = await clipServer.trim(source.path, range.inSec, range.outSec);
+  trimBusy = false;
+  const now = VideoCmd.mediaState(store).source;
+  if (!now || now.kind !== 'file' || now.path !== source.path) { views.video?.renderCut(); return; }
+  if (!res.ok) {
+    trimError = res.error || '알 수 없는 오류';
+    views.video?.renderCut();
+    return;
+  }
+  serverClipOk = res.path;
+  serverClipMissing = '';
+  libraryState = 'idle';
+  render(VideoCmd.applyTrim(store, { name: res.name, path: res.path, inSec: range.inSec, outSec: range.outSec }));
+  commitHistoryAndRender();
+}
+
+/**
+ * 영상을 그 시각으로 옮긴다(play 면 재생까지). `In 으로`·`Out 으로`·마커의 ▶ 가 쓴다.
+ * ⚠ play() 는 클릭 콜스택 안에서 불러야 한다(needsUserGesture) — 그래서 seek 을 기다리지 않는다.
+ * @param {number} sec
+ * @param {{play?: boolean}} [opts]
+ */
+function seekVideoTo(sec, opts = {}) {
+  player.seek(Math.max(0, sec));
+  if (opts.play) player.play();
+}
+
+// 서버가 있는지 한 번 본다. 있으면 설정과 패널이 서버 모드로 다시 그려진다(패널이 열려 있으면 경로도 확인한다).
+clipServer.probe().then((cfg) => {
+  clipServerConfig = cfg;
+  if (!cfg) return;
+  libraryAutoTriedFor = '';
+  views.settings?.render();
+  views.video?.render();
+});
+
+/** 보간된 현재 미디어 시각(초). 표본은 캐시된 값이라 매 프레임 불러도 iframe 경계를 넘지 않는다. */
+const currentVideoSec = () => projectTime(player.getTimeSample(), performance.now(), videoDurationSec);
+
+const playhead = createPlayhead({
+  scrollRoot: byId('mainBoardWrap'),
+  getTrack: (row) => boardViews[BOARD_MAIN].rowRefs.get(row)?.track || null,
+  getCols: () => store.board(BOARD_MAIN).cols,
+  getTempo: () => VideoCmd.mediaState(store).tempo,
+  // ⚠ 템포가 준비되지 않았으면 **아예 그리지 않는다**. bpm 0 에서 그리면 거짓 위치가 선다.
+  isActive: () => VideoCmd.isTempoReady(store) && hasMediaSource(),
+  isFollowing: () => VideoCmd.panelState(store).follow,
+  getCurrentSec: currentVideoSec,
+  // 재생 위치가 지나가는 블록을 켠다. 칸이 바뀔 때만 불리므로 여기서 필터링해도 싸다.
+  getPlacementsInRow: (row) => store.board(BOARD_MAIN).placements.filter(p => p.row === row)
+});
+
+// 렌더러가 보드를 다시 그린 뒤 헤드 캐시를 버리게 한다. 헤드를 그리는 것은 여전히 rAF 루프뿐이다.
+views.playhead = { invalidate: () => playhead.invalidate() };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 16-b. 자세 분석 (2026-09-12)
+//
+// ⚠ **관절점은 store 에 넣지 않는다.** 30초를 12fps 로 보면 프레임 360장이라 숫자 수만 개다 —
+//   undo 스냅샷이 그만큼 불어나고 되돌릴 값도 아니다. 여기 모듈 변수로 들고, store 에는 요약만 간다
+//   (usecases/poseCommands.js 경계 ①). 재생 위치를 store 에 안 넣는 것과 같은 이유다.
+// ⚠ 그리는 것은 rAF 오버레이의 몫이다(채널 B). 이 자리는 "돌리고 결과를 들고 있는" 일만 한다.
+// ⚠ 유튜브에는 안 된다 — iframe 안의 픽셀을 읽을 수 없다. 자르기와 같은 조건이다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 초당 몇 장을 볼 것인가. 가동 범위에는 10~15면 충분하고, 높일수록 그만큼 오래 걸린다. */
+const POSE_FPS = 12;
+
+/** 분석 결과. **store 밖**이다(위 주석). */
+let poseFrames = [];
+/** 누가 누구인지 이어 붙인 것. 앵커가 바뀔 때마다 다시 만든다. */
+let poseTracks = null;
+/** 추정기는 처음 쓸 때 만든다 — 한 번도 안 쓰는 사람에게 11MB 를 올리지 않는다. */
+let poseEstimator = null;
+let poseRunning = false;
+
+/** 지금 프레임 안에 있는 `<video>`. 유튜브면 iframe 이라 null 이다. */
+const videoElement = () => videoFrameEl.querySelector('video');
+
+function ensurePoseEstimator() {
+  if (!poseEstimator) poseEstimator = createMediapipePose({ baseUrl: '/models', numPoses: 2 });
+  return poseEstimator;
+}
+
+/**
+ * 지금 분석할 수 있는가, 없으면 왜인가. 문구는 ui/poseView.js 가 만든다.
+ * @returns {'ready'|'busy'|'no-server'|'no-model'|'not-file'|'not-loaded'}
+ */
+function poseReadiness() {
+  if (poseRunning) return 'busy';
+  if (!clipServerConfig) return 'no-server';
+  if (!clipServerConfig.pose) return 'no-model';
+  const source = VideoCmd.mediaState(store).source;
+  if (!source || source.kind !== 'file') return 'not-file';
+  if (!fileSourceReady() || !videoElement()) return 'not-loaded';
+  return 'ready';
+}
+
+/** 앵커에서 궤적을 다시 잇는다. 한 사람뿐이면 앵커 없이도 저절로 선다(domain/poseTracks.autoAnchors). */
+function rebuildPoseTracks() {
+  poseTracks = buildTracks(poseFrames, PoseCmd.poseState(store).anchors);
+  return poseTracks;
+}
+
+/**
+ * 그 시각에 가장 가까운 분석 프레임. 오버레이가 매 프레임 부르므로 이분 탐색이다.
+ * @param {number} sec
+ * @returns {{sec:number, subjects:Array, activeIndex:number}|null}
+ */
+function poseFrameAt(sec) {
+  if (!poseFrames.length) return null;
+  let lo = 0, hi = poseFrames.length - 1;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (poseFrames[m].sec < sec) lo = m + 1; else hi = m;
+  }
+  let i = lo;
+  if (i > 0 && Math.abs(poseFrames[i - 1].sec - sec) < Math.abs(poseFrames[i].sec - sec)) i -= 1;
+  const activeId = PoseCmd.poseState(store).activeId;
+  const map = (poseTracks && poseTracks.byFrame[i]) || {};
+  const activeIndex = activeId && map[activeId] !== undefined ? map[activeId] : -1;
+  return { sec: poseFrames[i].sec, subjects: poseFrames[i].subjects, activeIndex };
+}
+
+/** 분석 결과를 버린다. 소스가 바뀌면 옛 관절을 새 영상 위에 그리게 되므로 반드시 함께 지운다. */
+function dropPoseAnalysis() {
+  poseFrames = [];
+  poseTracks = null;
+  const dirty = PoseCmd.clearAnalysis(store);
+  poseOverlay.invalidate();
+  return dirty;
+}
+
+/**
+ * In~Out 구간(없으면 영상 전체)에서 관절을 찾는다.
+ * ⚠ `<video>` 를 시각으로 탐색하며 한 장씩 보므로 **탭이 보이는 동안에만** 된다 — 브라우저는 보이지 않는
+ *   탭의 영상을 디코드하지 않는다. 배경 탭에서 누르면 프레임이 0장으로 끝난다.
+ */
+async function runPoseAnalysis() {
+  const video = videoElement();
+  if (!video || poseReadiness() !== 'ready') return;
+  const range = VideoCmd.inOutRange(store);
+  const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : videoDurationSec;
+  const fromSec = range ? range.inSec : 0;
+  const toSec = range ? range.outSec : (Number.isFinite(duration) ? duration : 0);
+  if (!(toSec > fromSec)) {
+    // 길이를 모르는 것과 In~Out 이 뒤집힌 것은 사용자가 할 일이 다르다.
+    render(PoseCmd.failAnalysis(store, {
+      error: !Number.isFinite(duration) || duration <= 0
+        ? '영상 길이를 아직 모릅니다. 이 탭이 화면에 보이는 상태에서 영상이 뜬 뒤 다시 누르세요.'
+        : '분석할 구간이 없습니다. In~Out 을 다시 찍어 보세요.'
+    }));
+    return;
+  }
+
+  poseRunning = true;
+  poseFrames = [];
+  poseTracks = null;
+  render(PoseCmd.startAnalysis(store, { fromSec, toSec }));
+
+  const estimator = ensurePoseEstimator();
+  const loaded = await estimator.load();
+  if (!loaded.ok) {
+    poseRunning = false;
+    render(PoseCmd.failAnalysis(store, { error: loaded.error }));
+    return;
+  }
+  const res = await estimator.analyze(video, {
+    fromSec, toSec, fps: POSE_FPS, maxSubjects: 2,
+    onProgress: (done, total) => render(PoseCmd.setProgress(store, { done, total }))
+  });
+  poseRunning = false;
+  if (!res.ok) {
+    render(PoseCmd.failAnalysis(store, { error: res.error }));
+    return;
+  }
+  if (!res.frames.length) {
+    render(PoseCmd.failAnalysis(store, { error: '프레임을 한 장도 읽지 못했습니다. 이 탭이 화면에 보이는 상태에서 다시 눌러 보세요.' }));
+    return;
+  }
+  poseFrames = res.frames;
+  const tracks = rebuildPoseTracks();
+  let maxSubjects = 0;
+  for (const f of poseFrames) if (f.subjects.length > maxSubjects) maxSubjects = f.subjects.length;
+  render(PoseCmd.finishAnalysis(store, {
+    frames: poseFrames.length, maxSubjects,
+    trackIds: tracks.ids, ambiguous: tracks.ambiguous.length, lost: tracks.lost.length
+  }));
+  poseOverlay.invalidate();
+}
+
+/** 영상 위를 눌렀다 — 그 자리의 사람을 지금 보는 궤적의 앵커로 삼는다. */
+function onPosePick(sec, point) {
+  const found = poseFrameAt(sec);
+  if (!found || found.subjects.length === 0) return;
+  const index = pickSubjectAt({ sec: found.sec, subjects: found.subjects }, point);
+  if (index === null) return;
+  render(PoseCmd.addAnchor(store, { sec: found.sec, subject: index }));
+  rebuildPoseTracks();
+  views.pose?.render();
+  poseOverlay.invalidate();
+}
+
+const poseOverlay = createPoseOverlay({
+  canvas: videoPoseCanvasEl,
+  frame: videoFrameEl,
+  getVideoSize: () => {
+    const v = videoElement();
+    return v ? { w: v.videoWidth || 0, h: v.videoHeight || 0 } : { w: 0, h: 0 };
+  },
+  getCurrentSec: currentVideoSec,
+  isActive: () => VideoCmd.panelState(store).open && PoseCmd.hasOverlay(store),
+  getFrameAt: poseFrameAt,
+  getShowMesh: () => PoseCmd.poseState(store).showMesh,
+  onPick: onPosePick
+});
+
+views.pose = createPoseView({
+  store,
+  render,
+  getReadiness: poseReadiness,
+  onRun: runPoseAnalysis,
+  onChange: () => { rebuildPoseTracks(); poseOverlay.invalidate(); },
+  commands: {
+    clearAnalysis: () => dropPoseAnalysis(),
+    setActiveTrack: (args) => PoseCmd.setActiveTrack(store, args),
+    addTrack: () => PoseCmd.addTrack(store),
+    clearAnchors: () => PoseCmd.clearAnchors(store),
+    setMesh: (args) => PoseCmd.setMesh(store, args)
+  }
+});
+
+views.video = createVideoPanel({
+  store,
+  render,
+  commitHistory: () => render(commitHistory(BOARD_MAIN)),
+  getSourceUrl: videoSourceUrl,
+  getSource: () => VideoCmd.mediaState(store).source,
+  getFileLoaded: fileSourceReady,
+  onFileChosen: chooseLocalFile,
+  onOpenFromLibrary: () => openFromLibrary(true),
+  getLibraryState: () => libraryState,
+  getPlayerState: () => player.getState(),
+  getPlayerKind: () => player.kind,
+  getCurrentSec: currentVideoSec,
+  onSeek: seekVideoTo,
+  getTrimState: trimState,
+  getTrimError: () => trimError,
+  onTrim: trimCurrentClip,
+  // ⚠ 매 렌더 불린다(패널이 열린 채 URL 만 바뀌는 경로가 있다). 아래 셋은 전부 멱등이다.
+  onSync: (shown) => {
+    if (shown) {
+      tryLibraryQuietly();
+      ensurePlayer();
+      playhead.start();
+      poseOverlay.start();
+    } else {
+      poseOverlay.stop();
+      // ⚠ 반드시 멈춘다 — display:none 인 iframe 도 오디오는 계속 나온다(패널 닫기·루틴 편집기 열기).
+      player.pause();
+      playhead.stop();
+    }
+    playhead.invalidate();   // 폭이 달라졌을 수 있다(패널이 안무표를 좁힌다)
+    poseOverlay.invalidate();
+  },
+  commands: {
+    togglePanel: () => VideoCmd.togglePanel(store),
+    closePanel: () => VideoCmd.closePanel(store),
+    setCollapsed: (args) => VideoCmd.setCollapsed(store, args),
+    setFollow: (args) => VideoCmd.setFollow(store, args),
+    markTempoPoint: (args) => VideoCmd.markTempoPoint(store, args),
+    clearTempoPoints: () => VideoCmd.clearTempoPoints(store),
+    tapTempo: (args) => VideoCmd.tapTempo(store, args),
+    commitTaps: (args) => VideoCmd.commitTaps(store, args),
+    clearTaps: () => VideoCmd.clearTaps(store),
+    setTempo: (args) => VideoCmd.setTempo(store, args),
+    setBeatsPerCount: (args) => VideoCmd.setBeatsPerCount(store, args),
+    reanchorTo: (args) => VideoCmd.reanchorTo(store, args),
+    clearTempo: () => VideoCmd.clearTempo(store),
+    clearFileSource: () => VideoCmd.clearFileSource(store),
+    addTempoPoint: (args) => VideoCmd.addTempoPoint(store, args),
+    clearTempoMap: () => VideoCmd.clearTempoMap(store),
+    setInPoint: (args) => VideoCmd.setInPoint(store, args),
+    setOutPoint: (args) => VideoCmd.setOutPoint(store, args),
+    setInOut: (args) => VideoCmd.setInOut(store, args),
+    clearInOut: () => VideoCmd.clearInOut(store),
+    setLoop: (args) => VideoCmd.setLoop(store, args),
+    addMarker: (args) => VideoCmd.addMarker(store, args),
+    removeMarker: (args) => VideoCmd.removeMarker(store, args),
+    clearMarkers: () => VideoCmd.clearMarkers(store),
+    applyMarkerToTempo: (args) => VideoCmd.applyMarkerToTempo(store, args)
+  }
+});
+
+/**
+ * 배치 시작 카운트로 영상을 옮기고 그 자리에서 재생한다.
+ *
+ * ⚠ YouTube 의 착지 오차는 0.5초라(capabilities.seekToleranceSec) 180bpm 에서 1카운트보다 크다 —
+ *   "정확한 카운트로 점프"는 원리적으로 불가능하다. 대신 착지가 부정확할 뿐 **진행 자체는 정확**하므로,
+ *   프리롤(`ceil(tolerance / spc) + 2` 카운트)만큼 앞을 겨냥해 탐색한 뒤 재생으로 통과시킨다
+ *   (docs/PORTS.md '탐색은 정확하지 않다').
+ * ⚠ 그래서 여기서 재생까지 한다. 멈춘 채 탐색만 하면 표본이 갱신되지 않아(폴링은 재생 중에만 돈다)
+ *   재생 헤드가 옛 자리에 남는다. "누른 곳을 들려준다"가 이 조작의 뜻이기도 하다.
+ * ⚠ play() 는 **클릭 콜스택 안에서** 불러야 한다(capabilities.needsUserGesture) — await 뒤로
+ *   미루면 브라우저가 차단한다. 그래서 seek 을 기다리지 않고 곧바로 부른다.
+ */
+function seekToSpanStart(startSec) {
+  const tempo = VideoCmd.mediaState(store).tempo;
+  const tolerance = player.capabilities.seekToleranceSec;
+  const spc = secondsPerCount(tempo);
+  const preRoll = (Number.isFinite(tolerance) && spc > 0) ? (Math.ceil(tolerance / spc) + 2) * spc : 0;
+  player.seek(Math.max(0, startSec - preRoll));
+  player.play();
+}
+
+// 배치를 누르면 그 시각으로 영상이 이동한다.
+// ⚠ **영상 패널이 열려 있을 때만** 동작한다 — 닫혀 있으면 첫 두 줄에서 물러나므로 선택 동작이
+//   오늘과 한 글자도 다르지 않다. boardController 의 click 리스너와 같은 엘리먼트에 따로 붙으므로
+//   그쪽의 stopPropagation 은 이 핸들러를 막지 않는다(stopImmediatePropagation 이 아니다).
+boardEl.addEventListener('click', (e) => {
+  if (!VideoCmd.panelState(store).open) return;
+  if (!VideoCmd.isTempoReady(store)) return;
+  if (e.target.closest(SEL.moveHandle) || e.target.closest(SEL.resizeHandle)) return;
+  const placementEl = e.target.closest(SEL.placement);
+  if (!placementEl) return;
+  const groupId = placementEl.dataset[DATA.groupId];
+  const board = store.board(BOARD_MAIN);
+  const segments = board.placements.filter(p => p.groupId === groupId);
+  const span = groupToSpan(segments, board.cols, VideoCmd.mediaState(store).tempo);
+  if (!span) return;
+  seekToSpanStart(span.startSec);
+});
+
+// 첫 동기화. 기본이 open:false 라 패널은 hidden 그대로이고 재생기는 만들어지지 않는다.
+views.video.render();
+// ⚠ 자세 구획도 여기서 한 번 그린다. Dirty 라우팅을 타지 않는 첫 렌더라, 빠뜨리면 `인물` 줄이
+//   분석 전에도 떠 있고 버튼의 잠김 상태가 마크업 그대로 남는다.
+views.pose.render();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 17. 문서 허브 — 상단 액션 줄에 '문서' 버튼을 붙인다
 // ─────────────────────────────────────────────────────────────────────────────
 
 createDocsHub({ container: document.querySelector('.top-actions') });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 18. 설정 — 영상 보관 폴더. 어댑터(clipLibrary·localStore)를 아는 자리는 여기다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const llmServer = createLlmServer();
+// 자세 분석 모델은 **받아 두는 것까지만** 여기서 다룬다. 실제로 관절점을 뽑는 추정기는 아직 없다
+// (ports/pose.js 계약과 domain/pose·rom·poseTracks 만 있다) — 설정에서 위치를 정해 두면 그것이 붙을 자리다.
+const modelServer = createModelServer();
+
+views.settings = createSettingsView({
+  container: document.querySelector('.top-actions'),
+  getClipSetting: loadClipSetting,
+  saveClipSetting,
+  clips: clipLibrary,
+  llm: llmServer,
+  models: modelServer,
+  // 서버 모드면 설정은 서버의 것이다 — 폴더 선택 대신 경로 입력이고, 서버의 .clipserver.json 에 남는다.
+  server: {
+    isActive: () => !!clipServerConfig,
+    getConfig: () => clipServer.getConfig(),
+    setConfig: async (next) => {
+      const cfg = await clipServer.setConfig(next);
+      if (cfg) clipServerConfig = cfg;
+      return cfg;
+    }
+  },
+  getProjectName: projectNameForClips,
+  previewDirParts: clipDirParts,
+  // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
+  onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 19. 말로 채우기 — 음성/텍스트 → LLM 다듬기 → 스키마 → 배치. LLM 은 서버가 부른다(키는 서버에만).
+// ─────────────────────────────────────────────────────────────────────────────
+
+createComposeView({
+  container: document.querySelector('.top-actions'),
+  llm: llmServer,
+  getContext: () => {
+    const st = store.get();
+    const board = store.board(BOARD_MAIN);
+    return {
+      cols: board.cols, rows: board.rows,
+      moves: st.library.map(m => m.name),
+      categories: Object.fromEntries(Object.entries(st.categories).map(([k, v]) => [k, v.label]))
+    };
+  },
+  previewPlan: (plan) => PlanCmd.previewPlan(store, plan),
+  applyPlan: (plan, args) => PlanCmd.applyPlan(paletteCtx, plan, args),
+  render,
+  commitHistory: () => render(commitHistory(BOARD_MAIN)),
+  getCols: () => store.board(BOARD_MAIN).cols,
+  hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
+});

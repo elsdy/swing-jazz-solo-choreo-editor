@@ -61,6 +61,11 @@ const IDLE_FETCH = { status: 'idle', title: '' };
  *   updateCustomLink: (id: string, fields: { label?: string, url?: string }) => any,
  *   removeCustomLink: (id: string) => any
  * }} commands app/main 이 linkCommands 를 묶어 넘긴다.
+ * @property {(rawUrl: string) => void} [onYoutubeUrlCommit] 2026-09 신설(영상 패널).
+ *   YouTube URL 이 **확정될 때**(change · ✕ 초기화) 원문 그대로 한 번 불린다 — app/main 이
+ *   `videoCommands.setSource` 로 잇는다. 기본은 무동작이라 넘기지 않으면 오늘과 동작이 같다.
+ *   ⚠ commitHistory **앞에서** 부른다. 뒤에서 부르면 링크와 영상 소스가 서로 다른 undo 단계가 된다.
+ *   ⚠ `input` 이 아니라 change 인 이유는 commitHistory 와 같다 — 글자마다 부르면 iframe 이 재로드된다.
  * @property {() => void} [commitHistory] 링크 편집 뒤 undo 스냅샷을 쌓는다. app/main 이
  *   `() => render(commitHistory('main'))` 로 넘긴다(Dirty.history 는 Undo/Redo 버튼만 건드리므로
  *   입력 중에 링크바를 다시 그리지 않는다). 없으면 커밋을 건너뛴다(테스트용).
@@ -91,6 +96,7 @@ export function createLinksBarView(deps) {
     titleFetchState = () => IDLE_FETCH,
     commands,
     commitHistory = () => {},
+    onYoutubeUrlCommit = () => {},
     debounce,
     fetchTitle,
     elements = {}
@@ -271,7 +277,11 @@ export function createLinksBarView(deps) {
     });
     // 2026-09 — 커밋은 blur/Enter 한 번뿐이다. 위 'input' 에 걸면 글자마다 undo 단계가 쌓인다.
     // ⚠ 이 시점의 제목은 아직 조회 전(빈 문자열)일 수 있다. 제목은 다음 커밋에 실린다.
-    ytInput.addEventListener('change', () => commitHistory());
+    // 2026-09 — 영상 소스 확정도 여기 한 번이다(정규화하지 않은 **원문**을 그대로 넘긴다).
+    ytInput.addEventListener('change', () => {
+      onYoutubeUrlCommit(ytInput.value);
+      commitHistory();
+    });
   }
 
   const cuInput = byId('clickupUrlInput');
@@ -289,6 +299,7 @@ export function createLinksBarView(deps) {
       commands.resetYoutube();                                       // 5253-5254 + 저장(5257)
       if (ytInput) ytInput.value = '';                               // 5255
       renderYoutubeExtras();                                         // 5256
+      onYoutubeUrlCommit('');                                        // 2026-09 — 소스 없음도 정상 상태다
       commitHistory();                                               // 2026-09
     });
   }

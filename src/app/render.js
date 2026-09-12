@@ -20,7 +20,7 @@
 //
 // ⚠ 이 파일은 커맨드를 부르지 않는다. store 는 **읽기만** 한다.
 
-import { BOARD_IDS, expandRows, assertDirty } from '../usecases/store.js';
+import { BOARD_IDS, BOARD_MAIN, expandRows, assertDirty } from '../usecases/store.js';
 import * as Grid from '../domain/grid.js';
 
 /**
@@ -43,6 +43,8 @@ import * as Grid from '../domain/grid.js';
  *   routineEditor?: { sync(): void, syncHistory(): void },
  *   savedLists?: { render(kind: string, list?: unknown[]): void },
  *   linksBar?: { render(links?: object, titleFetch?: object): void },
+ *   video?: { render(): void, renderStatus(): void, renderCut(): void },
+ *   pose?: { render(): void },
  *   notify?: (n: { kind: 'alert', message: string }) => void
  * }} views
  * @param {{ dev?: boolean, paranoid?: boolean }} [options]
@@ -80,6 +82,9 @@ export function createRenderer(store, views, options = {}) {
         : expandRows(store.get(), boardId, b.rows);
       view.updateRows(rows, store.viewDeps(boardId));
     }
+    // 메인 보드가 다시 그려졌으면 재생 헤드의 캐시(칸 폭·켜 둔 블록)를 버린다. 헤드 자체는 여기서
+    // 그리지 않는다(채널 B) — 다음 rAF 프레임이 스스로 다시 잰다.
+    if (d.layout || d.boards?.[BOARD_MAIN]) views.playhead?.invalidate();
 
     // ── ③ selection — 행 재렌더 없이 클래스만 ──────────────────────────────
     // ⚠ **전체 선택 집합**을 넘긴다(바뀐 것만이 아니다). 루틴 보드에는 붙는 게 없다
@@ -87,6 +92,8 @@ export function createRenderer(store, views, options = {}) {
     if (d.selection) {
       views.board?.main?.setSelected(store.selection);
       views.toolbar?.syncSelection();
+      // 영상 패널의 `선택한 블록이 여기서 시작` 은 선택에 따라 켜지고 꺼진다. 패널 전체가 아니라 템포 구획만 다시 그린다.
+      views.video?.syncSelection();
     }
 
     // ── ④ 패널 ────────────────────────────────────────────────────────────
@@ -101,6 +108,10 @@ export function createRenderer(store, views, options = {}) {
     }
     if (d.routineList) views.routineList?.render();
     if (d.routineEditor) views.routineEditor?.sync();
+    // ⚠ 영상 패널은 **루틴 편집기와 동시에 열리지 않는다**(CSS 가 `[data-routine="on"]` 으로 가린다).
+    //   그래서 편집기 개폐도 이 패널을 다시 그려야 한다 — 안 그리면 숨겨진 채 소리만 계속 난다.
+    // ⚠ 재생 헤드는 이 경로를 타지 **않는다**. 초당 60회 재렌더가 된다(ui/playhead.js 채널 B).
+    if (d.video || d.routineEditor) { views.video?.render(); views.pose?.render(); }
     if (d.savedLists) {
       for (const kind of d.savedLists) views.savedLists?.render(kind, store.recents[kind]);
     }

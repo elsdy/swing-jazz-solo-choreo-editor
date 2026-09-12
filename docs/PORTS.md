@@ -1,13 +1,13 @@
 # 포트 계약
 
-이 문서는 아직 없는 세 가지 — 동영상 플레이어, 외부 시퀀스 엔진, 연습 버전 저장소 — 가 이 앱의 **어디로** 들어오는지를 적는다. 그 기능을 실제로 붙이러 왔을 때 읽는다. 계약은 이미 `src/ports/` 와 `src/domain/tempo.js` 에 코드로 들어가 있고 구현만 비어 있으므로, 여기 적힌 것과 소스가 다르면 **소스가 맞다**. 계층 규칙 전반은 [아키텍처](ARCHITECTURE.md)에, 앞으로의 순서는 [로드맵](ROADMAP.md)에 있다.
+이 문서는 바깥 세계가 이 앱의 **어디로** 들어오는지를 적는다. 셋을 다룬다 — 동영상 플레이어, 외부 시퀀스 엔진, 연습 버전 저장소. **동영상 플레이어는 2026-09-09 에 실물이 들어왔고**(YouTube 어댑터와 영상 패널), 나머지 둘은 계약만 있고 구현이 비어 있다. 계약은 `src/ports/` 와 `src/domain/tempo.js` 에 코드로 들어가 있으므로, 여기 적힌 것과 소스가 다르면 **소스가 맞다**. 계층 규칙 전반은 [아키텍처](ARCHITECTURE.md)에, 앞으로의 순서는 [로드맵](ROADMAP.md)에 있다.
 
 ## 붙이기 전에 — 실행 방법
 
-`src/` 가 ES 모듈로 나뉘어 있어 `index.html` 을 더블클릭해 `file://` 로 여는 방식은 더 이상 동작하지 않는다. 저장소 루트에서 정적 서버를 띄우고 `http://localhost:8000` 으로 연다.
+`src/` 가 ES 모듈로 나뉘어 있어 `index.html` 을 더블클릭해 `file://` 로 여는 방식은 더 이상 동작하지 않는다. 저장소 루트에서 `python3 server.py` 를 띄우고 `http://localhost:8000` 으로 연다(정적 서버로 열어도 앱은 뜨지만 영상 보관이 브라우저 폴더 방식이 된다).
 
 ```
-python3 -m http.server 8000
+python3 server.py
 ```
 
 이 제약은 영상 기능의 전제조건이기도 하다. YouTube IFrame API 는 `enablejsapi=1` 과 함께 `origin` 을 요구하는데 `file://` 문서의 origin 은 `null` 이라 API 가 애초에 붙지 않는다. 정적 서버 위에서 여는 지금 방식이 그대로 조건을 만족한다. 자세한 실행 절차는 [튜토리얼](TUTORIAL.md)에 있다.
@@ -110,6 +110,8 @@ python3 -m http.server 8000
 
 10Hz 도 60fps 화면에는 부족하다. 그래서 뷰는 표본을 **보간**한다 — `getTimeSample()` 을 매 프레임 부르는 대신, 마지막 표본과 현재 시각으로 `projectTime` 을 계산한다.
 
+그러므로 "10Hz 이상"은 **표본을 10Hz 로 뜨라는 뜻이 아니라, 소비자가 보는 시각이 10Hz 이상으로 정확하라는 뜻**이다. YouTube 어댑터는 이것을 250ms(4Hz) 폴링 + 보간으로 만족시킨다. 표본을 10Hz 로 뜨면 iframe 경계를 넘는 호출이 초당 10번이라 저가 기기에서 눈에 띄게 버벅이는데, 보간은 배속까지 반영하므로 화면은 오히려 60fps 로 매끄럽다. 어댑터가 표본 간격을 정할 때 지켜야 하는 것은 **보간 오차가 1카운트보다 작을 것** 하나다(250ms 는 400bpm·1박 카운트에서도 1.7카운트가 아니라 표본 지연일 뿐이고, 실제 오차는 `rate` 가 바뀌는 순간의 한 표본에만 생긴다).
+
 ```js
 projectTime(sample, nowMs, durationSec = null)
 // !sample          → 0
@@ -200,15 +202,21 @@ linearOf(row, index, cols) = (row - 1) * cols + index
 | `groupToSpan(segments, cols, tempo)` | 같은 그룹의 세그먼트 배열 → 초 구간 | 세그먼트 사이의 빈틈은 메우지 않고 포함한다. 빈 배열이면 `null` |
 | `spanToCountRange(startSec, endSec, cols, tempo)` | 엔진의 초 구간 → `{from, to}` 격자 범위 | 양끝 포함. 뒤집힌/영길이 구간은 한 칸으로 접는다 |
 | `tempoFromTwoPoints(a, b, beatsPerCount?)` | 두 점 → `Tempo` | 순서가 뒤집혔거나 간격이 0 이면 `null` |
-| `reanchor(tempo, point)` | bpm 유지, 앵커만 이동 | |
+| `reanchor(tempo, point)` | bpm 유지, 앵커만 이동 | 보정점이 있으면 지우지 않고 지도 전체를 같은 만큼 민다(옛 앵커는 보정점으로 남는다) |
+| `tempoPoints(tempo)` | 변환에 실제로 쓰는 점열(앵커 + 보정점, 카운트순) | 길이 ≥ 1. 앵커와 같은 카운트의 보정점이 앵커를 덮고, 앵커와 되감기는 보정점은 버린다 |
+| `addTempoPoint(tempo, point)` | 보정점 하나 추가(같은 카운트는 교체) | 되감기는 점이면 **`null`** — 넣지 않는다. 다른 점을 몰래 버리지 않는다 |
+| `removeTempoPoint(tempo, count)` · `clearTempoPointsOf(tempo)` | 보정점 제거 | bpm·앵커는 그대로 |
+| `normalizeTempoPoints(raw)` | 손상된 보정점 배열 정리 | 카운트순 정렬, 같은 카운트는 뒤가 이김, 앞 점보다 되감기는 점은 버림 |
 | `bpmFromTaps(tapSecs, beatsPerTap?)` | 탭 템포 → bpm | 클램프하지 않은 날 값이다. 탭 2개 미만이거나 오름차순이 아니면 `null` |
 
-핵심은 두 줄이고 나머지는 전부 이 둘의 조합이다.
+핵심은 두 줄이고 나머지는 전부 이 둘의 조합이다. 보정점이 없을 때(대부분의 파일)는 정확히 아래 식이다.
 
 ```js
 countToTime(count, t) = t.anchorSec + (count - t.anchorCount) * secondsPerCount(t)
 timeToCount(sec, t)   = t.anchorCount + (sec - t.anchorSec) / secondsPerCount(t)
 ```
+
+보정점(`t.points`, 2026-09-09)이 있으면 `tempoPoints(t)` 가 앵커와 보정점을 합친 점열을 만들고, 두 함수는 **점열 사이를 구간별 선형으로 잇고 양 끝 밖은 위 식의 기울기로 뻗는다.** 점열이 카운트·초 모두 오름차순이라 두 함수는 서로의 정확한 역함수다. 앵커는 여전히 점 하나일 뿐이라 이 절의 다른 함수(`timeToCell` · `placementToSpan` · `spanToCountRange`)는 한 글자도 바뀌지 않았다.
 
 경계에서는 `1e-9` 카운트의 허용 오차를 흡수해서 내림한다. 이게 없으면 `countToTime` 을 거쳐 돌아온 정확히 8인 카운트가 `7.999999999999998` 로 나오고, 재생 헤드가 한 칸 뒤 칸을 `fraction 0.99999` 로 가리킨다. 400bpm·`beatsPerCount 0.125` 에서도 `1e-9` 카운트는 2e-11 초라 무해하다.
 
@@ -434,9 +442,9 @@ v1 → v2 단계가 하는 일은 링크 4필드를 `doc.links` 로 묶고, 결�
 
 `부분 채우기` 는 `media` 도 링크도 가져오지 않는다. 현재 보드의 곡과 템포를 남의 파일이 덮어쓰면 안 된다.
 
-## 영상 패널이 들어갈 자리
+## 영상 패널이 들어간 자리
 
-아직 `index.html` 에 마크업도 CSS 도 없다. 여기 적는 것은 **어디를 어떻게 쪼개는지**에 대한 결정이다.
+**2026-09-09 에 실제로 들어갔다.** 아래 결정은 전부 코드가 되었고, 문단마다 어느 파일이 그것을 지키는지 적어 둔다. 계약이 먼저 쓰였고 구현이 그것을 따라간 자리이므로, 앞으로 이 절을 고칠 때는 코드와 함께 고쳐야 한다.
 
 ### 삽입 지점
 
@@ -447,6 +455,10 @@ v1 → v2 단계가 하는 일은 링크 4필드를 `doc.links` 로 묶고, 결�
 - **iframe 은 DOM 에서 부모를 바꾸면 리로드된다.** 그래서 "데스크톱은 옆, 모바일은 위"를 DOM 이동으로 구현하면 안 된다. 이 제약이 삽입 지점을 사실상 하나로 확정한다.
 
 URL 입력은 **새로 만들지 않는다.** 링크바에 이미 있는 `YouTube URL 입력...` 칸이 그대로 소스다. 상태를 두 곳에 두지 않는다.
+
+> 구현: `index.html` 의 `<aside class="video-panel" id="videoPanel" hidden>` 이 `#routineEditorPanel` 뒤에 있고, 링크바의 확정(`change` · `✕`)이 `ui/linksBarView.js` 의 `onYoutubeUrlCommit` 으로 `usecases/videoCommands.setSource` 를 부른다. `input` 에는 걸지 않는다 — 글자마다 iframe 이 다시 로드된다.
+>
+> 이 "두 곳에 두지 않는다"는 초기화 경로에서도 지켜야 한다. `전체 초기화(링크 포함)` 가 링크바만 비우고 `media.source` 를 남기면 같은 사실이 갈라진다(아래 참조).
 
 ### 데스크톱과 모바일
 
@@ -461,6 +473,8 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 
 넓은 화면에서 루틴 편집기와 영상 패널을 동시에 열지 않는다. 루틴 편집 패널이 폭의 절반 가까이를 차지해서 둘 다 열리면 메인 보드가 짜부라진다. 그리고 **숨길 때 반드시 `pause()` 를 부른다** — `display:none` 인 iframe 도 오디오는 계속 나온다.
 
+> 구현: `.boards-container` 에 `data-routine` · `data-video`(`'on'`|`'off'`) 두 표식이 붙고(`ui/domContract.js` 가 소유), CSS 는 그 둘만 본다 — `.boards-container[data-routine="on"] .video-panel { display: none }` 과 `@media (max-width:1040px) .boards-container[data-video="on"] { flex-direction: column }`. 끈 상태에서는 어느 규칙도 매칭되지 않으므로 이 기능이 들어오기 전 화면과 같다. `pause()` 는 `ui/videoPanel.js` 의 `onSync(false)` 를 받은 `app/main.js` 가 부른다(어댑터를 아는 유일한 자리다).
+
 ### 재생 헤드가 렌더 파이프라인을 타면 안 되는 이유
 
 지금 모든 상태 변경은 스토어를 거쳐 뷰 갱신으로 라우팅된다. 재생 헤드를 이 경로에 태우면 **초당 60회 전체 재렌더**가 된다.
@@ -474,22 +488,39 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 
 반대로 **템포는 undo 에 들어가야 한다.** 앵커는 사용자가 공들여 찍는 값이라 오조작 손실이 크고, 스냅샷 증가량은 숫자 네 개다. 다만 드래그·타이핑 중에는 히스토리를 남기지 않고 확정 시점에만 커밋한다.
 
-`전체 초기화` 는 곡 정보를 지우지 않는다. 전체 초기화의 의미는 "배치 지우기"이지 "곡 정보 폐기"가 아니다. 만약 지우도록 넓힌다면 되돌리기 장치와 확인 문구를 **같은 커밋에서** 함께 손봐야 한다([개발 원칙 R-4](PRINCIPLES.md#r-4)). 링크가 그 규칙을 어긴 채 다섯 달 남아 있다가 2026-09-07 에 닫혔다 — 되돌리기 범위(`UNDO_FIELDS`)를 정리 범위와 같게 맞추고 버튼 라벨을 `전체 초기화(링크 포함)` 으로 바꿨다. 곡 정보를 지우는 쪽으로 넓힐 때도 같은 세 가지(필드 목록·복원 경로의 저장소 되쓰기·라벨)를 한 커밋에서 함께 한다.
+### `전체 초기화(링크 포함)` 가 영상까지 지우는 이유
+
+계약을 쓸 때는 "`전체 초기화` 는 곡 정보를 지우지 않는다 — 전체 초기화의 의미는 배치 지우기이지 곡 정보 폐기가 아니다" 로 정해 두었다. **2026-09-09 에 뒤집었다.** 그 전제가 이 버튼에는 맞지 않는다는 것이 실물에서 드러났기 때문이다.
+
+이 버튼은 이름 그대로 링크바의 `youtubeUrl` 을 **이미 지운다**. 그런데 `media.source` 를 남기면 링크바는 비었는데 패널은 옛 영상을 계속 싣고, 다음 저장이 사용자가 지운 주소를 파일에 다시 쓴다 — 위에서 "상태를 두 곳에 두지 않는다" 고 못 박은 그 불변식이 이 한 경로에서만 깨진다. 템포도 함께 버린다. 앵커와 bpm 은 **그 영상의 시간축**에 붙은 값이라, 소스만 버리고 템포를 남기면 다음에 붙인 다른 영상에 옛 앵커가 조용히 적용되어 재생 헤드가 그럴듯한 거짓 위치를 가리킨다 — 이 기능에서 가장 나쁜 실패다.
+
+[개발 원칙 R-4](PRINCIPLES.md#r-4) 가 요구하는 세 가지는 같은 커밋에서 함께 확인했다.
+
+| 확인할 것 | 이 경우 |
+|---|---|
+| 되돌리기 범위 | `media` 는 이미 `UNDO_FIELDS` 안이고 호출부가 곧바로 커밋한다. `Undo` 한 번이면 배치·링크와 함께 템포와 소스가 살아난다 |
+| 복원 경로의 저장소 되쓰기 | 필요 없다. `media` 는 localStorage 에 없다(링크와 달리 프로젝트 파일에만 있다) |
+| 버튼 라벨 | 이미 `전체 초기화(링크 포함)` 이다. 영상 소스는 그 링크의 사본이므로 라벨이 이미 그것을 말한다 |
+
+구현은 `usecases/videoCommands.clearMedia` 이고 `boardCommands.clearBoard` 가 `clearLinks` 옆에서 부른다. **비어 있으면 `NONE` 을 돌려준다** — 영상을 한 번도 안 쓴 사용자의 `전체 초기화` 는 Dirty 가 글자 하나 달라지지 않아야 하고, 골든 150 이 그것을 재생한다.
+
+링크가 같은 규칙을 어긴 채 다섯 달 남아 있다가 2026-09-07 에 닫혔다 — 되돌리기 범위(`UNDO_FIELDS`)를 정리 범위와 같게 맞추고 버튼 라벨을 `전체 초기화(링크 포함)` 으로 바꿨다. 이번 것은 같은 함정을 하루 만에 닫은 셈이다.
 
 ## 아직 정해지지 않은 것
 
 [로드맵](ROADMAP.md)의 미결정 사항 중 **계약의 모양을 바꾸는 것**만 여기 적는다.
 
-- **intro 행(row 0)을 시간 축에 넣는가.** 지금은 `(row-1)*cols+index` 한 식으로 intro 를 음수 카운트로 분기 없이 처리한다. 빼기로 하면 `timeToCell` 과 `spanToCountRange` 의 반환 규약이 달라진다.
-- **버전마다 영상이 다른가.** 다르다면 영상 정보가 `ChoreoVersion` 안으로 들어가고, 공통이면 프로젝트 최상위에 남는다. `ChoreoVersion.reference` 필드가 지금 그 자리를 비워 두고 있다.
+- ~~**intro 행(row 0)을 시간 축에 넣는가.**~~ **2026-09-09 에 넣기로 정했다.** `(row-1)*cols+index` 한 식이 intro 를 음수 카운트로 분기 없이 떨어뜨리고, 재생 헤드도 거기 그대로 선다. `timeToCell` · `spanToCountRange` 의 반환 규약은 바뀌지 않았다.
+- ~~**버전마다 영상이 다른가.**~~ **지금은 프로젝트 공통이다.** `media` 블록이 `ChoreoDoc` 최상위에 있다. 나눌 때가 오면 블록 통째로 `ChoreoVersion.reference` 옆으로 내려가고 최상위에는 "기본 영상"만 남는다 — 그래서 `tempo` 와 `source` 를 state 에 평평하게 풀지 않고 블록 하나로 묶어 두었다(`domain/project/media.js`).
+- **`media` 최상위 키 이름이 겹친다.** v2 `ProjectFile` 에는 `MediaRef[]` 자리로 예약된 `media`(항상 `[]`)가 이미 있었고, 새 블록도 `media` 다. 지금은 마이그레이션이 `raw.media` 를 명시적으로 `doc.media` 로 내려 충돌을 피하지만, `MediaRef[]` 를 실제로 쓰기 시작할 때 둘 중 하나의 이름을 바꿔야 한다.
 - **루틴 편집 보드에도 카운트 ↔ 시간을 적용하는가.** 적용한다면 Tempo 가 보드마다 하나씩 두 벌이 된다. "루틴은 시간 매핑 없음"으로 못 박는 편이 단순하다.
-- **로컬 영상 파일을 어디까지 지원하는가.** `MediaSource` 의 `{kind:'file', url}` 은 blob URL 이라 저장할 수 없다. 파일명·크기만 힌트로 남기고 다음에 다시 고르게 할지, 더 갈지에 따라 저장 포맷이 달라진다.
+- ~~**로컬 영상 파일을 어디까지 지원하는가.**~~ **2026-09-09 에 정했다.** 저장 포맷의 `MediaSourceRef` 는 `{kind:'file', name, path?}` 이고 url 이 없다. `path` 는 설정의 보관 폴더 기준 상대 경로(`video-clip/<프로젝트>/<파일>`)로, 보관 폴더에 복사한 파일만 갖는다. 실행 중의 blob URL 은 `app/main` 이 `URL.createObjectURL` 로 만들고 revoke 까지 책임지며, 재생기에는 `{kind:'file', url, name}` 으로 들어간다. 저장 참조(이름)와 실물(blob)의 연결은 이름 비교 하나다 — 다시 열면 이름만 있고 실물이 없으므로 패널이 "같은 파일을 다시 골라 달라"고 안내한다.
 - **엔진 상태 blob 의 크기 상한을 둘 것인가.** `EngineSession.getState()` 가 돌려주는 것을 우리는 파싱하지 않고 왕복만 시킨다. 그런데 프로젝트 JSON 은 파일과 최근 목록 10개에 동시에 들어가므로 blob 이 크면 쿼터를 때린다. 상한 초과 시 조용히 강등할지 알릴지 정해야 한다.
 - **저장 실패를 사용자에게 알릴 것인가.** `StorageError` 의 네 코드는 정의되어 있지만 아무도 던지지 않는다. 던지기 시작하면 새 한국어 문구가 생기고, 그건 동작 변경이다.
 
-## 이번 단계에 들어간 것과 비워 둔 것
+## 이번 PR 에 실제로 들어간 것과 비워 둔 것
 
-계약과 문서까지만 만들고 구현은 비웠다. 던지기만 하는 미구현 스텁은 만들지 않았다 — 그건 지뢰다.
+계약이 먼저 쓰인 자리였다. **2026-09-09 에 영상 패널이 실제로 들어가면서** 아래 표의 절반이 "비워 둔 것" 에서 "들어간 것" 으로 넘어갔다. 여전히 던지기만 하는 미구현 스텁은 만들지 않는다 — 그건 지뢰다.
 
 | 들어간 것 | 무엇 |
 |---|---|
@@ -501,15 +532,24 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 | `src/domain/project/schema.js` | `ChoreoDoc` / `ChoreoVersion` / `PracticeLog` / `MediaRef` / `CountRef` 타입, `SCHEMA_VERSION`, `LEGACY_FILE_VERSION` |
 | `src/domain/project/migrations.js` | v1 → v2 마이그레이션. **실제로 배선되어 돈다** |
 | `tools/check-arch.mjs` | 계층 방향과 순수성의 기계 검사. `node tools/check-arch.mjs` 로 돌린다 |
-| `tests/unit/domain.test.mjs` | Tempo 를 포함한 도메인 단위 테스트 25개. `countToTime` ↔ `timeToCount` 왕복, `timeToCell` 의 fraction 범위, `tempoFromTwoPoints` 의 거부 조건을 검사한다. `node --test 'tests/**/*.test.mjs'` 로 돌린다 |
+| `tests/unit/domain.test.mjs` | 도메인·어댑터·유스케이스 단위 테스트 **89개**(+ `tests/server.test.mjs` 의 서버 실물 3개). `countToTime` ↔ `timeToCount` 왕복(보정점 있을 때 포함), `timeToCell` 의 fraction 범위, `tempoFromTwoPoints` 의 거부 조건, 보정점의 되감기 거부·교체·`reanchor` 밀기·빈 보정점 미저장에 더해 YouTube 어댑터의 계약 충족·스크립트 로드 실패·`onTime` 3보장, `<video>` 어댑터의 계약 충족·디코드 실패·자동재생 차단·착지 시각, 파일 소스가 이름만 남기는 것, 재생 위치가 store 에 없다는 것, 빈 `media` 가 저장 바이트를 안 늘린다는 것을 검사한다. `node --test 'tests/**/*.test.mjs'` 로 돌린다 |
+| `src/adapters/media/youtubePlayer.js` | **2026-09-09.** IFrame API 를 MediaPlayer 계약으로 감싼 실물. 마지막 줄이 `assertMediaPlayer` 다. 생성만으로는 DOM·네트워크를 안 건드리고 첫 `load()` 에서 `<script>` 가 붙는다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가지 않는다 |
+| `src/adapters/media/pickPlayer.js` | **2026-09-09.** URL 또는 MediaSource → `'youtube'` \| `'file'` \| `'null'`. `domain/links.parseYoutubeUrl` 을 재사용하고 정규식을 한 글자도 쓰지 않는다. 언제나 완전한 MediaPlayer 를 돌려주므로 호출부에 `player?.` 가 생기지 않는다 |
+| `server.py` 의 `/api/llm/*` · `src/adapters/llmServer.js` · `src/domain/choreoPlan.js` · `src/usecases/planCommands.js` · `src/ui/composeView.js` | **2026-09-09.** 말로 채우기. 서버가 Claude(Messages API 직접 호출, `claude-opus-5`, 구조화 출력, 서버 측 폴백) · OpenAI · Ollama 를 한 모양으로 감싸고 키는 서버에만 둔다. 도메인이 플랜을 격자 항목으로, 유스케이스가 기존 배치 경로로 놓는다. 서버 테스트가 가짜 Ollama 로 다듬기→스키마→검증을 끝까지 돌린다 |
+| `server.py` · `src/adapters/clipServer.js` · `tests/server.test.mjs` | **2026-09-09.** 영상 보관 서버. 파이썬 표준 라이브러리만 쓰는 로컬 서버가 정적 파일 위에 `/api/health` · `/api/config` · `/api/clips` · `/clips/<path>`(Range) 를 얹는다. 클라이언트는 `probe` 로 서버가 있는지 보고 없으면 브라우저 폴더 방식으로 떨어진다. 보관 위치는 `--root`/`--subdir` 또는 앱 설정에서 바꾸고 `.clipserver.json` 에 남는다 |
+| `src/ports/clips.js` · `src/adapters/clipLibrary.js` · `src/domain/clips.js` | **2026-09-09.** 영상 보관 폴더(브라우저 방식, 서버가 없을 때). 계약(`ClipLibrary`: `isSupported` · `getFolder` · `pickFolder` · `forgetFolder` · `ensurePermission(interactive)` · `saveClip` · `openClip`), File System Access API + IndexedDB 구현, 그리고 `<subdir>/<프로젝트>/<파일>` 경로 규칙(순수). 폴더 핸들은 IndexedDB `choreo_clips` 에, 표시 이름·하위 폴더는 localStorage `choreo_clip_folder` 에 있다. 지원하지 않는 브라우저에서는 전부 "없음"으로 답하고 던지지 않는다 |
+| `src/adapters/media/filePlayer.js` | **2026-09-09.** `<video>` 를 MediaPlayer 계약으로 감싼 실물. `seekToleranceSec` 0.05, 재생 중 100ms 표본 + `timeupdate`. `MediaError.code` 를 포트의 5종 코드로 접고 한국어 문구는 만들지 않는다. blob URL 을 만들지도 놓지도 않는다(그건 `app/main` 의 몫) |
+| `src/usecases/videoCommands.js` | **2026-09-09.** 패널 상태 · 두 점 앵커 · 탭 템포 · 소스 확정 · `clearMedia`. DOM 도 플레이어도 시계도 모른다(시각은 전부 인자로 들어온다) |
+| `src/ui/videoPanel.js` · `src/ui/playhead.js` | **2026-09-09.** 패널 뷰(채널 A)와 재생 헤드(채널 B). 헤드는 rAF 루프가 자기 엘리먼트의 `transform` 만 쓴다 |
+| `src/domain/project/media.js` | **2026-09-09.** `media` 블록의 정규화·직렬화. 비어 있으면 `null` 을 돌려 `buildProjectFile` 이 키째로 뺀다 |
+| 저장 포맷의 `media` 블록 | **2026-09-09.** `{tempo, source}` 가 `customLinks` 뒤에 붙는다. `UNDO_FIELDS` 와 `DOC_FIELDS` 양쪽에 있다. `tempo.points`(보정점)는 있을 때만 쓰인다 — 빈 배열은 키째로 뺀다. **2026-09-10** 부터 세 번째 키 `markers`(영상 구간 ↔ 카운트 구간, `domain/markers.js`)가 맨 뒤에 붙고 같은 규칙으로 비면 빠진다 |
+| `index.html` 의 영상 패널 마크업·CSS | **2026-09-09.** `#boardsContainer` 의 세 번째 flex 자식. 기존 규칙은 한 줄도 고치지 않고 `</style>` 앞에 165줄을 더하기만 했다 |
 
 | 비워 둔 것 | 상태 |
 |---|---|
-| YouTube 어댑터 · 로컬 `<video>` 어댑터 | 없다. `src/adapters/` 에 있는 것은 브라우저·localStorage·널 재생기·oEmbed 넷뿐이다 |
-| 재생 헤드 유스케이스와 영상 패널 뷰 | 없다. `index.html` 에 영상 패널 마크업도 CSS 도 들어가지 않았다 |
-| 시퀀스 엔진 진입점 | 없다. 엔진이 실제로 올 때 어댑터와 함께 만든다 |
+| 재생·정지 · 배속 · 구간 반복 조작 | 없다. 재생은 iframe 안의 유튜브 자체 UI 로 한다. 패널이 부르는 것은 배치 클릭의 `seek` + `play` 와 숨길 때의 `pause` 뿐이다 |
+| 시퀀스 엔진 진입점 | 없다. 엔진이 실제로 올 때 어댑터와 함께 만든다. [로드맵 3번](ROADMAP.md)이 그 조사 결과다 |
 | `nullSequenceEngine` | **일부러 만들지 않았다.** 위의 이유 참조 |
 | 저장소 어댑터의 Promise 판 · IndexedDB | 없다. `localStore.js` 는 오늘과 같이 동기 localStorage 다 |
 | 버전·연습 기록 리포지토리 구현 | 없다. 인메모리 참조 구현도 만들지 않았다. `VersionRepository` 등은 typedef 뿐이다 |
-| 저장 포맷의 `media` 블록 | 없다. 파일은 오늘과 같은 필드에 `version: 1` 로 나간다. Tempo 를 저장하는 코드가 아직 없다 |
 | `StorageError` 를 던지는 경로 | 정의만 있다 |
