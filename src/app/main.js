@@ -75,7 +75,7 @@ import { createPlayhead } from '../ui/playhead.js';
 import { SEL, DATA } from '../ui/domContract.js';
 import { confirmOnce } from '../ui/widgets.js';
 import { readCellW } from '../ui/cssVars.js';
-import { initLayout, syncCellSize } from '../ui/layout.js';
+import { initLayout, isStacked, syncCellSize } from '../ui/layout.js';
 
 import { createDragSession } from '../input/dragSession.js';
 import { createPointerSession } from '../input/pointerSession.js';
@@ -1175,7 +1175,12 @@ views.video = createVideoPanel({
       player.pause();
       playhead.stop();
     }
-    playhead.invalidate();   // 폭이 달라졌을 수 있다(패널이 안무표를 좁힌다)
+    // 패널이 안무표를 좁혔거나 넓혔다. 순서가 중요하다 — 셀 폭을 **먼저** 다시 재고, 그 결과를
+    // 재생 헤드가 다음 프레임에 다시 읽게 한다(채널 B). 반대로 하면 헤드가 옛 칸 폭에 선다.
+    // ⚠ 이 재측정을 videoCommands 의 Dirty 로 올리면 안 된다 — app/render 는 layout 을 맨 먼저
+    //   처리하는데 패널의 hidden 은 그 뒤에 뒤집혀서, 바뀌기 전 폭을 재게 된다.
+    views.layout?.syncCellSize();
+    playhead.invalidate();
     poseOverlay.invalidate();
   },
   commands: {
@@ -1251,11 +1256,26 @@ boardEl.addEventListener('click', (e) => {
   seekToSpanStart(span.startSec);
 });
 
-// 첫 동기화. 기본이 open:false 라 패널은 hidden 그대로이고 재생기는 만들어지지 않는다.
+// 넓은 화면에서는 **열고 시작한다**(2026-09-12).
+//
+// 안무표를 채우는 길은 둘이고(docs/EDITING_FLOWS.md '방향은 둘뿐이다') 그중 하나가 영상에서
+// 시작하는 길이다 — 영상을 보며 받아 적고, 마커를 찍고, 박자를 맞춘다. 패널을 닫아 두면 그 길의
+// 입구가 화면에 아예 없어서, 도구가 "표를 먼저 적는 길" 하나만 있는 것처럼 보인다.
+//
+// ⚠ 좁은 화면(≤1040, 사이드바가 시트로 내려가는 폭)에서는 닫고 시작한다. 거기서는 패널이 안무표
+//   **위로** 쌓여 세로를 절반 가까이 가져가므로, 열어 두는 것이 곧 안무표를 가리는 것이 된다.
+// ⚠ 이 값은 여전히 휘발성이다 — 닫아 두어도 저장되지 않고 다음에 열면 다시 열려 있다. 켜고 끄는
+//   기억을 남기면 "한 번 닫으면 그 길이 다시 안 보인다"가 되어 애초의 까닭을 스스로 무너뜨린다.
+if (!isStacked()) VideoCmd.openPanel(store);
+// 첫 동기화. 닫혀 있으면 패널은 hidden 그대로이고 재생기는 만들어지지 않는다.
 views.video.render();
 // ⚠ 자세 구획도 여기서 한 번 그린다. Dirty 라우팅을 타지 않는 첫 렌더라, 빠뜨리면 `인물` 줄이
 //   분석 전에도 떠 있고 버튼의 잠김 상태가 마크업 그대로 남는다.
 views.pose.render();
+// ⚠ 여기서 격자 폭을 **다시** 잰다. 13절의 syncCellSize 는 보드를 그리기 전이라 잴 것이 없었고
+//   (scrollWidth 0), 그 뒤 이 자리에서 패널이 열려 안무표에 남는 폭이 또 달라졌다.
+//   이 한 줄이 없으면 처음 뜬 화면에서만 표가 가로로 넘친 채 남는다.
+views.layout.syncCellSize();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 17. 문서 허브 — 상단 액션 줄에 '문서' 버튼을 붙인다

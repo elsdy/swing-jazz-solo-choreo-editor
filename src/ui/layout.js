@@ -17,11 +17,12 @@ import { SEL, CLS, DATA } from './domContract.js';
 import {
   setGridVars,
   clearGridVars,
+  readCellW,
   setNoteWidth,
   MOBILE_ROW_LABEL_W,
   MOBILE_CELL_H,
 } from './cssVars.js';
-import { computeCellWidth } from '../domain/grid.js';
+import { computeCellWidth, fitCellWidth } from '../domain/grid.js';
 
 /**
  * 이 앱의 브레이크포인트 2개.
@@ -105,6 +106,7 @@ export function syncCellSize({
   if (!isCompact(win)) {
     clearGridVars(root); // ⚠ --cellH 는 남는다(보존 결함 #12)
     applyNoteWidth(boardEl, noteRoot);
+    fitWideCells(root, boardEl, cols);
     return;
   }
   setGridVars(root, {
@@ -113,6 +115,33 @@ export function syncCellSize({
     cellH: MOBILE_CELL_H,
   });
   applyNoteWidth(boardEl, noteRoot);
+}
+
+/**
+ * 넓은 화면에서 격자가 제 자리에 안 들어가면 셀 폭을 줄여 맞춘다(2026-09-12). 산술은 도메인이 한다
+ * (domain/grid.fitCellWidth) — 여기서는 **재고 쓰기만** 한다.
+ *
+ * ⚠ 반드시 clearGridVars 와 applyNoteWidth **뒤**다. 비고 칸 폭이 계산의 재료이고, 기준값(76px)에서
+ *   재야 자리가 다시 생겼을 때 도로 커진다.
+ * ⚠ `clientWidth` 는 패딩을 포함하므로 빼고 잰다. 안 빼면 매번 패딩만큼 더 줄인다.
+ * ⚠ 잴 것이 없으면(보드가 아직 안 그려졌거나 폭이 0) 아무것도 하지 않는다 — 0 으로 나눈 값을
+ *   CSS 변수에 쓰면 격자가 통째로 사라진다.
+ *
+ * @param {HTMLElement} root
+ * @param {HTMLElement|null} boardEl
+ * @param {number} cols
+ * @returns {void}
+ */
+function fitWideCells(root, boardEl, cols) {
+  const wrap = boardEl && boardEl.parentElement;
+  if (!wrap) return;
+  const cs = getComputedStyle(wrap);
+  const availableW = wrap.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const neededW = boardEl.scrollWidth;
+  if (!(availableW > 0) || !(neededW > 0)) return;
+  const next = fitCellWidth({ neededW, availableW, cols, currentCellW: readCellW(root) });
+  if (next == null) return;
+  setGridVars(root, { cellW: next });
 }
 
 /**

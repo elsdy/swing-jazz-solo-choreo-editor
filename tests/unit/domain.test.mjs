@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
-  boardSignature, buildSegments, cellOf, linearOf, totalCellsFrom
+  DESKTOP_CELL_W, MIN_FIT_CELL_W, boardSignature, buildSegments, cellOf, fitCellWidth, linearOf, totalCellsFrom
 } from '../../src/domain/grid.js';
 import {
   DEFAULT_TEMPO, cellToTime, countToTime, isTempoUsable, normalizeTempo,
@@ -3269,4 +3269,45 @@ test('받아 적기: 고른 블록에 이름을 붙이면 이름 있는 블록�
   store.update({ selection: new Set(groups) });
   assert.deepEqual(CaptureCmd.nameSelected(store, {}, { dialogs: { promptText: () => null } }), NONE);
   assert.deepEqual(CaptureCmd.nameSelected(store, {}, { dialogs: { promptText: () => '  ' } }), NONE);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 넓은 화면의 셀 폭 맞추기 (2026-09-12)
+//
+// 영상 패널을 기본으로 열면서 생겼다. 1280px 창에서 8칸 표가 162px 모자랐고, 그대로 두면 6·7·8
+// 카운트가 가로 스크롤 뒤로 숨는다. 여기서 지키는 것은 셋이다 — 필요할 때만 줄인다, 하한에서
+// 멈춘다, 자리가 다시 생기면 도로 커진다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('fitCellWidth: 들어가면 건드리지 않고, 모자라면 남는 자리에 맞춰 줄인다', () => {
+  // 고정분(행 라벨 88 + 비고 60 + 틈 24) = 172. 8칸 × 76 = 608 → 780 이 필요하다.
+  const base = { cols: 8, currentCellW: DESKTOP_CELL_W, neededW: 780 };
+  assert.equal(fitCellWidth({ ...base, availableW: 900 }), null, '남으면 CSS 기본값 그대로 둔다');
+  assert.equal(fitCellWidth({ ...base, availableW: 780 }), null, '딱 맞아도 그대로다');
+  // 618 = 1280px 창에서 영상 패널을 열었을 때 실제로 주어지던 폭.
+  assert.equal(fitCellWidth({ ...base, availableW: 618 }), 55, '(618 − 172) / 8 = 55.75 → 55');
+});
+
+test('fitCellWidth: 하한에서 멈춘다 — 그 아래는 줄이는 게 아니라 못 쓰게 만드는 것이다', () => {
+  // 32칸 안무표를 좁은 자리에 넣으려 하면 하한에 닿는다(그 뒤로는 원래대로 가로로 민다).
+  const out = fitCellWidth({ cols: 32, currentCellW: DESKTOP_CELL_W, neededW: 32 * 76 + 172, availableW: 600 });
+  assert.equal(out, MIN_FIT_CELL_W);
+  // 고정분만으로 이미 넘쳐도 음수나 0 이 나오지 않는다(격자가 통째로 사라지는 사고를 막는다).
+  assert.equal(fitCellWidth({ cols: 8, currentCellW: DESKTOP_CELL_W, neededW: 780, availableW: 100 }), MIN_FIT_CELL_W);
+});
+
+test('fitCellWidth: 한 번 줄인 뒤 자리가 생기면 도로 커진다(현재 폭에서 재도 된다)', () => {
+  // 이미 55px 로 줄어 있는 상태에서 잰 값. 고정분은 셀 폭과 무관하므로 같은 식이 성립한다.
+  const shrunk = { cols: 8, currentCellW: 55, neededW: 8 * 55 + 172 };
+  assert.equal(fitCellWidth({ ...shrunk, availableW: 900 }), null, '자리가 넉넉하면 기준값으로 돌아간다');
+  assert.equal(fitCellWidth({ ...shrunk, availableW: 700 }), 66, '조금 생기면 그만큼만 커진다');
+  assert.equal(fitCellWidth({ ...shrunk, availableW: 618 }), 55, '그대로면 그대로다');
+});
+
+test('fitCellWidth: 못 재는 값은 조용히 넘긴다', () => {
+  const ok = { cols: 8, currentCellW: 76, neededW: 780, availableW: 618 };
+  assert.equal(fitCellWidth({ ...ok, cols: 0 }), null);
+  assert.equal(fitCellWidth({ ...ok, availableW: 0 }), null, '아직 안 그려진 보드');
+  assert.equal(fitCellWidth({ ...ok, currentCellW: NaN }), null);
+  assert.equal(fitCellWidth({ ...ok, neededW: undefined }), null);
 });

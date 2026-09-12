@@ -31,6 +31,11 @@ import { addMarker as addMarkerOf, removeMarker as removeMarkerOf, markerTempoPo
 /** 패널·템포 보정이 다시 그려져야 한다는 뜻. 재생 헤드와는 무관하다(위 경계 ①). */
 const VIDEO = Object.freeze({ video: true });
 
+// ⚠ 패널을 여닫으면 안무표에 남는 **폭이 달라진다**(2026-09-12). 그런데 그 재측정을 여기서
+//   `layout` Dirty 로 올리면 안 된다 — app/render 는 layout 을 **맨 먼저** 처리하고(CSS 변수가
+//   보드 골격보다 먼저여야 한다) 패널의 hidden 은 그 뒤에 뒤집히므로, 옛 폭을 재게 된다.
+//   재측정은 패널이 실제로 바뀐 **뒤**인 videoPanel 의 onSync 에서 한다(app/main.js).
+
 /**
  * 탭이 이만큼 벌어지면 "새로 세는 것"으로 본다. 딴짓하다 돌아와 다시 두드리기 시작한 것을
  * 앞의 탭과 평균 내면 bpm 이 엉뚱해진다.
@@ -113,7 +118,11 @@ function setMedia(store, next) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 패널을 연다. **켜야 보이는 기능**이라 기본은 닫힘이고, 닫힌 화면은 이 기능이 들어오기 전과 같다.
+ * 패널을 연다.
+ *
+ * ⚠ 기본값은 **화면 폭이 정한다**(app/main.js). 넓은 화면(1041px 이상)은 열고 시작한다 —
+ *   안무표를 채우는 두 길 가운데 하나가 영상에서 시작하는 길인데(docs/EDITING_FLOWS.md),
+ *   닫아 두면 그 입구가 화면에 아예 없다. 좁은 화면은 패널이 안무표 위로 쌓이므로 닫고 시작한다.
  * @param {object} store
  * @returns {import('./store.js').Dirty}
  */

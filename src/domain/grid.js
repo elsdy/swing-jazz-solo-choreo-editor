@@ -215,6 +215,49 @@ export function cellIndexFromRatio(clientX, rect, cols) {
  * @param {number} cols           board.cols
  * @returns {number} cellW (px)
  */
+/** CSS 기본 셀 폭(index.html `:root { --cellW: 76px }`). 줄이기 전의 기준값이다. */
+export const DESKTOP_CELL_W = 76;
+
+/** 남는 자리에 맞춰 줄일 때의 하한. 이보다 작아지면 카운트 숫자가 안 읽히고 손으로도 못 집는다. */
+export const MIN_FIT_CELL_W = 44;
+
+/**
+ * 넓은 화면에서 격자가 제 자리에 안 들어갈 때 **셀 폭만** 줄여 맞춘다(2026-09-12).
+ *
+ * 영상 패널을 열면 안무표에 남는 폭이 300px 쯤 줄어든다 — 1280px 창에서 8칸 표가 162px 모자랐다.
+ * 그대로 두면 6·7·8 카운트가 가로 스크롤 뒤로 숨는데, "한 마디가 한눈에 보인다"가 이 격자의 전부라
+ * 그건 표를 반쯤 못 쓰게 만드는 것이다. 그래서 줄여서 넣는다.
+ *
+ * ⚠ 행 라벨·비고 칸·틈은 건드리지 않는다. 그 셋을 합친 값을 `fixed` 로 **역산**하므로
+ *   (neededW − cols × currentCellW), 호출부는 각각을 따로 잴 필요가 없고 셋 중 무엇이 바뀌어도
+ *   식이 그대로 성립한다.
+ * ⚠ 현재 셀 폭에서 재도 된다 — `fixed` 가 셀 폭과 무관하기 때문이다. 그래서 한 번 줄인 뒤 자리가
+ *   다시 생기면 baseCellW 까지 **도로 커진다**(한쪽으로만 가는 계산이 아니다).
+ * ⚠ 하한(minCellW)에 닿으면 거기서 멈춘다. 그 아래는 줄이는 것이 아니라 못 쓰게 만드는 것이고,
+ *   칸이 아주 많은 안무표(32칸 등)는 그때부터 원래대로 가로로 밀어 본다.
+ *
+ * @param {object} args
+ * @param {number} args.neededW      격자가 실제로 차지하는 폭(px). `.board` 의 scrollWidth
+ * @param {number} args.availableW   격자에게 주어진 폭(px). board-wrap 의 안쪽 폭(패딩 제외)
+ * @param {number} args.cols         칸 수
+ * @param {number} args.currentCellW 지금 적용돼 있는 셀 폭(px). neededW 를 잴 때의 값
+ * @param {number} [args.baseCellW]  줄이기 전 기준값(기본 DESKTOP_CELL_W)
+ * @param {number} [args.minCellW]   하한(기본 MIN_FIT_CELL_W)
+ * @returns {number|null} 적용할 셀 폭. **줄일 까닭도 되돌릴 까닭도 없으면 null** (CSS 기본값 그대로 둔다)
+ */
+export function fitCellWidth({
+  neededW, availableW, cols, currentCellW,
+  baseCellW = DESKTOP_CELL_W, minCellW = MIN_FIT_CELL_W
+}) {
+  if (![neededW, availableW, cols, currentCellW].every(Number.isFinite)) return null;
+  if (!(cols > 0) || !(availableW > 0) || !(currentCellW > 0)) return null;
+  const fixed = neededW - cols * currentCellW;          // 행 라벨 + 비고 + 틈
+  const room = availableW - fixed;
+  const raw = Math.floor(room / cols);
+  const next = Math.max(minCellW, Math.min(baseCellW, raw));
+  return next === baseCellW ? null : next;              // 기준값이면 변수를 쓰지 않고 CSS 에 맡긴다
+}
+
 export function computeCellWidth(viewportWidth, cols) {
   const appPadding = 10 * 2;
   const panelBorder = 2;
