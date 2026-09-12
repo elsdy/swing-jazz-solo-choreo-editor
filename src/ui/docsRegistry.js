@@ -59,6 +59,13 @@ export const DOCS = [
     desc: '앞으로 무엇을 만들고, 무엇을 안 하기로 했는지',
   },
   {
+    id: 'editing-flows',
+    group: 'changes',
+    title: '편집 흐름',
+    path: 'docs/EDITING_FLOWS.md',
+    desc: '안무표를 채우는 길 스무 가지와, 그중 막힌 것을 여는 계획',
+  },
+  {
     id: 'architecture',
     group: 'dev',
     title: '아키텍처',
