@@ -542,7 +542,7 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 | `src/usecases/videoCommands.js` | **2026-09-09.** 패널 상태 · 두 점 앵커 · 탭 템포 · 소스 확정 · `clearMedia`. DOM 도 플레이어도 시계도 모른다(시각은 전부 인자로 들어온다) |
 | `src/ui/videoPanel.js` · `src/ui/playhead.js` | **2026-09-09.** 패널 뷰(채널 A)와 재생 헤드(채널 B). 헤드는 rAF 루프가 자기 엘리먼트의 `transform` 만 쓴다 |
 | `src/domain/project/media.js` | **2026-09-09.** `media` 블록의 정규화·직렬화. 비어 있으면 `null` 을 돌려 `buildProjectFile` 이 키째로 뺀다 |
-| 저장 포맷의 `media` 블록 | **2026-09-09.** `{tempo, source}` 가 `customLinks` 뒤에 붙는다. `UNDO_FIELDS` 와 `DOC_FIELDS` 양쪽에 있다. `tempo.points`(보정점)는 있을 때만 쓰인다 — 빈 배열은 키째로 뺀다 |
+| 저장 포맷의 `media` 블록 | **2026-09-09.** `{tempo, source}` 가 `customLinks` 뒤에 붙는다. `UNDO_FIELDS` 와 `DOC_FIELDS` 양쪽에 있다. `tempo.points`(보정점)는 있을 때만 쓰인다 — 빈 배열은 키째로 뺀다. **2026-09-10** 부터 세 번째 키 `markers`(영상 구간 ↔ 카운트 구간, `domain/markers.js`)가 맨 뒤에 붙고 같은 규칙으로 비면 빠진다 |
 | `index.html` 의 영상 패널 마크업·CSS | **2026-09-09.** `#boardsContainer` 의 세 번째 flex 자식. 기존 규칙은 한 줄도 고치지 않고 `</style>` 앞에 165줄을 더하기만 했다 |
 
 | 비워 둔 것 | 상태 |

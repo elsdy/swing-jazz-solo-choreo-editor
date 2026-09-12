@@ -14,7 +14,7 @@ cd swing-jazz-solo-choreo-editor
 python3 server.py
 ```
 
-그리고 브라우저에서 `http://localhost:8000` 을 연다. 영상 패널에서 고른 영상 파일은 저장소의 `video-clip/<프로젝트 이름>/` 아래에 복사되고, 안무표를 다시 열면 자동으로 돌아온다. 보관 위치는 `python3 server.py --root <폴더>` 또는 앱의 `⚙ 설정` 에서 바꾼다. `python3 -m http.server 8000` 으로도 앱은 뜨지만 영상 보관은 브라우저 폴더 방식(크롬 계열)이 된다.
+그리고 브라우저에서 `http://localhost:8000` 을 연다. 영상 패널에서 고른 영상 파일은 저장소의 `video-clip/<프로젝트 이름>/` 아래에 복사되고, 안무표를 다시 열면 자동으로 돌아온다. 영상의 한 구간만 잘라 새 파일로 만드는 `✂ 잘라서 새 클립으로` 는 서버를 켠 컴퓨터에 `ffmpeg` 이 있을 때만 켜진다(`brew install ffmpeg`, 없어도 나머지는 다 된다). 보관 위치는 `python3 server.py --root <폴더>` 또는 앱의 `⚙ 설정` 에서 바꾼다. `python3 -m http.server 8000` 으로도 앱은 뜨지만 영상 보관은 브라우저 폴더 방식(크롬 계열)이 된다.
 
 `index.html` 을 더블클릭해도 열리기는 하지만 **화면이 뜨지 않는다.** `file://` 에서는 브라우저가 ES 모듈 로딩과 문서 `fetch` 를 모두 막기 때문이다. 서버로 열어야 한다. GitHub Pages 같은 정적 호스팅에 올려도 그대로 동작한다.
 
@@ -50,7 +50,7 @@ src/testing/    골든 러너가 쓰는 어댑터 (앱은 쓰지 않는다)
 ## 고칠 때
 
 ```
-node --test 'tests/**/*.test.mjs' # 도메인 단위 테스트 45개 (색 대비·템포·마이그레이션·충돌 규칙)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 136개 (도메인·어댑터·유스케이스 130 + server.py 실물 6)
 node tests/run.mjs                # 격자 알고리즘 골든 150개
 node tools/check-arch.mjs         # 계층 방향과 순수성
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커

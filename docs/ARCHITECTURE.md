@@ -23,6 +23,8 @@ node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커
 
 둘의 역할이 다르다. 골든은 **격자 알고리즘의 현재 동작**을 기록한 것이라 undo·링크·영상처럼 격자 밖의 일은 지켜 주지 못한다. 그쪽 안전망이 단위 테스트다.
 
+세 번째가 하나 더 있다. `tests/pose-check.html` 은 **관절 위치를 미리 정해서 그린 합성 영상**으로 자세 분석이 맞는지 본다(`python3 tools/make-pose-clip.py video-clip/_posecheck` 로 만든다). 실제 춤 영상에는 "이 순간 팔꿈치가 몇 도" 라는 정답이 없으므로 각도를 넣어 그림을 그리고 그 각도를 다시 재는 방식이다. 2026-09-11 에 이 검사가 실제 결함을 잡았다 — 아래 '정규 좌표는 각도를 일그러뜨린다' 참조. 브라우저에서만 도는 검사라 `node --test` 에는 들어가지 않는다.
+
 ## 의존 규칙 한 줄
 
 **import 는 언제나 안쪽으로만 — `app(4) → adapters|ui|input(3) → usecases(2) → ports(1) → domain(0)`.**
@@ -224,7 +226,9 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `gestureMath.js` | 제스처 판정의 순수 부분. `resolveDragCount` 의 `lowerBound` 가 곳마다 다른 하한을 담는다 |
 | `links.js` | YouTube URL 정규화와 커스텀 링크 목록 규칙 |
 | `defaults.js` | 초기값만. `makeDefaultMoves(ids)` 가 uid 소비 순서를 결정적으로 만든다 |
-| `tempo.js` | 카운트 ↔ 초 변환. 카운트 축에 얹는 곱셈 한 겹. 2026-09-09 부터 영상 패널이 실제로 쓴다 |
+| `tempo.js` | 카운트 ↔ 초 변환. 카운트 축에 얹는 곱셈 한 겹. 2026-09-09 부터 영상 패널이 실제로 쓴다. `shiftTempo` 는 잘라내기 뒤 시간축을 통째로 민다 |
+| `bodyMesh.js` | 관절점 → 몸 표면 메시(2026-09-12). 뼈마다 통을 씌우고 몸통을 잇고 머리를 얹는다. 돌리기·평행 투영도 여기 있다(그리는 일은 `ui/meshView.js`). **몸매 복원이 아니라** 평균 몸을 관절 길이에 맞춰 늘리는 것이다 — 굵기 표(`RADII`)가 그 평균값이고, 관절이 없는 부위는 만들지 않는다 |
+| `markers.js` | 영상 구간 ↔ 안무표 카운트 구간 마커(2026-09-10). 정규화·추가·삭제·잘라내기 뒤 이동(`shiftMarkersForTrim`). id 는 값에서 결정론적으로 만들어 난수가 없다. 마커는 변환(tempo)을 건드리지 않는다 — 박자에 반영하는 것은 유스케이스의 명시적 조작이다 |
 | `choreoPlan.js` | LLM 플랜(`server.py` PLAN_SCHEMA) → 격자 항목. 이름을 동작 목록과 느슨하게 맞추고(공백·대소문자 무시, 3글자 이상 포함), 마디를 넘는 카운트를 다음 마디로 넘기며, 못 쓰는 항목은 버린 이유와 함께 남긴다 |
 | `project/schema.js` | 저장 포맷 상수와 필드 목록. 로직이 없고 import 도 0개. `UNDO_FIELDS` 와 `DOC_FIELDS` 는 같은 집합이다(`rows` `cols` `placements` `moveLibrary` `categories` `routines` `links` `media`, 순서만 다르다) — 파일과 undo 가 같은 것을 상태로 본다 |
 | `project/media.js` | 영상 블록(`{tempo, source}`)의 정규화·직렬화. **비어 있으면 `serializeMedia` 가 `null` 을 돌려주고 파일에서 키가 통째로 빠진다** — 영상을 안 쓴 사용자의 저장 파일은 이 기능 전과 바이트가 같다. 로직이 있어야 해서 `schema.js`(import 0개 리프)가 아니라 여기다 |
@@ -253,6 +257,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `media/youtubePlayer.js` | YouTube IFrame API 를 `MediaPlayer` 계약으로 감싼다. **이 앱의 첫 외부 스크립트 의존**이라 실패를 예외가 아니라 상태로 다룬다 — 스크립트가 막히면 `getState().load === 'error'` 이고 한국어 문구는 뷰가 만든다. 생성만으로는 DOM 도 네트워크도 안 건드린다 |
 | `llmServer.js` | `server.py` 의 LLM 중계 클라이언트(`/api/llm/*`). 브라우저는 모델을 직접 부르지 않는다 — 키가 브라우저에 가면 안 되고 로컬 LLM 은 CORS 에 막힌다. 어떤 함수도 던지지 않는다 |
 | `clipServer.js` | `server.py` 의 클립 API 클라이언트. 서버가 있는지 `probe` 하고, 업로드(`PUT /api/clips`, 본문이 파일 바이트라 multipart 가 없다)·존재 확인·재생 URL(`/clips/<path>`)을 준다. 어떤 함수도 던지지 않는다 — 서버가 없으면 null 이고 `app/main` 이 브라우저 폴더 방식으로 떨어진다 |
+| `pose/mediapipePose.js` | 받아 둔 MediaPipe 파일로 `PoseEstimator` 계약을 채운다. **번호를 이름으로 옮기는 표(`LANDMARK_NAMES`)가 여기 하나뿐**이라, 다른 모델로 갈아 끼울 때 고치는 것이 그 표다. `<video>` 를 탐색하거나 이미 뽑아 둔 프레임(`{images}`)을 받는다 — 뒤쪽은 탭이 안 보여 `<video>` 가 디코드되지 않는 자동화에서 쓴다 |
+| `modelServer.js` | 자세 분석 모델의 보관 위치(`server.py`). **받아 두고 위치를 아는 것까지**가 전부다 — 모델을 로드하지 않는다(그건 추정기 어댑터의 몫이고, 한 파일에 두면 설정 화면이 20MB 를 로드하게 된다) |
 | `clipLibrary.js` | 영상 보관 폴더(브라우저 방식). File System Access API 의 폴더 핸들을 IndexedDB 에 남기고 `<subdir>/<프로젝트>/<파일>` 로 복사·재읽기한다. 경로 규칙은 `domain/clips.js` 가 정하고 여기서는 이름을 만들지 않는다. 지원하지 않는 브라우저에서는 "없음"으로 답한다 |
 | `media/filePlayer.js` | 로컬 영상 파일을 `<video>` 로 재생하는 `MediaPlayer`. blob URL 을 만들지 않는다 — 만든 쪽(`app/main`)이 revoke 까지 책임지므로 여기 들어오는 것은 이미 만들어진 `{kind:'file', url}` 뿐이다. 덕분에 node 에서 가짜 document 하나로 전 경로를 검사한다 |
 | `media/pickPlayer.js` | URL 또는 `MediaSource` → 재생기 종류(`youtube`/`file`/`null`). `domain/links.parseYoutubeUrl` 을 재사용하고 언제나 완전한 `MediaPlayer` 를 돌려준다(호출부에 `player?.` 가 생기지 않는다) |
@@ -268,6 +274,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `routineCommands.js` | 루틴 CRUD 와 편집기 세션(`openEditor` `syncFromEditor` `setRoutineSize`) |
 | `projectCommands.js` | 저장·불러오기·`부분 불러오기`·최근 목록 |
 | `linkCommands.js` | 링크바 상태 전이와 제목 조회 상태머신 |
+| `poseCommands.js` | 자세 분석의 화면 상태(2026-09-12). **관절점은 여기 들어오지 않는다** — 30초를 12fps 로 보면 숫자 수만 개라 undo 스냅샷이 통째로 불어난다. store 에는 요약(몇 장·몇 명·어느 궤적·앵커)만 있고 결과는 `app/main.js` 가 모듈 변수로 든다. undo 도 타지 않는다 — 분석은 안무가 아니라 영상을 들여다보는 일이다 |
 | `videoCommands.js` | 영상 패널 상태·두 점 앵커·탭 템포·소스 확정·`clearMedia`. **DOM 도 플레이어도 시계도 모른다** — 시각(초)은 전부 인자로 들어온다(`check-arch` 가 `performance` 를 막는다). 재생 위치·재생 상태는 여기에도 store 에도 없다 |
 | `planCommands.js` | 플랜 미리보기와 채우기. 새 배치 경로를 만들지 않고 `paletteCommands.createAndPlace`(빠른 동작 생성과 같은 길)로 하나씩 놓는다 — 겹침·스택·클램프가 손으로 놓을 때와 같아진다. 행이 모자라면 `setBoardRows` |
 | `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 8필드(링크·영상 템포 포함), 루틴은 3필드. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
@@ -292,6 +299,9 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
 | `composeView.js` | 상단 `✨ 말로 채우기` 팝업. 음성 인식(webkitSpeechRecognition) → 다듬기 → 스키마 → 미리보기 → 채우기의 세 단. LLM 은 주입받은 어댑터로, 배치는 주입받은 유스케이스로 |
 | `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 첫 항목이 영상 보관 폴더다. docsHub 처럼 자기 DOM·CSS 를 만들고, 어댑터는 함수로 주입받는다 |
+| `meshView.js` | 몸 메시를 캔버스에 그린다(2026-09-12). 가림은 화가 알고리즘 한 줄로 푼다 — 면을 먼 것부터 칠하면 가까운 면이 덮는다. 이 한 줄이 three.js 를 안 들이는 이유다. 영상 위에 겹칠 때는 `xScale` 로 가로 눌림을 다시 적용한다 |
+| `poseOverlay.js` | 영상 위에 관절·몸을 겹쳐 그린다(2026-09-12, 채널 B). `playhead.js` 와 같은 규약이다 — rAF 루프가 자기 캔버스에만 그리고 store 는 게터로만 읽는다. **프레임이 아니라 영상이 그려진 칸**에 맞춘다(레터박스), 측정은 `invalidate()` 뒤 한 번뿐이다 |
+| `poseView.js` | 영상 패널의 `자세 분석` 구획. 마크업은 `index.html` 이고 이 파일이 묶는다 — `videoPanel.js` 가 이미 커서 구획 하나를 뗐다. 히스토리를 건드리지 않는다 |
 | `playhead.js` | 안무표 위의 재생 헤드(채널 B). rAF 루프가 자기 엘리먼트의 `transform` 과, 지금 지나가는 블록의 `is-playing` 클래스만 쓴다. 렌더 파이프라인을 타지 않는 유일한 상설 루프다 |
 | `layout.js` | 셸의 부작용 전부. 브레이크포인트·스크롤 락·셀 크기 동기화 |
 | `cssVars.js` | `--cellW` `--cellH` `--rowLabelW` `--noteW` 의 유일한 소유자 |
@@ -381,6 +391,6 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | `GET` · `PUT /api/llm/config` | LLM 제공자·모델·주소·키. 키 값은 절대 돌려주지 않는다(`hasKey` 만) |
 | `POST /api/llm/refine` · `POST /api/llm/compose` | 말로 적은 안무 → 다듬은 설명(평문) → 안무표 스키마(JSON). 제공자는 anthropic(Messages API, `output_config.format` 구조화 출력, 서버 측 폴백) · openai(chat completions, `response_format: json_schema`) · ollama(`/api/chat` 의 `format`). 서버가 스키마로 손 검증한다 |
 
-경계는 HTTP 뿐이다. `server.py` 는 `src/` 를 모르고 `src/` 는 서버 코드를 모른다(`adapters/clipServer.js` 가 URL 만 안다). 두 가지가 겹친다. **경로 규칙** — `<subdir>/<프로젝트>/<파일>`, 못 쓰는 글자는 `_`, 앞의 점 제거, 빈 조각은 대체 이름 — 은 `src/domain/clips.js` 와 `server.py` 상단에 같은 규칙이 두 번 적혀 있고, **안무표 스키마** — `{title, moves:[{bar,count,length,name,category,note}], notes}` — 는 `server.py` 의 `PLAN_SCHEMA` 와 `src/domain/choreoPlan.js` 가 같은 모양을 두 번 안다. 그래서 프로젝트 파일의 `media.source.path` 가 서버 방식과 브라우저 폴더 방식 사이에서 그대로 통한다. 한쪽을 고치면 다른 쪽도 고친다.
+경계는 HTTP 뿐이다. `server.py` 는 `src/` 를 모르고 `src/` 는 서버 코드를 모른다(`adapters/clipServer.js` 가 URL 만 안다). 서버는 `ffmpeg` 을 **선택 의존성**으로 자식 프로세스로 띄워 클립을 잘라 다시 인코딩한다(`POST /api/clips/trim`) — 없으면 `/api/health` 의 `ffmpeg:false` 로 알리고 그 기능만 501 이다. 자세 분석 모델도 같은 모양이다(2026-09-11): 서버가 파일을 한 번 받아 두고(`/api/models/*`) `/models/<이름>` 으로 내주기만 하며, 없으면 `/api/health` 의 `pose:false` 다. 어디에 받아 둘지는 **서버가 띄우는 네이티브 폴더 고르기 창**으로 고른다(`POST /api/models/choose`, 맥은 `osascript`) — 브라우저의 `showDirectoryPicker` 는 절대 경로를 주지 않아 서버가 쓸 수 없기 때문이다. 창을 하나만 띄우도록 잠그고 5분 상한을 둔다. **계산은 브라우저가 하므로 서버에 파이썬 패키지가 하나도 늘지 않는다.** 잘라 낸 결과를 소스로 삼고 시간축을 당기는 것은 `usecases/videoCommands.applyTrim` 이라, 유스케이스는 여전히 fetch 도 ffmpeg 도 모른다. 두 가지가 겹친다. **경로 규칙** — `<subdir>/<프로젝트>/<파일>`, 못 쓰는 글자는 `_`, 앞의 점 제거, 빈 조각은 대체 이름 — 은 `src/domain/clips.js` 와 `server.py` 상단에 같은 규칙이 두 번 적혀 있고, **안무표 스키마** — `{title, moves:[{bar,count,length,name,category,note}], notes}` — 는 `server.py` 의 `PLAN_SCHEMA` 와 `src/domain/choreoPlan.js` 가 같은 모양을 두 번 안다. 그래서 프로젝트 파일의 `media.source.path` 가 서버 방식과 브라우저 폴더 방식 사이에서 그대로 통한다. 한쪽을 고치면 다른 쪽도 고친다.
 
 `tools/check-arch.mjs` 는 `src/` 만 본다. 서버는 `tests/server.test.mjs` 가 실제로 띄워 검사한다(업로드 → 번호 붙이기 → Range → 루트 탈출 거부 → 숨김 파일 거부).
