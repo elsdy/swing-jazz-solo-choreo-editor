@@ -104,9 +104,11 @@ export function findStoredClip(clips, file) {
   if (exact) return exact;
 
   // `a.mp4` 를 찾을 때 `a (2).mp4` 도 같은 것으로 본다. 확장자는 같아야 한다.
+  // ⚠ 번호는 **2 부터**다(numberedName). ` (1)` 은 서버가 붙이지 않는다 — 사용자 파일 이름의 일부다.
+  //   `\d+` 로 두면 `안무 (1).mp4` 를 `안무.mp4` 의 사본으로 보게 된다(손으로 정리하다 실제로 틀렸다).
   const m = /^(.*?)(\.[^.]*)?$/.exec(name) || [];
   const stem = m[1] || name;
   const ext = m[2] || '';
-  const numbered = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(\\d+\\)${ext.replace(/\./g, '\\.')}$`);
+  const numbered = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\((?:[2-9]|\\d{2,})\\)${ext.replace(/\./g, '\\.')}$`);
   return sameSize.find(c => numbered.test(String(c.name || ''))) || null;
 }

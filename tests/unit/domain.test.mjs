@@ -3803,6 +3803,13 @@ test('findStoredClip: 이미 쌓인 번호 사본도 같은 것으로 본다', (
   ];
   assert.equal(findStoredClip(clips, { name: '필소굿.mp4', size: 102431603 }).name, '필소굿 (3).mp4');
 
+  // ⚠ ` (1)` 은 서버가 붙이는 번호가 아니다(2 부터다) — 사용자 파일 이름의 일부이므로 남의 사본으로 보지 않는다.
+  assert.equal(findStoredClip([{ name: '필소굿 (1).mp4', size: 7, path: 'x' }],
+    { name: '필소굿.mp4', size: 7 }), null, '(1) 을 서버 사본으로 오인했다');
+  // 반대로 이름 자체가 ' (1)' 로 끝나는 파일의 사본은 찾아야 한다.
+  assert.equal(findStoredClip([{ name: '필소굿 (1) (2).mp4', size: 7, path: 'ok' }],
+    { name: '필소굿 (1).mp4', size: 7 }).path, 'ok');
+
   // 확장자가 다르면 다른 파일이다.
   assert.equal(findStoredClip([{ name: '필소굿 (2).mov', size: 10, path: 'x' }],
     { name: '필소굿.mp4', size: 10 }), null);
