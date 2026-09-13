@@ -66,7 +66,7 @@ import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
 import * as PlanCmd from '../usecases/planCommands.js';
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
-import { clipDirParts } from '../domain/clips.js';
+import { clipDirParts, findStoredClip } from '../domain/clips.js';
 import { createVideoPanel } from '../ui/videoPanel.js';
 import { createPoseView } from '../ui/poseView.js';
 import { createPoseOverlay } from '../ui/poseOverlay.js';
@@ -882,7 +882,16 @@ function chooseLocalFile(file) {
     commitHistoryAndRender();
   };
   if (clipServerConfig) {
-    clipServer.upload(file, projectNameForClips(), file.name).then((saved) => { if (saved) attachPath(saved.path); });
+    // ⚠ 올리기 전에 **이미 있는지 먼저 본다**(2026-09-13). 그전에는 같은 영상을 열 때마다 새로 올려
+    //   ` (2)`, ` (3)` 이 쌓였다 — 한 폴더에서 754MB 중 530MB 가 같은 파일의 사본이었고, 폰에서는
+    //   100MB 를 5G 로 다시 올리는 값까지 들었다. 목록 한 번이 그 전부를 아낀다.
+    const project = projectNameForClips();
+    clipServer.list(project).then((clips) => {
+      if (!stillCurrent()) return;
+      const hit = findStoredClip(clips, { name: file.name, size: file.size });
+      if (hit && hit.path) { attachPath(hit.path); return; }
+      return clipServer.upload(file, project, file.name).then((saved) => { if (saved) attachPath(saved.path); });
+    });
     return;
   }
   // 브라우저 모드. 권한은 조용히 확인만 한다(파일 선택 대화상자가 닫힌 뒤라 제스처가 끝났을 수 있다).
@@ -1229,6 +1238,8 @@ views.video = createVideoPanel({
   getCurrentSec: currentVideoSec,
   onSeek: seekVideoTo,
   // 화면 속 화면(2026-09-13). 포트의 **선택 멤버**라 없는 재생기(YouTube iframe)는 조용히 'unavailable' 이다.
+  // 줄에 「서버에 보관됨」을 적으려면 지금 어느 보관 방식인지 알아야 한다.
+  getStorageMode: () => (clipServerConfig ? 'server' : (loadClipSetting().folderName ? 'folder' : 'browser')),
   getPipState: () => (typeof player.pipState === 'function' ? player.pipState() : 'unavailable'),
   // ⚠ 브라우저는 **클릭 콜스택 안에서만** PiP 를 켜 준다 — await 로 한 박자 늦추면 조용히 거절당한다.
   //   그래서 여기서 곧바로 부르고, 결과는 돌아온 뒤 버튼에만 반영한다.
@@ -1391,6 +1402,7 @@ views.settings = createSettingsView({
   server: {
     isActive: () => !!clipServerConfig,
     getConfig: () => clipServer.getConfig(),
+    listVolumes: () => clipServer.listVolumes(),
     setConfig: async (next) => {
       const cfg = await clipServer.setConfig(next);
       if (cfg) clipServerConfig = cfg;

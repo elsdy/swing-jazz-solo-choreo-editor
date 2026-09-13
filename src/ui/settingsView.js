@@ -32,6 +32,16 @@ const CSS = `
 .settings-text { width: 10em; }
 .settings-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #cbd5e1;
   background: rgba(148,163,184,0.10); border-radius: 6px; padding: 4px 8px; margin-top: 6px; word-break: break-all; }
+/* 저장장치 고르기(2026-09-13). 폰에서 누르는 것이라 줄마다 최소 44px 을 준다(손가락 과녁). */
+.settings-volumes { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.settings-volume { display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  min-height: 44px; width: 100%; text-align: left; padding: 6px 10px; cursor: pointer;
+  color: #e2e8f0; background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.18);
+  border-radius: 8px; font-size: 12px; }
+.settings-volume:hover:not(:disabled) { background: rgba(148,163,184,0.16); }
+.settings-volume.is-current { border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.10); }
+.settings-volume span { font-size: 10px; color: #94a3b8; word-break: break-all; }
+.settings-volume:disabled { opacity: 0.45; cursor: not-allowed; }
 `;
 
 /** 이 브라우저가 폴더 지정을 못 할 때의 안내. 기능이 없는 것이지 고장이 아니다. */
@@ -122,6 +132,9 @@ export function createSettingsView(deps) {
             <button class="ghost accent" data-act="pick" type="button">폴더 지정</button>
             <button class="ghost" data-act="forget" type="button">해제</button>
           </div>
+          <!-- 저장장치 고르기(2026-09-13). 폰에서 긴 경로를 손으로 치는 것은 사실상 불가능하다 —
+               서버가 자기에게 붙어 있는 디스크를 알려 주면 누르기만 하면 된다. -->
+          <div class="settings-volumes" data-role="volumes" hidden></div>
           <div class="settings-row" data-role="server-row" hidden>
             <span class="settings-label">서버 보관 루트</span>
             <input class="settings-text" data-role="root" type="text" style="width: 22em; max-width: 100%;" placeholder="/절대/경로" />
@@ -212,6 +225,7 @@ export function createSettingsView(deps) {
 
   const folderChip = overlay.querySelector('[data-role="folder"]');
   const browserRow = overlay.querySelector('[data-role="browser-row"]');
+  const volumesEl = overlay.querySelector('[data-role="volumes"]');
   const serverRow = overlay.querySelector('[data-role="server-row"]');
   const rootInput = overlay.querySelector('[data-role="root"]');
   const subdirInput = overlay.querySelector('[data-role="subdir"]');
@@ -459,10 +473,50 @@ export function createSettingsView(deps) {
     }
   }
 
+  /** 바이트 → 사람이 읽는 크기. 남은 자리는 GB 단위면 충분하다(영상은 GB 단위로 쌓인다). */
+  function humanSize(bytes) {
+    const n = Number(bytes);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    const gb = n / 1e9;
+    return gb >= 1000 ? `${(gb / 1000).toFixed(1)}TB` : `${Math.round(gb)}GB`;
+  }
+
+  /**
+   * 서버가 쓸 수 있는 저장장치를 눌러 고르게 한다(2026-09-13).
+   * ⚠ 쓸 수 없는 자리도 **감추지 않고** 흐리게 남긴다 — 목록에서 사라지면 "왜 내 외장이 안 보이지" 가 된다.
+   */
+  async function renderVolumes(currentRoot) {
+    if (!volumesEl || !server.listVolumes) return;
+    const vols = await server.listVolumes();
+    volumesEl.hidden = vols.length === 0;
+    volumesEl.textContent = '';
+    for (const v of vols) {
+      const btn = doc.createElement('button');
+      btn.type = 'button';
+      btn.className = 'settings-volume';
+      btn.disabled = !v.writable;
+      btn.classList.toggle('is-current', v.path === currentRoot);
+      const label = doc.createElement('b');
+      label.textContent = (v.path === currentRoot ? '◉ ' : '○ ') + v.label;
+      const sub = doc.createElement('span');
+      const free = humanSize(v.freeBytes);
+      sub.textContent = [v.writable ? (free && `${free} 남음`) : '쓸 수 없음(권한·읽기 전용)', v.path]
+        .filter(Boolean).join(' · ');
+      btn.append(label, sub);
+      btn.onclick = () => {
+        if (!rootInput) return;
+        rootInput.value = v.path;                   // 눌러도 바로 적용하지 않는다 — 하위 폴더까지 보고 `적용`
+        render();
+      };
+      volumesEl.appendChild(btn);
+    }
+  }
+
   async function renderServer() {
     if (browserRow) browserRow.hidden = true;
     if (serverRow) serverRow.hidden = false;
     const cfg = await server.getConfig();
+    await renderVolumes(rootInput && rootInput.value.trim() ? rootInput.value.trim() : (cfg ? cfg.root : ''));
     if (rootInput && doc.activeElement !== rootInput) rootInput.value = cfg ? cfg.root : '';
     if (subdirInput && doc.activeElement !== subdirInput) subdirInput.value = cfg ? cfg.subdir : '';
     if (previewEl) {

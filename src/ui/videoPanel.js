@@ -173,6 +173,8 @@ export function formatRange(from, to, cols) {
  *   URL 은 있는데 'null' 이면 **알아보지 못한 주소**라는 뜻이라 문구가 달라진다
  * @property {(sec: number, opts?: {play?: boolean}) => void} [onSeek] 영상을 그 시각으로 옮긴다(play 면 재생까지).
  *   `In 으로`·`Out 으로`·마커의 ▶ 가 쓴다. 어댑터를 아는 자리의 몫이라 여기서 player 를 만지지 않는다
+ * @property {() => 'server'|'folder'|'browser'} [getStorageMode] 고른 영상 파일이 어디에 복사되는가 —
+ *   서버가 받아 두는가(`server`), 브라우저에 지정한 폴더인가(`folder`), 아무 데도 아닌가(`browser`)
  * @property {() => 'unavailable'|'off'|'on'} [getPipState] 화면 속 화면을 지금 쓸 수 있는가.
  *   'unavailable' 이면 버튼을 아예 감춘다 — 눌러도 안 되는 버튼을 두지 않는다
  * @property {() => void} [onTogglePip] `⧉ PiP`. ⚠ **클릭 콜스택 안에서** 재생기까지 닿아야 켜진다
@@ -232,6 +234,7 @@ export function createVideoPanel(deps) {
     getPlayerKind = () => 'null',
     getCurrentSec,
     onSeek = () => {},
+    getStorageMode = () => 'browser',
     getPipState = () => 'unavailable',
     onTogglePip = () => {},
     getTrimState = () => 'no-server',
@@ -252,6 +255,7 @@ export function createVideoPanel(deps) {
   const followBtn = byId('videoFollowBtn');
   const collapseBtn = byId('videoCollapseBtn');
   const pipBtn = byId('videoPipBtn');
+  const frameSlot = byId('videoFrameSlot');
   const floatBtn = byId('videoFloatBtn');
   const floatBar = byId('videoFloatBar');
   const floatDockBtn = byId('videoFloatDockBtn');
@@ -601,6 +605,18 @@ export function createVideoPanel(deps) {
   }
 
   /**
+   * 이 영상이 어디에 남아 있는가. **파일을 연 사람에게만 뜻이 있다** — 유튜브는 주소가 곧 원본이다.
+   * `path` 가 있으면 어딘가에 복사가 끝난 것이고, 없으면 이 기기의 고른 파일에만 기대고 있다.
+   * @param {{kind?:string, path?:string}|null} source
+   * @returns {string} 빈 문자열이면 줄에 아무것도 붙이지 않는다
+   */
+  function storageOf(source) {
+    if (!source || source.kind !== 'file') return '';
+    if (!source.path) return '이 기기에만';
+    return getStorageMode() === 'server' ? '서버에 보관됨' : '보관 폴더에 있음';
+  }
+
+  /**
    * 영상 목록(2026-09-12). 한 줄이 영상 하나고, 그 영상이 안무표의 어디를 덮는지를 막대로 보여 준다.
    *
    * ⚠ 커버리지는 **마커가 말한다.** 마커가 없으면 0% 막대가 아니라 `마커 없음` 이다 — 영상을 올리고
@@ -639,9 +655,12 @@ export function createVideoPanel(deps) {
       sub.className = 'video-clip-sub';
       const cov = clipCoverage(c);
       const src = c.source ? (c.source.kind === 'file' ? c.source.name : '유튜브') : '소스 없음';
-      sub.textContent = cov
-        ? `${src} · ${formatRange(cov.fromCount, cov.toCount - 1, board.cols)} · 마커 ${cov.markers}개`
-        : `${src} · 마커 없음`;
+      // 보관 상태를 줄에 적는다(2026-09-13). 그전에는 서버가 파일을 받아 두고도 화면이 아무 말을
+      // 하지 않아, 올린 사람이 "저장이 안 됐나" 하고 같은 파일을 또 골랐다.
+      const keep = storageOf(c.source);
+      sub.textContent = [src, keep, cov
+        ? `${formatRange(cov.fromCount, cov.toCount - 1, board.cols)} · 마커 ${cov.markers}개`
+        : '마커 없음'].filter(Boolean).join(' · ');
       sub.title = sub.textContent;
       main.append(name, sub);
       if (cov) {
@@ -951,8 +970,16 @@ export function createVideoPanel(deps) {
    * OS 쪽에서 창을 닫아도 상태가 따라오도록 app/main 이 재생기의 상태 변화에서 다시 부른다.
    */
   function renderPip() {
-    if (!pipBtn) return;
     const state = getPipState();
+    // ⚠ 버튼이 없어도 <body> 표시는 해야 한다 — 영상 칸을 접는 CSS 가 이것만 읽는다.
+    document.body.dataset.videopip = state === 'on' ? 'on' : 'off';
+    // 빈 자리의 글귀는 어디로 갔는지에 따라 다르다. 띄운 창과 PiP 는 되돌리는 방법이 서로 다르다.
+    if (frameSlot && state === 'on') {
+      frameSlot.innerHTML = '영상은 <b>PiP 창</b>으로 빼 두었습니다 — <b>⧉ PiP 끄기</b> 로 되돌립니다';
+    } else if (frameSlot) {
+      frameSlot.innerHTML = '영상은 큰 창으로 띄워 두었습니다 — 창의 <b>⤡ 제자리로</b> 로 되돌립니다';
+    }
+    if (!pipBtn) return;
     pipBtn.hidden = state === 'unavailable';
     pipBtn.className = state === 'on' ? CLS.quickBtnActive : CLS.ghost;
     pipBtn.textContent = state === 'on' ? '⧉ PiP 끄기' : '⧉ PiP';

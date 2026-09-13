@@ -15,6 +15,7 @@
 
     GET  /api/health                      서버가 있는지. {ok, mode:'server', root, subdir, dir}
     GET  /api/config                      {root, subdir, dir}
+    GET  /api/volumes                     이 서버가 쓸 수 있는 저장장치 [{path,label,freeBytes,writable,current}]
     PUT  /api/config  {root?, subdir?}    보관 루트·하위 폴더 변경. 없는 폴더는 만든다. .clipserver.json 에 남는다
     PUT  /api/clips?project=P&name=N      본문 = 파일 바이트. <root>/<subdir>/<P>/<N> 으로 저장(겹치면 " (2)").
                                           → {path:'<subdir>/<P>/<N>', url:'/clips/<path>', size}
@@ -128,6 +129,59 @@ def config_home():
 def cache_home():
     """지워도 되는 것. 지우면 모델을 다시 받을 뿐 데이터는 그대로다."""
     return _xdg('XDG_CACHE_HOME', 'Library/Caches', '.cache') / APP_NAME
+
+
+def storage_volumes(current_root):
+    """이 서버가 쓸 수 있는 **저장장치** 목록(2026-09-13).
+
+    폰에서 `⚙ 설정` 에 긴 경로를 손으로 치는 것은 사실상 불가능하다. 서버는 자기가 어떤 디스크에
+    붙어 있는지 알고 있으니, 고를 수 있는 것을 목록으로 내려 준다.
+
+    무엇을 담나 — 데이터 기본 자리 · 홈 · 지금 쓰는 루트, 그리고 **붙어 있는 외장·네트워크 볼륨**
+    (macOS `/Volumes/*`, 리눅스 `/media/<사용자>/*` 와 `/mnt/*`). 남은 자리를 함께 내려 무엇을
+    고를지 판단할 수 있게 한다.
+
+    ⚠ 쓸 수 없는 자리는 `writable: false` 로 **내려 주되 감추지 않는다** — 목록에서 사라지면
+      "왜 내 외장 디스크가 안 보이지" 가 되고, 이유(읽기 전용·권한)를 말할 자리가 없어진다.
+    """
+    seen, out = set(), []
+
+    def add(path, label, kind):
+        try:
+            resolved = Path(path).expanduser().resolve()
+        except OSError:
+            return
+        key = str(resolved)
+        # ⚠ 아직 없는 자리도 담는다(부모가 있으면). 기본 자리는 처음 쓰는 순간에 만들어지는데,
+        #   없다고 목록에서 빼면 "기본으로 되돌리기" 가 화면에서 사라진다 — 적용할 때 만든다.
+        if key in seen or not (resolved.is_dir() or resolved.parent.is_dir()):
+            return
+        seen.add(key)
+        free = total = None
+        try:
+            usage = shutil.disk_usage(resolved if resolved.is_dir() else resolved.parent)
+            free, total = usage.free, usage.total
+        except OSError:
+            pass
+        out.append({
+            'path': key, 'label': label, 'kind': kind,
+            'freeBytes': free, 'totalBytes': total,
+            'writable': os.access(key if resolved.is_dir() else str(resolved.parent), os.W_OK),
+            'current': key == str(Path(current_root).expanduser().resolve()),
+        })
+
+    add(data_home(), '기본 자리(앱 데이터)', 'app')
+    add(Path.home(), '홈 폴더', 'home')
+    add(current_root, '지금 쓰는 자리', 'current')
+    if sys.platform == 'darwin':
+        for entry in sorted(Path('/Volumes').glob('*')) if Path('/Volumes').is_dir() else []:
+            add(entry, entry.name, 'volume')
+    else:
+        roots = [Path('/media') / os.environ.get('USER', ''), Path('/mnt'), Path('/media')]
+        for root in roots:
+            for entry in sorted(root.glob('*')) if root.is_dir() else []:
+                add(entry, entry.name, 'volume')
+    return out
 
 
 LEGACY_CONFIG_FILE = REPO_DIR / '.clipserver.json'
@@ -906,6 +960,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._serve_model(unquote(url.path[len('/models/'):]))
         if url.path == '/api/clips':
             return self._list_clips(parse_qs(url.query))
+        if url.path == '/api/volumes':
+            return self._json(HTTPStatus.OK, {'ok': True, 'volumes': storage_volumes(self.config.root)})
         if url.path == '/api/projects':
             return self._list_projects()
         if url.path.startswith('/api/projects/'):

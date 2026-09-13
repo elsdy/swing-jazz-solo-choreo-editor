@@ -1361,6 +1361,22 @@
          이 이미 안에서 맞추므로, 창의 비율을 고정해도 잘리지 않는다. */
     .only-wide { display: inline-flex; }
     .video-frame-slot { display: none; }
+
+    /* ── PiP 중에는 패널의 영상 칸을 접는다 (2026-09-13) ──
+       영상이 브라우저 밖 창으로 나가면 <video> 자리에는 브라우저가 만든 검은 안내판
+       ("This video is playing in picture in picture.")이 남는다. 16:9 를 그대로 차지해서
+       폰에서는 화면의 3분의 1을 검은 칸이 먹는다 — PiP 로 자리를 벌려 놓고 그 자리를 도로 뺏는 셈이다.
+
+       ⚠ **display:none 을 쓰지 않는다.** <video> 를 렌더 트리에서 빼면 브라우저가 PiP 를 끝낼 수 있다.
+         높이만 0 으로 접어 자리를 없애고 요소는 그대로 그려 둔다. */
+    body[data-videopip="on"] .video-frame {
+      height: 0;
+      min-height: 0;
+      aspect-ratio: auto;
+      border: 0;
+      overflow: hidden;
+    }
+    body[data-videopip="on"] .video-frame-slot,
     body[data-videofloat="on"] .video-frame-slot {
       display: block;
       border: 1px dashed rgba(34,197,94,0.35);

@@ -80,6 +80,16 @@ export function createClipServer(options = {}) {
       }
     },
 
+    /**
+     * 이 서버가 쓸 수 있는 **저장장치** 목록(2026-09-13). 폰에서 긴 경로를 손으로 치지 않게 하려고 있다.
+     * @returns {Promise<{path:string,label:string,kind:string,freeBytes:number|null,totalBytes:number|null,writable:boolean,current:boolean}[]>}
+     *   서버가 없거나 모르는 엔드포인트면 빈 배열 — 호출부는 그때 경로 칸만 보여 준다
+     */
+    async listVolumes() {
+      const data = await json('GET', '/api/volumes');
+      return data && Array.isArray(data.volumes) ? data.volumes : [];
+    },
+
     async getConfig() {
       const data = await json('GET', '/api/config');
       return data && typeof data.root === 'string' ? data : null;

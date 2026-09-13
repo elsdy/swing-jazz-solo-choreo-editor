@@ -59,7 +59,7 @@ import { mediaSourceFromUrl, pickPlayer, pickPlayerKind, toMediaSource } from '.
 import { createFilePlayer, FILE_CAPABILITIES } from '../../src/adapters/media/filePlayer.js';
 import { createClipLibrary } from '../../src/adapters/clipLibrary.js';
 import { createProjectServer } from '../../src/adapters/projectServer.js';
-import { safeSegment, projectDirName, clipDirParts, joinClipPath, splitClipPath, numberedName } from '../../src/domain/clips.js';
+import { safeSegment, projectDirName, clipDirParts, joinClipPath, splitClipPath, numberedName, findStoredClip } from '../../src/domain/clips.js';
 import { DEFAULT_CLIP_SUBDIR, CLIP_UNFILED_DIR } from '../../src/ports/clips.js';
 import { nameKey, matchMove, normalizePlan, cellLabel } from '../../src/domain/choreoPlan.js';
 import * as PlanCmd from '../../src/usecases/planCommands.js';
@@ -3773,4 +3773,51 @@ test('projectServer: 없는 파일을 읽으면 null 이고, 있으면 내용 �
   assert.deepEqual(await api.read('있는것'), { version: 1, fileName: '있는것' });
   assert.equal(await api.read('없는것'), null);
   assert.equal(await api.read(''), null, '빈 이름은 보내지도 않는다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 같은 영상을 두 번 올리지 않는다 (2026-09-13)
+//
+// 실측: 한 폴더에 754MB 가 쌓였는데 그중 530MB 가 같은 파일의 사본이었다(같은 영상을 열 때마다
+// ` (2)`, ` (3)` 이 붙었다). 폰에서는 100MB 를 5G 로 다시 올리는 값까지 들었다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('findStoredClip: 이름과 크기가 같으면 이미 있는 것을 쓴다', () => {
+  const clips = [
+    { name: '다른 것.mp4', size: 500, path: 'video-clip/p/다른 것.mp4' },
+    { name: '9월 공연.mp4', size: 102431603, path: 'video-clip/p/9월 공연.mp4' }
+  ];
+  assert.equal(findStoredClip(clips, { name: '9월 공연.mp4', size: 102431603 }).path,
+    'video-clip/p/9월 공연.mp4');
+
+  // 크기가 다르면 다른 영상이다 — 같은 이름이어도 새로 올려야 한다(다시 찍은 테이크).
+  assert.equal(findStoredClip(clips, { name: '9월 공연.mp4', size: 999 }), null);
+  assert.equal(findStoredClip(clips, { name: '없는 것.mp4', size: 102431603 }), null);
+});
+
+test('findStoredClip: 이미 쌓인 번호 사본도 같은 것으로 본다', () => {
+  // 이 기능이 생기기 전에 만들어진 사본들이다. 하나를 골라 쓰면 더 늘지 않는다.
+  const clips = [
+    { name: '필소굿 (3).mp4', size: 102431603, path: 'video-clip/p/필소굿 (3).mp4' },
+    { name: '필소굿 (2).mp4', size: 102431603, path: 'video-clip/p/필소굿 (2).mp4' }
+  ];
+  assert.equal(findStoredClip(clips, { name: '필소굿.mp4', size: 102431603 }).name, '필소굿 (3).mp4');
+
+  // 확장자가 다르면 다른 파일이다.
+  assert.equal(findStoredClip([{ name: '필소굿 (2).mov', size: 10, path: 'x' }],
+    { name: '필소굿.mp4', size: 10 }), null);
+
+  // 이름에 정규식 기호가 있어도 터지지 않는다(괄호·점은 파일 이름에 흔하다).
+  const tricky = [{ name: 'a+b (2) [x].mp4', size: 7, path: 'video-clip/p/a+b (2) [x].mp4' }];
+  assert.equal(findStoredClip(tricky, { name: 'a+b [x].mp4', size: 7 }), null);
+  assert.equal(findStoredClip([{ name: 'a+b (2).mp4', size: 7, path: 'ok' }],
+    { name: 'a+b.mp4', size: 7 }).path, 'ok');
+});
+
+test('findStoredClip: 모르는 입력은 조용히 null 이다(올리는 쪽으로 떨어진다)', () => {
+  assert.equal(findStoredClip(null, { name: 'a.mp4', size: 1 }), null);
+  assert.equal(findStoredClip([], { name: 'a.mp4', size: 1 }), null);
+  assert.equal(findStoredClip([{ name: 'a.mp4', size: 0 }], { name: 'a.mp4', size: 0 }), null,
+    '크기 0 은 판단 근거가 못 된다');
+  assert.equal(findStoredClip([{ name: 'a.mp4', size: 5 }], { name: '', size: 5 }), null);
 });

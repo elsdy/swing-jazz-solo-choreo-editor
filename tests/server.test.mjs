@@ -528,3 +528,27 @@ test('server.py: 옛 자리에 쌓인 것이 있으면 그 자리를 계속 쓴�
   if (legacyHas) assert.equal(root, REPO, '쌓인 것이 있는데 새 자리를 가리킨다 — 사라진 것처럼 보인다');
   else assert.ok(!root.startsWith(REPO + path.sep) && root !== REPO, '빈 저장소인데 안쪽을 가리킨다');
 });
+
+test('server.py: 저장장치 목록은 지금 루트를 표시하고 남은 자리를 함께 준다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    const data = await (await fetch(`${s.base}/api/volumes`)).json();
+    assert.equal(data.ok, true);
+    assert.ok(Array.isArray(data.volumes) && data.volumes.length, '고를 것이 하나도 없다');
+
+    // 지금 쓰는 자리는 언제나 목록에 있고, 하나만 current 다 — 없으면 화면이 아무것도 못 고른다.
+    const current = data.volumes.filter(v => v.current);
+    assert.equal(current.length, 1);
+    assert.equal(current[0].path, s.root);
+
+    for (const v of data.volumes) {
+      assert.equal(typeof v.path, 'string');
+      assert.equal(typeof v.label, 'string');
+      assert.equal(typeof v.writable, 'boolean');
+      // 남은 자리는 모를 수 있다(null). 있으면 양수여야 화면이 크기를 적는다.
+      assert.ok(v.freeBytes === null || v.freeBytes >= 0, `freeBytes 가 이상하다: ${v.freeBytes}`);
+    }
+    // 홈은 어느 기계에나 있다.
+    assert.ok(data.volumes.some(v => v.kind === 'home'), '홈 폴더가 목록에 없다');
+  } finally { s.stop(); }
+});
