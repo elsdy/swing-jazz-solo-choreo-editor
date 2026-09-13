@@ -2042,7 +2042,9 @@
               <div class="vstep-body">
             <div class="video-pose-section" style="border-top:none; padding-top:0;">
               <div class="video-field">
-                <button id="videoPoseRunBtn" class="ghost accent" type="button" title="In~Out 구간(없으면 영상 전체)에서 관절을 찾습니다">🧍 자세 분석</button>
+                <!-- 재생하며 실시간(2026-09-13). 파일 영상에서만 된다 — 유튜브는 iframe 이라 픽셀을 못 읽는다. -->
+                <button id="videoPoseLiveBtn" class="ghost" type="button" title="재생하면서 그 프레임의 관절을 그 자리에서 찾아 그립니다. 내 컴퓨터의 영상에서만 됩니다">▶ 따라 그리기</button>
+                <button id="videoPoseRunBtn" class="ghost accent" type="button" title="In~Out 구간(없으면 영상 전체)에서 관절을 찾습니다. 가동 범위·가속도 요약은 이쪽이 필요합니다">🧍 자세 분석</button>
                 <button id="videoPoseMeshBtn" class="ghost" type="button" title="관절에 몸을 씌워 그립니다. 끄면 뼈대만 나옵니다">메시</button>
                 <button id="videoPoseClearBtn" class="ghost" type="button">분석 지우기</button>
               </div>

@@ -189,6 +189,34 @@ export function createMediapipePose(options = {}) {
     },
 
     /**
+     * 한 장만 지금 본다(2026-09-13). 재생 중에 부르는 길이라 **탐색하지 않고 던지지도 않는다.**
+     *
+     * ⚠ `analyze` 와 같은 `lastStamp` 를 쓴다 — MediaPipe 는 VIDEO 모드에서 타임스탬프가 줄면
+     *   추적 상태가 엉킨다. 미리 분석하다 멈추고 실시간으로 넘어가도 단조 증가가 유지된다.
+     * ⚠ 아직 디코드가 안 된 영상(readyState < 2)은 **빈 결과**다. 그리지 않는 편이 맞다 —
+     *   마지막으로 본 관절을 계속 그리면 영상은 흐르는데 뼈대만 얼어붙는다.
+     * @param {any} source `<video>` 엘리먼트
+     * @param {number} sec 지금 시각(초)
+     * @returns {import('../../ports/pose.js').PoseLiveResult}
+     */
+    detectNow(source, sec) {
+      if (loadState !== 'ready' || !landmarker) return { ok: false, subjects: [], error: '모델이 아직 준비되지 않았습니다.' };
+      if (!source || (source.readyState !== undefined && source.readyState < 2)) {
+        return { ok: false, subjects: [], error: '' };
+      }
+      const w = source.videoWidth || source.naturalWidth || source.width || 0;
+      const h = source.videoHeight || source.naturalHeight || source.height || 0;
+      if (!(w > 0 && h > 0)) return { ok: false, subjects: [], error: '' };
+      try {
+        const stamp = Math.max(lastStamp + 1, Math.round(Number(sec) * 1000));
+        lastStamp = stamp;
+        return { ok: true, subjects: subjectsOf(landmarker.detectForVideo(source, stamp), w / h), error: '' };
+      } catch (e) {
+        return { ok: false, subjects: [], error: String(e && e.message ? e.message : e) };
+      }
+    },
+
+    /**
      * 구간을 훑어 프레임마다 관절점을 뽑는다. **절대 reject 하지 않는다**(계약).
      * @param {any} video `<video>` 엘리먼트, 또는 이미 뽑아 둔 프레임 `{images:[{sec, el}]}`
      * @param {import('../../ports/pose.js').PoseRequest} request

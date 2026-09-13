@@ -3828,3 +3828,62 @@ test('findStoredClip: 모르는 입력은 조용히 null 이다(올리는 쪽으
     '크기 0 은 판단 근거가 못 된다');
   assert.equal(findStoredClip([{ name: 'a.mp4', size: 5 }], { name: '', size: 5 }), null);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 재생하며 실시간으로 보기 (2026-09-13)
+//
+// 미리 분석해 두던 것을 대신하는 것이 아니라 **나란히 선다** — 구간 요약(가동 범위·가속도)은
+// 한 장으로는 못 재므로 미리 훑는 길이 그대로 필요하다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('poseCommands: 실시간을 켜면 미리 분석한 것이 없어도 오버레이가 돈다', () => {
+  const store = createStore();
+  assert.equal(PoseCmd.hasOverlay(store), false, '아무것도 없는데 그리려 한다');
+
+  assert.deepEqual(PoseCmd.setLive(store, { live: true }), { video: true });
+  assert.equal(PoseCmd.poseState(store).live, true);
+  // ★ 이것이 이 기능의 핵심이다 — 분석해 둔 프레임이 0장이어도 그릴 것이 있다.
+  assert.equal(PoseCmd.hasOverlay(store), true);
+
+  // 같은 값을 다시 주면 아무것도 하지 않는다(렌더를 부르지 않는다).
+  assert.deepEqual(PoseCmd.setLive(store, { live: true }), {});
+  // 인자 없이 부르면 토글이다.
+  PoseCmd.setLive(store);
+  assert.equal(PoseCmd.poseState(store).live, false);
+  assert.equal(PoseCmd.hasOverlay(store), false);
+});
+
+test('poseCommands: 실시간 실측값은 초당 한 번만 store 를 흔든다', () => {
+  const store = createStore();
+  PoseCmd.setLive(store, { live: true });
+
+  assert.deepEqual(PoseCmd.setLiveStats(store, { fps: 36.62, delegate: 'GPU' }), { video: true });
+  assert.equal(PoseCmd.poseState(store).liveFps, 36.6, '소수 한 자리로 접어 화면 흔들림을 줄인다');
+  assert.equal(PoseCmd.poseState(store).delegate, 'GPU');
+
+  // 같은 값이면 Dirty 가 비어 있다 — 안 그러면 초마다 화면 전체가 다시 그려진다.
+  assert.deepEqual(PoseCmd.setLiveStats(store, { fps: 36.62, delegate: 'GPU' }), {});
+  assert.deepEqual(PoseCmd.setLiveStats(store, { fps: 5.6, delegate: 'CPU' }), { video: true });
+
+  // 끄면 실측값은 지우고 어느 장치로 섰는지는 남긴다(다시 켤 때 곧바로 말해 줄 수 있다).
+  PoseCmd.setLive(store, { live: false });
+  assert.equal(PoseCmd.poseState(store).liveFps, 0);
+  assert.equal(PoseCmd.poseState(store).delegate, 'CPU');
+});
+
+test('poseCommands: `분석 지우기` 는 결과만 지우고 보기 방식은 남긴다', () => {
+  const store = createStore();
+  PoseCmd.setLive(store, { live: true });
+  PoseCmd.setLiveStats(store, { fps: 30, delegate: 'GPU' });
+  PoseCmd.setMesh(store, { on: false });
+  PoseCmd.finishAnalysis(store, { frames: 120, maxSubjects: 2, trackIds: ['t1'], ambiguous: 0, lost: 0 });
+
+  PoseCmd.clearAnalysis(store);
+  const p = PoseCmd.poseState(store);
+  assert.equal(p.frames, 0, '결과는 지워야 한다');
+  assert.equal(p.state, 'idle');
+  // ⚠ 「지우기」는 결과를 지우는 것이지 보기 방식을 되돌리는 것이 아니다.
+  assert.equal(p.live, true, '실시간이 꺼졌다');
+  assert.equal(p.showMesh, false, '메시/뼈대 선택이 되돌아갔다');
+  assert.equal(p.delegate, 'GPU');
+});

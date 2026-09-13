@@ -66,6 +66,21 @@
  */
 
 /**
+ * 한 장만 지금 본다(2026-09-13). 재생하면서 **그 프레임을 그 자리에서** 그리는 길이다.
+ *
+ * `analyze` 와 갈라 둔 까닭 — analyze 는 구간을 훑으며 `<video>` 를 탐색한다(재생을 멈춘다).
+ * 재생 중에는 탐색하면 안 되고, 지금 화면에 있는 그 그림을 그대로 넘겨야 한다.
+ *
+ * ⚠ **선택 멤버다.** 없으면 호출부는 미리 분석해 둔 프레임으로 떨어진다.
+ * ⚠ 동기로 돌고 한 장에 27~178ms 가 든다(GPU·CPU 실측). 호출부가 **부르는 빈도를 정한다** —
+ *   매 rAF 마다 부르면 화면이 그만큼 느려진다.
+ * @typedef {Object} PoseLiveResult
+ * @property {boolean} ok
+ * @property {PoseSubject[]} subjects 못 찾았으면 빈 배열
+ * @property {string} error
+ */
+
+/**
  * @typedef {Object} PoseResult
  * @property {boolean} ok
  * @property {PoseFrame[]} frames 취소됐으면 그때까지의 것. 실패해도 빈 배열이지 null 이 아니다
@@ -82,6 +97,8 @@
  * @property {() => {load: PoseLoadState, error: string}} getState
  * @property {() => Promise<{ok:boolean, error:string}>} load 모델·런타임을 받아 온다. **던지지 않는다**
  * @property {(source: unknown, request: PoseRequest) => Promise<PoseResult>} analyze
+ * @property {(source: unknown, sec: number) => PoseLiveResult} [detectNow] 한 장만 지금 본다.
+ *   **선택 멤버**이고 **동기**다 — 없으면 호출부는 미리 분석해 둔 프레임으로 떨어진다
  *   source 는 어댑터가 아는 것(<video> 엘리먼트)이다. 포트는 그것이 무엇인지 모른다
  * @property {() => void} destroy 멱등
  */

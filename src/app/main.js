@@ -820,6 +820,8 @@ function ensurePlayer() {
   if (key !== loadedVideoKey) {
     // ⚠ 영상이 바뀌면 옛 관절은 거짓이 된다 — 다른 영상 위에 남의 자세를 그리게 된다.
     if (loadedVideoKey && poseFrames.length) dropPoseAnalysis();
+    // ⚠ 유튜브로 갈아타면 실시간은 돌 수 없다(iframe 의 픽셀을 못 읽는다) — 루프를 여기서 맞춘다.
+    liveStop();
     loadedVideoKey = key;
     player.load(source);
   }
@@ -1095,12 +1097,150 @@ function rebuildPoseTracks() {
   return poseTracks;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 재생하며 실시간으로 보기 (2026-09-13)
+//
+// 미리 분석해 두는 길은 두 가지를 안고 간다 — "분석 안 한 구간은 아무것도 안 보인다"와
+// "CG 가 초당 12번만 바뀐다". 둘 다 영상을 훑는 내내 걸리는 마찰이다. GPU 로 36.6fps 를
+// 재고 나서 그 둘을 없앨 수 있게 됐다(결정 기록: 「자세 분석은 재생하며 실시간으로 돈다」).
+//
+// ⚠ **같은 그림을 두 번 보지 않는다.** 한 장에 27~178ms 가 드는데, 브라우저가 아직 새 프레임을
+//   내놓지 않았으면 그 값이 통째로 버려진다. `requestVideoFrameCallback` 이 있으면 그것이
+//   "새 프레임이 나왔다"를 정확히 알려 주고, 없으면 currentTime 이 움직였는지로 가른다.
+// ⚠ **유튜브에는 안 된다.** iframe 안의 그림은 이쪽에서 읽을 수 없다(픽셀을 못 만진다).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 실시간으로 뽑은 한 장을 언제까지 믿을 것인가. 이보다 낡으면 그리지 않는다.
+ * CPU 한 장이 178ms(실측)이므로 그 세 배쯤을 둔다 — 느린 기기에서 깜빡이지 않으면서,
+ * 검출이 정말 멎으면 곧 사라진다.
+ */
+const LIVE_STALE_SEC = 0.6;
+
+/** 실시간으로 뽑은 마지막 한 장. store 에 넣지 않는다 — 초당 30번 바뀐다. */
+let liveFrame = null;
+/** rVFC 핸들 또는 rAF 핸들. 둘 중 어느 쪽으로 도는지는 rVFC 지원 여부가 정한다. */
+let liveHandle = null;
+let liveUsesVfc = false;
+/** 마지막으로 본 영상 시각. rAF 경로에서 "새 그림인가"를 가르는 유일한 근거다. */
+let liveLastSec = -1;
+/** fps 실측 — 최근 1초에 몇 장을 봤나. 사람이 "왜 끊기지"를 물을 자리에 숫자로 답한다. */
+let liveCount = 0;
+let liveWindowStart = 0;
+
+/** 지금 실시간으로 돌 수 있는 상태인가. 하나라도 어긋나면 돌지 않는다. */
+function liveCanRun() {
+  const p = PoseCmd.poseState(store);
+  return p.live && playerKind === 'file' && !!videoElement() && !poseRunning;
+}
+
+/** 한 장 본다. **이 함수가 이 기능의 값 전부를 쓴다** — 부르는 빈도가 곧 비용이다. */
+function liveTick(nowMs, mediaSec) {
+  const estimator = poseEstimator;
+  const video = videoElement();
+  if (!estimator || !video || typeof estimator.detectNow !== 'function') return;
+  const sec = Number.isFinite(mediaSec) ? mediaSec : video.currentTime || 0;
+  const res = estimator.detectNow(video, sec);
+  if (!res.ok) return;
+  liveFrame = { sec, subjects: res.subjects };
+  poseOverlay.invalidate();
+
+  // 초당 한 번만 store 를 건드린다 — 매 장마다 쓰면 화면이 그만큼 다시 그려진다.
+  liveCount += 1;
+  if (!liveWindowStart) liveWindowStart = nowMs;
+  if (nowMs - liveWindowStart >= 1000) {
+    const fps = (liveCount * 1000) / (nowMs - liveWindowStart);
+    render(PoseCmd.setLiveStats(store, { fps, delegate: estimator.getState().delegate }));
+    liveCount = 0;
+    liveWindowStart = nowMs;
+  }
+}
+
+function liveLoopVfc(nowMs, meta) {
+  liveHandle = null;
+  if (!liveCanRun()) return liveStop();
+  liveTick(nowMs, meta && Number.isFinite(meta.mediaTime) ? meta.mediaTime : undefined);
+  liveSchedule();
+}
+
+function liveLoopRaf(nowMs) {
+  liveHandle = null;
+  if (!liveCanRun()) return liveStop();
+  const video = videoElement();
+  const sec = video ? video.currentTime || 0 : 0;
+  // 새 그림일 때만 본다. 멈춰 있으면 한 번만 보고 그 뒤로는 쉰다.
+  if (sec !== liveLastSec) {
+    liveLastSec = sec;
+    liveTick(nowMs, sec);
+  }
+  liveSchedule();
+}
+
+function liveSchedule() {
+  const video = videoElement();
+  if (!video) return;
+  if (liveUsesVfc && typeof video.requestVideoFrameCallback === 'function') {
+    liveHandle = video.requestVideoFrameCallback(liveLoopVfc);
+  } else {
+    liveHandle = window.requestAnimationFrame(liveLoopRaf);
+  }
+}
+
+/** 실시간을 켠다. 모델을 아직 안 올렸으면 여기서 올린다(11MB 는 처음 한 번뿐이다). */
+async function liveStart() {
+  if (liveHandle !== null) return;
+  const video = videoElement();
+  if (!video) return;
+  const estimator = ensurePoseEstimator();
+  const loaded = await estimator.load();
+  if (!loaded.ok) {
+    render(PoseCmd.failAnalysis(store, { error: loaded.error }));
+    render(PoseCmd.setLive(store, { live: false }));
+    return;
+  }
+  render(PoseCmd.setLiveStats(store, { fps: 0, delegate: estimator.getState().delegate }));
+  if (!liveCanRun()) return;
+  liveUsesVfc = typeof video.requestVideoFrameCallback === 'function';
+  liveLastSec = -1;
+  liveCount = 0;
+  liveWindowStart = 0;
+  liveSchedule();
+}
+
+/** 실시간을 끈다. 뽑아 둔 한 장도 버린다 — 남기면 멈춘 뼈대가 영상 위에 얼어붙는다. */
+function liveStop() {
+  if (liveHandle !== null) {
+    const video = videoElement();
+    if (liveUsesVfc && video && typeof video.cancelVideoFrameCallback === 'function') video.cancelVideoFrameCallback(liveHandle);
+    else window.cancelAnimationFrame(liveHandle);
+  }
+  liveHandle = null;
+  liveFrame = null;
+  poseOverlay.invalidate();
+}
+
+/** 켜짐/꺼짐이 바뀌었을 수 있다 — 상태를 보고 맞춘다. 멱등이다. */
+function liveSync() {
+  if (liveCanRun()) liveStart();
+  else liveStop();
+}
+
 /**
  * 그 시각에 가장 가까운 분석 프레임. 오버레이가 매 프레임 부르므로 이분 탐색이다.
  * @param {number} sec
  * @returns {{sec:number, subjects:Array, activeIndex:number}|null}
  */
 function poseFrameAt(sec) {
+  // ⚠ 실시간이 켜져 있으면 **그것이 답이다.** 미리 분석해 둔 것이 있어도 지금 그림이 맞다.
+  //   activeIndex 는 -1 이다 — 추적(누가 누구인가)은 구간을 훑어야 나오는 값이라 한 장으로는 모른다.
+  // ⚠ **묻는 시각으로 돌려준다.** 오버레이는 |found.sec - sec| 이 0.2초를 넘으면 안 그리는데,
+  //   CPU 로 서면 한 장에 178ms(실측)라 그 문턱에 걸려 화면이 깜빡인다 — 가장 필요한 순간에 사라진다.
+  //   대신 **너무 낡았으면 아예 null 을 준다**: 검출이 멎었을 때 멈춘 뼈대가 영상 위에 얼어붙는 편이
+  //   아무것도 안 보이는 것보다 나쁘다.
+  if (liveFrame) {
+    if (Math.abs(liveFrame.sec - sec) > LIVE_STALE_SEC) return null;
+    return { sec, subjects: liveFrame.subjects, activeIndex: -1 };
+  }
   if (!poseFrames.length) return null;
   let lo = 0, hi = poseFrames.length - 1;
   while (lo < hi) {
@@ -1219,7 +1359,10 @@ views.pose = createPoseView({
     setActiveTrack: (args) => PoseCmd.setActiveTrack(store, args),
     addTrack: () => PoseCmd.addTrack(store),
     clearAnchors: () => PoseCmd.clearAnchors(store),
-    setMesh: (args) => PoseCmd.setMesh(store, args)
+    setMesh: (args) => PoseCmd.setMesh(store, args),
+    // ⚠ 켜고 끄는 것은 store 를 바꾸고, **루프를 맞추는 것은 liveSync 가** 한다(멱등).
+    //   커맨드가 직접 루프를 건드리면 어댑터를 아는 자리가 usecases 로 새어 들어간다.
+    setLive: (args) => { const d = PoseCmd.setLive(store, args); liveSync(); return d; }
   }
 });
 
@@ -1258,8 +1401,10 @@ views.video = createVideoPanel({
       ensurePlayer();
       playhead.start();
       poseOverlay.start();
+      liveSync();                                       // 멱등 — 켤 수 있으면 켜고 아니면 끈다
     } else {
       poseOverlay.stop();
+      liveStop();                                       // 안 보이는 화면에 GPU 를 물고 있지 않는다
       // ⚠ 반드시 멈춘다 — display:none 인 iframe 도 오디오는 계속 나온다(패널 닫기·루틴 편집기 열기).
       player.pause();
       playhead.stop();

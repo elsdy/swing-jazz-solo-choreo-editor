@@ -279,7 +279,8 @@ function createInitialState(ids) {
       // 자세 분석의 **요약만** 둔다(2026-09-12). 관절점 수만 개는 app/main.js 가 모듈 변수로 들고 있다 —
       // store 에 넣으면 undo 스냅샷이 그만큼 불어나고, 되돌릴 값도 아니다(usecases/poseCommands.js 경계 ①).
       pose: { state: 'idle', done: 0, total: 0, error: '', frames: 0, maxSubjects: 0,
-              trackIds: [], activeId: '', anchors: [], ambiguous: 0, lost: 0, fromSec: 0, toSec: 0, showMesh: true }
+              trackIds: [], activeId: '', anchors: [], ambiguous: 0, lost: 0, fromSec: 0, toSec: 0, showMesh: true,
+              live: false, liveFps: 0, delegate: '' }
     }
   };
 }
