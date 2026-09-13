@@ -33,7 +33,9 @@ export const POSE_TEXT = Object.freeze({
  * @property {() => void} onRun `🧍 자세 분석`. 어댑터를 아는 자리(app/main)가 실제로 돌린다
  * @property {{
  *   clearAnalysis: () => any, setActiveTrack: (args:{id:string}) => any,
- *   addTrack: () => any, clearAnchors: () => any, setMesh: (args?:{on?:boolean}) => any
+ *   addTrack: () => any, clearAnchors: () => any, setMesh: (args?:{on?:boolean}) => any,
+ *   setLive: (args?:{live?:boolean}) => any 재생하며 실시간으로 볼 것인가(2026-09-13).
+ *     ⚠ 루프를 돌리는 것은 app/main 이다 — 뷰는 상태만 뒤집는다
  * }} commands
  * @property {() => void} [onChange] 고른 사람·앵커가 바뀌었다 — 호출부가 궤적을 다시 잇는다
  * @property {Record<string, HTMLElement|null>} [elements] 테스트용 주입
@@ -53,6 +55,7 @@ export function createPoseView(deps) {
 
   const byId = (id) => (id in elements ? elements[id] : document.getElementById(id));
 
+  const liveBtn = byId('videoPoseLiveBtn');
   const runBtn = byId('videoPoseRunBtn');
   const meshBtn = byId('videoPoseMeshBtn');
   const clearBtn = byId('videoPoseClearBtn');
@@ -66,7 +69,8 @@ export function createPoseView(deps) {
   /** 휘발성 상태. usecases/poseCommands.DEFAULT_POSE 와 같은 기본값을 쓴다(ui 는 usecases 를 import 하지 않는다). */
   const state = () => store.get().session.pose || {
     state: 'idle', done: 0, total: 0, error: '', frames: 0, maxSubjects: 0,
-    trackIds: [], activeId: '', anchors: [], ambiguous: 0, lost: 0, showMesh: true
+    trackIds: [], activeId: '', anchors: [], ambiguous: 0, lost: 0, showMesh: true,
+    live: false, liveFps: 0, delegate: ''
   };
 
   /** 초를 `m:ss` 로. 구간 안내에만 쓴다. */
@@ -77,11 +81,33 @@ export function createPoseView(deps) {
     return `${sec < 0 ? '-' : ''}${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
   }
 
+  /**
+   * 실시간으로 도는 동안의 안내. **잰 값을 그대로 적는다** — "빠릅니다" 가 아니라 몇 fps 인지.
+   * CPU 로 섰으면 그 사실을 감추지 않는다(실측 5.6fps 라 눈에 띄게 끊긴다).
+   */
+  function liveText(p) {
+    const bits = ['재생하면 그 프레임의 관절을 그 자리에서 찾아 그립니다'];
+    if (p.liveFps > 0) bits.push(`지금 초당 ${p.liveFps}장`);
+    if (p.delegate === 'CPU') {
+      bits.push('이 기기는 **CPU** 로 돌고 있어 끊깁니다 — 구간을 미리 `🧍 자세 분석` 하는 편이 낫습니다');
+    } else if (p.delegate === 'GPU') {
+      bits.push('GPU 로 돕니다');
+    }
+    bits.push('가동 범위·가속도 요약은 여전히 `🧍 자세 분석` 이 필요합니다(한 장으로는 범위를 못 잽니다)');
+    return bits.join(' · ') + '.';
+  }
+
   function renderPose() {
     const p = state();
     const why = getReadiness();
     const running = p.state === 'running';
 
+    // 재생하며 실시간(2026-09-13). 분석하는 중에는 잠근다 — 같은 추정기를 둘이 쓰면 타임스탬프가 엉킨다.
+    if (liveBtn) {
+      liveBtn.disabled = why !== 'ready' || running;
+      liveBtn.className = p.live ? CLS.quickBtnActive : CLS.ghost;
+      liveBtn.textContent = p.live ? '■ 따라 그리기 끄기' : '▶ 따라 그리기';
+    }
     if (runBtn) {
       runBtn.disabled = why !== 'ready';
       runBtn.textContent = running ? '🧍 분석하는 중…' : (p.state === 'done' ? '🧍 다시 분석' : '🧍 자세 분석');
@@ -133,12 +159,13 @@ export function createPoseView(deps) {
         if (many) bits.push('영상 위의 사람을 누르면 그 사람으로 바뀝니다');
         help.textContent = bits.join(' · ') + '.';
       } else {
-        help.textContent = why === 'ready' ? POSE_TEXT.ready : (POSE_TEXT[why] || POSE_TEXT.ready);
+        help.textContent = p.live ? liveText(p) : (why === 'ready' ? POSE_TEXT.ready : (POSE_TEXT[why] || POSE_TEXT.ready));
       }
     }
   }
 
   if (runBtn) runBtn.onclick = () => { if (getReadiness() === 'ready') onRun(); };
+  if (liveBtn) liveBtn.onclick = () => { render(commands.setLive()); onChange(); };
   if (meshBtn) meshBtn.onclick = () => { render(commands.setMesh()); onChange(); };
   if (clearBtn) clearBtn.onclick = () => { render(commands.clearAnalysis()); onChange(); };
   if (addBtn) addBtn.onclick = () => { render(commands.addTrack()); onChange(); };

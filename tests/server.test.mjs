@@ -426,3 +426,194 @@ test('server.py: 자세 분석 모델의 보관 위치를 설정으로 바꾸고
     s.stop();
   }
 });
+
+test('server.py: 안무표는 projects 폴더에 덮어쓰기로 쌓이고, 지우면 파일까지 없어진다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    const put = (name, body) => fetch(`${s.base}/api/projects?name=${encodeURIComponent(name)}`,
+      { method: 'PUT', body: JSON.stringify(body) });
+
+    // 한글·공백 이름이 그대로 파일 이름이 된다(확장자는 서버가 붙인다).
+    let res = await put('9월 공연 안무', { version: 1, fileName: '9월 공연 안무' });
+    assert.equal(res.status, 201);
+    const saved = await res.json();
+    assert.equal(saved.name, '9월 공연 안무.json');
+    assert.equal(saved.dir, path.join(s.root, 'projects'));
+    assert.ok(existsSync(path.join(s.root, 'projects', '9월 공연 안무.json')));
+
+    // ⚠ 클립과 반대로 **덮어쓴다** — 같은 안무를 여러 번 저장하는 것이 정상이라, ' (2)' 가 붙으면
+    //   목록이 같은 이름으로 가득 찬다.
+    res = await put('9월 공연 안무', { version: 2, fileName: '9월 공연 안무' });
+    assert.equal(res.status, 201);
+    assert.deepEqual(readdirSync(path.join(s.root, 'projects')), ['9월 공연 안무.json']);
+    const back = await (await fetch(`${s.base}/api/projects/${encodeURIComponent('9월 공연 안무')}`)).json();
+    assert.equal(back.version, 2, '덮어쓰지 않고 옛 내용이 남았다');
+
+    // JSON 이 아닌 본문은 받아 두지 않는다 — 받아 두면 다음에 여는 쪽에서 터진다.
+    res = await fetch(`${s.base}/api/projects?name=깨진것`, { method: 'PUT', body: '{not json' });
+    assert.equal(res.status, 400);
+    assert.ok(!existsSync(path.join(s.root, 'projects', '깨진것.json')));
+
+    // 폴더 밖으로 나가려는 이름은 한 조각으로 접힌다(safe_segment).
+    res = await put('../탈출', { version: 1 });
+    assert.equal(res.status, 201);
+    assert.equal((await res.json()).name, '_탈출.json', '구분자가 접히지 않았다');
+    assert.ok(!existsSync(path.join(s.root, '탈출.json')), '보관 폴더 밖에 파일이 생겼다');
+
+    // 목록은 최근에 고친 것이 앞이고, 이것이 앱의 최근 프로젝트 목록의 주인이다.
+    await put('3월 워크샵', { version: 1 });
+    const list = await (await fetch(`${s.base}/api/projects`)).json();
+    assert.equal(list.projects[0].name, '3월 워크샵.json');
+    assert.equal(list.projects.length, 3);
+
+    // 삭제는 목록이 아니라 **파일**을 지운다 — 목록의 주인이 폴더라 파일이 남으면 도로 나타난다.
+    res = await fetch(`${s.base}/api/projects?name=${encodeURIComponent('3월 워크샵')}`, { method: 'DELETE' });
+    assert.equal(res.status, 200);
+    assert.ok(!existsSync(path.join(s.root, 'projects', '3월 워크샵.json')));
+    const after = await (await fetch(`${s.base}/api/projects`)).json();
+    assert.deepEqual(after.projects.map(p => p.name).sort(), ['9월 공연 안무.json', '_탈출.json']);
+
+    // 두 번 눌러도 성공이다(멱등) — 두 번째만 빨개지는 것을 막는다.
+    res = await fetch(`${s.base}/api/projects?name=${encodeURIComponent('3월 워크샵')}`, { method: 'DELETE' });
+    assert.equal(res.status, 200);
+
+    // 없는 것을 읽으면 404, 이름이 없으면 400.
+    assert.equal((await fetch(`${s.base}/api/projects/없는것`)).status, 404);
+    assert.equal((await fetch(`${s.base}/api/projects?name=`, { method: 'DELETE' })).status, 400);
+  } finally { s.stop(); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 보관 자리는 저장소 밖이다 (2026-09-13)
+//
+// 저장소는 코드의 자리이고 안무표·영상은 잃으면 복구 못 하는 사용자의 것이라 수명이 다르다.
+// 여기서 지키는 것은 셋이다 — **데이터·설정·캐시가 서로 다른 자리**일 것, XDG 환경 변수를
+// 따를 것, 그리고 **옛 자리에 쌓인 것이 있으면 말없이 옮기지 않을** 것.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** server.py 를 모듈로 읽어 한 줄을 물어본다(서버를 띄우지 않는다). */
+function askPython(expr, env = {}) {
+  const res = spawnSync('python3', ['-c', `import server; print(${expr})`],
+    { cwd: REPO, env: { ...process.env, ...env }, encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  return res.stdout.trim();
+}
+
+test('server.py: 데이터·설정·캐시가 저장소 밖의 서로 다른 자리다', { skip: !hasPython && 'python3 없음' }, () => {
+  const [data, config, cache] = askPython(
+    "'\\n'.join(str(f()) for f in (server.data_home, server.config_home, server.cache_home))"
+  ).split('\n');
+
+  for (const dir of [data, config, cache]) {
+    assert.ok(!dir.startsWith(REPO + path.sep), `저장소 안이다: ${dir}`);
+  }
+  // ⚠ 설정에는 LLM 키가 평문으로 있다. 안무 폴더는 통째로 건네거나 올리는 것이라 같이 두면 안 된다.
+  assert.notEqual(data, config, '설정이 데이터와 같은 자리다 — 키가 따라간다');
+  assert.notEqual(data, cache);
+});
+
+test('server.py: XDG 환경 변수를 따른다', { skip: !hasPython && 'python3 없음' }, () => {
+  const fake = path.join(tmpdir(), 'choreo-xdg-데이터');
+  const got = askPython('server.data_home()', { XDG_DATA_HOME: fake });
+  assert.equal(got, path.join(fake, 'choreo'));
+});
+
+test('server.py: 옛 자리에 쌓인 것이 있으면 그 자리를 계속 쓴다', { skip: !hasPython && 'python3 없음' }, () => {
+  // 이 저장소에는 실제로 옛 폴더가 남아 있을 수도, 없을 수도 있다. 둘 중 어느 쪽이든
+  // **규칙이 같은지**만 본다 — 폴더가 있으면 저장소, 없으면 밖.
+  const root = askPython('server.default_data_root()');
+  const legacyHas = askPython(
+    "server._has_anything(server.REPO_DIR / 'video-clip') or server._has_anything(server.REPO_DIR / 'projects')"
+  ) === 'True';
+  if (legacyHas) assert.equal(root, REPO, '쌓인 것이 있는데 새 자리를 가리킨다 — 사라진 것처럼 보인다');
+  else assert.ok(!root.startsWith(REPO + path.sep) && root !== REPO, '빈 저장소인데 안쪽을 가리킨다');
+});
+
+test('server.py: 저장장치 목록은 지금 루트를 표시하고 남은 자리를 함께 준다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    const data = await (await fetch(`${s.base}/api/volumes`)).json();
+    assert.equal(data.ok, true);
+    assert.ok(Array.isArray(data.volumes) && data.volumes.length, '고를 것이 하나도 없다');
+
+    // 지금 쓰는 자리는 언제나 목록에 있고, 하나만 current 다 — 없으면 화면이 아무것도 못 고른다.
+    const current = data.volumes.filter(v => v.current);
+    assert.equal(current.length, 1);
+    assert.equal(current[0].path, s.root);
+
+    for (const v of data.volumes) {
+      assert.equal(typeof v.path, 'string');
+      assert.equal(typeof v.label, 'string');
+      assert.equal(typeof v.writable, 'boolean');
+      // 남은 자리는 모를 수 있다(null). 있으면 양수여야 화면이 크기를 적는다.
+      assert.ok(v.freeBytes === null || v.freeBytes >= 0, `freeBytes 가 이상하다: ${v.freeBytes}`);
+    }
+    // 홈은 어느 기계에나 있다.
+    assert.ok(data.volumes.some(v => v.kind === 'home'), '홈 폴더가 목록에 없다');
+  } finally { s.stop(); }
+});
+
+test('server.py: 설정 하나를 바꿔도 나머지가 떨어지지 않는다(Config.replace)', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    const cfgOf = () => fetch(`${s.base}/api/config`, { cache: 'no-store' }).then(r => r.json());
+    const put = (path, body) => fetch(`${s.base}${path}`,
+      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+    // 세 값을 서로 다르게 세워 둔다.
+    await put('/api/config', { root: s.root, subdir: '영상모음', projectsSubdir: '안무표모음' });
+    await put('/api/models/config', { dir: path.join(s.root, 'm1'), poseModel: 'heavy' });
+
+    // 보관 루트만 바꾼다 — 모델과 안무표 폴더가 따라 떨어지면 안 된다.
+    await put('/api/config', { root: path.join(s.root, 'sub') });
+    let cfg = await cfgOf();
+    assert.equal(cfg.subdir, '영상모음');
+    assert.equal(cfg.projectsSubdir, '안무표모음');
+    let models = await (await fetch(`${s.base}/api/models`)).json();
+    assert.equal(models.poseModel, 'heavy', '루트를 바꿨더니 모델 설정이 기본값으로 돌아갔다');
+    assert.equal(models.dir, path.join(s.root, 'm1'));
+
+    // 거꾸로 모델만 바꾼다 — 안무표 하위 폴더가 떨어지던 자리다(2026-09-13 에 찾음).
+    await put('/api/models/config', { dir: path.join(s.root, 'm2'), poseModel: 'lite' });
+    cfg = await cfgOf();
+    assert.equal(cfg.projectsSubdir, '안무표모음', '모델을 바꿨더니 안무표 폴더가 기본값으로 돌아갔다');
+    assert.equal(cfg.subdir, '영상모음');
+    models = await (await fetch(`${s.base}/api/models`)).json();
+    assert.equal(models.poseModel, 'lite');
+  } finally { s.stop(); }
+});
+
+test('server.py: /admin 은 로컬호스트에서만 열리고, 밖에서는 까닭을 말하며 거절한다', { skip: !hasPython && 'python3 없음' }, async () => {
+  // 주소 판정 자체는 파이썬 쪽에서 직접 잰다 — 테스트가 다른 기계인 척할 수는 없다.
+  const probe = spawnSync('python3', ['-c',
+    'import sys; sys.path.insert(0, ".."); import server; '
+    + 'print(",".join(str(server.is_loopback(a)) for a in '
+    + '["127.0.0.1", "::1", "::ffff:127.0.0.1", "192.168.50.7", "100.86.195.60", "1.127.0.0", ""]))'
+  ], { cwd: path.join(REPO, 'tests'), encoding: 'utf8' });
+  assert.equal(probe.status, 0, probe.stderr);
+  assert.equal(probe.stdout.trim(), 'True,True,True,False,False,False,False',
+    '로컬호스트 판정이 헐겁거나 너무 빡빡하다');
+
+  const s = await startServer();
+  try {
+    // 테스트는 127.0.0.1 로 붙으므로 열려야 한다.
+    const res = await fetch(`${s.base}/admin`);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /서버 설정/, '관리 화면이 아니라 다른 것이 왔다');
+    // ⚠ 이 화면은 앱의 모듈을 쓰지 않는다 — 앱이 깨져도, 앱을 안 열었어도 떠야 한다.
+    assert.ok(!/src\/app\/main\.js/.test(html), '관리 화면이 앱 모듈을 불러오고 있다');
+    // ⚠ 이 화면이 소유하는 것은 보관 위치 하나다 — 모델·LLM 은 앱의 `⚙ 설정` 이 갖는다.
+    assert.ok(!/id="llmKey"/.test(html), '관리 화면에 LLM 키 칸이 남아 있다');
+    assert.ok(!/id="poseModel"/.test(html), '관리 화면에 모델 고르개가 남아 있다');
+
+    // 보관 현황은 서버가 세어 준다(관리 화면이 여러 API 를 긁어모으지 않게).
+    const usage = await (await fetch(`${s.base}/api/storage`)).json();
+    assert.equal(usage.ok, true);
+    for (const key of ['clips', 'projects', 'models']) {
+      assert.equal(typeof usage[key].count, 'number');
+      assert.equal(typeof usage[key].bytes, 'number');
+    }
+    assert.equal(usage.root, s.root);
+  } finally { s.stop(); }
+});

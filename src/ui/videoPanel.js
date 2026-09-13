@@ -25,10 +25,11 @@
 //   패널 열기/접기/따라가기·탭 한 번 한 번·In/Out 찍기·구간 반복에는 걸지 않는다 — 화면 상태이지 안무가 아니다.
 
 import { CLS, DATA } from './domContract.js';
-import { isStacked as layoutIsStacked } from './layout.js';
+import { confirmOnce } from './widgets.js';
 import { cellOf, clamp, linearOf, rowIndices } from '../domain/grid.js';
 import { isTempoUsable, normalizeTempo } from '../domain/tempo.js';
 import { markersAt, normalizeMarkers } from '../domain/markers.js';
+import { activeClipOf, clipCoverage, normalizeMedia } from '../domain/project/media.js';
 
 /** 메인 보드의 store 상 id. usecases/store.BOARD_MAIN 과 같은 문자열이다(ui 는 usecases 를 import 하지 않는다). */
 const BOARD_MAIN = 'main';
@@ -40,7 +41,7 @@ const POINTS_NEEDED = 2;
 const SECOND_POINT_ROW_GAP = 4;
 
 /** session.video 가 없을 때의 기본값(옛 스냅샷 복원 뒤에도 안전하도록). */
-const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false });
+const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null });
 
 /** 잘라내기가 안 되는 이유 → 안내 문구. 어댑터·서버는 코드/사실만 주고 문구는 여기서 만든다. */
 const TRIM_TEXT = Object.freeze({
@@ -172,6 +173,11 @@ export function formatRange(from, to, cols) {
  *   URL 은 있는데 'null' 이면 **알아보지 못한 주소**라는 뜻이라 문구가 달라진다
  * @property {(sec: number, opts?: {play?: boolean}) => void} [onSeek] 영상을 그 시각으로 옮긴다(play 면 재생까지).
  *   `In 으로`·`Out 으로`·마커의 ▶ 가 쓴다. 어댑터를 아는 자리의 몫이라 여기서 player 를 만지지 않는다
+ * @property {() => 'server'|'folder'|'browser'} [getStorageMode] 고른 영상 파일이 어디에 복사되는가 —
+ *   서버가 받아 두는가(`server`), 브라우저에 지정한 폴더인가(`folder`), 아무 데도 아닌가(`browser`)
+ * @property {() => 'unavailable'|'off'|'on'} [getPipState] 화면 속 화면을 지금 쓸 수 있는가.
+ *   'unavailable' 이면 버튼을 아예 감춘다 — 눌러도 안 되는 버튼을 두지 않는다
+ * @property {() => void} [onTogglePip] `⧉ PiP`. ⚠ **클릭 콜스택 안에서** 재생기까지 닿아야 켜진다
  * @property {() => 'ready'|'busy'|'no-inout'|'not-file'|'no-server'|'no-ffmpeg'|'not-stored'} [getTrimState]
  *   잘라내기를 지금 할 수 있는가, 안 되면 왜인가. In/Out 유무는 뷰가 스스로 보므로 호출부는 나머지만 답해도 된다
  * @property {() => string} [getTrimError] 마지막 잘라내기 실패 이유(서버 문구). 비어 있으면 실패가 없었다
@@ -203,7 +209,6 @@ export function formatRange(from, to, cols) {
  *   clearMarkers?: () => any,
  *   applyMarkerToTempo?: (args: {id:string}) => any
  * }} commands app/main 이 videoCommands 를 store 에 묶어 넘긴다
- * @property {() => boolean} [isStacked] 좁은 화면인가. 기본값은 ui/layout.isStacked
  * @property {Record<string, HTMLElement|null>} [elements] 테스트용 요소 주입
  */
 
@@ -212,7 +217,7 @@ export function formatRange(from, to, cols) {
  * 한 번 바인딩한다 — routineEditorView·linksBarView 와 같은 규약이다.
  *
  * @param {VideoPanelDeps} deps
- * @returns {{ render(): void, renderStatus(): void, syncSelection(): void, playerHost(): HTMLElement|null }}
+ * @returns {{ render(): void, renderStatus(): void, renderPip(): void, syncSelection(): void, playerHost(): HTMLElement|null }}
  */
 export function createVideoPanel(deps) {
   const {
@@ -220,7 +225,7 @@ export function createVideoPanel(deps) {
     render,
     commitHistory = () => {},
     getSourceUrl,
-    getSource = () => (store.media && store.media.source) || null,
+    getSource = () => activeClipOf(store.media).source,
     getFileLoaded = () => false,
     onFileChosen = () => {},
     onOpenFromLibrary = () => {},
@@ -229,12 +234,16 @@ export function createVideoPanel(deps) {
     getPlayerKind = () => 'null',
     getCurrentSec,
     onSeek = () => {},
+    getStorageMode = () => 'browser',
+    getPipState = () => 'unavailable',
+    onTogglePip = () => {},
     getTrimState = () => 'no-server',
     getTrimError = () => '',
     onTrim = () => {},
     onSync = () => {},
+    // 영상 이름 바꾸기에 쓴다(원본 renameMove 와 같은 idiom). 넓히지 않으려고 promptText 하나만 받는다.
+    dialogs = { promptText: (title, value) => window.prompt(title, value) },
     commands,
-    isStacked = layoutIsStacked,
     elements = {}
   } = deps;
 
@@ -245,6 +254,11 @@ export function createVideoPanel(deps) {
   const openBtn = byId('videoPanelBtn');          // 안무표 툴바의 진입점
   const followBtn = byId('videoFollowBtn');
   const collapseBtn = byId('videoCollapseBtn');
+  const pipBtn = byId('videoPipBtn');
+  const frameSlot = byId('videoFrameSlot');
+  const floatBtn = byId('videoFloatBtn');
+  const floatBar = byId('videoFloatBar');
+  const floatDockBtn = byId('videoFloatDockBtn');
   const closeBtn = byId('videoCloseBtn');
   const titleChip = byId('videoTitleChip');
   const frame = byId('videoFrame');
@@ -278,6 +292,12 @@ export function createVideoPanel(deps) {
   const loopBtn = byId('videoLoopBtn');
   const inOutClearBtn = byId('videoInOutClearBtn');
   const inOutText = byId('videoInOutText');
+  const captureBtn = byId('videoCaptureBtn');
+  const captureCancelBtn = byId('videoCaptureCancelBtn');
+  const captureSkipBtn = byId('videoCaptureSkipBtn');
+  const markerBlocksBtn = byId('videoMarkerBlocksBtn');
+  const nameSelBtn = byId('videoNameSelBtn');
+  const captureHelp = byId('videoCaptureHelp');
   const trimBtn = byId('videoTrimBtn');
   const trimHelp = byId('videoTrimHelp');
   const markerSelBtn = byId('videoMarkerSelBtn');
@@ -285,28 +305,41 @@ export function createVideoPanel(deps) {
   const markerClearBtn = byId('videoMarkerClearBtn');
   const markerHelp = byId('videoMarkerHelp');
   const markerList = byId('videoMarkerList');
+  const clipList = byId('videoClipList');
+  const clipHelp = byId('videoClipHelp');
 
   /** 마지막으로 세운 행 선택지의 `${cols}x${rows}`. 같으면 다시 만들지 않는다(선택·포커스 보존). */
   let rowOptionsSig = null;
   /** 이 세션에서 패널을 한 번이라도 열었는가. 좁은 화면의 '첫 열기는 접힌 채로' 판정에 쓴다. */
-  let openedOnce = false;
   /** 마지막 보정점 추가가 거부됐는가(앞뒤 점과 순서가 맞지 않음). 다음 성공이나 지우기가 지운다. */
   let pointRejected = false;
   /** 마지막 `박자에 반영` 이 거부된 마커 id. 다음 성공이나 마커 변경이 지운다. */
   let markerRejectedId = '';
+  /** 띄운 창의 `position: fixed` 기준점(floatOrigin). 창 크기가 바뀌면 버린다. */
+  let floatOriginCache = null;
 
   // ── store 읽기 (얇은 접근자) ──────────────────────────────────────────────
 
   /** 휘발성 화면 상태. usecases/videoCommands.panelState 와 같은 기본값을 쓴다. */
   const panelState = () => store.get().session.video || DEFAULT_PANEL;
   /** 확정된 Tempo. 손상된 값·없는 값은 normalizeTempo 가 흡수한다(bpm 0 = 미설정). */
-  const tempo = () => normalizeTempo(store.media && store.media.tempo);
-  const markers = () => normalizeMarkers(store.media && store.media.markers);
+  /** 지금 보고 있는 영상. 박자·마커는 **영상마다 따로**다(2026-09-12) — 목록은 clips() 가 준다. */
+  const clip = () => activeClipOf(store.media);
+  /** 이 안무에 달린 영상 전부. */
+  const clips = () => normalizeMedia(store.media);
+  const tempo = () => normalizeTempo(clip().tempo);
+  const markers = () => normalizeMarkers(clip().markers);
   const mainBoard = () => store.board(BOARD_MAIN);
   /** In·Out 이 둘 다 있고 순서가 맞으면 그 구간, 아니면 null. usecases/videoCommands.inOutRange 와 같은 규칙이다. */
   const inOutRange = () => {
     const p = panelState();
     return Number.isFinite(p.inSec) && Number.isFinite(p.outSec) && p.outSec > p.inSec ? { inSec: p.inSec, outSec: p.outSec } : null;
+  };
+
+  /** 지금 고른 것 가운데 **이름 없는** 블록이 몇 그룹인가. `고른 블록에 이름 붙이기` 의 활성 판정. */
+  const pendingSelected = () => {
+    const placements = mainBoard().placements;
+    return [...(store.selection || [])].filter(gid => placements.some(p => p.groupId === gid && p.pending)).length;
   };
 
   // ── 앵커 입력 읽기/쓰기 ───────────────────────────────────────────────────
@@ -532,6 +565,222 @@ export function createVideoPanel(deps) {
     }
   }
 
+  /**
+   * 받아 적기 구획(2026-09-12). 버튼 하나가 두 뜻을 번갈아 가진다 — 시작을 안 찍었으면 `● 여기서 시작`,
+   * 찍었으면 `■ 여기서 끝`. 두 버튼으로 나누면 눈이 영상을 떠나 어느 쪽을 누를지 고르게 된다.
+   *
+   * ⚠ 진행 중 표시는 store 의 captureSec 에서 재도출한다(뷰가 따로 기억하지 않는다) — 패널을 접었다
+   *   펴거나 다른 렌더가 끼어들어도 표시가 어긋나지 않는다.
+   */
+  function renderCapture() {
+    const start = panelState().captureSec;
+    const running = Number.isFinite(start);
+    const ready = isTempoUsable(tempo());
+    if (captureBtn) {
+      // 연속으로 찍는다(2026-09-13) — 한 동작의 끝이 곧 다음의 시작이라 경계마다 한 번씩이다.
+      captureBtn.textContent = running ? '▮ 여기서 끊기' : '● 받아 적기 시작';
+      captureBtn.className = running ? CLS.warn : CLS.primary;
+      captureBtn.disabled = !ready;
+    }
+    if (captureSkipBtn) captureSkipBtn.disabled = !ready;
+    if (captureCancelBtn) captureCancelBtn.disabled = !running;
+    if (markerBlocksBtn) markerBlocksBtn.disabled = markers().length === 0;
+    const pending = pendingSelected();
+    if (nameSelBtn) {
+      nameSelBtn.disabled = pending === 0;
+      nameSelBtn.textContent = pending > 1 ? `고른 블록 ${pending}개에 이름 붙이기` : '고른 블록에 이름 붙이기';
+    }
+    if (captureHelp) {
+      if (!ready) {
+        captureHelp.textContent = '먼저 `② 박자 맞추기` 에서 BPM 을 정하세요 — 영상의 초를 안무표의 카운트로 바꾸는 데 박자가 필요합니다.';
+      } else if (running) {
+        captureHelp.textContent = `${formatClock(start)} 부터 받는 중 — 동작이 바뀌는 자리마다 \`B\`. `
+          + '안무가 아닌 대목은 `N` 으로 건너뛰고, 다 되면 `Esc` 나 `■ 그만` 으로 끝냅니다.';
+      } else {
+        captureHelp.textContent = '영상을 보면서 동작이 바뀌는 자리마다 한 번씩 누르면 그 사이가 이름 없는 블록(`?`)으로 놓입니다. '
+          + '한 동작의 끝이 곧 다음 동작의 시작이라 두 번 누를 필요가 없습니다. 이름은 나중에 붙입니다.';
+      }
+      captureHelp.classList.toggle(CLS.isError, false);
+    }
+  }
+
+  /**
+   * 이 영상이 어디에 남아 있는가. **파일을 연 사람에게만 뜻이 있다** — 유튜브는 주소가 곧 원본이다.
+   * `path` 가 있으면 어딘가에 복사가 끝난 것이고, 없으면 이 기기의 고른 파일에만 기대고 있다.
+   * @param {{kind?:string, path?:string}|null} source
+   * @returns {string} 빈 문자열이면 줄에 아무것도 붙이지 않는다
+   */
+  function storageOf(source) {
+    if (!source || source.kind !== 'file') return '';
+    if (!source.path) return '이 기기에만';
+    return getStorageMode() === 'server' ? '서버에 보관됨' : '보관 폴더에 있음';
+  }
+
+  /**
+   * 영상 목록(2026-09-12). 한 줄이 영상 하나고, 그 영상이 안무표의 어디를 덮는지를 막대로 보여 준다.
+   *
+   * ⚠ 커버리지는 **마커가 말한다.** 마커가 없으면 0% 막대가 아니라 `마커 없음` 이다 — 영상을 올리고
+   *   아직 안 찍었을 뿐일 수 있고, 0% 막대는 "이 영상은 아무 데도 안 맞는다"는 거짓말이 된다.
+   * ⚠ 전체 카운트는 메인 보드에서 읽는다. 안무표 크기를 바꾸면 막대 비율도 함께 달라진다.
+   */
+  function renderClips() {
+    if (!clipList) return;
+    const { clips: list, activeId } = clips();
+    const board = mainBoard();
+    const total = Math.max(1, (board.rows + (board.hasIntroRow ? 1 : 0)) * board.cols);
+    if (clipHelp) {
+      clipHelp.textContent = list.length === 0
+        ? '영상을 고르면 여기 쌓입니다. 같은 안무를 여러 번 찍었으면 영상마다 박자와 마커가 따로 삽니다.'
+        : `영상 ${list.length}개 — 줄을 누르면 그 영상으로 갈아탑니다(박자·마커가 함께 바뀝니다).`;
+    }
+    clipList.innerHTML = '';
+    for (const c of list) {
+      const li = document.createElement('li');
+      li.className = 'video-clip' + (c.id === activeId ? ' is-active' : '');
+      li.dataset.clipId = c.id;
+
+      const pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'video-clip-pick';
+      pick.dataset.act = 'pick';
+      pick.textContent = c.id === activeId ? '◉' : '○';
+      pick.title = c.id === activeId ? '지금 보고 있는 영상' : '이 영상으로 갈아타기';
+
+      const main = document.createElement('div');
+      main.className = 'video-clip-main';
+      const name = document.createElement('div');
+      name.className = 'video-clip-name';
+      name.textContent = c.name;
+      const sub = document.createElement('div');
+      sub.className = 'video-clip-sub';
+      const cov = clipCoverage(c);
+      const src = c.source ? (c.source.kind === 'file' ? c.source.name : '유튜브') : '소스 없음';
+      // 보관 상태를 줄에 적는다(2026-09-13). 그전에는 서버가 파일을 받아 두고도 화면이 아무 말을
+      // 하지 않아, 올린 사람이 "저장이 안 됐나" 하고 같은 파일을 또 골랐다.
+      const keep = storageOf(c.source);
+      sub.textContent = [src, keep, cov
+        ? `${formatRange(cov.fromCount, cov.toCount - 1, board.cols)} · 마커 ${cov.markers}개`
+        : '마커 없음'].filter(Boolean).join(' · ');
+      sub.title = sub.textContent;
+      main.append(name, sub);
+      if (cov) {
+        const bar = document.createElement('div');
+        bar.className = 'video-clip-bar';
+        const fill = document.createElement('span');
+        const from = clamp(cov.fromCount, 0, total);
+        const to = clamp(cov.toCount, 0, total);
+        fill.style.left = `${(from / total) * 100}%`;
+        fill.style.width = `${Math.max(2, ((to - from) / total) * 100)}%`;
+        bar.appendChild(fill);
+        main.appendChild(bar);
+      }
+
+      const acts = document.createElement('div');
+      acts.className = 'video-clip-acts';
+      const ren = document.createElement('button');
+      ren.type = 'button'; ren.className = CLS.ghost;
+      ren.textContent = '✎'; ren.title = '이름 바꾸기';
+      ren.onclick = () => {
+        if (!commands.renameClip) return;
+        const next = dialogs.promptText('이 영상의 이름', c.name);
+        if (next == null) return;
+        render(commands.renameClip({ id: c.id, name: next }));
+        commitHistory();
+      };
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = CLS.ghost;
+      del.textContent = '✕'; del.title = '이 영상을 목록에서 빼기(찍어 둔 박자·마커도 함께 사라집니다)';
+      // ⚠ 되돌리는 길이 Undo 하나뿐이라 2단계 확인을 받는다(이 저장소의 confirmOnce 관습).
+      del.onclick = () => confirmOnce(del, '✕', () => {
+        if (!commands.removeClip) return;
+        render(commands.removeClip({ id: c.id }));
+        commitHistory();
+      });
+      acts.append(ren, del);
+
+      // 줄 아무 데나 눌러도 갈아탄다 — 작은 ○ 만 과녁이면 손가락으로 못 맞힌다.
+      const pickIt = () => {
+        if (!commands.selectClip) return;
+        render(commands.selectClip({ id: c.id }));
+      };
+      pick.onclick = pickIt;
+      main.onclick = pickIt;
+
+      li.append(pick, main, acts);
+      clipList.appendChild(li);
+    }
+  }
+
+  // ── 띄운 창의 자리와 크기 ──────────────────────────────────────────────────
+  //
+  // ⚠ 값은 **인라인 스타일**로만 쓴다. CSS 의 기본 자리(오른쪽 아래·min(56vw,1100px))는 그대로 두고,
+  //   사용자가 옮기거나 크기를 바꾼 뒤에만 덮어쓴다 — 그래야 처음 띄울 때 화면 크기를 따라간다.
+  // ⚠ 창이 화면 밖으로 나가지 않게 가둔다. 끌다 놓친 창을 되찾을 길이 없으면 새로고침밖에 없다.
+
+  /** 화면 크기에 맞춘 기본 폭. 큰 모니터에서 너무 커지지 않게 위를 막는다. */
+  function defaultFloatWidth() {
+    const vw = window.innerWidth;
+    return Math.round(Math.max(420, Math.min(vw * 0.56, 1100)));
+  }
+
+  /**
+   * `position: fixed` 의 기준점(뷰포트 좌표). 보통은 (0,0) 이라고 생각하지만 **이 앱에서는 아니다.**
+   *
+   * ⚠⚠ 조상에 `transform`·`filter`·`backdrop-filter` 가 있으면 그 조상이 fixed 의 기준(포함 블록)이
+   *   된다. 이 앱은 `.panel` 에 `backdrop-filter: blur(10px)` 이 있고 `.workspace` 가 `.panel` 이라,
+   *   `left: 260px` 를 줬는데 화면에서는 601px 에 섰다(실측 341·69px 어긋남). 이 사실을 모르고
+   *   뷰포트 좌표를 그대로 쓰면 창이 손끝을 따라오지 않고 비스듬히 달아난다.
+   *
+   * 재는 방법은 하나뿐이다 — **0,0 에 놓고 어디에 서는지 본다.** 조상 체인을 뒤져 어떤 속성이
+   * 포함 블록을 만드는지 맞히려 들면 CSS 가 하나 늘 때마다 틀린다.
+   * @returns {{x:number, y:number}}
+   */
+  function floatOrigin() {
+    if (floatOriginCache) return floatOriginCache;
+    const keep = ['left', 'top', 'right', 'bottom'].map(k => [k, frame.style[k]]);
+    frame.style.left = '0px'; frame.style.top = '0px';
+    frame.style.right = 'auto'; frame.style.bottom = 'auto';
+    const r = frame.getBoundingClientRect();
+    for (const [k, v] of keep) frame.style[k] = v;
+    floatOriginCache = { x: r.left, y: r.top };
+    return floatOriginCache;
+  }
+
+  function placeFloat(p) {
+    if (!frame) return;
+    const w = Number.isFinite(p.floatW) ? p.floatW : defaultFloatWidth();
+    frame.style.width = `${w}px`;
+    if (!Number.isFinite(p.floatX) || !Number.isFinite(p.floatY)) {
+      // 처음 띄울 때는 오른쪽 아래 — 안무표의 왼쪽 위(마디 번호·앞 카운트)를 가리지 않는다.
+      // ⚠ right/bottom 은 포함 블록 기준이라 기준점 보정이 필요 없다(어느 쪽 끝에서 재든 같은 모서리).
+      frame.style.left = '';
+      frame.style.top = '';
+      frame.style.right = '18px';
+      frame.style.bottom = '18px';
+      return;
+    }
+    setFloatViewportPos(p.floatX, p.floatY, w);
+  }
+
+  /** 뷰포트 좌표 (x,y) 에 창의 왼쪽 위를 놓는다. 화면 밖으로 나가지 않게 가둔 뒤 기준점만큼 뺀다. */
+  function setFloatViewportPos(x, y, width) {
+    const w = width || frame.getBoundingClientRect().width;
+    const h = w * 9 / 16;
+    const vx = clamp(x, 8, Math.max(8, window.innerWidth - w - 8));
+    const vy = clamp(y, 8, Math.max(8, window.innerHeight - h - 8));
+    const o = floatOrigin();
+    frame.style.left = `${Math.round(vx - o.x)}px`;
+    frame.style.top = `${Math.round(vy - o.y)}px`;
+    frame.style.right = 'auto';
+    frame.style.bottom = 'auto';
+  }
+
+  function clearFloat() {
+    if (!frame) return;
+    floatOriginCache = null;
+    for (const k of ['width', 'left', 'top', 'right', 'bottom']) frame.style.removeProperty(k);
+  }
+
   /** 구간 자르기·마커 구획. In/Out 은 화면 상태, 마커는 media 에서 읽는다. */
   function renderCut() {
     const board = mainBoard();
@@ -669,10 +918,29 @@ export function createVideoPanel(deps) {
     // 툴바 진입점의 활성 표시. '+ 빠른 배치' 와 같은 규칙이라 store 값에서 재도출한다.
     if (openBtn) openBtn.className = p.open ? CLS.quickBtnActive : CLS.ghost;
     if (followBtn) followBtn.className = p.follow ? CLS.quickBtnActive : CLS.ghost;
+    renderPip();
     if (collapseBtn) collapseBtn.textContent = p.collapsed ? '펼치기' : '접기';
 
+    // ── 큰 창으로 띄우기(2026-09-13) ──
+    // ⚠ 상태는 <body> 의 data-videofloat 하나이고 CSS 가 그것만 읽는다. DOM 을 옮기지 않는다 —
+    //   .video-frame 은 제자리에 있고 position:fixed 로만 떠 있다(iframe 리로드 방지).
+    // ⚠ 패널이 닫히거나 접히면 띄운 창도 내린다. 안 그러면 패널을 닫았는데 영상만 화면에 남는다.
+    const floating = !!p.floating && shown && !p.collapsed;
+    document.body.dataset.videofloat = floating ? 'on' : 'off';
+    if (floatBtn) {
+      // ⚠ className 을 통째로 쓰지 않는다. 이 버튼은 마크업에서 `only-wide` 를 달고 있고(좁은 화면에서
+      //   숨기는 장치), 통째로 덮으면 그 클래스가 날아가 **폰에서 `⤢ 크게` 가 보인다** — 화면보다 큰
+      //   창을 띄우는 버튼이 폰에 뜬 채로 2026-09-13 까지 있었다. 상태 클래스만 토글한다.
+      floatBtn.classList.toggle(CLS.quickBtnActive, floating);
+      floatBtn.classList.toggle(CLS.ghost, !floating);
+      floatBtn.textContent = floating ? '⤡ 제자리로' : '⤢ 크게';
+    }
+    if (floating) placeFloat(p); else clearFloat();
+
     renderStatus();
+    renderClips();
     renderTempo();
+    renderCapture();
     renderCut();
 
     // ⚠ **매번** 부른다. 값이 바뀔 때만 부르면 "패널이 열린 채로 URL 만 바뀌는" 경로가 통째로
@@ -696,13 +964,35 @@ export function createVideoPanel(deps) {
     return !!committed;
   }
 
+  /**
+   * `⧉ PiP` 버튼. **쓸 수 없으면 아예 감춘다** — 눌러도 안 되는 버튼은 없느니만 못하다.
+   * 재생기가 iframe(YouTube)이거나 영상이 아직 안 실렸으면 'unavailable' 이다.
+   * OS 쪽에서 창을 닫아도 상태가 따라오도록 app/main 이 재생기의 상태 변화에서 다시 부른다.
+   */
+  function renderPip() {
+    const state = getPipState();
+    // ⚠ 버튼이 없어도 <body> 표시는 해야 한다 — 영상 칸을 접는 CSS 가 이것만 읽는다.
+    document.body.dataset.videopip = state === 'on' ? 'on' : 'off';
+    // 빈 자리의 글귀는 어디로 갔는지에 따라 다르다. 띄운 창과 PiP 는 되돌리는 방법이 서로 다르다.
+    if (frameSlot && state === 'on') {
+      frameSlot.innerHTML = '영상은 <b>PiP 창</b>으로 빼 두었습니다 — <b>⧉ PiP 끄기</b> 로 되돌립니다';
+    } else if (frameSlot) {
+      frameSlot.innerHTML = '영상은 큰 창으로 띄워 두었습니다 — 창의 <b>⤡ 제자리로</b> 로 되돌립니다';
+    }
+    if (!pipBtn) return;
+    pipBtn.hidden = state === 'unavailable';
+    pipBtn.className = state === 'on' ? CLS.quickBtnActive : CLS.ghost;
+    pipBtn.textContent = state === 'on' ? '⧉ PiP 끄기' : '⧉ PiP';
+  }
+
+  if (pipBtn) pipBtn.onclick = () => { onTogglePip(); };
+
   if (openBtn) {
     openBtn.onclick = () => {
-      const wasOpen = panelState().open;
+      // 2026-09-13 — 좁은 화면에서 처음 열 때 접던 것을 없앴다. 세로를 아끼려던 것인데,
+      // 접힌 패널은 헤더만 남아 `① 영상 고르기` 의 `📁 영상 파일 열기` 가 통째로 사라졌다 —
+      // 폰에서는 "파일을 여는 버튼이 아예 없는 앱"이 됐다. 접기는 손으로 누르면 된다.
       render(commands.togglePanel());
-      // 좁은 화면은 세로 예산이 빡빡하다 — 처음 열 때는 헤더만 남긴다(펼치기는 한 번 누르면 된다).
-      if (!wasOpen && !openedOnce && isStacked()) render(commands.setCollapsed({ collapsed: true }));
-      if (!wasOpen) openedOnce = true;
     };
   }
   if (closeBtn) closeBtn.onclick = () => render(commands.closePanel());
@@ -845,14 +1135,138 @@ export function createVideoPanel(deps) {
     };
   }
 
+  // ── 띄우기 조작 ───────────────────────────────────────────────────────────
+  if (floatBtn && commands.setFloating) floatBtn.onclick = () => render(commands.setFloating());
+  // ⚠ 브라우저 창 크기가 바뀌면 포함 블록의 자리도 바뀐다 — 기준점을 버리고 다시 잰다.
+  window.addEventListener('resize', () => { floatOriginCache = null; });
+  if (floatDockBtn && commands.setFloating) {
+    floatDockBtn.onclick = (e) => { e.stopPropagation(); render(commands.setFloating({ floating: false })); };
+  }
+
+  // 막대를 잡아 끈다. ⚠ 끄는 **동안에는 store 를 건드리지 않는다**(초당 수십 번 렌더가 된다) —
+  //   인라인 스타일만 직접 쓰고, 놓는 순간 한 번만 커맨드로 확정한다(재생 헤드의 채널 B 와 같은 규약).
+  if (floatBar && frame) {
+    let drag = null;
+    floatBar.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      const r = frame.getBoundingClientRect();
+      drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height };
+      floatBar.classList.add('is-dragging');
+      floatBar.setPointerCapture(e.pointerId);
+    });
+    floatBar.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      // ⚠ 손끝은 뷰포트 좌표다. 창은 포함 블록 좌표로 선다 — 변환은 setFloatViewportPos 한 곳에서만.
+      setFloatViewportPos(e.clientX - drag.dx, e.clientY - drag.dy, drag.w);
+    });
+    const endDrag = (e) => {
+      if (!drag) return;
+      drag = null;
+      floatBar.classList.remove('is-dragging');
+      if (e && e.pointerId != null && floatBar.hasPointerCapture(e.pointerId)) floatBar.releasePointerCapture(e.pointerId);
+      const r = frame.getBoundingClientRect();
+      if (commands.setFloatBox) render(commands.setFloatBox({ x: r.left, y: r.top, w: r.width }));
+      onSync(true);   // 오버레이·재생 헤드가 자리를 다시 재게 한다
+    };
+    floatBar.addEventListener('pointerup', endDrag);
+    floatBar.addEventListener('pointercancel', endDrag);
+
+    // 모서리 리사이즈(CSS resize)는 이벤트가 없다 — 크기가 바뀌면 ResizeObserver 가 알려 준다.
+    if (typeof ResizeObserver === 'function') {
+      let last = 0;
+      const ro = new ResizeObserver(() => {
+        if (document.body.dataset.videofloat !== 'on') return;
+        const w = Math.round(frame.getBoundingClientRect().width);
+        if (!w || Math.abs(w - last) < 2) return;
+        last = w;
+        onSync(true);
+      });
+      ro.observe(frame);
+    }
+  }
+
+  // ── 받아 적기 ─────────────────────────────────────────────────────────────
+  // ⚠ 커밋은 **블록이 실제로 놓인 때만** 한다. 시작을 찍은 것은 화면 상태이고(안무가 아직 안 바뀌었다),
+  //   거기에 커밋하면 Undo 한 번이 아무것도 되돌리지 않는 빈 칸이 된다.
+
+  /** "바뀐 것이 없다" 를 알아보는 값. usecases/store 의 NONE 은 키가 없는 객체다. */
+  const NONE_DIRTY_EMPTY = (d) => !d || Object.keys(d).length === 0;
+
+  /** 커맨드가 얹어 보내는 알림용 키(started·placed·skipped·needsTempo)를 뗀다 — Dirty 의 키가 아니다. */
+  function strip(result) {
+    const { started, placed, skipped, needsTempo, ...dirty } = result || {};
+    return dirty;
+  }
+
+  /**
+   * 받아 적기 키를 한 번 눌렀다(버튼도 단축키도 여기로 온다).
+   * @returns {boolean} 블록이 놓였는가
+   */
+  function captureToggle() {
+    if (!commands.captureToggle) return false;
+    const { started, placed, needsTempo, ...dirty } = commands.captureToggle({ sec: getCurrentSec() }) || {};
+    render(dirty);
+    renderCapture();
+    if (needsTempo) return false;
+    if (placed) commitHistory();
+    return !!placed;
+  }
+
+  if (captureBtn) captureBtn.onclick = () => captureToggle();
+  if (captureSkipBtn && commands.captureSkip) {
+    captureSkipBtn.onclick = () => { render(strip(commands.captureSkip({ sec: getCurrentSec() }))); renderCapture(); };
+  }
+  if (nameSelBtn && commands.nameSelected) {
+    nameSelBtn.onclick = () => {
+      const { named, ...dirty } = commands.nameSelected() || {};
+      render(dirty);
+      renderCapture();
+      if (named) commitHistory();
+    };
+  }
+  if (captureCancelBtn && commands.stopCapture) {
+    captureCancelBtn.onclick = () => { render(commands.stopCapture()); renderCapture(); };
+  }
+  if (markerBlocksBtn && commands.markersToBlocks) {
+    markerBlocksBtn.onclick = () => {
+      const { placed, ...dirty } = commands.markersToBlocks() || {};
+      render(dirty);
+      if (placed) commitHistory();
+    };
+  }
+
   return {
     render: renderPanel,
     renderStatus,
     /** 잘라내기 상태(대기·진행·실패)가 바뀌었다 — 구획만 다시 그린다(store 를 거치지 않는 값이다). */
     renderCut,
+    /**
+     * 받아 적기 한 번(단축키 B). 패널이 닫혀 있거나 박자가 없으면 아무것도 하지 않는다 —
+     * 판정을 여기 두는 이유는 input 계층이 재생 시각을 모르기 때문이다.
+     * @returns {boolean} 블록이 놓였는가
+     */
+    captureToggle: () => (panelState().open ? captureToggle() : false),
+    /** `N` — 여기까지는 안무가 아니다. 패널이 닫혀 있으면 아무 일도 하지 않는다. */
+    captureSkip: () => {
+      if (!panelState().open || !commands.captureSkip) return false;
+      const res = commands.captureSkip({ sec: getCurrentSec() }) || {};
+      render(strip(res));
+      renderCapture();
+      return Boolean(res.started || res.skipped);
+    },
+    /** `Esc` — 받아 적기를 끝낸다. **받는 중일 때만 참**을 돌려준다(그래야 Esc 의 옛 뜻이 산다). */
+    stopCapture: () => {
+      if (!panelState().open || !commands.stopCapture) return false;
+      const dirty = commands.stopCapture();
+      if (NONE_DIRTY_EMPTY(dirty)) return false;
+      render(dirty);
+      renderCapture();
+      return true;
+    },
     /** 선택이 바뀌었다 — `선택한 블록이 여기서 시작`·`선택한 블록에 맵핑` 의 활성 여부만 다시 잰다(패널이 닫혀 있으면 값만 바뀌고 안 보인다). */
-    syncSelection: () => { renderTempo(); renderCut(); },
+    syncSelection: () => { renderTempo(); renderCapture(); renderCut(); },
     /** YT.Player 가 iframe 으로 갈아치울 자리. app/main 이 여기에 컨테이너를 만든다. */
+    renderPip,
     playerHost: () => frame
   };
 }

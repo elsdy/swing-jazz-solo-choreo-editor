@@ -15,6 +15,7 @@ import { normalize as normalizeCategories } from '../categories.js';
 import { normalizeLibrary } from '../moves.js';
 import { normalizeRoutine } from '../routines.js';
 import { normalizeMedia } from './media.js';
+import { normalizePhrasing } from '../phrasing.js';
 
 /** ids 는 함수(`()=>string`)와 `{uid}` 객체를 모두 받는다 — domain/placements.js 와 같은 규약. */
 function uidOf(ids) {
@@ -30,6 +31,10 @@ function uidOf(ids) {
  *    merge 는 length 클립 → filter 이고 merge 에만 `length > 0` 조건이 있다(4136 vs 4361).
  *    그래서 startIndex 가 cols 경계에 걸린 배치의 생존 여부가 두 경로에서 다르다 — 원본 그대로 둔다.
  *
+ * ⚠ 이름이 빈 배치를 **버리지 않는 유일한 예외**가 `pending: true` 다(2026-09-12, 받아 적기).
+ *    이름 없이 자리부터 잡은 블록이라 살려야 하고, 그 표시가 없는 빈 이름은 예전처럼 버린다 —
+ *    손상된 파일에서 이름이 날아간 배치와 구분하려고 일부러 플래그를 요구한다.
+ *
  * @see index.html:4349
  * @param {any[]} rawPlacements
  * @param {{rows:number, cols:number}} board  ⚠ rows 는 마지막 행 인덱스다(행 개수 아님)
@@ -40,11 +45,12 @@ function uidOf(ids) {
 export function normalizePlacements(rawPlacements, board, categories, ids) {
   const uid = uidOf(ids);
   const fallback = Object.keys(categories)[0];
-  return (Array.isArray(rawPlacements) ? rawPlacements : []).filter(p => p && p.name).map(p => ({
+  return (Array.isArray(rawPlacements) ? rawPlacements : []).filter(p => p && (p.name || p.pending)).map(p => ({
     id: p.id || uid(),
     groupId: p.groupId || uid(),
-    name: String(p.name),
+    name: String(p.name || ''),
     category: categories[p.category] ? p.category : fallback,
+    ...(p.name ? {} : { pending: true }),
     row: Math.max(0, p.row != null ? Number(p.row) : 1),
     startIndex: Math.max(0, Number(p.startIndex) || 0),
     length: Math.max(1, Number(p.length) || 1),
@@ -109,6 +115,9 @@ export function normalizeProject(data, deps) {
   // DEFAULT_MEDIA(bpm 0 = 미설정)로 떨어뜨린다. 그 값은 isEmptyMedia 가 참이라 다시 저장할 때
   // 파일에서 키째로 빠진다 — 열었다 저장하는 왕복이 바이트를 늘리지 않는다.
   const media = normalizeMedia(data.media);
+  // phrasing 도 같다(2026-09-13). 없는 옛 파일은 DEFAULT_PHRASING(on:false)으로 떨어지고,
+  // 그 값은 isEmptyPhrasing 이 참이라 다시 저장할 때 키째로 빠진다.
+  const phrasing = normalizePhrasing(data.phrasing);
 
-  return { rows, cols, categories, moveLibrary, placements, routines, favoriteRoutineIds, media, fileName: data.fileName || '' };
+  return { rows, cols, categories, moveLibrary, placements, routines, favoriteRoutineIds, media, phrasing, fileName: data.fileName || '' };
 }

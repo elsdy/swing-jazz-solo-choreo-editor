@@ -75,3 +75,40 @@ export function numberedName(fileName, n) {
   const ext = m[2] || '';
   return `${stem} (${n})${ext}`;
 }
+
+/**
+ * 이미 보관된 클립 가운데 **지금 고른 파일과 같은 것**을 찾는다(2026-09-13).
+ *
+ * 왜 있나 — 같은 영상을 다시 열 때마다 서버가 ` (2)`, ` (3)` 을 붙여 새로 받아, 실측으로 한 폴더에
+ * 754MB 중 530MB 가 같은 파일의 사본이었다. 폰에서는 100MB 를 5G 로 다시 올리는 값까지 든다.
+ *
+ * 판단 기준은 **이름과 바이트 크기**다. 내용을 해시하려면 100MB 를 다 읽어야 하는데, 그 값은
+ * 다시 올리는 값과 크게 다르지 않다 — 같은 이름에 같은 바이트 수인 다른 영상은 실제로 거의 없다.
+ * ⚠ 그래서 아주 드물게 틀릴 수 있다: 이름도 크기도 같고 내용만 다르면 **옛것을 쓴다.**
+ *
+ * 번호가 붙은 사본(`a (3).mp4`)도 같은 것으로 본다 — 이미 쌓인 사본을 하나 골라 쓰면 더 늘지 않는다.
+ *
+ * @param {{name?:string, size?:number, path?:string}[]} clips `GET /api/clips?project=` 가 준 목록
+ * @param {{name:string, size:number}} file 지금 고른 파일
+ * @returns {{name?:string, size?:number, path?:string}|null} 없으면 null
+ */
+export function findStoredClip(clips, file) {
+  const name = String((file && file.name) || '');
+  const size = Number(file && file.size);
+  if (!name || !Number.isFinite(size) || size <= 0 || !Array.isArray(clips)) return null;
+
+  const sameSize = clips.filter(c => Number(c && c.size) === size);
+  if (!sameSize.length) return null;
+
+  const exact = sameSize.find(c => String(c.name || '') === name);
+  if (exact) return exact;
+
+  // `a.mp4` 를 찾을 때 `a (2).mp4` 도 같은 것으로 본다. 확장자는 같아야 한다.
+  // ⚠ 번호는 **2 부터**다(numberedName). ` (1)` 은 서버가 붙이지 않는다 — 사용자 파일 이름의 일부다.
+  //   `\d+` 로 두면 `안무 (1).mp4` 를 `안무.mp4` 의 사본으로 보게 된다(손으로 정리하다 실제로 틀렸다).
+  const m = /^(.*?)(\.[^.]*)?$/.exec(name) || [];
+  const stem = m[1] || name;
+  const ext = m[2] || '';
+  const numbered = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\((?:[2-9]|\\d{2,})\\)${ext.replace(/\./g, '\\.')}$`);
+  return sameSize.find(c => numbered.test(String(c.name || ''))) || null;
+}

@@ -66,6 +66,7 @@ export function createPlacementEl(placement, visualSubRow, deps) {
   const el = document.createElement('div');
   el.className = CLS.placement;
   if (placement.type === 'routine') el.classList.add(CLS.isRoutine);
+  if (placement.pending) el.classList.add(CLS.isPending);
   // 원본 3424 의 `ctx === mainCtx` → policy.allowsSelection (루틴 편집 보드는 false)
   if (policy?.allowsSelection && selection?.has(placement.groupId)) el.classList.add(CLS.isSelected);
   if (drag?.type === 'placement-move' && drag.groupId === placement.groupId) el.classList.add(CLS.isDragging);
@@ -85,9 +86,12 @@ export function createPlacementEl(placement, visualSubRow, deps) {
   el.style.background = color.background;
   el.style.color = color.textColor;
   const cnt = groupCount(board.placements, placement.groupId);
-  el.innerHTML = `<div class="${CLS.tooltip}">${escapeHtml(placement.name)} ${cnt}c</div>`
+  // 이름 없는 블록은 자리와 길이만 있다. 빈 칸으로 두면 "왜 아무것도 안 적혔지"가 되므로 `?` 를 세운다
+  // (docs/EDITING_FLOWS.md 1단계). name 은 빈 문자열 그대로라 이름을 붙이면 이 분기가 저절로 풀린다.
+  const shown = placement.pending ? '?' : escapeHtml(placement.name);
+  el.innerHTML = `<div class="${CLS.tooltip}">${placement.pending ? '이름 없는 블록' : escapeHtml(placement.name)} ${cnt}c</div>`
     + `<div class="${CLS.moveHandle}" draggable="true" title="위치 이동"></div>`
-    + `<div class="${CLS.label}">${escapeHtml(placement.name)} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div>`
+    + `<div class="${CLS.label}">${shown} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div>`
     + `<div class="${CLS.resizeHandle}" title="길이 조절"></div>`;
   return el;
 }

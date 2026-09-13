@@ -64,6 +64,17 @@
  *   뷰는 projectTime 으로 rAF 보간한다(YT 는 시간 이벤트가 아예 없고 <video>.timeupdate 는 4Hz 라 성기다)
  * @property {(cb: (s: unknown) => void) => (() => void)} onState
  * @property {() => void} destroy 멱등. container 를 비운 채 남긴다
+ * @property {() => PipState} [pipState] 화면 속 화면(Picture-in-Picture)을 지금 쓸 수 있는가.
+ *   **선택 멤버다** — 없으면 'unavailable' 로 친다. iframe 재생기(YouTube)는 바깥 문서가 건드릴 수
+ *   없으므로 영영 없고, <video> 재생기만 가진다
+ * @property {() => Promise<PipState>} [togglePip] 켜고 끈다. 실패해도 던지지 않고 결과 상태를 돌려준다 —
+ *   ⚠ **사용자 제스처 콜스택 안에서만** 켜진다(브라우저 정책). 클릭 핸들러에서 곧바로 부른다
+ */
+
+/**
+ * 'unavailable' 이 둘을 겹쳐 뜻한다는 점에 주의한다 — 이 재생기가 원래 못 하는 것(YouTube)과,
+ * 할 수 있지만 지금 조건이 안 된 것(영상이 아직 안 실림)이 화면에서는 똑같이 "버튼 없음"이다.
+ * @typedef {'unavailable'|'off'|'on'} PipState
  */
 
 /** MediaPlayer 가 반드시 가져야 하는 멤버 전부. assertMediaPlayer 의 유일한 판정 근거다. */

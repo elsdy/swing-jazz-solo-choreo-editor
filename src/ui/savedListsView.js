@@ -128,9 +128,14 @@ export function createSavedListsView(deps) {
    * @param {{ fileName: string }} item
    */
   function makeDeleteBtn(kind, item) {
+    // ⚠ 프로젝트는 보관 폴더가 목록의 주인이라 이 버튼이 **파일까지 지운다**(2026-09-13).
+    //   되돌릴 수 없으므로 무엇이 지워지는지 손끝에 알린다 — 라벨은 세 목록이 같아야 하니 title 로.
+    const hint = kind === 'projects'
+      ? '목록에서 지웁니다. 서버로 열었다면 보관 폴더의 파일도 함께 지워집니다 — 되돌릴 수 없습니다.'
+      : undefined;
     return makeBtn(CLS.danger, '삭제', (btn) => {
       confirmOnce(btn, '삭제', () => { render(commands.removeRecent(kind, item.fileName)); });
-    });
+    }, hint);
   }
 
   /**
@@ -156,11 +161,13 @@ export function createSavedListsView(deps) {
       ));
       actions.appendChild(makeBtn(
         CLS.ghost + ' ' + CLS.accent, '부분 불러오기',
-        () => render(commands.mergeProjectFromRecent(item.data))   // 4274
+        // ⚠ 두 번째 인자로 **항목 전체**를 함께 준다(2026-09-13). 보관 폴더에서 온 항목은 `data` 가
+        //   없고 이름으로 읽어 와야 한다 — 옛 항목(브라우저에 내용이 든 것)은 첫 인자만 쓰므로 그대로다.
+        () => render(commands.mergeProjectFromRecent(item.data, item))   // 4274
       ));
       actions.appendChild(makeBtn(
         CLS.ghost, '전체 불러오기',
-        () => render(commands.loadProjectFromRecent(item.data))    // 4275
+        () => render(commands.loadProjectFromRecent(item.data, item))    // 4275
       ));
     } else if (kind === 'moves') {
       // 원본 4293 의 버튼 2개

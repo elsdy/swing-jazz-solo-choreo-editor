@@ -37,6 +37,7 @@ export const CLS = Object.freeze({
 
   // ── 배치 블록의 상태 클래스 ──
   isRoutine: 'is-routine',    // 3423 — 루틴 블록
+  isPending: 'is-pending',    // 이름을 아직 안 붙인 블록(받아 적기, 2026-09-12). 점선 테두리에 `?`
   isSelected: 'is-selected',  // 3424 · 2463 · 4537 — 선택. ⚠ 메인 보드에만 붙는다
   isDragging: 'is-dragging',  // 3425 · 3746 · 3893
   isResizing: 'is-resizing',  // 3746 — is-dragging 과 **함께** 붙고 따로 떨어진다(3771)
@@ -257,6 +258,20 @@ export const DATA = Object.freeze({
   // 루틴 블록만 갖는 키(3428). 일반 동작 배치에는 **아예 없다**.
   routineId: 'routineId',
   routineIdAttr: 'data-routine-id',
+
+  // ── 프레이즈·코러스 표시(2026-09-13). ui/boardView.syncPhrasing 이 쓰고 CSS 가 읽는다.
+  //    ⚠ 값은 보여 주기용이 아니라 **CSS 선택자용**이다 — 번호는 dataset, 색은 CSS 변수로 간다.
+  phrase: 'phrase',
+  phraseAttr: 'data-phrase',
+  chorus: 'chorus',
+  chorusAttr: 'data-chorus',
+  phraseStart: 'phraseStart',
+  phraseStartAttr: 'data-phrase-start',
+  chorusStart: 'chorusStart',
+  chorusStartAttr: 'data-chorus-start',
+  /** 마디 이름 칸의 `코러스-프레이즈` 꼬리표. ::after 가 attr() 로 읽는다. */
+  phraseTag: 'phraseTag',
+  phraseTagAttr: 'data-phrase-tag',
 
   // 겹침 행의 레이어 수(3379). CSS 가 [data-layers] 로 구분선을 그린다.
   // ⚠ 0 이 아니라 **키 자체를 delete** 해서 끈다(3380).

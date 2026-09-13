@@ -14,12 +14,12 @@
 python3 server.py
 ```
 
-그리고 `http://localhost:8000` 을 연다. 업로드한 영상은 저장소의 `video-clip/<프로젝트>/` 아래에 놓인다(`--root` · `--subdir` 또는 앱의 `⚙ 설정` 에서 바꾼다). `python3 -m http.server 8000` 으로 열어도 앱은 뜨지만 영상 보관이 서버가 아니라 브라우저 폴더 방식이 된다. `index.html` 을 더블클릭하면 안 된다 — `file://` 에서는 ES 모듈과 문서 뷰어의 `fetch` 가 모두 막힌다.
+그리고 `http://localhost:8000` 을 연다. **보관 자리는 저장소 밖이다**(2026-09-13) — 영상은 `<데이터 폴더>/video-clip/<프로젝트>/`, 안무표는 그 형제인 `projects/`, 모델은 캐시 폴더, 설정과 LLM 키는 또 다른 설정 폴더다. 서버가 켜질 때 네 자리를 첫 줄에 찍는다. 저장소는 코드의 자리이고 안무표·영상은 잃으면 복구 못 하는 사용자의 것이라 수명이 다르기 때문이다. **옛 자리(저장소 안 `video-clip/`·`projects/`·`models/`·`.clipserver.json`)에 이미 쌓인 것이 있으면 그 자리를 계속 쓴다** — 말없이 옮기지 않는다. `--root` · `--subdir` · `--projects` · `--models` · `--config` 또는 앱의 `⚙ 설정` 에서 바꾼다. `python3 -m http.server 8000` 으로 열어도 앱은 뜨지만 영상 보관이 서버가 아니라 브라우저 폴더 방식이 된다. `index.html` 을 더블클릭하면 안 된다 — `file://` 에서는 ES 모듈과 문서 뷰어의 `fetch` 가 모두 막힌다.
 
 ## 고치기 전에 돌리는 것
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 136개 (도메인·어댑터·유스케이스 130 + server.py 실물 6, ffmpeg 이 있으면 실제로 한 번 자른다)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 194개 (도메인·어댑터·유스케이스 181 + server.py 실물 13, ffmpeg 이 있으면 실제로 한 번 자른다)
 node tests/run.mjs                # 격자 알고리즘 골든 150개
 node tools/check-arch.mjs         # 계층 방향과 순수성
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
@@ -39,6 +39,7 @@ node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
 - `src/adapters/` — 브라우저 전역을 만지는 유일한 계층. `usecases` 는 어댑터를 import 하지 않고 주입받는다. `src/` 안에서 어댑터를 import 하는 파일은 `app/main.js` 하나뿐이다.
 - `src/ui/`, `src/input/` — DOM 렌더와 제스처. **서로 import 하지 않는다.** 협력자는 `app/main.js` 가 주입한다. 유일한 예외가 `src/ui/domContract.js`.
 - `src/app/` — 조립과 렌더 라우팅.
+- `admin.html` — **서버가 내는 관리 화면**(`/admin`). 보관 위치·모델·LLM 을 정하는 자리다. `src/` 를 import 하지 않는다 — 앱의 모듈이 아니라 서버의 화면이고, 앱이 깨져도 떠야 한다. 앱(`ui/settingsView`)은 서버 설정을 **읽기만** 하고 이 화면으로 보낸다.
 - `server.py` — 저장소 밖의 두 번째 런타임. 정적 파일 + 클립 API(`/api/*`, `/clips/*`, 자르기 `/api/clips/trim` 은 **선택 의존성 ffmpeg** 을 자식 프로세스로 띄운다 — 없으면 그 기능만 501) + 자세 분석 모델 보관(`/api/models/*`, `/models/*` — 파일을 받아 두고 내주기만 한다. 계산은 브라우저가 하므로 파이썬 패키지는 늘지 않는다) + LLM 중계(`/api/llm/*`, Claude·OpenAI·Ollama, 키는 서버에만). `src/` 를 import 하지 않고 `src/` 도 서버 코드를 모른다 — 둘 사이는 HTTP 뿐이다. 경로 규칙(`<subdir>/<프로젝트>/<파일>`)은 `src/domain/clips.js` 와, 안무표 스키마(`PLAN_SCHEMA`)는 `src/domain/choreoPlan.js` 와 **같은 모양으로 두 번** 적혀 있으니 한쪽을 고치면 다른 쪽도 고친다.
 
 `node tools/check-arch.mjs` 가 이 규칙을 강제한다. 규칙을 우회하고 싶어지면 대개 파일 위치가 틀린 것이다.

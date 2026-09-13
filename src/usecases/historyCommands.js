@@ -9,6 +9,9 @@
 //   이 모듈이 유일하게 어댑터를 **주입받는다** — createHistory(store, { storage }) 의 saveLinks.
 // ⚠ 8번째는 media(템포·소스)다. 링크와 달리 localStorage 에 살지 않으므로 되쓰기가 없다 —
 //   상태만 되돌리면 끝이다. 반대로 **재생 위치는 스냅샷에 들어오지 않는다**(휘발성 채널 B).
+// ⚠ 9번째는 phrasing(프레이즈·코러스 구조, 2026-09-13)이고 media 와 같은 규칙이다. 이 파일에서
+//   손볼 자리가 셋이라는 것만 기억하면 된다 — mainSnapshotView(뽑기) · restoreMain(되돌리기) ·
+//   mainRestoreDirty(다시 그리기). 하나만 빠져도 "되돌렸는데 화면이 그대로"가 된다.
 
 import { UNDO_FIELDS, ROUTINE_UNDO_FIELDS } from '../domain/project/schema.js';
 import { snapshotMain, snapshotRoutine, applySnapshot } from '../domain/project/snapshot.js';
@@ -28,7 +31,7 @@ import { BOARD_MAIN, BOARD_ROUTINE, BOARD_IDS, boardOf, NONE } from './store.js'
 export const SNAPSHOT_SPEC = Object.freeze({
   [BOARD_MAIN]: Object.freeze({
     kind: 'main',            // applySnapshot 의 kind 인자 (= BOARD_POLICY.snapshotKind)
-    fields: UNDO_FIELDS,     // ['rows','cols','placements','moveLibrary','categories','routines','links','media']
+    fields: UNDO_FIELDS,     // 9필드. 목록은 schema.js 소유다(여기 적으면 두 벌이 되어 어긋난다)
     limit: 100               // 2869
   }),
   [BOARD_ROUTINE]: Object.freeze({
@@ -47,7 +50,7 @@ export const SNAPSHOT_SPEC = Object.freeze({
 
 /**
  * snapshotState(2834-2839)가 보던 그대로의 평평한 뷰. 키 순서는 snapshotMain 이 UNDO_FIELDS 로 고정한다.
- * ⚠ links·media 는 원본에 없던 필드다(2026-09). 복제는 snapshot.pickUndoFields 가 한다 — 여기서는 참조만 넘긴다.
+ * ⚠ links·media·phrasing 은 원본에 없던 필드다. 복제는 snapshot.pickUndoFields 가 한다 — 여기서는 참조만 넘긴다.
  * ⚠ media 는 `{tempo, source}` 뿐이다. 재생 위치·재생 상태는 store 에 아예 없으므로 스냅샷에도 없다.
  */
 function mainSnapshotView(state) {
@@ -60,7 +63,8 @@ function mainSnapshotView(state) {
     categories: state.categories,
     routines: state.routines,
     links: state.links,
-    media: state.media   // 2026-09 — UNDO_FIELDS 의 8번째. 값 복제는 snapshot.pickUndoFields 가 한다
+    media: state.media,    // 2026-09 — UNDO_FIELDS 의 8번째. 값 복제는 snapshot.pickUndoFields 가 한다
+    phrasing: state.phrasing  // 2026-09-13 — 9번째. ⚠ 여기 빠뜨리면 Undo 가 곡 구조를 기본값으로 되돌린다
   };
 }
 
@@ -108,6 +112,7 @@ function restoreMain(store, snapshot, storage) {
     categories: patch.categories, // 2849
     links: patch.links,           // 2026-09 — UNDO_FIELDS 에 links 가 들어온 자리
     media: patch.media,           // 2026-09 — 템포·소스. 재생 위치는 여기 없다(휘발성)
+    phrasing: patch.phrasing,     // 2026-09-13 — 곡 구조(프레이즈·코러스)
     selection: new Set()          // state.selectedGroupIds.clear() (2851)
   };
   if ('routines' in patch) top.routines = patch.routines; // 2850
@@ -161,7 +166,9 @@ function mainRestoreDirty() {
     links: true,
     toolbar: true,
     history: true,
-    video: true
+    video: true,
+    // ⚠ boards.skeleton 이 행 dataset 을 날리므로 프레이즈 표시도 반드시 다시 입혀야 한다.
+    phrasing: true
   };
 }
 

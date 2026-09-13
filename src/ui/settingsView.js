@@ -32,6 +32,16 @@ const CSS = `
 .settings-text { width: 10em; }
 .settings-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #cbd5e1;
   background: rgba(148,163,184,0.10); border-radius: 6px; padding: 4px 8px; margin-top: 6px; word-break: break-all; }
+/* 저장장치 고르기(2026-09-13). 폰에서 누르는 것이라 줄마다 최소 44px 을 준다(손가락 과녁). */
+.settings-volumes { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.settings-volume { display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  min-height: 44px; width: 100%; text-align: left; padding: 6px 10px; cursor: pointer;
+  color: #e2e8f0; background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.18);
+  border-radius: 8px; font-size: 12px; }
+.settings-volume:hover:not(:disabled) { background: rgba(148,163,184,0.16); }
+.settings-volume.is-current { border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.10); }
+.settings-volume span { font-size: 10px; color: #94a3b8; word-break: break-all; }
+.settings-volume:disabled { opacity: 0.45; cursor: not-allowed; }
 `;
 
 /** 이 브라우저가 폴더 지정을 못 할 때의 안내. 기능이 없는 것이지 고장이 아니다. */
@@ -65,6 +75,7 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  * @property {() => string} [getProjectName] 경로 미리보기에 쓸 지금 프로젝트 이름
  * @property {(subdir: string, projectName: string) => string[]} [previewDirParts] 미리보기 경로 조각(domain/clips.clipDirParts)
  * @property {() => void} [onChange] 설정이 바뀌었다 — 호출부가 패널 문구 등을 다시 그린다
+ * @property {Window} [win] `location.hostname` 으로 관리 화면을 열 수 있는 기기인지 본다
  * @property {Document} [doc]
  */
 
@@ -85,7 +96,9 @@ export function createSettingsView(deps) {
     getProjectName = () => '',
     previewDirParts = (subdir, name) => [subdir || 'video-clip', name || '_미지정'],
     onChange = () => {},
-    doc = document
+    doc = document,
+    // 관리 화면을 열 수 있는 기기인지 판정하고 새 탭을 여는 데 쓴다. 테스트가 가짜를 준다.
+    win = typeof window === 'undefined' ? { location: { hostname: '' }, open() {} } : window
   } = deps;
 
   if (!doc.getElementById(STYLE_ID)) {
@@ -122,10 +135,13 @@ export function createSettingsView(deps) {
             <button class="ghost accent" data-act="pick" type="button">폴더 지정</button>
             <button class="ghost" data-act="forget" type="button">해제</button>
           </div>
+          <!-- ⚠ 서버 모드에서는 **읽기만** 한다(2026-09-13). 보관 위치를 정하는 것은 서버의 일이다 —
+               클라이언트가 정하면 브라우저마다 다른 답을 들고 같은 서버를 서로 다르게 설정하게 된다.
+               바꾸는 자리는 서버의 관리 화면(/admin) 하나다. -->
           <div class="settings-row" data-role="server-row" hidden>
-            <span class="settings-label">서버 보관 루트</span>
-            <input class="settings-text" data-role="root" type="text" style="width: 22em; max-width: 100%;" placeholder="/절대/경로" />
-            <button class="ghost accent" data-act="apply-root" type="button">적용</button>
+            <span class="settings-label">보관 위치</span>
+            <span class="settings-chip" data-role="server-root">—</span>
+            <button class="ghost accent" data-act="open-admin" type="button">서버 설정 열기 ↗</button>
           </div>
           <div class="settings-row">
             <span class="settings-label">하위 폴더</span>
@@ -134,6 +150,19 @@ export function createSettingsView(deps) {
           </div>
           <div class="settings-path" data-role="preview"></div>
           <div class="helper" data-role="note"></div>
+        </section>
+
+        <section class="settings-section" data-role="projects-section" hidden>
+          <h3>프로젝트 보관 폴더</h3>
+          <div class="helper"><code>프로젝트 저장</code> 을 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
+          <div class="settings-row">
+            <span class="settings-label">하위 폴더</span>
+            <input class="settings-text" data-role="projects-subdir" type="text" placeholder="projects" disabled />
+            <button class="ghost accent" data-act="open-admin" type="button">서버 설정 열기 ↗</button>
+            <span class="settings-label">/ 프로젝트 이름.json</span>
+          </div>
+          <div class="settings-path" data-role="projects-preview"></div>
+          <div class="helper" data-role="projects-note"></div>
         </section>
 
         <section class="settings-section" data-role="models-section" hidden>
@@ -162,7 +191,7 @@ export function createSettingsView(deps) {
 
         <section class="settings-section" data-role="llm-section" hidden>
           <h3>말로 채우기 — LLM</h3>
-          <div class="helper"><code>✨ 말로 채우기</code> 가 쓰는 모델입니다. 호출은 로컬 서버가 대신 하고, API 키는 서버의 설정 파일(<code>.clipserver.json</code>)에만 남습니다 — 브라우저로 오지 않습니다.</div>
+          <div class="helper"><code>✨ 말로 채우기</code> 가 쓰는 모델입니다. 호출은 로컬 서버가 대신 하고, API 키는 서버의 설정 파일에만 남습니다 — 저장소 밖, 안무·영상 폴더와도 다른 자리입니다. 브라우저로 오지 않습니다.</div>
           <div class="settings-row">
             <span class="settings-label">제공자</span>
             <select data-role="llm-provider" class="video-pick">
@@ -200,9 +229,19 @@ export function createSettingsView(deps) {
   const folderChip = overlay.querySelector('[data-role="folder"]');
   const browserRow = overlay.querySelector('[data-role="browser-row"]');
   const serverRow = overlay.querySelector('[data-role="server-row"]');
-  const rootInput = overlay.querySelector('[data-role="root"]');
+  const serverRootChip = overlay.querySelector('[data-role="server-root"]');
+  const adminBtns = [...overlay.querySelectorAll('[data-act="open-admin"]')];
+  /** 지금 이 브라우저가 서버를 도는 바로 그 기계인가. 서버의 판정과 같은 규칙이다(server.py is_loopback). */
+  const isLocalHost = () => {
+    const h = (win.location && win.location.hostname) || '';
+    return h === 'localhost' || h === '::1' || h.split('.')[0] === '127';
+  };
   const subdirInput = overlay.querySelector('[data-role="subdir"]');
   const previewEl = overlay.querySelector('[data-role="preview"]');
+  const projectsSection = overlay.querySelector('[data-role="projects-section"]');
+  const projectsSubdirInput = overlay.querySelector('[data-role="projects-subdir"]');
+  const projectsPreview = overlay.querySelector('[data-role="projects-preview"]');
+  const projectsNote = overlay.querySelector('[data-role="projects-note"]');
   const noteEl = overlay.querySelector('[data-role="note"]');
   const pickBtn = overlay.querySelector('[data-act="pick"]');
   const modelsSection = overlay.querySelector('[data-role="models-section"]');
@@ -387,6 +426,7 @@ export function createSettingsView(deps) {
   async function render() {
     await renderModels();
     await renderLlm();
+    await renderProjects();
     if (server && server.isActive()) { await renderServer(); return; }
     if (browserRow) browserRow.hidden = false;
     if (serverRow) serverRow.hidden = true;
@@ -419,19 +459,58 @@ export function createSettingsView(deps) {
   }
 
   /** 서버 모드. 폴더는 서버의 루트이고, 변경은 서버의 설정 파일에 남는다(브라우저 저장소는 쓰지 않는다). */
+  /**
+   * 프로젝트 보관 폴더 절(2026-09-13).
+   * ⚠ **서버가 있을 때만 보인다.** 정적 호스팅에서는 파일을 쓸 자리가 없어 지금까지처럼 다운로드로만
+   *   돌아가므로, 고칠 수 없는 설정을 보여 주면 거짓말이 된다(모델 절과 같은 규칙).
+   */
+  async function renderProjects() {
+    const active = !!(server && server.isActive());
+    if (projectsSection) projectsSection.hidden = !active;
+    if (!active) return;
+    const cfg = await server.getConfig();
+    const sub = (cfg && cfg.projectsSubdir) || 'projects';
+    if (projectsSubdirInput && doc.activeElement !== projectsSubdirInput) projectsSubdirInput.value = sub;
+    if (projectsPreview) {
+      projectsPreview.textContent = `${cfg ? cfg.root : '<서버 루트>'}/${sub}/<프로젝트 이름>.json`;
+    }
+    if (projectsNote) {
+      projectsNote.textContent = cfg
+        ? `지금 보관 폴더는 ${cfg.projectsDir} 입니다. 같은 이름으로 저장하면 덮어씁니다 — 같은 안무를 여러 번 저장하는 것이 정상이기 때문입니다(영상 클립은 반대로 " (2)" 가 붙습니다).`
+        : '로컬 서버에서 설정을 읽지 못했습니다. 서버가 켜져 있는지 확인하세요.';
+    }
+  }
+
   async function renderServer() {
     if (browserRow) browserRow.hidden = true;
     if (serverRow) serverRow.hidden = false;
     const cfg = await server.getConfig();
-    if (rootInput && doc.activeElement !== rootInput) rootInput.value = cfg ? cfg.root : '';
-    if (subdirInput && doc.activeElement !== subdirInput) subdirInput.value = cfg ? cfg.subdir : '';
+    if (serverRootChip) serverRootChip.textContent = cfg ? cfg.root : '읽지 못했습니다';
+    // ⚠ 관리 화면은 **서버를 도는 기계에서만** 열린다(2026-09-13). 폰에서 눌러 403 을 보게 두지 않는다 —
+    //   눌러도 안 되는 버튼은 없느니만 못하다(U-13 과 같은 규칙).
+    const local = isLocalHost();
+    for (const btn of adminBtns) {
+      btn.disabled = !local;
+      btn.title = local
+        ? '서버 설정 화면을 새 탭에서 엽니다.'
+        : '보관 위치는 서버를 도는 기계에서만 바꿉니다 — 그 기계에서 /admin 을 여세요.';
+    }
+    // ⚠ 서버 모드에서는 칸을 **잠근다.** 바꾸는 자리는 서버의 관리 화면 하나다.
+    if (subdirInput) {
+      subdirInput.value = cfg ? cfg.subdir : '';
+      subdirInput.disabled = true;
+      subdirInput.title = '보관 위치는 서버가 정합니다 — `서버 설정 열기` 에서 바꿉니다.';
+    }
     if (previewEl) {
       const parts = previewDirParts(cfg ? cfg.subdir : '', getProjectName());
       previewEl.textContent = `${cfg ? cfg.root : '<서버 루트>'}/${parts.join('/')}/<파일 이름>`;
     }
     if (noteEl) {
       noteEl.textContent = cfg
-        ? `로컬 서버(server.py)가 영상을 보관합니다. 지금 보관 폴더는 ${cfg.dir} 이고, 서버를 다시 켜도 유지됩니다(저장소의 .clipserver.json). 서버는 이 컴퓨터에서만 접속됩니다.`
+        ? `로컬 서버(server.py)가 영상을 보관합니다. 지금 보관 폴더는 ${cfg.dir} 이고, 서버를 다시 켜도 유지됩니다. `
+          + (isLocalHost()
+            ? '어느 디스크에 쌓을지는 서버가 정합니다 — 바꾸려면 `서버 설정 열기` 를 누르세요(같은 서버를 보는 모든 기기에 함께 적용됩니다).'
+            : '어느 디스크에 쌓을지는 서버가 정합니다 — 바꾸려면 서버를 도는 기계에서 `/admin` 을 여세요. 이 기기에서는 바꿀 수 없습니다.')
         : '로컬 서버에서 설정을 읽지 못했습니다. 서버가 켜져 있는지 확인하세요.';
     }
   }
@@ -544,11 +623,11 @@ export function createSettingsView(deps) {
       downloadModels();
       return;
     }
-    if (kind === 'apply-root' && server && rootInput) {
-      server.setConfig({ root: rootInput.value.trim() }).then((cfg) => {
-        if (!cfg && noteEl) noteEl.textContent = '서버가 그 경로를 만들지 못했습니다. 절대 경로인지, 쓸 수 있는 곳인지 확인하세요.';
-        else { render(); onChange(); }
-      });
+    // 보관 위치(영상·안무표 둘 다)를 정하는 것은 **서버의 일**이다 — 앱은 그 화면으로 보내기만 한다.
+    // 여기서 PUT /api/config 를 부르던 두 갈래를 2026-09-13 에 닫았다.
+    if (kind === 'open-admin') {
+      if (!isLocalHost()) return;
+      win.open('/admin', '_blank', 'noopener');
     }
   });
   if (modelsSize && models) {

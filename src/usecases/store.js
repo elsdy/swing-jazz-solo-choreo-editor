@@ -9,6 +9,7 @@ import { DEFAULT_CATEGORIES, DEFAULT_COUNT_INITIAL, makeDefaultMoves } from '../
 import { cloneCategories } from '../domain/categories.js';
 import { rowIndices } from '../domain/grid.js';
 import { normalizeMedia } from '../domain/project/media.js';
+import { normalizePhrasing } from '../domain/phrasing.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 보드 식별자와 보드별 정책
@@ -73,7 +74,10 @@ const DIRTY_FLAGS = Object.freeze([
   // 2026-09 신설(영상 패널). 패널 열림/접힘·따라가기·템포 표시가 이 플래그로 다시 그려진다.
   // ⚠ **재생 헤드는 이 플래그를 쓰지 않는다.** 재생 위치는 초당 60번 바뀌므로 렌더 파이프라인을
   //   타면 안 된다 — 뷰의 rAF 루프가 자기 엘리먼트의 transform 만 직접 쓴다(docs/PORTS.md 채널 B).
-  'video'
+  'video',
+  // 2026-09-13 신설(프레이즈·코러스). 보드의 행 테두리 색과 툴바 버튼이 이 플래그로 다시 그려진다.
+  // ⚠ 배치는 건드리지 않으므로 `boards` 를 함께 세우지 마라 — 행을 다시 그릴 이유가 없다.
+  'phrasing'
 ]);
 const DIRTY_KEYS = new Set([...DIRTY_FLAGS, 'boards', 'savedLists', 'notify']);
 const BOARD_DIRTY_KEYS = new Set(['rows', 'skeleton']);
@@ -241,6 +245,9 @@ function createInitialState(ids) {
     // ⚠ 재생 위치·재생 상태는 여기 **절대** 넣지 마라. 아래 session.video 도 마찬가지다 —
     //   거기 있는 것은 "패널이 열려 있나" 같은 화면 상태이지 시각이 아니다.
     media: normalizeMedia(null),
+    // 2026-09-13 신설(프레이즈·코러스). `{on, rowsPerPhrase, phrasesPerChorus, startRow}` 넷이며
+    // UNDO_FIELDS·DOC_FIELDS 의 9번째 필드다 — 곡의 구조는 안무의 일부다(schema.js 주석).
+    phrasing: normalizePhrasing(null),
     recents: {                // 1403-1405, 각각 상한 10 / 3 / 3 (4042·4053·4063)
       projects: [],
       moves: [],
@@ -271,12 +278,16 @@ function createInitialState(ids) {
       //   taps      탭 템포로 누른 시각(초). 확정되면 비워진다
       //   inSec/outSec  In·Out 지점(초, 없으면 null). 잘라내기와 마커 만들기의 재료이고 확정 전 값이라 휘발성이다
       //   loop      In~Out 구간을 반복 재생하는가
+      //   captureSec 받아 적는 중인 구간의 시작(초, 아니면 null). 끝을 찍는 순간 블록이 되고 비워진다
+      //   floating  영상을 큰 창으로 띄웠는가(2026-09-13). float* 는 그 창의 자리와 폭(px)이다.
+      //             ⚠ **DOM 을 옮기지 않는다** — iframe 은 부모가 바뀌면 리로드된다. CSS 로만 띄운다.
       // ⚠ 여기에도 재생 위치(currentSec)는 없다. 있으면 초당 60번 store 가 바뀐다.
-      video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false },
+      video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null, floating: false, floatX: null, floatY: null, floatW: null },
       // 자세 분석의 **요약만** 둔다(2026-09-12). 관절점 수만 개는 app/main.js 가 모듈 변수로 들고 있다 —
       // store 에 넣으면 undo 스냅샷이 그만큼 불어나고, 되돌릴 값도 아니다(usecases/poseCommands.js 경계 ①).
       pose: { state: 'idle', done: 0, total: 0, error: '', frames: 0, maxSubjects: 0,
-              trackIds: [], activeId: '', anchors: [], ambiguous: 0, lost: 0, fromSec: 0, toSec: 0, showMesh: true }
+              trackIds: [], activeId: '', anchors: [], ambiguous: 0, lost: 0, fromSec: 0, toSec: 0, showMesh: true,
+              live: false, liveFps: 0, delegate: '' }
     }
   };
 }
@@ -386,6 +397,7 @@ export function createStore(initial = {}) {
     get favorites() { return state.favorites; },
     get links() { return state.links; },
     get media() { return state.media; },
+    get phrasing() { return state.phrasing; },
     get recents() { return state.recents; },
     get palette() { return state.palette; },
     get selection() { return state.selection; },

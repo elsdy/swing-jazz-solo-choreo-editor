@@ -132,6 +132,8 @@ export function createMediapipePose(options = {}) {
   let landmarker = null;
   let loadState = 'idle';
   let error = '';
+  /** 어느 연산 장치로 섰는가('GPU' | 'CPU' | ''). 속도가 6배 갈리므로 결과와 함께 남긴다. */
+  let delegateUsed = '';
   /** detectForVideo 에 넘긴 마지막 타임스탬프. **반드시 커져야 한다**(경계 ③). */
   let lastStamp = -1;
 
@@ -139,11 +141,11 @@ export function createMediapipePose(options = {}) {
     id: `mediapipe/${modelFile.replace(/^pose_landmarker_|\.task$/g, '')}`,
 
     describe() {
-      return { name: 'MediaPipe Pose Landmarker', model: modelFile, space: 'world', maxSubjects: numPoses };
+      return { name: 'MediaPipe Pose Landmarker', model: modelFile, space: 'world', maxSubjects: numPoses, delegate: delegateUsed };
     },
 
     getState() {
-      return { load: loadState, error };
+      return { load: loadState, error, delegate: delegateUsed };
     },
 
     /** ★ 던지지 않는다. 모델이 없거나 못 읽으면 `{ok:false, error}` 다. */
@@ -154,21 +156,63 @@ export function createMediapipePose(options = {}) {
       try {
         const mod = await importModule(`${baseUrl}/vision_bundle.mjs`);
         const fileset = await mod.FilesetResolver.forVisionTasks(`${baseUrl}/wasm`);
-        landmarker = await mod.PoseLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: `${baseUrl}/${modelFile}` },
+        const build = (delegate) => mod.PoseLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: `${baseUrl}/${modelFile}`, delegate },
           runningMode: 'VIDEO',
           numPoses,
           minPoseDetectionConfidence: minConfidence,
           minPosePresenceConfidence: minConfidence,
           minTrackingConfidence: minConfidence
         });
+        // ⚠ **GPU 를 먼저 쓴다**(2026-09-13). 이 값을 안 주면 MediaPipe 는 CPU 로 돈다. 실측(맥북,
+        //   pose_landmarker_full, 1020x990, numPoses 2)으로 CPU 5.6fps · GPU 36.6fps — **6.5배**다.
+        //   재생하며 따라 그리려면 30fps 를 넘겨야 하므로, 이 한 줄이 "미리 분석해 두는 기능"과
+        //   "보면서 따라 그리는 기능"을 가른다.
+        // ⚠ 안 되는 기기가 있다(WebGL 차단·오래된 GPU·원격 데스크톱). 그때는 **조용히 CPU 로 떨어진다** —
+        //   느릴 뿐 결과는 같으므로 기능을 끄는 것보다 낫다. 어느 쪽으로 섰는지는 delegate 에 남는다.
+        try {
+          landmarker = await build('GPU');
+          delegateUsed = 'GPU';
+        } catch (gpuErr) {
+          landmarker = await build('CPU');
+          delegateUsed = 'CPU';
+        }
         loadState = 'ready';
         return { ok: true, error: '' };
       } catch (e) {
         loadState = 'error';
         error = String(e && e.message ? e.message : e);
         landmarker = null;
+        delegateUsed = '';
         return { ok: false, error };
+      }
+    },
+
+    /**
+     * 한 장만 지금 본다(2026-09-13). 재생 중에 부르는 길이라 **탐색하지 않고 던지지도 않는다.**
+     *
+     * ⚠ `analyze` 와 같은 `lastStamp` 를 쓴다 — MediaPipe 는 VIDEO 모드에서 타임스탬프가 줄면
+     *   추적 상태가 엉킨다. 미리 분석하다 멈추고 실시간으로 넘어가도 단조 증가가 유지된다.
+     * ⚠ 아직 디코드가 안 된 영상(readyState < 2)은 **빈 결과**다. 그리지 않는 편이 맞다 —
+     *   마지막으로 본 관절을 계속 그리면 영상은 흐르는데 뼈대만 얼어붙는다.
+     * @param {any} source `<video>` 엘리먼트
+     * @param {number} sec 지금 시각(초)
+     * @returns {import('../../ports/pose.js').PoseLiveResult}
+     */
+    detectNow(source, sec) {
+      if (loadState !== 'ready' || !landmarker) return { ok: false, subjects: [], error: '모델이 아직 준비되지 않았습니다.' };
+      if (!source || (source.readyState !== undefined && source.readyState < 2)) {
+        return { ok: false, subjects: [], error: '' };
+      }
+      const w = source.videoWidth || source.naturalWidth || source.width || 0;
+      const h = source.videoHeight || source.naturalHeight || source.height || 0;
+      if (!(w > 0 && h > 0)) return { ok: false, subjects: [], error: '' };
+      try {
+        const stamp = Math.max(lastStamp + 1, Math.round(Number(sec) * 1000));
+        lastStamp = stamp;
+        return { ok: true, subjects: subjectsOf(landmarker.detectForVideo(source, stamp), w / h), error: '' };
+      } catch (e) {
+        return { ok: false, subjects: [], error: String(e && e.message ? e.message : e) };
       }
     },
 

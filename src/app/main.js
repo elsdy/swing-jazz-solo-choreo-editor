@@ -29,6 +29,7 @@ import * as RoutineCmd from '../usecases/routineCommands.js';
 import * as ProjectCmd from '../usecases/projectCommands.js';
 import * as LinkCmd from '../usecases/linkCommands.js';
 import * as VideoCmd from '../usecases/videoCommands.js';
+import * as CaptureCmd from '../usecases/captureCommands.js';
 import * as PoseCmd from '../usecases/poseCommands.js';
 
 import * as Grid from '../domain/grid.js';
@@ -57,14 +58,18 @@ import { createRoutineEditorView } from '../ui/routineEditorView.js';
 import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createDocsHub } from '../ui/docsHub.js';
 import { createSettingsView } from '../ui/settingsView.js';
+import { createPhrasingView } from '../ui/phrasingView.js';
 import { createClipLibrary } from '../adapters/clipLibrary.js';
 import { createClipServer } from '../adapters/clipServer.js';
+import { createProjectServer } from '../adapters/projectServer.js';
 import { createModelServer } from '../adapters/modelServer.js';
 import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
 import * as PlanCmd from '../usecases/planCommands.js';
+import * as PhrasingCmd from '../usecases/phrasingCommands.js';
+import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
-import { clipDirParts } from '../domain/clips.js';
+import { clipDirParts, findStoredClip } from '../domain/clips.js';
 import { createVideoPanel } from '../ui/videoPanel.js';
 import { createPoseView } from '../ui/poseView.js';
 import { createPoseOverlay } from '../ui/poseOverlay.js';
@@ -74,7 +79,7 @@ import { createPlayhead } from '../ui/playhead.js';
 import { SEL, DATA } from '../ui/domContract.js';
 import { confirmOnce } from '../ui/widgets.js';
 import { readCellW } from '../ui/cssVars.js';
-import { initLayout, syncCellSize } from '../ui/layout.js';
+import { initLayout, isStacked, syncCellSize } from '../ui/layout.js';
 
 import { createDragSession } from '../input/dragSession.js';
 import { createPointerSession } from '../input/pointerSession.js';
@@ -395,16 +400,64 @@ views.category = createCategoryView({
 
 views.toolbar = createToolbarView({ store, canUndo, canRedo });
 
+/**
+ * 보관 폴더의 목록을 최근 프로젝트 목록으로 삼는다(2026-09-13).
+ *
+ * **폴더가 주인이다** — 브라우저에 안무표 내용을 이고 있던 것이 용량 한계에 부딪히던 문제를 여기서
+ * 끝낸다(버그 기록: 최근 10개의 payload 전체를 localStorage 에 넣으면서 예외 처리가 없다).
+ * ⚠ 서버가 없으면 **아무것도 하지 않는다** — 지금까지의 localStorage 목록이 그대로 보인다.
+ * ⚠ 항목에 `data` 를 넣지 않는다. 열 때 이름으로 읽어 온다(openFromFolder).
+ */
+function refreshProjectFolder() {
+  return projectServer.list().then((items) => {
+    if (!items.length) return;
+    store.patch('recents', {
+      projects: items.map(it => ({
+        fileName: it.name.replace(/\.json$/i, ''),
+        savedAt: new Date(it.mtime * 1000).toISOString(),
+        data: null
+      }))
+    });
+    render({ savedLists: ['projects'] });
+  });
+}
+
+/**
+ * 최근 목록의 한 줄을 연다. 브라우저에 내용이 있으면 그대로, 폴더에서 온 것이면 읽어 와서.
+ * @param {any} data 항목이 들고 있는 내용(폴더에서 온 것이면 null)
+ * @param {{fileName?:string}} item 항목 전체
+ * @param {(deps:any, payload:any) => any} run 실제 커맨드
+ * @returns {any} 동기로 열었으면 Dirty, 읽어 와야 하면 undefined(렌더는 여기서 한다)
+ */
+function openFromFolder(data, item, run) {
+  if (data) return run(projectDeps, data);
+  const name = item && item.fileName;
+  if (!name) return undefined;
+  projectServer.read(name).then((payload) => {
+    if (payload) render(run(projectDeps, payload));
+    else browserDialogs.alert(`보관 폴더에서 '${name}' 을 읽지 못했습니다.`);
+  });
+  return undefined;
+}
+
 views.savedLists = createSavedListsView({
   store,
   render,
   setProjectFileName,                                   // 안 넘기면 '이름 복사'가 조용히 죽는다
   commands: {
-    loadProjectFromRecent: (data) => ProjectCmd.loadProjectFromRecent(projectDeps, data),
-    mergeProjectFromRecent: (data) => ProjectCmd.mergeProjectFromRecent(projectDeps, data),
+    // ⚠ 보관 폴더에서 온 항목은 `data` 가 없다 — 이름으로 읽어 와서 연다. 읽기는 비동기라
+    //   **여기서 render 를 부르고 undefined 를 돌려준다**(render 는 falsy 를 조용히 넘긴다).
+    loadProjectFromRecent: (data, item) => openFromFolder(data, item, ProjectCmd.loadProjectFromRecent),
+    mergeProjectFromRecent: (data, item) => openFromFolder(data, item, ProjectCmd.mergeProjectFromRecent),
     loadMoveListFromRecent: (data) => ProjectCmd.loadMoveListFromRecent(projectDeps, data),
     loadCategoriesFromRecent: (data) => ProjectCmd.loadCategoriesFromRecent(projectDeps, data),
-    removeRecent: (kind, fileName) => ProjectCmd.removeRecent(projectDeps, kind, fileName),
+    // ⚠ 프로젝트는 폴더가 목록의 주인이라 **파일까지 지운다**(2026-09-13 결정). 목록에서만 지우면
+    //   새로고침에 도로 나타나 「지웠다」가 거짓이 된다. 동작·카테고리 목록은 폴더가 없으므로 그대로.
+    removeRecent: (kind, fileName) => {
+      const dirty = ProjectCmd.removeRecent(projectDeps, kind, fileName);
+      if (kind === 'projects') projectServer.remove(fileName);
+      return dirty;
+    },
     setRecentSort: (mode) => ProjectCmd.setRecentSort(projectDeps, mode)
   }
 });
@@ -556,10 +609,25 @@ bindControls({
     setSortDir: (dir) => PaletteCmd.setSortDir(paletteCtx, dir),
     addMove: (rawName, category) => PaletteCmd.addMove(paletteCtx, rawName, category),
     cancelActivePaletteMove: () => PaletteCmd.cancelActivePaletteMove(paletteCtx),
+    // 받아 적기 단축키 `B`. ⚠ 늦게 묶는다 — bindControls 가 views.video 보다 먼저 돌기 때문에
+    //   여기서 views.video 를 바로 읽으면 undefined 다. 키를 누르는 시점에는 이미 만들어져 있다.
+    captureToggle: () => Boolean(views.video && views.video.captureToggle()),
+    captureSkip: () => Boolean(views.video && views.video.captureSkip()),
+    stopCapture: () => Boolean(views.video && views.video.stopCapture()),
     commitHistory,
     undo,
     redo,
-    saveProject: (options) => ProjectCmd.saveProject(projectDeps, options),
+    // ⚠ 다운로드는 유스케이스가 그대로 한다(정적 호스팅에서도 저장이 되어야 한다). 보관 폴더 쓰기는
+    //   **여기서** 한다 — 비동기이고 어댑터를 아는 자리가 app/main 뿐이기 때문이다(clipServer 와 같은 규약).
+    saveProject: (options) => {
+      const dirty = ProjectCmd.saveProject(projectDeps, options);
+      const fileName = (store.get().recents.projects[0] || {}).fileName;
+      const payload = (store.get().recents.projects[0] || {}).data;
+      if (fileName && payload) {
+        projectServer.save(fileName, payload).then((saved) => { if (saved) refreshProjectFolder(); });
+      }
+      return dirty;
+    },
     saveMoveList: (options) => ProjectCmd.saveMoveList(projectDeps, options),
     saveCategories: (options) => ProjectCmd.saveCategories(projectDeps, options),
     loadProjectFromFile: (input) => ProjectCmd.loadProjectFromFile(projectDeps, input),
@@ -745,6 +813,8 @@ function ensurePlayer() {
     unsubscribeVideoState = player.onState(() => {
       videoDurationSec = player.getDuration();
       views.video?.renderStatus();
+      // PiP 는 OS 쪽에서 닫히기도 한다 — 우리가 켠 것만 알고 있으면 버튼이 거짓말을 한다.
+      views.video?.renderPip();
     });
     unsubscribeVideoTime = player.onTime(enforceLoop);
   }
@@ -753,6 +823,8 @@ function ensurePlayer() {
   if (key !== loadedVideoKey) {
     // ⚠ 영상이 바뀌면 옛 관절은 거짓이 된다 — 다른 영상 위에 남의 자세를 그리게 된다.
     if (loadedVideoKey && poseFrames.length) dropPoseAnalysis();
+    // ⚠ 유튜브로 갈아타면 실시간은 돌 수 없다(iframe 의 픽셀을 못 읽는다) — 루프를 여기서 맞춘다.
+    liveStop();
     loadedVideoKey = key;
     player.load(source);
   }
@@ -767,6 +839,9 @@ function ensurePlayer() {
  */
 const clipLibrary = createClipLibrary();
 const clipServer = createClipServer();
+// 프로젝트 파일 보관(2026-09-13). 영상과 같은 root 아래 형제 폴더(<root>/projects/)를 쓴다.
+// ⚠ 서버가 없으면 모든 함수가 null·빈 배열이다 — 그때는 지금까지처럼 다운로드와 localStorage 로 돈다.
+const projectServer = createProjectServer();
 /** 서버가 있으면 그 설정, 없으면 null. probe 가 끝나기 전에는 null 이라 브라우저 모드처럼 군다. */
 let clipServerConfig = null;
 /** 서버에 있다고 확인한 경로. 소스가 바뀌면 다시 확인한다. */
@@ -812,7 +887,16 @@ function chooseLocalFile(file) {
     commitHistoryAndRender();
   };
   if (clipServerConfig) {
-    clipServer.upload(file, projectNameForClips(), file.name).then((saved) => { if (saved) attachPath(saved.path); });
+    // ⚠ 올리기 전에 **이미 있는지 먼저 본다**(2026-09-13). 그전에는 같은 영상을 열 때마다 새로 올려
+    //   ` (2)`, ` (3)` 이 쌓였다 — 한 폴더에서 754MB 중 530MB 가 같은 파일의 사본이었고, 폰에서는
+    //   100MB 를 5G 로 다시 올리는 값까지 들었다. 목록 한 번이 그 전부를 아낀다.
+    const project = projectNameForClips();
+    clipServer.list(project).then((clips) => {
+      if (!stillCurrent()) return;
+      const hit = findStoredClip(clips, { name: file.name, size: file.size });
+      if (hit && hit.path) { attachPath(hit.path); return; }
+      return clipServer.upload(file, project, file.name).then((saved) => { if (saved) attachPath(saved.path); });
+    });
     return;
   }
   // 브라우저 모드. 권한은 조용히 확인만 한다(파일 선택 대화상자가 닫힌 뒤라 제스처가 끝났을 수 있다).
@@ -943,6 +1027,9 @@ clipServer.probe().then((cfg) => {
   libraryAutoTriedFor = '';
   views.settings?.render();
   views.video?.render();
+  // 서버가 있으면 **보관 폴더가 최근 프로젝트 목록의 주인**이다(2026-09-13).
+  // ⚠ 여기서만 부른다 — 매 렌더마다 폴더를 읽으면 목록이 스크롤 중에 다시 그려진다.
+  refreshProjectFolder();
 });
 
 /** 보간된 현재 미디어 시각(초). 표본은 캐시된 값이라 매 프레임 불러도 iframe 경계를 넘지 않는다. */
@@ -1013,12 +1100,150 @@ function rebuildPoseTracks() {
   return poseTracks;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 재생하며 실시간으로 보기 (2026-09-13)
+//
+// 미리 분석해 두는 길은 두 가지를 안고 간다 — "분석 안 한 구간은 아무것도 안 보인다"와
+// "CG 가 초당 12번만 바뀐다". 둘 다 영상을 훑는 내내 걸리는 마찰이다. GPU 로 36.6fps 를
+// 재고 나서 그 둘을 없앨 수 있게 됐다(결정 기록: 「자세 분석은 재생하며 실시간으로 돈다」).
+//
+// ⚠ **같은 그림을 두 번 보지 않는다.** 한 장에 27~178ms 가 드는데, 브라우저가 아직 새 프레임을
+//   내놓지 않았으면 그 값이 통째로 버려진다. `requestVideoFrameCallback` 이 있으면 그것이
+//   "새 프레임이 나왔다"를 정확히 알려 주고, 없으면 currentTime 이 움직였는지로 가른다.
+// ⚠ **유튜브에는 안 된다.** iframe 안의 그림은 이쪽에서 읽을 수 없다(픽셀을 못 만진다).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 실시간으로 뽑은 한 장을 언제까지 믿을 것인가. 이보다 낡으면 그리지 않는다.
+ * CPU 한 장이 178ms(실측)이므로 그 세 배쯤을 둔다 — 느린 기기에서 깜빡이지 않으면서,
+ * 검출이 정말 멎으면 곧 사라진다.
+ */
+const LIVE_STALE_SEC = 0.6;
+
+/** 실시간으로 뽑은 마지막 한 장. store 에 넣지 않는다 — 초당 30번 바뀐다. */
+let liveFrame = null;
+/** rVFC 핸들 또는 rAF 핸들. 둘 중 어느 쪽으로 도는지는 rVFC 지원 여부가 정한다. */
+let liveHandle = null;
+let liveUsesVfc = false;
+/** 마지막으로 본 영상 시각. rAF 경로에서 "새 그림인가"를 가르는 유일한 근거다. */
+let liveLastSec = -1;
+/** fps 실측 — 최근 1초에 몇 장을 봤나. 사람이 "왜 끊기지"를 물을 자리에 숫자로 답한다. */
+let liveCount = 0;
+let liveWindowStart = 0;
+
+/** 지금 실시간으로 돌 수 있는 상태인가. 하나라도 어긋나면 돌지 않는다. */
+function liveCanRun() {
+  const p = PoseCmd.poseState(store);
+  return p.live && playerKind === 'file' && !!videoElement() && !poseRunning;
+}
+
+/** 한 장 본다. **이 함수가 이 기능의 값 전부를 쓴다** — 부르는 빈도가 곧 비용이다. */
+function liveTick(nowMs, mediaSec) {
+  const estimator = poseEstimator;
+  const video = videoElement();
+  if (!estimator || !video || typeof estimator.detectNow !== 'function') return;
+  const sec = Number.isFinite(mediaSec) ? mediaSec : video.currentTime || 0;
+  const res = estimator.detectNow(video, sec);
+  if (!res.ok) return;
+  liveFrame = { sec, subjects: res.subjects };
+  poseOverlay.invalidate();
+
+  // 초당 한 번만 store 를 건드린다 — 매 장마다 쓰면 화면이 그만큼 다시 그려진다.
+  liveCount += 1;
+  if (!liveWindowStart) liveWindowStart = nowMs;
+  if (nowMs - liveWindowStart >= 1000) {
+    const fps = (liveCount * 1000) / (nowMs - liveWindowStart);
+    render(PoseCmd.setLiveStats(store, { fps, delegate: estimator.getState().delegate }));
+    liveCount = 0;
+    liveWindowStart = nowMs;
+  }
+}
+
+function liveLoopVfc(nowMs, meta) {
+  liveHandle = null;
+  if (!liveCanRun()) return liveStop();
+  liveTick(nowMs, meta && Number.isFinite(meta.mediaTime) ? meta.mediaTime : undefined);
+  liveSchedule();
+}
+
+function liveLoopRaf(nowMs) {
+  liveHandle = null;
+  if (!liveCanRun()) return liveStop();
+  const video = videoElement();
+  const sec = video ? video.currentTime || 0 : 0;
+  // 새 그림일 때만 본다. 멈춰 있으면 한 번만 보고 그 뒤로는 쉰다.
+  if (sec !== liveLastSec) {
+    liveLastSec = sec;
+    liveTick(nowMs, sec);
+  }
+  liveSchedule();
+}
+
+function liveSchedule() {
+  const video = videoElement();
+  if (!video) return;
+  if (liveUsesVfc && typeof video.requestVideoFrameCallback === 'function') {
+    liveHandle = video.requestVideoFrameCallback(liveLoopVfc);
+  } else {
+    liveHandle = window.requestAnimationFrame(liveLoopRaf);
+  }
+}
+
+/** 실시간을 켠다. 모델을 아직 안 올렸으면 여기서 올린다(11MB 는 처음 한 번뿐이다). */
+async function liveStart() {
+  if (liveHandle !== null) return;
+  const video = videoElement();
+  if (!video) return;
+  const estimator = ensurePoseEstimator();
+  const loaded = await estimator.load();
+  if (!loaded.ok) {
+    render(PoseCmd.failAnalysis(store, { error: loaded.error }));
+    render(PoseCmd.setLive(store, { live: false }));
+    return;
+  }
+  render(PoseCmd.setLiveStats(store, { fps: 0, delegate: estimator.getState().delegate }));
+  if (!liveCanRun()) return;
+  liveUsesVfc = typeof video.requestVideoFrameCallback === 'function';
+  liveLastSec = -1;
+  liveCount = 0;
+  liveWindowStart = 0;
+  liveSchedule();
+}
+
+/** 실시간을 끈다. 뽑아 둔 한 장도 버린다 — 남기면 멈춘 뼈대가 영상 위에 얼어붙는다. */
+function liveStop() {
+  if (liveHandle !== null) {
+    const video = videoElement();
+    if (liveUsesVfc && video && typeof video.cancelVideoFrameCallback === 'function') video.cancelVideoFrameCallback(liveHandle);
+    else window.cancelAnimationFrame(liveHandle);
+  }
+  liveHandle = null;
+  liveFrame = null;
+  poseOverlay.invalidate();
+}
+
+/** 켜짐/꺼짐이 바뀌었을 수 있다 — 상태를 보고 맞춘다. 멱등이다. */
+function liveSync() {
+  if (liveCanRun()) liveStart();
+  else liveStop();
+}
+
 /**
  * 그 시각에 가장 가까운 분석 프레임. 오버레이가 매 프레임 부르므로 이분 탐색이다.
  * @param {number} sec
  * @returns {{sec:number, subjects:Array, activeIndex:number}|null}
  */
 function poseFrameAt(sec) {
+  // ⚠ 실시간이 켜져 있으면 **그것이 답이다.** 미리 분석해 둔 것이 있어도 지금 그림이 맞다.
+  //   activeIndex 는 -1 이다 — 추적(누가 누구인가)은 구간을 훑어야 나오는 값이라 한 장으로는 모른다.
+  // ⚠ **묻는 시각으로 돌려준다.** 오버레이는 |found.sec - sec| 이 0.2초를 넘으면 안 그리는데,
+  //   CPU 로 서면 한 장에 178ms(실측)라 그 문턱에 걸려 화면이 깜빡인다 — 가장 필요한 순간에 사라진다.
+  //   대신 **너무 낡았으면 아예 null 을 준다**: 검출이 멎었을 때 멈춘 뼈대가 영상 위에 얼어붙는 편이
+  //   아무것도 안 보이는 것보다 나쁘다.
+  if (liveFrame) {
+    if (Math.abs(liveFrame.sec - sec) > LIVE_STALE_SEC) return null;
+    return { sec, subjects: liveFrame.subjects, activeIndex: -1 };
+  }
   if (!poseFrames.length) return null;
   let lo = 0, hi = poseFrames.length - 1;
   while (lo < hi) {
@@ -1137,7 +1362,10 @@ views.pose = createPoseView({
     setActiveTrack: (args) => PoseCmd.setActiveTrack(store, args),
     addTrack: () => PoseCmd.addTrack(store),
     clearAnchors: () => PoseCmd.clearAnchors(store),
-    setMesh: (args) => PoseCmd.setMesh(store, args)
+    setMesh: (args) => PoseCmd.setMesh(store, args),
+    // ⚠ 켜고 끄는 것은 store 를 바꾸고, **루프를 맞추는 것은 liveSync 가** 한다(멱등).
+    //   커맨드가 직접 루프를 건드리면 어댑터를 아는 자리가 usecases 로 새어 들어간다.
+    setLive: (args) => { const d = PoseCmd.setLive(store, args); liveSync(); return d; }
   }
 });
 
@@ -1155,9 +1383,20 @@ views.video = createVideoPanel({
   getPlayerKind: () => player.kind,
   getCurrentSec: currentVideoSec,
   onSeek: seekVideoTo,
+  // 화면 속 화면(2026-09-13). 포트의 **선택 멤버**라 없는 재생기(YouTube iframe)는 조용히 'unavailable' 이다.
+  // 줄에 「서버에 보관됨」을 적으려면 지금 어느 보관 방식인지 알아야 한다.
+  getStorageMode: () => (clipServerConfig ? 'server' : (loadClipSetting().folderName ? 'folder' : 'browser')),
+  getPipState: () => (typeof player.pipState === 'function' ? player.pipState() : 'unavailable'),
+  // ⚠ 브라우저는 **클릭 콜스택 안에서만** PiP 를 켜 준다 — await 로 한 박자 늦추면 조용히 거절당한다.
+  //   그래서 여기서 곧바로 부르고, 결과는 돌아온 뒤 버튼에만 반영한다.
+  onTogglePip: () => {
+    if (typeof player.togglePip !== 'function') return;
+    player.togglePip().then(() => views.video?.renderPip());
+  },
   getTrimState: trimState,
   getTrimError: () => trimError,
   onTrim: trimCurrentClip,
+  dialogs: browserDialogs,
   // ⚠ 매 렌더 불린다(패널이 열린 채 URL 만 바뀌는 경로가 있다). 아래 셋은 전부 멱등이다.
   onSync: (shown) => {
     if (shown) {
@@ -1165,19 +1404,29 @@ views.video = createVideoPanel({
       ensurePlayer();
       playhead.start();
       poseOverlay.start();
+      liveSync();                                       // 멱등 — 켤 수 있으면 켜고 아니면 끈다
     } else {
       poseOverlay.stop();
+      liveStop();                                       // 안 보이는 화면에 GPU 를 물고 있지 않는다
       // ⚠ 반드시 멈춘다 — display:none 인 iframe 도 오디오는 계속 나온다(패널 닫기·루틴 편집기 열기).
       player.pause();
       playhead.stop();
     }
-    playhead.invalidate();   // 폭이 달라졌을 수 있다(패널이 안무표를 좁힌다)
+    // 패널이 안무표를 좁혔거나 넓혔다. 순서가 중요하다 — 셀 폭을 **먼저** 다시 재고, 그 결과를
+    // 재생 헤드가 다음 프레임에 다시 읽게 한다(채널 B). 반대로 하면 헤드가 옛 칸 폭에 선다.
+    // ⚠ 이 재측정을 videoCommands 의 Dirty 로 올리면 안 된다 — app/render 는 layout 을 맨 먼저
+    //   처리하는데 패널의 hidden 은 그 뒤에 뒤집혀서, 바뀌기 전 폭을 재게 된다.
+    views.layout?.syncCellSize();
+    playhead.invalidate();
     poseOverlay.invalidate();
   },
   commands: {
     togglePanel: () => VideoCmd.togglePanel(store),
     closePanel: () => VideoCmd.closePanel(store),
     setCollapsed: (args) => VideoCmd.setCollapsed(store, args),
+    // 큰 창으로 띄우기(2026-09-13). 자리·폭은 끌기를 **놓는 순간** 한 번만 들어온다.
+    setFloating: (args) => VideoCmd.setFloating(store, args),
+    setFloatBox: (args) => VideoCmd.setFloatBox(store, args),
     setFollow: (args) => VideoCmd.setFollow(store, args),
     markTempoPoint: (args) => VideoCmd.markTempoPoint(store, args),
     clearTempoPoints: () => VideoCmd.clearTempoPoints(store),
@@ -1199,7 +1448,18 @@ views.video = createVideoPanel({
     addMarker: (args) => VideoCmd.addMarker(store, args),
     removeMarker: (args) => VideoCmd.removeMarker(store, args),
     clearMarkers: () => VideoCmd.clearMarkers(store),
-    applyMarkerToTempo: (args) => VideoCmd.applyMarkerToTempo(store, args)
+    applyMarkerToTempo: (args) => VideoCmd.applyMarkerToTempo(store, args),
+    // 영상 목록(2026-09-12). 같은 안무를 여러 번 찍으면 영상이 여러 개 달린다.
+    selectClip: (args) => VideoCmd.selectClip(store, args),
+    renameClip: (args) => VideoCmd.renameClip(store, args),
+    removeClip: (args) => VideoCmd.removeClip(store, args),
+    // 받아 적기(2026-09-12). 메인 보드에만 놓는다 — 루틴 편집기와 영상 패널은 동시에 열리지 않는다.
+    captureToggle: (args) => CaptureCmd.captureToggle(store, args, { ids: browserEnv }),
+    // 연속 받아 적기(2026-09-13): 경계 찍기 · 건너뛰기 · 그만
+    captureSkip: (args) => CaptureCmd.captureSkip(store, args),
+    stopCapture: () => CaptureCmd.stopCapture(store),
+    markersToBlocks: () => CaptureCmd.markersToBlocks(store, {}, { ids: browserEnv }),
+    nameSelected: () => CaptureCmd.nameSelected(store, {}, { dialogs: browserDialogs })
   }
 });
 
@@ -1242,11 +1502,26 @@ boardEl.addEventListener('click', (e) => {
   seekToSpanStart(span.startSec);
 });
 
-// 첫 동기화. 기본이 open:false 라 패널은 hidden 그대로이고 재생기는 만들어지지 않는다.
+// 넓은 화면에서는 **열고 시작한다**(2026-09-12).
+//
+// 안무표를 채우는 길은 둘이고(docs/EDITING_FLOWS.md '방향은 둘뿐이다') 그중 하나가 영상에서
+// 시작하는 길이다 — 영상을 보며 받아 적고, 마커를 찍고, 박자를 맞춘다. 패널을 닫아 두면 그 길의
+// 입구가 화면에 아예 없어서, 도구가 "표를 먼저 적는 길" 하나만 있는 것처럼 보인다.
+//
+// ⚠ 좁은 화면(≤1040, 사이드바가 시트로 내려가는 폭)에서는 닫고 시작한다. 거기서는 패널이 안무표
+//   **위로** 쌓여 세로를 절반 가까이 가져가므로, 열어 두는 것이 곧 안무표를 가리는 것이 된다.
+// ⚠ 이 값은 여전히 휘발성이다 — 닫아 두어도 저장되지 않고 다음에 열면 다시 열려 있다. 켜고 끄는
+//   기억을 남기면 "한 번 닫으면 그 길이 다시 안 보인다"가 되어 애초의 까닭을 스스로 무너뜨린다.
+if (!isStacked()) VideoCmd.openPanel(store);
+// 첫 동기화. 닫혀 있으면 패널은 hidden 그대로이고 재생기는 만들어지지 않는다.
 views.video.render();
 // ⚠ 자세 구획도 여기서 한 번 그린다. Dirty 라우팅을 타지 않는 첫 렌더라, 빠뜨리면 `인물` 줄이
 //   분석 전에도 떠 있고 버튼의 잠김 상태가 마크업 그대로 남는다.
 views.pose.render();
+// ⚠ 여기서 격자 폭을 **다시** 잰다. 13절의 syncCellSize 는 보드를 그리기 전이라 잴 것이 없었고
+//   (scrollWidth 0), 그 뒤 이 자리에서 패널이 열려 안무표에 남는 폭이 또 달라졌다.
+//   이 한 줄이 없으면 처음 뜬 화면에서만 표가 가로로 넘친 채 남는다.
+views.layout.syncCellSize();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 17. 문서 허브 — 상단 액션 줄에 '문서' 버튼을 붙인다
@@ -1270,7 +1545,10 @@ views.settings = createSettingsView({
   clips: clipLibrary,
   llm: llmServer,
   models: modelServer,
-  // 서버 모드면 설정은 서버의 것이다 — 폴더 선택 대신 경로 입력이고, 서버의 .clipserver.json 에 남는다.
+  // ⚠ 서버 모드면 설정은 **서버의 것**이라 앱은 읽기만 한다(2026-09-13). 보관 위치를 클라이언트가
+  //   정하면 브라우저마다 다른 답을 들고 같은 서버를 서로 다르게 설정하게 된다 — 폰과 PC 가 같은
+  //   서버를 보면서 갈렸다. 바꾸는 자리는 서버의 관리 화면(/admin) 하나다.
+  //   setConfig 는 남겨 둔다: 모델 폴더처럼 서버가 자기 창으로 고르게 하는 갈래가 아직 쓴다.
   server: {
     isActive: () => !!clipServerConfig,
     getConfig: () => clipServer.getConfig(),
@@ -1309,3 +1587,28 @@ createComposeView({
   getCols: () => store.board(BOARD_MAIN).cols,
   hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 20. 프레이즈·코러스 — 곡 구조를 색으로 드러낸다. 칠하는 곳은 boardView.syncPhrasing 이고
+//     이 뷰는 숫자를 받는 창이다. 첫 렌더는 아래 한 줄이 겸한다(켜져 있는 파일을 열었을 때).
+// ─────────────────────────────────────────────────────────────────────────────
+
+views.phrasing = createPhrasingView({
+  container: document.querySelector('.top-actions'),
+  getPhrasing: () => PhrasingCmd.phrasingState(store),
+  getRows: () => store.board(BOARD_MAIN).rows,
+  getPresetId: () => PhrasingCmd.matchedPresetId(store),
+  summarize: phrasingSummary,
+  presets: PHRASING_PRESETS,
+  palettes: { phrase: PHRASE_COLORS, chorus: CHORUS_COLORS },
+  commands: {
+    toggle: (args) => PhrasingCmd.togglePhrasing(store, args),
+    set: (patch) => PhrasingCmd.setPhrasing(store, patch),
+    applyPreset: (presetId) => PhrasingCmd.applyPhrasingPreset(store, presetId)
+  },
+  render,
+  commitHistory: () => render(commitHistory(BOARD_MAIN))
+});
+
+// 파일을 열거나 Undo 로 돌아온 구조도 그려야 한다 — 첫 화면에 한 번 맞춘다.
+render({ phrasing: true });

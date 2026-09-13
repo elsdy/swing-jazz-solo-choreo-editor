@@ -22,6 +22,7 @@
 
 import { BOARD_IDS, BOARD_MAIN, expandRows, assertDirty } from '../usecases/store.js';
 import * as Grid from '../domain/grid.js';
+import { phraseMark } from '../domain/phrasing.js';
 
 /**
  * @typedef {import('../usecases/store.js').Dirty} Dirty
@@ -85,6 +86,15 @@ export function createRenderer(store, views, options = {}) {
     // 메인 보드가 다시 그려졌으면 재생 헤드의 캐시(칸 폭·켜 둔 블록)를 버린다. 헤드 자체는 여기서
     // 그리지 않는다(채널 B) — 다음 rAF 프레임이 스스로 다시 잰다.
     if (d.layout || d.boards?.[BOARD_MAIN]) views.playhead?.invalidate();
+
+    // ── ②' 프레이즈·코러스 — 행을 다시 그리지 않고 dataset·CSS 변수만 입힌다 ────────────
+    // ⚠ 보드가 조금이라도 다시 그려졌으면 함께 부른다. 골격 재생성(innerHTML='')이 dataset 을
+    //   통째로 날리고, 그 재생성은 Dirty.skeleton 없이 boardView 의 자가치유로도 일어난다 —
+    //   조건을 `d.phrasing` 하나로 좁히면 안무표 크기를 바꾼 뒤 색이 조용히 사라진다.
+    if (d.phrasing || d.boards?.[BOARD_MAIN]) {
+      views.board?.[BOARD_MAIN]?.syncPhrasing((row) => phraseMark(row, store.phrasing));
+    }
+    if (d.phrasing) views.phrasing?.render();
 
     // ── ③ selection — 행 재렌더 없이 클래스만 ──────────────────────────────
     // ⚠ **전체 선택 집합**을 넘긴다(바뀐 것만이 아니다). 루틴 보드에는 붙는 게 없다

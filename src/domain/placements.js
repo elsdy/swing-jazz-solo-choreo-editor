@@ -13,6 +13,7 @@ import { linearOf } from './grid.js';
  * @property {string} groupId
  * @property {string} name
  * @property {string} category
+ * @property {true} [pending]  이름을 아직 안 붙인 블록(받아 적기). 참일 때만 키가 있다
  * @property {'routine'} [type]
  * @property {string} [routineId]
  * @property {number} row
@@ -144,6 +145,10 @@ export function placementRangeLabel(placements, groupId, cols) {
  *   보존해야 하는 결함(FINAL-architecture.md §5 #1). 여기서 `subRow: 0` 을 채우면 루틴 블록이 있는
  *   모든 프로젝트의 JSON 바이트가 달라진다.
  *
+ * ⚠ pending 은 **참일 때만** 키가 붙는다(2026-09-12, 받아 적기). 이름 없이 자리부터 잡은 블록에만
+ *   생기는 키라 이름 있는 배치의 JSON 바이트는 그대로고, 자리는 category 바로 뒤다 —
+ *   루틴 블록은 언제나 이름이 있으므로 type/routineId 와 겹치지 않는다.
+ *
  * @see index.html:3585
  * @see index.html:3627
  * @see index.html:3660
@@ -151,7 +156,7 @@ export function placementRangeLabel(placements, groupId, cols) {
  * @see index.html:3717
  * @see index.html:4668
  * @param {{row:number,startIndex:number,length:number}[]} segments
- * @param {{ groupId: string, name: string, category: string, type?: string, routineId?: string }} meta
+ * @param {{ groupId: string, name: string, category: string, pending?: boolean, type?: string, routineId?: string }} meta
  * @param {(() => string) | { uid: () => string }} ids  uid 생성기. 도메인은 uid()를 직접 만들지 않는다
  * @param {{ subRow?: number, withSubRow?: boolean }} [options]
  * @returns {Placement[]}
@@ -164,6 +169,7 @@ export function makeSegmentPlacements(segments, meta, ids, options = {}) {
     groupId: meta.groupId,
     name: meta.name,
     category: meta.category,
+    ...(meta.pending ? { pending: true } : {}),
     ...(meta.type === 'routine' ? { type: 'routine', routineId: meta.routineId } : {}),
     row: seg.row,
     startIndex: seg.startIndex,
@@ -202,4 +208,60 @@ export function rewriteMoveName(placements, prevName, nextName) {
  */
 export function rewriteCategoryKey(placements, moveName, nextCategory) {
   return placements.map(p => p.name === moveName ? { ...p, category: nextCategory } : p);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 이름 없는 블록 (2026-09-12, 받아 적기)
+//
+// 영상을 보며 "지금 뭔가 했다"를 먼저 찍고 이름은 나중에 붙인다. 그 사이 동안 블록은 자리와 길이만
+// 가진 채 표 위에 있다. 이름이 비어 있다는 사실을 `pending: true` 로 **명시**한다 — 빈 문자열만으로
+// 판정하면 손상된 파일에서 이름이 날아간 배치와 구분되지 않고, 그러면 정규화가 지워야 할지 살려야
+// 할지 알 수 없다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 이름을 아직 안 붙인 블록인가.
+ * @param {Placement} p
+ * @returns {boolean}
+ */
+export function isPending(p) {
+  return Boolean(p && p.pending);
+}
+
+/**
+ * 이름 없는 블록의 groupId 들(등장 순, 중복 제거). 2단계의 "한 곳에서 이름 붙이기"가 읽을 목록이다.
+ * @param {Placement[]} placements
+ * @returns {string[]}
+ */
+export function pendingGroupIds(placements) {
+  const seen = new Set();
+  const out = [];
+  for (const p of placements || []) {
+    if (!isPending(p) || seen.has(p.groupId)) continue;
+    seen.add(p.groupId);
+    out.push(p.groupId);
+  }
+  return out;
+}
+
+/**
+ * 그 그룹에 이름을 붙인다(pending 키는 사라진다). 이름이 비면 아무것도 하지 않는다 —
+ * 지우는 것은 삭제이지 이름 붙이기가 아니다.
+ * @param {Placement[]} placements
+ * @param {string} groupId
+ * @param {string} name
+ * @param {string} [category]  주지 않으면 원래 카테고리를 그대로 둔다
+ * @returns {Placement[]} 바뀐 것이 없으면 입력 배열을 그대로 돌려준다
+ */
+export function nameGroup(placements, groupId, name, category) {
+  const label = String(name == null ? '' : name).trim();
+  if (!label) return placements;
+  let touched = false;
+  const next = (placements || []).map(p => {
+    if (p.groupId !== groupId) return p;
+    touched = true;
+    const { pending, ...rest } = p;
+    return { ...rest, name: label, ...(category ? { category } : {}) };
+  });
+  return touched ? next : placements;
 }

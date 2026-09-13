@@ -451,7 +451,7 @@ v1 → v2 단계가 하는 일은 링크 4필드를 `doc.links` 로 묶고, 결�
 `#boardsContainer` 의 세 번째 flex 자식으로, `#routineEditorPanel` **뒤에** 넣는다. 근거는 셋이다.
 
 - `.boards-container` 는 이미 `display:flex; flex:1; min-height:0; overflow:hidden` 이다. 구조를 바꿀 필요가 없고, `.routine-editor-panel` 이 이미 같은 패턴의 형제다.
-- `.app` 의 직계 자식은 셋(사이드바 / 리사이즈 디바이더 / 메인)이고 모바일 `grid-template-rows` 가 정확히 3트랙이다. `.app` 을 3열로 만드는 안은 이 계약을 깨서 미디어쿼리 두 개를 모두 고쳐야 한다.
+- `.app` 의 직계 자식은 앱바 / 사이드바 / 시트 배경 / 리사이즈 디바이더 / 메인이고, 흐름에 서는 것은 **앱바와 메인 둘**이다(2026-09-12 부터 좁은 화면에서 사이드바가 `position:fixed` 바텀 시트로 빠지고 디바이더는 숨는다). `.app` 을 3열로 만드는 안은 이 계약을 깨서 미디어쿼리 세 개를 모두 고쳐야 한다.
 - **iframe 은 DOM 에서 부모를 바꾸면 리로드된다.** 그래서 "데스크톱은 옆, 모바일은 위"를 DOM 이동으로 구현하면 안 된다. 이 제약이 삽입 지점을 사실상 하나로 확정한다.
 
 URL 입력은 **새로 만들지 않는다.** 링크바에 이미 있는 `YouTube URL 입력...` 칸이 그대로 소스다. 상태를 두 곳에 두지 않는다.
@@ -536,7 +536,7 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 | `src/adapters/media/youtubePlayer.js` | **2026-09-09.** IFrame API 를 MediaPlayer 계약으로 감싼 실물. 마지막 줄이 `assertMediaPlayer` 다. 생성만으로는 DOM·네트워크를 안 건드리고 첫 `load()` 에서 `<script>` 가 붙는다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가지 않는다 |
 | `src/adapters/media/pickPlayer.js` | **2026-09-09.** URL 또는 MediaSource → `'youtube'` \| `'file'` \| `'null'`. `domain/links.parseYoutubeUrl` 을 재사용하고 정규식을 한 글자도 쓰지 않는다. 언제나 완전한 MediaPlayer 를 돌려주므로 호출부에 `player?.` 가 생기지 않는다 |
 | `server.py` 의 `/api/llm/*` · `src/adapters/llmServer.js` · `src/domain/choreoPlan.js` · `src/usecases/planCommands.js` · `src/ui/composeView.js` | **2026-09-09.** 말로 채우기. 서버가 Claude(Messages API 직접 호출, `claude-opus-5`, 구조화 출력, 서버 측 폴백) · OpenAI · Ollama 를 한 모양으로 감싸고 키는 서버에만 둔다. 도메인이 플랜을 격자 항목으로, 유스케이스가 기존 배치 경로로 놓는다. 서버 테스트가 가짜 Ollama 로 다듬기→스키마→검증을 끝까지 돌린다 |
-| `server.py` · `src/adapters/clipServer.js` · `tests/server.test.mjs` | **2026-09-09.** 영상 보관 서버. 파이썬 표준 라이브러리만 쓰는 로컬 서버가 정적 파일 위에 `/api/health` · `/api/config` · `/api/clips` · `/clips/<path>`(Range) 를 얹는다. 클라이언트는 `probe` 로 서버가 있는지 보고 없으면 브라우저 폴더 방식으로 떨어진다. 보관 위치는 `--root`/`--subdir` 또는 앱 설정에서 바꾸고 `.clipserver.json` 에 남는다 |
+| `server.py` · `src/adapters/clipServer.js` · `tests/server.test.mjs` | **2026-09-09.** 영상 보관 서버. 파이썬 표준 라이브러리만 쓰는 로컬 서버가 정적 파일 위에 `/api/health` · `/api/config` · `/api/clips` · `/clips/<path>`(Range) 를 얹는다. 클라이언트는 `probe` 로 서버가 있는지 보고 없으면 브라우저 폴더 방식으로 떨어진다. 보관 위치는 `--root`/`--subdir` 또는 앱 설정에서 바꾸고 설정 폴더의 `config.json` 에 남는다(2026-09-13 에 기본 자리가 저장소 밖으로 나갔다) |
 | `src/ports/clips.js` · `src/adapters/clipLibrary.js` · `src/domain/clips.js` | **2026-09-09.** 영상 보관 폴더(브라우저 방식, 서버가 없을 때). 계약(`ClipLibrary`: `isSupported` · `getFolder` · `pickFolder` · `forgetFolder` · `ensurePermission(interactive)` · `saveClip` · `openClip`), File System Access API + IndexedDB 구현, 그리고 `<subdir>/<프로젝트>/<파일>` 경로 규칙(순수). 폴더 핸들은 IndexedDB `choreo_clips` 에, 표시 이름·하위 폴더는 localStorage `choreo_clip_folder` 에 있다. 지원하지 않는 브라우저에서는 전부 "없음"으로 답하고 던지지 않는다 |
 | `src/adapters/media/filePlayer.js` | **2026-09-09.** `<video>` 를 MediaPlayer 계약으로 감싼 실물. `seekToleranceSec` 0.05, 재생 중 100ms 표본 + `timeupdate`. `MediaError.code` 를 포트의 5종 코드로 접고 한국어 문구는 만들지 않는다. blob URL 을 만들지도 놓지도 않는다(그건 `app/main` 의 몫) |
 | `src/usecases/videoCommands.js` | **2026-09-09.** 패널 상태 · 두 점 앵커 · 탭 템포 · 소스 확정 · `clearMedia`. DOM 도 플레이어도 시계도 모른다(시각은 전부 인자로 들어온다) |

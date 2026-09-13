@@ -17,11 +17,12 @@ import { SEL, CLS, DATA } from './domContract.js';
 import {
   setGridVars,
   clearGridVars,
+  readCellW,
   setNoteWidth,
   MOBILE_ROW_LABEL_W,
   MOBILE_CELL_H,
 } from './cssVars.js';
-import { computeCellWidth } from '../domain/grid.js';
+import { computeCellWidth, fitCellWidth } from '../domain/grid.js';
 
 /**
  * 이 앱의 브레이크포인트 2개.
@@ -105,6 +106,7 @@ export function syncCellSize({
   if (!isCompact(win)) {
     clearGridVars(root); // ⚠ --cellH 는 남는다(보존 결함 #12)
     applyNoteWidth(boardEl, noteRoot);
+    fitWideCells(root, boardEl, cols);
     return;
   }
   setGridVars(root, {
@@ -113,6 +115,33 @@ export function syncCellSize({
     cellH: MOBILE_CELL_H,
   });
   applyNoteWidth(boardEl, noteRoot);
+}
+
+/**
+ * 넓은 화면에서 격자가 제 자리에 안 들어가면 셀 폭을 줄여 맞춘다(2026-09-12). 산술은 도메인이 한다
+ * (domain/grid.fitCellWidth) — 여기서는 **재고 쓰기만** 한다.
+ *
+ * ⚠ 반드시 clearGridVars 와 applyNoteWidth **뒤**다. 비고 칸 폭이 계산의 재료이고, 기준값(76px)에서
+ *   재야 자리가 다시 생겼을 때 도로 커진다.
+ * ⚠ `clientWidth` 는 패딩을 포함하므로 빼고 잰다. 안 빼면 매번 패딩만큼 더 줄인다.
+ * ⚠ 잴 것이 없으면(보드가 아직 안 그려졌거나 폭이 0) 아무것도 하지 않는다 — 0 으로 나눈 값을
+ *   CSS 변수에 쓰면 격자가 통째로 사라진다.
+ *
+ * @param {HTMLElement} root
+ * @param {HTMLElement|null} boardEl
+ * @param {number} cols
+ * @returns {void}
+ */
+function fitWideCells(root, boardEl, cols) {
+  const wrap = boardEl && boardEl.parentElement;
+  if (!wrap) return;
+  const cs = getComputedStyle(wrap);
+  const availableW = wrap.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const neededW = boardEl.scrollWidth;
+  if (!(availableW > 0) || !(neededW > 0)) return;
+  const next = fitCellWidth({ neededW, availableW, cols, currentCellW: readCellW(root) });
+  if (next == null) return;
+  setGridVars(root, { cellW: next });
 }
 
 /**
@@ -195,6 +224,13 @@ export function initLayout(deps = {}) {
     dividerEl = doc.getElementById('resizeDivider'),
     appEl = doc.querySelector(SEL.app),
     sidebarEl = doc.querySelector(SEL.sidebar),
+    // 좁은 화면 전용 토글 4개(2026-09-12). 넓은 화면에서는 CSS 가 숨기므로 눌릴 일이 없다.
+    appbarMoreBtn = doc.getElementById('appbarMoreBtn'),
+    sidebarSheetBtn = doc.getElementById('sidebarSheetBtn'),
+    sheetCloseBtn = doc.getElementById('sheetCloseBtn'),
+    sheetBackdrop = doc.getElementById('sheetBackdrop'),
+    linksToggleBtn = doc.getElementById('linksToggleBtn'),
+    notesToggleBtn = doc.getElementById('notesToggleBtn'),
   } = deps;
 
   const teardown = [];
@@ -284,6 +320,53 @@ export function initLayout(deps = {}) {
     if (!isMobileLayout()) appEl.style.removeProperty('--sidebar-h');
   });
 
+  // ── 좁은 화면의 네 토글 (2026-09-12, 원본에 대응물 없음) ─────────────────
+  //
+  // 폰에서 안무표가 세로의 10% 밖에 못 쓰던 것을 고치면서 생겼다. 넷 다 **화면 상태**라
+  // store 에 넣지 않는다 — 스크롤 락과 같은 성격이고, 저장하거나 Undo 할 값이 아니다.
+  // 값은 <body> 의 data-* 하나로 두고 CSS 가 읽는다(마크업의 기본값이 전부 'off').
+  //
+  // ⚠ 넓은 화면에서는 이 버튼들이 `display:none` 이라 눌리지 않는다. 그래도 dataset 은
+  //   남으므로, 폭을 넓혔다 줄여도 마지막 상태가 그대로 돌아온다.
+
+  /** <body data-*> 한 칸을 뒤집고 버튼의 aria-expanded 를 맞춘다. */
+  function toggleFlag(name, btn) {
+    const next = doc.body.dataset[name] === 'on' ? 'off' : 'on';
+    doc.body.dataset[name] = next;
+    if (btn) btn.setAttribute('aria-expanded', String(next === 'on'));
+    return next;
+  }
+
+  /** 시트를 닫는다(이미 닫혀 있으면 무동작). 배경 누르기·✕·Escape 가 함께 쓴다. */
+  function closeSheet() {
+    if (doc.body.dataset.sheet !== 'on') return;
+    doc.body.dataset.sheet = 'off';
+    if (sidebarSheetBtn) sidebarSheetBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  if (appbarMoreBtn) on(appbarMoreBtn, 'click', () => toggleFlag('more', appbarMoreBtn));
+  if (linksToggleBtn) on(linksToggleBtn, 'click', () => toggleFlag('links', linksToggleBtn));
+  if (notesToggleBtn) {
+    on(notesToggleBtn, 'click', () => {
+      toggleFlag('notes', notesToggleBtn);
+      sync();   // 비고 칸이 사라지면 셀 폭을 다시 잰다(가로 스크롤이 여기서 생겼다)
+    });
+  }
+  if (sidebarSheetBtn) on(sidebarSheetBtn, 'click', () => toggleFlag('sheet', sidebarSheetBtn));
+  // ⚠ 동작·루틴 카드를 고르면 시트를 닫는다. 고른 다음에 하는 일이 **격자를 쓸어 놓는 것**인데
+  //   시트가 안무표를 덮고 있으면 그 자리가 안 보인다. 카드 안의 버튼·선택칸(별·삭제·카테고리)은
+  //   고르는 조작이 아니므로 닫지 않는다.
+  if (sidebarEl) {
+    on(sidebarEl, 'click', (e) => {
+      const card = e.target.closest(`.${CLS.moveCard}, .${CLS.routineCard}`);
+      if (!card || e.target.closest('button, select, input')) return;
+      closeSheet();
+    });
+  }
+  if (sheetCloseBtn) on(sheetCloseBtn, 'click', closeSheet);
+  if (sheetBackdrop) on(sheetBackdrop, 'click', closeSheet);
+  on(doc, 'keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+
   // ── 1664-1678: 입력 완료 후 뷰포트 줌 리셋 (모바일 포커스 줌 복구) ───────
   // ⚠⚠ 알려진 결함이지만 그대로 옮긴다 — user-scalable=no 를 영구히 박고
   //    window.scrollTo(0,0) 으로 스크롤 위치를 강제로 날린다. deviations 참조.
@@ -309,6 +392,8 @@ export function initLayout(deps = {}) {
     isStacked: () => isStacked(win),
     isCompact: () => isCompact(win),
     isRoutineOverlayMode: () => isRoutineOverlayMode(win),
+    /** 좁은 화면의 동작 시트를 닫는다(넓은 화면에서는 아무 일도 없다). */
+    closeSheet,
     // 원본에는 없는 추가분. 테스트가 리스너를 걷어낼 수 있게만 두었고 앱은 부르지 않는다.
     destroy() { teardown.splice(0).forEach(off => off()); },
   };

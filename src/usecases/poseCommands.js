@@ -34,7 +34,13 @@ export const DEFAULT_POSE = Object.freeze({
   lost: 0,
   fromSec: 0,
   toSec: 0,
-  showMesh: true
+  showMesh: true,
+  // 재생하며 실시간으로 볼 것인가(2026-09-13). 켜면 미리 분석해 둔 프레임 대신 **지금 그 프레임**을 본다.
+  live: false,
+  // 실시간으로 실제로 몇 장을 보고 있나. 사람이 "왜 뚝뚝 끊기지" 를 물을 자리에 숫자로 답한다.
+  liveFps: 0,
+  // 어느 연산 장치로 섰는가('GPU' | 'CPU' | ''). CPU 면 실측 5.6fps 라 끊긴다 — 감추지 않는다.
+  delegate: ''
 });
 
 /**
@@ -133,7 +139,8 @@ export function failAnalysis(store, args = {}) {
 export function clearAnalysis(store) {
   const cur = poseState(store);
   if (cur.state === 'idle' && cur.anchors.length === 0) return NONE;
-  return patch(store, { ...DEFAULT_POSE, showMesh: cur.showMesh });
+  // ⚠ showMesh 와 실시간 설정은 남긴다 — 「분석 지우기」는 결과를 지우는 것이지 보기 방식을 되돌리는 것이 아니다.
+  return patch(store, { ...DEFAULT_POSE, showMesh: cur.showMesh, live: cur.live, delegate: cur.delegate });
 }
 
 /**
@@ -201,6 +208,35 @@ export function clearAnchors(store) {
  * @param {{on?: boolean}} [args] 생략하면 토글
  * @returns {import('./store.js').Dirty}
  */
+/**
+ * 실시간으로 볼 것인가를 켜고 끈다(2026-09-13).
+ * ⚠ 켜고 끄는 것이 **분석 결과를 지우지 않는다.** 미리 훑어 둔 프레임은 가동 범위·가속도 요약이
+ *   여전히 쓴다(한 프레임으로는 범위를 못 잰다) — 실시간은 "지금 무엇을 보고 있나" 쪽이다.
+ * @param {object} store
+ * @param {{live?: boolean}} [args] 생략하면 토글
+ * @returns {import('./store.js').Dirty}
+ */
+export function setLive(store, args = {}) {
+  const cur = poseState(store);
+  const next = typeof args.live === 'boolean' ? args.live : !cur.live;
+  if (next === cur.live) return NONE;
+  return patch(store, next ? { live: true } : { live: false, liveFps: 0 });
+}
+
+/**
+ * 실시간으로 도는 동안의 실측값. **초당 한 번쯤** 부른다 — 매 프레임 부르면 store 가 그만큼 흔들린다.
+ * @param {object} store
+ * @param {{fps?: number, delegate?: string}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function setLiveStats(store, args = {}) {
+  const cur = poseState(store);
+  const fps = Number.isFinite(args.fps) ? Math.max(0, Math.round(args.fps * 10) / 10) : cur.liveFps;
+  const delegate = typeof args.delegate === 'string' ? args.delegate : cur.delegate;
+  if (fps === cur.liveFps && delegate === cur.delegate) return NONE;
+  return patch(store, { liveFps: fps, delegate });
+}
+
 export function setMesh(store, args = {}) {
   const next = typeof args.on === 'boolean' ? args.on : !poseState(store).showMesh;
   return patch(store, { showMesh: next });
@@ -213,5 +249,6 @@ export function setMesh(store, args = {}) {
  */
 export function hasOverlay(store) {
   const p = poseState(store);
-  return p.state === 'done' && p.frames > 0;
+  // 실시간이면 미리 분석해 둔 프레임이 한 장도 없어도 그린다 — 그릴 것을 그때그때 만든다.
+  return p.live || (p.state === 'done' && p.frames > 0);
 }
