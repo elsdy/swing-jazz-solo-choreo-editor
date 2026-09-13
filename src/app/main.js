@@ -560,6 +560,8 @@ bindControls({
     // 받아 적기 단축키 `B`. ⚠ 늦게 묶는다 — bindControls 가 views.video 보다 먼저 돌기 때문에
     //   여기서 views.video 를 바로 읽으면 undefined 다. 키를 누르는 시점에는 이미 만들어져 있다.
     captureToggle: () => Boolean(views.video && views.video.captureToggle()),
+    captureSkip: () => Boolean(views.video && views.video.captureSkip()),
+    stopCapture: () => Boolean(views.video && views.video.stopCapture()),
     commitHistory,
     undo,
     redo,
@@ -1219,7 +1221,9 @@ views.video = createVideoPanel({
     removeClip: (args) => VideoCmd.removeClip(store, args),
     // 받아 적기(2026-09-12). 메인 보드에만 놓는다 — 루틴 편집기와 영상 패널은 동시에 열리지 않는다.
     captureToggle: (args) => CaptureCmd.captureToggle(store, args, { ids: browserEnv }),
-    cancelCapture: () => CaptureCmd.cancelCapture(store),
+    // 연속 받아 적기(2026-09-13): 경계 찍기 · 건너뛰기 · 그만
+    captureSkip: (args) => CaptureCmd.captureSkip(store, args),
+    stopCapture: () => CaptureCmd.stopCapture(store),
     markersToBlocks: () => CaptureCmd.markersToBlocks(store, {}, { ids: browserEnv }),
     nameSelected: () => CaptureCmd.nameSelected(store, {}, { dialogs: browserDialogs })
   }

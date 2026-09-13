@@ -230,9 +230,11 @@ export function bindControls(deps) {
  *      (HOTKEY_ACTIVE_BOARD 플래그를 켜는 날 이 함수만 바꾸면 된다).
  * ⚠ Escape 의 cancelActivePaletteMove 는 dragstart 경로와 달리 **Dirty 를 그린다**(2802 renderPalette).
  *
- * ⚠ `B` (받아 적기, 2026-09-12)는 위 결함 1)의 예외다 — **입력 필드 안에서는 듣지 않는다.**
+ * ⚠ `B`(경계 찍기)·`N`(건너뛰기)은 위 결함 1)의 예외다 — **입력 필드 안에서는 듣지 않는다.**
  *   조합 없는 홑글쇠라 가드가 없으면 동작 이름을 타이핑하는 동안 블록이 쌓인다. 오래된 Ctrl 조합
  *   단축키의 가드 없음은 보존 대상이라 그대로 두고, 새 글쇠에만 가드를 둔다.
+ * ⚠ `Escape` 는 **받아 적는 중이면 그것을 먼저 닫는다**(2026-09-13). 받는 쪽이 참을 돌려주면 거기서
+ *   끝내고, 아니면 예전대로 팔레트의 고른 동작을 푼다 — 한 키에 두 뜻이지만 동시에 참인 적이 없다.
  * ⚠ `B` 는 Dirty 를 여기서 그리지 않는다. 지금 몇 초인지는 영상 패널만 알아서(재생기는 뷰가 쥔다)
  *   commands.captureToggle 이 패널의 메서드이고, 그리기와 히스토리 커밋까지 그쪽에서 끝낸다.
  *
@@ -257,9 +259,20 @@ export function bindHotkeys(deps) {
 
   doc.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
-    if (e.key === 'Escape') { apply(commands.cancelActivePaletteMove()); return; }
+    // ⚠ Escape 는 **받아 적는 중이면 그것부터 닫는다**(2026-09-13). 연속으로 찍다가 끝내는 길이
+    //   `그만` 버튼 하나뿐이면 손이 영상에서 떨어진다. 받아 적는 중이 아니면 예전대로 팔레트를 푼다.
+    if (e.key === 'Escape') {
+      if (typeof commands.stopCapture === 'function' && commands.stopCapture()) return;
+      apply(commands.cancelActivePaletteMove());
+      return;
+    }
     if (key === 'b' && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) {
       if (typeof commands.captureToggle === 'function' && commands.captureToggle()) e.preventDefault();
+      return;
+    }
+    // `N` — 여기까지는 안무가 아니다(설명·쉬는 시간). 앞 구간을 놓지 않고 경계만 옮긴다.
+    if (key === 'n' && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) {
+      if (typeof commands.captureSkip === 'function' && commands.captureSkip()) e.preventDefault();
       return;
     }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'z') {

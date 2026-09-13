@@ -287,6 +287,7 @@ export function createVideoPanel(deps) {
   const inOutText = byId('videoInOutText');
   const captureBtn = byId('videoCaptureBtn');
   const captureCancelBtn = byId('videoCaptureCancelBtn');
+  const captureSkipBtn = byId('videoCaptureSkipBtn');
   const markerBlocksBtn = byId('videoMarkerBlocksBtn');
   const nameSelBtn = byId('videoNameSelBtn');
   const captureHelp = byId('videoCaptureHelp');
@@ -570,10 +571,12 @@ export function createVideoPanel(deps) {
     const running = Number.isFinite(start);
     const ready = isTempoUsable(tempo());
     if (captureBtn) {
-      captureBtn.textContent = running ? '■ 여기서 끝' : '● 여기서 시작';
+      // 연속으로 찍는다(2026-09-13) — 한 동작의 끝이 곧 다음의 시작이라 경계마다 한 번씩이다.
+      captureBtn.textContent = running ? '▮ 여기서 끊기' : '● 받아 적기 시작';
       captureBtn.className = running ? CLS.warn : CLS.primary;
       captureBtn.disabled = !ready;
     }
+    if (captureSkipBtn) captureSkipBtn.disabled = !ready;
     if (captureCancelBtn) captureCancelBtn.disabled = !running;
     if (markerBlocksBtn) markerBlocksBtn.disabled = markers().length === 0;
     const pending = pendingSelected();
@@ -585,9 +588,11 @@ export function createVideoPanel(deps) {
       if (!ready) {
         captureHelp.textContent = '먼저 `② 박자 맞추기` 에서 BPM 을 정하세요 — 영상의 초를 안무표의 카운트로 바꾸는 데 박자가 필요합니다.';
       } else if (running) {
-        captureHelp.textContent = `${formatClock(start)} 부터 받아 적는 중 — 동작이 끝나는 순간에 한 번 더 누르세요(단축키 B).`;
+        captureHelp.textContent = `${formatClock(start)} 부터 받는 중 — 동작이 바뀌는 자리마다 \`B\`. `
+          + '안무가 아닌 대목은 `N` 으로 건너뛰고, 다 되면 `Esc` 나 `■ 그만` 으로 끝냅니다.';
       } else {
-        captureHelp.textContent = '영상을 보다가 동작이 시작될 때 누르고, 끝날 때 다시 누르면 그 구간이 이름 없는 블록(`?`)으로 안무표에 놓입니다. 이름은 나중에 붙입니다.';
+        captureHelp.textContent = '영상을 보면서 동작이 바뀌는 자리마다 한 번씩 누르면 그 사이가 이름 없는 블록(`?`)으로 놓입니다. '
+          + '한 동작의 끝이 곧 다음 동작의 시작이라 두 번 누를 필요가 없습니다. 이름은 나중에 붙입니다.';
       }
       captureHelp.classList.toggle(CLS.isError, false);
     }
@@ -1136,6 +1141,15 @@ export function createVideoPanel(deps) {
   // ⚠ 커밋은 **블록이 실제로 놓인 때만** 한다. 시작을 찍은 것은 화면 상태이고(안무가 아직 안 바뀌었다),
   //   거기에 커밋하면 Undo 한 번이 아무것도 되돌리지 않는 빈 칸이 된다.
 
+  /** "바뀐 것이 없다" 를 알아보는 값. usecases/store 의 NONE 은 키가 없는 객체다. */
+  const NONE_DIRTY_EMPTY = (d) => !d || Object.keys(d).length === 0;
+
+  /** 커맨드가 얹어 보내는 알림용 키(started·placed·skipped·needsTempo)를 뗀다 — Dirty 의 키가 아니다. */
+  function strip(result) {
+    const { started, placed, skipped, needsTempo, ...dirty } = result || {};
+    return dirty;
+  }
+
   /**
    * 받아 적기 키를 한 번 눌렀다(버튼도 단축키도 여기로 온다).
    * @returns {boolean} 블록이 놓였는가
@@ -1151,6 +1165,9 @@ export function createVideoPanel(deps) {
   }
 
   if (captureBtn) captureBtn.onclick = () => captureToggle();
+  if (captureSkipBtn && commands.captureSkip) {
+    captureSkipBtn.onclick = () => { render(strip(commands.captureSkip({ sec: getCurrentSec() }))); renderCapture(); };
+  }
   if (nameSelBtn && commands.nameSelected) {
     nameSelBtn.onclick = () => {
       const { named, ...dirty } = commands.nameSelected() || {};
@@ -1159,8 +1176,8 @@ export function createVideoPanel(deps) {
       if (named) commitHistory();
     };
   }
-  if (captureCancelBtn && commands.cancelCapture) {
-    captureCancelBtn.onclick = () => { render(commands.cancelCapture()); renderCapture(); };
+  if (captureCancelBtn && commands.stopCapture) {
+    captureCancelBtn.onclick = () => { render(commands.stopCapture()); renderCapture(); };
   }
   if (markerBlocksBtn && commands.markersToBlocks) {
     markerBlocksBtn.onclick = () => {
@@ -1181,6 +1198,23 @@ export function createVideoPanel(deps) {
      * @returns {boolean} 블록이 놓였는가
      */
     captureToggle: () => (panelState().open ? captureToggle() : false),
+    /** `N` — 여기까지는 안무가 아니다. 패널이 닫혀 있으면 아무 일도 하지 않는다. */
+    captureSkip: () => {
+      if (!panelState().open || !commands.captureSkip) return false;
+      const res = commands.captureSkip({ sec: getCurrentSec() }) || {};
+      render(strip(res));
+      renderCapture();
+      return Boolean(res.started || res.skipped);
+    },
+    /** `Esc` — 받아 적기를 끝낸다. **받는 중일 때만 참**을 돌려준다(그래야 Esc 의 옛 뜻이 산다). */
+    stopCapture: () => {
+      if (!panelState().open || !commands.stopCapture) return false;
+      const dirty = commands.stopCapture();
+      if (NONE_DIRTY_EMPTY(dirty)) return false;
+      render(dirty);
+      renderCapture();
+      return true;
+    },
     /** 선택이 바뀌었다 — `선택한 블록이 여기서 시작`·`선택한 블록에 맵핑` 의 활성 여부만 다시 잰다(패널이 닫혀 있으면 값만 바뀌고 안 보인다). */
     syncSelection: () => { renderTempo(); renderCapture(); renderCut(); },
     /** YT.Player 가 iframe 으로 갈아치울 자리. app/main 이 여기에 컨테이너를 만든다. */

@@ -3142,44 +3142,86 @@ function captureStore() {
   return store;
 }
 
-test('받아 적기: 시작·끝을 번갈아 누르면 이름 없는 블록이 그 카운트 구간에 놓인다', () => {
+test('받아 적기: 경계를 찍으면 앞 구간이 놓이고 그 자리에서 다음이 열린다', () => {
+  // 안무는 이어져 있다 — 한 동작의 끝이 곧 다음의 시작이라 동작마다 두 번 누르지 않는다.
   const store = captureStore();
-  const first = CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
-  assert.equal(first.started, true, '첫 번째는 시작만 찍는다');
-  assert.equal(CaptureCmd.captureStartSec(store), 4);
+  const ids = counterEnv();
+  const first = CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  assert.equal(first.started, true, '첫 번째는 시작만 연다');
   assert.deepEqual(store.board(BOARD_MAIN).placements, [], '아직 표는 그대로다');
 
-  const second = CaptureCmd.captureToggle(store, { sec: 8 }, { ids: counterEnv() });
-  assert.equal(second.placed, true);
-  assert.equal(CaptureCmd.captureStartSec(store), null, '끝을 찍으면 시작점은 비워진다');
+  // B B B — 네 번 찍으면 구간 셋.
+  for (const sec of [4, 8, 12]) {
+    const r = CaptureCmd.captureToggle(store, { sec }, { ids });
+    assert.equal(r.placed, true, `${sec}초에서 앞 구간이 놓여야 한다`);
+    assert.equal(CaptureCmd.captureStartSec(store), sec, '경계가 다음 구간의 시작이 된다');
+  }
+  const groups = [...new Set(store.board(BOARD_MAIN).placements.map(p => p.groupId))];
+  assert.equal(groups.length, 3, '탭 4번이면 구간 3개다');
 
-  const placed = store.board(BOARD_MAIN).placements;
-  // 4초 = 8카운트 = 8x2의 1, 8초 = 16카운트(배타적)이므로 8카운트짜리 한 블록.
-  assert.equal(placed.length, 1);
-  assert.equal(placed[0].row, 2);
-  assert.equal(placed[0].startIndex, 0);
-  assert.equal(placed[0].length, 8);
-  assert.equal(placed[0].name, '', '이름은 아직 없다');
-  assert.equal(isPending(placed[0]), true);
+  // 0~4초 = 0~8카운트, 4~8 = 8~16, 8~12 = 16~24. 전부 8카운트짜리 이름 없는 블록.
+  const rows = groups.map(g => store.board(BOARD_MAIN).placements.find(p => p.groupId === g));
+  assert.deepEqual(rows.map(p => p.row), [1, 2, 3]);
+  assert.equal(rows.every(p => p.length === 8), true);
+  assert.equal(rows.every(p => isPending(p)), true);
 });
 
-test('받아 적기: 순서가 뒤집혀 들어와도 앞선 시각이 시작이 된다', () => {
+test('받아 적기: 되감아 앞쪽을 찍으면 구간을 만들지 않고 경계만 옮긴다', () => {
+  // 뒤로 간 것은 "다시 여기서부터" 라는 뜻이지 거꾸로 된 구간을 만들라는 뜻이 아니다.
   const store = captureStore();
-  CaptureCmd.captureToggle(store, { sec: 8 }, { ids: counterEnv() });
-  CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
-  const placed = store.board(BOARD_MAIN).placements;
-  assert.equal(placed.length, 1);
-  assert.equal(placed[0].row, 2, '4초(8카운트)에서 시작한다');
-  assert.equal(placed[0].length, 8);
-});
-
-test('받아 적기: 너무 짧으면 블록을 만들지 않고 시작점만 지운다', () => {
-  const store = captureStore();
-  CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
-  const out = CaptureCmd.captureToggle(store, { sec: 4.01 }, { ids: counterEnv() });
-  assert.equal(out.placed, undefined);
-  assert.equal(CaptureCmd.captureStartSec(store), null);
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 8 }, { ids });
+  const back = CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  assert.equal(back.placed, undefined, '거꾸로 된 구간을 만들지 않는다');
+  assert.equal(CaptureCmd.captureStartSec(store), 4, '경계는 되감은 자리로 옮겨진다');
   assert.deepEqual(store.board(BOARD_MAIN).placements, []);
+});
+
+test('받아 적기: 너무 짧으면 구간을 만들지 않되 **흐름은 끊지 않는다**', () => {
+  // 손이 떨려 두 번 눌린 것이다. 그전처럼 시작점을 지우면 연속으로 찍던 흐름이 거기서 끊긴다.
+  const store = captureStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  const out = CaptureCmd.captureToggle(store, { sec: 4.01 }, { ids });
+  assert.equal(out.placed, undefined);
+  assert.equal(CaptureCmd.captureStartSec(store), 4.01, '받아 적기는 계속된다');
+  assert.deepEqual(store.board(BOARD_MAIN).placements, []);
+  // 이어서 제대로 찍으면 그 자리부터 구간이 선다.
+  CaptureCmd.captureToggle(store, { sec: 8 }, { ids });
+  assert.equal(store.board(BOARD_MAIN).placements.length > 0, true);
+});
+
+test('받아 적기: 건너뛰기는 앞 구간을 놓지 않고 경계만 옮긴다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });          // 구간 1개
+  const skipped = CaptureCmd.captureSkip(store, { sec: 8 });      // 4~8초는 안무가 아니다
+  assert.equal(skipped.skipped, true);
+  assert.equal(CaptureCmd.captureStartSec(store), 8);
+  CaptureCmd.captureToggle(store, { sec: 12 }, { ids });          // 구간 2개째
+  const groups = [...new Set(store.board(BOARD_MAIN).placements.map(p => p.groupId))];
+  assert.equal(groups.length, 2, '건너뛴 구간은 블록이 되지 않는다');
+  // 8x1(0~8카운트)과 8x3(16~24카운트). 가운데 8x2 는 비어 있다.
+  assert.deepEqual([...new Set(store.board(BOARD_MAIN).placements.map(p => p.row))].sort(), [1, 3]);
+
+  // 아직 시작도 안 했으면 그냥 여는 것과 같다.
+  const fresh = captureStore();
+  const open = CaptureCmd.captureSkip(fresh, { sec: 2 });
+  assert.equal(open.started, true);
+  assert.equal(CaptureCmd.captureStartSec(fresh), 2);
+});
+
+test('받아 적기: 그만 누르면 열려 있던 마지막 구간은 버린다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  const before = store.board(BOARD_MAIN).placements.length;
+  assert.deepEqual(CaptureCmd.stopCapture(store), { video: true });
+  assert.equal(CaptureCmd.captureStartSec(store), null);
+  assert.equal(store.board(BOARD_MAIN).placements.length, before, '이미 놓인 것은 그대로 남는다');
+  assert.deepEqual(CaptureCmd.stopCapture(store), NONE, '끝난 뒤 또 누르면 무동작이다');
 });
 
 test('받아 적기: 박자가 없으면 시작조차 찍히지 않는다(초를 카운트로 바꿀 수 없다)', () => {
@@ -3190,8 +3232,9 @@ test('받아 적기: 박자가 없으면 시작조차 찍히지 않는다(초를
   assert.equal(CaptureCmd.canCapture(store), false);
 });
 
-test('받아 적기: 받아 적던 것을 물릴 수 있다', () => {
+test('받아 적기: 옛 이름 cancelCapture 도 같은 일을 한다', () => {
   const store = captureStore();
+  assert.equal(CaptureCmd.cancelCapture, CaptureCmd.stopCapture);
   assert.deepEqual(CaptureCmd.cancelCapture(store), NONE, '찍은 것이 없으면 무동작');
   CaptureCmd.captureToggle(store, { sec: 4 }, { ids: counterEnv() });
   assert.deepEqual(CaptureCmd.cancelCapture(store), { video: true });

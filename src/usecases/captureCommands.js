@@ -105,10 +105,23 @@ export function captureSpan(store, args, deps = {}) {
 }
 
 /**
- * 받아 적기 키를 한 번 눌렀다. 첫 번째는 시작, 두 번째는 끝이다.
+ * 받아 적기 키를 한 번 눌렀다 — **경계를 찍는다**(2026-09-13).
  *
- * ⚠ 순서가 뒤집혀 들어와도(끝을 먼저 찍고 앞으로 되감아 시작을 찍는 경우) 작은 쪽을 시작으로 삼는다.
- * ⚠ 너무 짧으면(MIN_SPAN_SEC 미만) 블록을 만들지 않고 **시작점만 지운다** — 두 번 눌린 것으로 본다.
+ * 안무는 이어져 있다. 한 동작의 끝이 곧 다음 동작의 시작이므로 동작마다 두 번 누를 까닭이 없다.
+ * 첫 누름이 시작을 열고, 그다음부터는 누를 때마다 **앞 구간을 놓고 그 자리에서 다음 구간을 연다.**
+ * 그래서 `B B B B` 네 번이면 구간이 셋이고, 마지막에 열려 있는 구간은 `그만`(stopCapture)이 버린다.
+ *
+ * ```
+ *   B    B    B    B      ■ 그만
+ *   └─1──┴─2──┴──3─┘      └ 열린 채 버려진다
+ * ```
+ *
+ * ⚠ **되감아 앞쪽을 찍으면 구간을 만들지 않고 경계만 옮긴다.** 뒤로 간 것은 "다시 여기서부터" 라는
+ *   뜻이지 거꾸로 된 구간을 만들라는 뜻이 아니다(그전에는 min/max 로 바로 세웠다 — 두 번 누르기
+ *   시절에는 맞는 규칙이었다).
+ * ⚠ 너무 짧으면(MIN_SPAN_SEC 미만) 구간을 만들지 않고 **경계만 옮긴다** — 손이 떨려 두 번 눌린 것이다.
+ *   그전처럼 시작점을 지우면 연속으로 찍던 흐름이 거기서 끊긴다.
+ * ⚠ 블록을 못 놓아도(보드 밖) 경계는 **언제나 옮긴다.** 안 그러면 사용자가 같은 자리에 갇힌다.
  *
  * @param {object} store
  * @param {{ sec:number, boardId?:'main'|'routine' }} args
@@ -123,25 +136,48 @@ export function captureToggle(store, args, deps = {}) {
     if (!canCapture(store)) return { ...NONE, needsTempo: true };
     return { ...patchVideo(store, { captureSec: sec }), started: true };
   }
-  const inSec = Math.min(start, sec);
-  const outSec = Math.max(start, sec);
-  const cleared = patchVideo(store, { captureSec: null });
-  if (outSec - inSec < MIN_SPAN_SEC) return cleared;
-  const span = captureSpan(store, { ...args, inSec, outSec }, deps);
-  const dirty = mergeDirty(cleared, span);
+  const moved = patchVideo(store, { captureSec: sec });     // 경계는 언제나 옮긴다
+  if (sec - start < MIN_SPAN_SEC) return moved;             // 되감았거나 두 번 눌렸다
+  const span = captureSpan(store, { ...args, inSec: start, outSec: sec }, deps);
+  const dirty = mergeDirty(moved, span);
   if (span.needsTempo) return { ...dirty, needsTempo: true };
   return span.placed ? { ...dirty, placed: true } : dirty;
 }
 
 /**
- * 받아 적던 것을 물린다(시작만 찍고 그만둘 때). 찍은 것이 없으면 무동작이다.
+ * 여기까지는 **안무가 아니다**(설명·쉬는 시간·박수). 앞 구간을 놓지 않고 경계만 옮긴다(2026-09-13).
+ *
+ * 연속으로 찍는 동안 손을 멈추지 않고 빈 곳을 남기는 길이다. 이것이 없으면 설명하는 대목까지
+ * 블록이 되어 나중에 하나씩 지워야 한다.
+ * ⚠ 아직 시작도 안 했으면 그냥 여는 것과 같다 — "여기부터 볼 만하다" 는 뜻이므로.
+ *
+ * @param {object} store
+ * @param {{ sec:number }} args
+ * @returns {object & {started?:boolean, skipped?:boolean, needsTempo?:boolean}} Dirty
+ */
+export function captureSkip(store, args = {}) {
+  const sec = Number(args.sec);
+  if (!Number.isFinite(sec)) return NONE;
+  if (!canCapture(store)) return { ...NONE, needsTempo: true };
+  const had = captureStartSec(store) !== null;
+  return { ...patchVideo(store, { captureSec: sec }), started: !had, skipped: had };
+}
+
+/**
+ * 받아 적기를 끝낸다. **열려 있던 구간은 버린다** — 마지막 경계가 곧 마지막 동작의 끝이므로,
+ * 그 뒤는 아직 무엇인지 모르는 대목이다.
+ * ⚠ 이름이 cancel 이 아니라 stop 인 까닭: 지금까지 찍어 둔 구간은 이미 표에 놓여 있고 사라지지 않는다.
+ *   되돌리려면 Undo 를 쓴다.
  * @param {object} store
  * @returns {object} Dirty
  */
-export function cancelCapture(store) {
+export function stopCapture(store) {
   if (captureStartSec(store) === null) return NONE;
   return patchVideo(store, { captureSec: null });
 }
+
+/** 옛 이름. 하는 일은 stopCapture 와 같다 — 부르는 곳이 아직 남아 있어 둔다. */
+export const cancelCapture = stopCapture;
 
 /**
  * 찍어 둔 마커를 전부 블록으로 옮긴다(2026-09-12). 그동안 모은 마커가 살아나는 경로다 — 막히는 곳 ③.
