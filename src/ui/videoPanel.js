@@ -26,7 +26,6 @@
 
 import { CLS, DATA } from './domContract.js';
 import { confirmOnce } from './widgets.js';
-import { isStacked as layoutIsStacked } from './layout.js';
 import { cellOf, clamp, linearOf, rowIndices } from '../domain/grid.js';
 import { isTempoUsable, normalizeTempo } from '../domain/tempo.js';
 import { markersAt, normalizeMarkers } from '../domain/markers.js';
@@ -174,6 +173,9 @@ export function formatRange(from, to, cols) {
  *   URL 은 있는데 'null' 이면 **알아보지 못한 주소**라는 뜻이라 문구가 달라진다
  * @property {(sec: number, opts?: {play?: boolean}) => void} [onSeek] 영상을 그 시각으로 옮긴다(play 면 재생까지).
  *   `In 으로`·`Out 으로`·마커의 ▶ 가 쓴다. 어댑터를 아는 자리의 몫이라 여기서 player 를 만지지 않는다
+ * @property {() => 'unavailable'|'off'|'on'} [getPipState] 화면 속 화면을 지금 쓸 수 있는가.
+ *   'unavailable' 이면 버튼을 아예 감춘다 — 눌러도 안 되는 버튼을 두지 않는다
+ * @property {() => void} [onTogglePip] `⧉ PiP`. ⚠ **클릭 콜스택 안에서** 재생기까지 닿아야 켜진다
  * @property {() => 'ready'|'busy'|'no-inout'|'not-file'|'no-server'|'no-ffmpeg'|'not-stored'} [getTrimState]
  *   잘라내기를 지금 할 수 있는가, 안 되면 왜인가. In/Out 유무는 뷰가 스스로 보므로 호출부는 나머지만 답해도 된다
  * @property {() => string} [getTrimError] 마지막 잘라내기 실패 이유(서버 문구). 비어 있으면 실패가 없었다
@@ -205,7 +207,6 @@ export function formatRange(from, to, cols) {
  *   clearMarkers?: () => any,
  *   applyMarkerToTempo?: (args: {id:string}) => any
  * }} commands app/main 이 videoCommands 를 store 에 묶어 넘긴다
- * @property {() => boolean} [isStacked] 좁은 화면인가. 기본값은 ui/layout.isStacked
  * @property {Record<string, HTMLElement|null>} [elements] 테스트용 요소 주입
  */
 
@@ -214,7 +215,7 @@ export function formatRange(from, to, cols) {
  * 한 번 바인딩한다 — routineEditorView·linksBarView 와 같은 규약이다.
  *
  * @param {VideoPanelDeps} deps
- * @returns {{ render(): void, renderStatus(): void, syncSelection(): void, playerHost(): HTMLElement|null }}
+ * @returns {{ render(): void, renderStatus(): void, renderPip(): void, syncSelection(): void, playerHost(): HTMLElement|null }}
  */
 export function createVideoPanel(deps) {
   const {
@@ -231,6 +232,8 @@ export function createVideoPanel(deps) {
     getPlayerKind = () => 'null',
     getCurrentSec,
     onSeek = () => {},
+    getPipState = () => 'unavailable',
+    onTogglePip = () => {},
     getTrimState = () => 'no-server',
     getTrimError = () => '',
     onTrim = () => {},
@@ -238,7 +241,6 @@ export function createVideoPanel(deps) {
     // 영상 이름 바꾸기에 쓴다(원본 renameMove 와 같은 idiom). 넓히지 않으려고 promptText 하나만 받는다.
     dialogs = { promptText: (title, value) => window.prompt(title, value) },
     commands,
-    isStacked = layoutIsStacked,
     elements = {}
   } = deps;
 
@@ -249,6 +251,7 @@ export function createVideoPanel(deps) {
   const openBtn = byId('videoPanelBtn');          // 안무표 툴바의 진입점
   const followBtn = byId('videoFollowBtn');
   const collapseBtn = byId('videoCollapseBtn');
+  const pipBtn = byId('videoPipBtn');
   const floatBtn = byId('videoFloatBtn');
   const floatBar = byId('videoFloatBar');
   const floatDockBtn = byId('videoFloatDockBtn');
@@ -304,7 +307,6 @@ export function createVideoPanel(deps) {
   /** 마지막으로 세운 행 선택지의 `${cols}x${rows}`. 같으면 다시 만들지 않는다(선택·포커스 보존). */
   let rowOptionsSig = null;
   /** 이 세션에서 패널을 한 번이라도 열었는가. 좁은 화면의 '첫 열기는 접힌 채로' 판정에 쓴다. */
-  let openedOnce = false;
   /** 마지막 보정점 추가가 거부됐는가(앞뒤 점과 순서가 맞지 않음). 다음 성공이나 지우기가 지운다. */
   let pointRejected = false;
   /** 마지막 `박자에 반영` 이 거부된 마커 id. 다음 성공이나 마커 변경이 지운다. */
@@ -897,6 +899,7 @@ export function createVideoPanel(deps) {
     // 툴바 진입점의 활성 표시. '+ 빠른 배치' 와 같은 규칙이라 store 값에서 재도출한다.
     if (openBtn) openBtn.className = p.open ? CLS.quickBtnActive : CLS.ghost;
     if (followBtn) followBtn.className = p.follow ? CLS.quickBtnActive : CLS.ghost;
+    renderPip();
     if (collapseBtn) collapseBtn.textContent = p.collapsed ? '펼치기' : '접기';
 
     // ── 큰 창으로 띄우기(2026-09-13) ──
@@ -906,7 +909,11 @@ export function createVideoPanel(deps) {
     const floating = !!p.floating && shown && !p.collapsed;
     document.body.dataset.videofloat = floating ? 'on' : 'off';
     if (floatBtn) {
-      floatBtn.className = floating ? CLS.quickBtnActive : CLS.ghost;
+      // ⚠ className 을 통째로 쓰지 않는다. 이 버튼은 마크업에서 `only-wide` 를 달고 있고(좁은 화면에서
+      //   숨기는 장치), 통째로 덮으면 그 클래스가 날아가 **폰에서 `⤢ 크게` 가 보인다** — 화면보다 큰
+      //   창을 띄우는 버튼이 폰에 뜬 채로 2026-09-13 까지 있었다. 상태 클래스만 토글한다.
+      floatBtn.classList.toggle(CLS.quickBtnActive, floating);
+      floatBtn.classList.toggle(CLS.ghost, !floating);
       floatBtn.textContent = floating ? '⤡ 제자리로' : '⤢ 크게';
     }
     if (floating) placeFloat(p); else clearFloat();
@@ -938,13 +945,27 @@ export function createVideoPanel(deps) {
     return !!committed;
   }
 
+  /**
+   * `⧉ PiP` 버튼. **쓸 수 없으면 아예 감춘다** — 눌러도 안 되는 버튼은 없느니만 못하다.
+   * 재생기가 iframe(YouTube)이거나 영상이 아직 안 실렸으면 'unavailable' 이다.
+   * OS 쪽에서 창을 닫아도 상태가 따라오도록 app/main 이 재생기의 상태 변화에서 다시 부른다.
+   */
+  function renderPip() {
+    if (!pipBtn) return;
+    const state = getPipState();
+    pipBtn.hidden = state === 'unavailable';
+    pipBtn.className = state === 'on' ? CLS.quickBtnActive : CLS.ghost;
+    pipBtn.textContent = state === 'on' ? '⧉ PiP 끄기' : '⧉ PiP';
+  }
+
+  if (pipBtn) pipBtn.onclick = () => { onTogglePip(); };
+
   if (openBtn) {
     openBtn.onclick = () => {
-      const wasOpen = panelState().open;
+      // 2026-09-13 — 좁은 화면에서 처음 열 때 접던 것을 없앴다. 세로를 아끼려던 것인데,
+      // 접힌 패널은 헤더만 남아 `① 영상 고르기` 의 `📁 영상 파일 열기` 가 통째로 사라졌다 —
+      // 폰에서는 "파일을 여는 버튼이 아예 없는 앱"이 됐다. 접기는 손으로 누르면 된다.
       render(commands.togglePanel());
-      // 좁은 화면은 세로 예산이 빡빡하다 — 처음 열 때는 헤더만 남긴다(펼치기는 한 번 누르면 된다).
-      if (!wasOpen && !openedOnce && isStacked()) render(commands.setCollapsed({ collapsed: true }));
-      if (!wasOpen) openedOnce = true;
     };
   }
   if (closeBtn) closeBtn.onclick = () => render(commands.closePanel());
@@ -1218,6 +1239,7 @@ export function createVideoPanel(deps) {
     /** 선택이 바뀌었다 — `선택한 블록이 여기서 시작`·`선택한 블록에 맵핑` 의 활성 여부만 다시 잰다(패널이 닫혀 있으면 값만 바뀌고 안 보인다). */
     syncSelection: () => { renderTempo(); renderCapture(); renderCut(); },
     /** YT.Player 가 iframe 으로 갈아치울 자리. app/main 이 여기에 컨테이너를 만든다. */
+    renderPip,
     playerHost: () => frame
   };
 }

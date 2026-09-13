@@ -810,6 +810,8 @@ function ensurePlayer() {
     unsubscribeVideoState = player.onState(() => {
       videoDurationSec = player.getDuration();
       views.video?.renderStatus();
+      // PiP 는 OS 쪽에서 닫히기도 한다 — 우리가 켠 것만 알고 있으면 버튼이 거짓말을 한다.
+      views.video?.renderPip();
     });
     unsubscribeVideoTime = player.onTime(enforceLoop);
   }
@@ -1226,6 +1228,14 @@ views.video = createVideoPanel({
   getPlayerKind: () => player.kind,
   getCurrentSec: currentVideoSec,
   onSeek: seekVideoTo,
+  // 화면 속 화면(2026-09-13). 포트의 **선택 멤버**라 없는 재생기(YouTube iframe)는 조용히 'unavailable' 이다.
+  getPipState: () => (typeof player.pipState === 'function' ? player.pipState() : 'unavailable'),
+  // ⚠ 브라우저는 **클릭 콜스택 안에서만** PiP 를 켜 준다 — await 로 한 박자 늦추면 조용히 거절당한다.
+  //   그래서 여기서 곧바로 부르고, 결과는 돌아온 뒤 버튼에만 반영한다.
+  onTogglePip: () => {
+    if (typeof player.togglePip !== 'function') return;
+    player.togglePip().then(() => views.video?.renderPip());
+  },
   getTrimState: trimState,
   getTrimError: () => trimError,
   onTrim: trimCurrentClip,

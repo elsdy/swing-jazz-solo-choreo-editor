@@ -1492,6 +1492,57 @@ test('filePlayer: 준비되면 재생·탐색이 되고 seek 은 실제 착지 �
   assert.equal(env.made[0].src, '', 'src 를 비워 디코더를 놓는다');
 });
 
+test('filePlayer: PiP 는 표준·아이폰 두 방식을 다 알고, 못 쓰면 unavailable 이다', async () => {
+  // 영상이 실리기 전에는 켤 자리가 없다 — 요소도 없고, 메타데이터 전에는 크롬이 거절한다(실측).
+  const cold = stubbedFilePlayer();
+  assert.equal(cold.player.pipState(), 'unavailable');
+
+  // ── 표준(크롬·엣지·사파리 데스크톱) ──
+  const std = stubbedFilePlayer();
+  await std.player.load({ kind: 'file', url: 'blob:good', name: 'a.mp4' });
+  assert.equal(std.player.getState().load, 'ready', '메타데이터가 실려야 PiP 를 잰다');
+  const el = std.env.made[0];
+  // 문서가 허락하고 요소가 API 를 가졌을 때만 쓸 수 있다 — 둘 중 하나만 있으면 안 된다.
+  assert.equal(std.player.pipState(), 'unavailable', 'API 가 없는데 쓸 수 있다고 했다');
+  std.env.doc.pictureInPictureEnabled = true;
+  el.requestPictureInPicture = async () => { std.env.doc.pictureInPictureElement = el; };
+  assert.equal(std.player.pipState(), 'off');
+
+  assert.equal(await std.player.togglePip(), 'on');
+  assert.equal(std.player.pipState(), 'on');
+  std.env.doc.exitPictureInPicture = async () => { std.env.doc.pictureInPictureElement = null; };
+  assert.equal(await std.player.togglePip(), 'off');
+
+  // 문서가 막아 둔 영상은 존중한다.
+  el.disablePictureInPicture = true;
+  assert.equal(std.player.pipState(), 'unavailable');
+
+  // ── 아이폰 사파리: 표준이 없고 webkit 만 있다 ──
+  const ios = stubbedFilePlayer();
+  await ios.player.load({ kind: 'file', url: 'blob:good', name: 'a.mp4' });
+  const iel = ios.env.made[0];
+  iel.webkitSupportsPresentationMode = true;
+  iel.webkitPresentationMode = 'inline';
+  iel.webkitSetPresentationMode = (mode) => { iel.webkitPresentationMode = mode; };
+  assert.equal(ios.player.pipState(), 'off');
+  assert.equal(await ios.player.togglePip(), 'on');
+  assert.equal(iel.webkitPresentationMode, 'picture-in-picture');
+  assert.equal(await ios.player.togglePip(), 'off');
+  assert.equal(iel.webkitPresentationMode, 'inline');
+
+  // 거절해도 던지지 않는다 — 사용자에게는 "안 켜졌다"가 전부다.
+  const nope = stubbedFilePlayer();
+  await nope.player.load({ kind: 'file', url: 'blob:good', name: 'a.mp4' });
+  nope.env.doc.pictureInPictureEnabled = true;
+  nope.env.made[0].requestPictureInPicture = async () => { throw new Error('차단됨'); };
+  assert.equal(await nope.player.togglePip(), 'off');
+
+  // 재생기를 버린 뒤에는 조용히 unavailable 이다.
+  std.player.destroy();
+  assert.equal(std.player.pipState(), 'unavailable');
+  assert.equal(await std.player.togglePip(), 'unavailable');
+});
+
 test('filePlayer: 디코드 실패는 {load:"error"} 로, 자동재생 차단은 "blocked" 로 드러난다', async () => {
   const bad = stubbedFilePlayer();
   await bad.player.load({ kind: 'file', url: 'blob:bad' });

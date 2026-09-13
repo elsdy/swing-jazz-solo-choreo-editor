@@ -49,7 +49,10 @@ const ERROR_CODE_OF = Object.freeze({
 
 /** 이 어댑터가 <video> 에 거는 이벤트 전부. destroy 가 같은 목록으로 뗀다. */
 const VIDEO_EVENTS = Object.freeze([
-  'loadedmetadata', 'error', 'play', 'playing', 'pause', 'ended', 'waiting', 'seeked', 'timeupdate', 'ratechange'
+  'loadedmetadata', 'error', 'play', 'playing', 'pause', 'ended', 'waiting', 'seeked', 'timeupdate', 'ratechange',
+  // PiP(2026-09-13). 사용자가 OS 쪽 창을 닫거나 되돌릴 수 있으므로 **우리가 켠 것만 알고 있으면 안 된다** —
+  // 표준 둘과 iOS 사파리의 webkit 하나를 다 듣는다. 모르는 이벤트 이름은 그냥 안 불릴 뿐이다.
+  'enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged'
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -426,6 +429,43 @@ export function createFilePlayer(options = {}) {
     },
 
     /** ★ 멱등. 타이머·구독·<video> 를 전부 걷고 컨테이너를 **비운 채로** 남긴다. */
+    /**
+     * 화면 속 화면을 지금 쓸 수 있는가. 실제로 눌러 보기 전에는 알 수 없는 것이 많아
+     * (확장 프로그램 차단·정책·기기) 여기서는 **API 와 영상 유무만** 본다.
+     * @returns {import('../../ports/media.js').PipState}
+     */
+    pipState() {
+      if (!video || destroyed) return 'unavailable';
+      if (isPipActive(video)) return 'on';
+      // ⚠ **메타데이터 전에는 켤 수 없다.** 크롬이 InvalidStateError 로 거절한다(실측) — 그 사이에
+      //   버튼을 보여 주면 눌러도 아무 일이 없는 버튼이 된다. load 가 'ready' 가 곧 그 시점이다.
+      if (loadState !== 'ready') return 'unavailable';
+      return pipSupported(video) ? 'off' : 'unavailable';
+    },
+
+    /**
+     * 켜고 끈다. **클릭 핸들러 콜스택 안에서 불러야** 브라우저가 허락한다.
+     * 실패는 던지지 않는다 — 사용자에게는 "안 켜졌다"가 전부이고, 상태로 알린다.
+     * @returns {Promise<import('../../ports/media.js').PipState>}
+     */
+    async togglePip() {
+      if (!video || destroyed) return 'unavailable';
+      try {
+        if (isPipActive(video)) {
+          if (typeof video.webkitSetPresentationMode === 'function') video.webkitSetPresentationMode('inline');
+          else if (doc && typeof doc.exitPictureInPicture === 'function') await doc.exitPictureInPicture();
+          return 'off';
+        }
+        if (!pipSupported(video)) return 'unavailable';
+        // ⚠ 아이폰 사파리는 표준 requestPictureInPicture 가 없고 webkit 쪽만 있다. 표준을 먼저 본다.
+        if (typeof video.requestPictureInPicture === 'function') await video.requestPictureInPicture();
+        else video.webkitSetPresentationMode('picture-in-picture');
+        return isPipActive(video) ? 'on' : 'off';
+      } catch {
+        return isPipActive(video) ? 'on' : 'off';
+      }
+    },
+
     destroy() {
       if (destroyed) return;
       destroyed = true;
@@ -442,6 +482,24 @@ export function createFilePlayer(options = {}) {
       error = null;
     }
   };
+
+  /**
+   * 표준(크롬·엣지·사파리 데스크톱)과 아이폰 사파리의 webkit 방식을 둘 다 본다.
+   * `disablePictureInPicture` 는 문서가 명시적으로 막은 경우라 존중한다.
+   */
+  function pipSupported(el) {
+    if (!el || el.disablePictureInPicture) return false;
+    if (doc && doc.pictureInPictureEnabled && typeof el.requestPictureInPicture === 'function') return true;
+    return el.webkitSupportsPresentationMode === true
+      && typeof el.webkitSetPresentationMode === 'function';
+  }
+
+  /** 지금 떠 있는가. 표준은 문서가 알고, 아이폰은 요소가 안다. */
+  function isPipActive(el) {
+    if (!el) return false;
+    if (doc && doc.pictureInPictureElement === el) return true;
+    return el.webkitPresentationMode === 'picture-in-picture';
+  }
 
   /** play() 의 거부 → PlayResult. 자동재생 차단은 'blocked', 그 밖은 'error'(상태도 오류로 바꾸지 않는다). */
   function classifyPlayError(e) {
