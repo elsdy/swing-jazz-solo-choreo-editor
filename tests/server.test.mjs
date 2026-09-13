@@ -426,3 +426,59 @@ test('server.py: 자세 분석 모델의 보관 위치를 설정으로 바꾸고
     s.stop();
   }
 });
+
+test('server.py: 안무표는 projects 폴더에 덮어쓰기로 쌓이고, 지우면 파일까지 없어진다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    const put = (name, body) => fetch(`${s.base}/api/projects?name=${encodeURIComponent(name)}`,
+      { method: 'PUT', body: JSON.stringify(body) });
+
+    // 한글·공백 이름이 그대로 파일 이름이 된다(확장자는 서버가 붙인다).
+    let res = await put('9월 공연 안무', { version: 1, fileName: '9월 공연 안무' });
+    assert.equal(res.status, 201);
+    const saved = await res.json();
+    assert.equal(saved.name, '9월 공연 안무.json');
+    assert.equal(saved.dir, path.join(s.root, 'projects'));
+    assert.ok(existsSync(path.join(s.root, 'projects', '9월 공연 안무.json')));
+
+    // ⚠ 클립과 반대로 **덮어쓴다** — 같은 안무를 여러 번 저장하는 것이 정상이라, ' (2)' 가 붙으면
+    //   목록이 같은 이름으로 가득 찬다.
+    res = await put('9월 공연 안무', { version: 2, fileName: '9월 공연 안무' });
+    assert.equal(res.status, 201);
+    assert.deepEqual(readdirSync(path.join(s.root, 'projects')), ['9월 공연 안무.json']);
+    const back = await (await fetch(`${s.base}/api/projects/${encodeURIComponent('9월 공연 안무')}`)).json();
+    assert.equal(back.version, 2, '덮어쓰지 않고 옛 내용이 남았다');
+
+    // JSON 이 아닌 본문은 받아 두지 않는다 — 받아 두면 다음에 여는 쪽에서 터진다.
+    res = await fetch(`${s.base}/api/projects?name=깨진것`, { method: 'PUT', body: '{not json' });
+    assert.equal(res.status, 400);
+    assert.ok(!existsSync(path.join(s.root, 'projects', '깨진것.json')));
+
+    // 폴더 밖으로 나가려는 이름은 한 조각으로 접힌다(safe_segment).
+    res = await put('../탈출', { version: 1 });
+    assert.equal(res.status, 201);
+    assert.equal((await res.json()).name, '_탈출.json', '구분자가 접히지 않았다');
+    assert.ok(!existsSync(path.join(s.root, '탈출.json')), '보관 폴더 밖에 파일이 생겼다');
+
+    // 목록은 최근에 고친 것이 앞이고, 이것이 앱의 최근 프로젝트 목록의 주인이다.
+    await put('3월 워크샵', { version: 1 });
+    const list = await (await fetch(`${s.base}/api/projects`)).json();
+    assert.equal(list.projects[0].name, '3월 워크샵.json');
+    assert.equal(list.projects.length, 3);
+
+    // 삭제는 목록이 아니라 **파일**을 지운다 — 목록의 주인이 폴더라 파일이 남으면 도로 나타난다.
+    res = await fetch(`${s.base}/api/projects?name=${encodeURIComponent('3월 워크샵')}`, { method: 'DELETE' });
+    assert.equal(res.status, 200);
+    assert.ok(!existsSync(path.join(s.root, 'projects', '3월 워크샵.json')));
+    const after = await (await fetch(`${s.base}/api/projects`)).json();
+    assert.deepEqual(after.projects.map(p => p.name).sort(), ['9월 공연 안무.json', '_탈출.json']);
+
+    // 두 번 눌러도 성공이다(멱등) — 두 번째만 빨개지는 것을 막는다.
+    res = await fetch(`${s.base}/api/projects?name=${encodeURIComponent('3월 워크샵')}`, { method: 'DELETE' });
+    assert.equal(res.status, 200);
+
+    // 없는 것을 읽으면 404, 이름이 없으면 400.
+    assert.equal((await fetch(`${s.base}/api/projects/없는것`)).status, 404);
+    assert.equal((await fetch(`${s.base}/api/projects?name=`, { method: 'DELETE' })).status, 400);
+  } finally { s.stop(); }
+});

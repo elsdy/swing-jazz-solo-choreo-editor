@@ -448,7 +448,13 @@ views.savedLists = createSavedListsView({
     mergeProjectFromRecent: (data, item) => openFromFolder(data, item, ProjectCmd.mergeProjectFromRecent),
     loadMoveListFromRecent: (data) => ProjectCmd.loadMoveListFromRecent(projectDeps, data),
     loadCategoriesFromRecent: (data) => ProjectCmd.loadCategoriesFromRecent(projectDeps, data),
-    removeRecent: (kind, fileName) => ProjectCmd.removeRecent(projectDeps, kind, fileName),
+    // ⚠ 프로젝트는 폴더가 목록의 주인이라 **파일까지 지운다**(2026-09-13 결정). 목록에서만 지우면
+    //   새로고침에 도로 나타나 「지웠다」가 거짓이 된다. 동작·카테고리 목록은 폴더가 없으므로 그대로.
+    removeRecent: (kind, fileName) => {
+      const dirty = ProjectCmd.removeRecent(projectDeps, kind, fileName);
+      if (kind === 'projects') projectServer.remove(fileName);
+      return dirty;
+    },
     setRecentSort: (mode) => ProjectCmd.setRecentSort(projectDeps, mode)
   }
 });

@@ -17,6 +17,7 @@
     PUT  /api/projects?name=N             본문 = 안무표 JSON. <root>/<projectsSubdir>/<N>.json 으로 저장(**덮어쓴다**)
     GET  /api/projects                    보관된 안무표 목록 [{name, size, mtime}] — 최근 목록의 주인
     GET  /api/projects/<이름>             그 파일을 그대로 내준다
+    DELETE /api/projects?name=N           그 파일을 지운다(되돌릴 수 없다 — 휴지통이 없다)
     HEAD /api/clips/<path>                있는지(200/404)
     GET  /clips/<path>                    파일. Range 를 지원한다(<video> 탐색에 필수)
     POST /api/clips/trim {path, inSec, outSec}   보관된 클립을 [inSec, outSec) 로 잘라 **다시 인코딩**해 같은 폴더에
@@ -849,6 +850,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_error(HTTPStatus.NOT_FOUND)
         return super().do_HEAD()
 
+    def do_DELETE(self):
+        # ⚠ 지금 지우는 것은 **프로젝트 파일뿐**이다. 영상 클립은 지우지 않는다 — 수십 MB 를
+        #   되돌릴 길 없이 날리는 버튼을 만들지 않기로 했다(2026-09-13 결정).
+        url = urlsplit(self.path)
+        if url.path == '/api/projects':
+            return self._delete_project(parse_qs(url.query))
+        return self._error(HTTPStatus.NOT_FOUND, 'no such endpoint')
+
     def do_PUT(self):
         url = urlsplit(self.path)
         if url.path == '/api/config':
@@ -1178,6 +1187,26 @@ class Handler(SimpleHTTPRequestHandler):
             'ok': True, 'name': target.name, 'size': st.st_size, 'mtime': int(st.st_mtime),
             'dir': str(self.config.projects_dir),
         })
+
+    def _delete_project(self, query):
+        """보관 폴더의 안무표 하나를 지운다. **되돌릴 수 없다** — 휴지통에 넣지 않는다.
+
+        목록의 주인이 이 폴더이므로, 목록에서만 지우면 새로고침에 도로 나타난다. 「지웠다」가
+        참이 되려면 파일이 없어져야 한다. 없는 파일을 지우라고 해도 성공으로 답한다(멱등) —
+        두 번 눌렀을 때 두 번째만 빨개지는 것을 막는다.
+        """
+        name = (query.get('name') or [''])[0]
+        target = self._project_file(name)
+        if not target:
+            return self._error(HTTPStatus.BAD_REQUEST, 'name required')
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f'delete failed: {exc}')
+        return self._json(HTTPStatus.OK, {'ok': True, 'name': target.name,
+                                          'dir': str(self.config.projects_dir)})
 
     def _list_projects(self):
         """보관 폴더의 .json 목록. **이것이 최근 프로젝트 목록의 주인**이다(브라우저는 순서만 기억한다)."""

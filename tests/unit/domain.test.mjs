@@ -3700,6 +3700,18 @@ test('projectServer: 목록은 서버가 준 순서 그대로 돌려준다(정�
   assert.deepEqual(await weird.list(), []);
 });
 
+test('projectServer: 지우기는 DELETE 로 가고 서버가 없으면 false 다', async () => {
+  const f = fakeFetch(okJson({ ok: true, name: '9월 공연.json', dir: '/p' }));
+  const api = createProjectServer({ fetchImpl: f });
+  assert.equal(await api.remove('9월 공연'), true);
+  assert.equal(f.calls[0].method, 'DELETE');
+  assert.equal(f.calls[0].url, `/api/projects?name=${encodeURIComponent('9월 공연')}`);
+
+  assert.equal(await api.remove(''), false, '빈 이름은 보내지도 않는다');
+  assert.equal(f.calls.length, 1);
+  assert.equal(await createProjectServer({ fetchImpl: null }).remove('가'), false);
+});
+
 test('projectServer: 없는 파일을 읽으면 null 이고, 있으면 내용 그대로다', async () => {
   const api = createProjectServer({
     // 경로에도 인코딩이 걸리므로 가짜 서버도 디코드해서 본다.

@@ -26,6 +26,7 @@ function defaultFetch() {
  *   save: (name: string, payload: unknown) => Promise<{name:string, size:number, dir:string}|null>,
  *   list: () => Promise<ProjectEntry[]>,
  *   read: (name: string) => Promise<any|null>,
+ *   remove: (name: string) => Promise<boolean>,
  *   dirOf: () => Promise<string>
  * }}
  */
@@ -84,6 +85,18 @@ export function createProjectServer(options = {}) {
       const safe = String(name || '').trim();
       if (!safe) return null;
       return call('GET', `/api/projects/${q(safe)}`);
+    },
+
+    /**
+     * 보관된 파일 하나를 지운다. **되돌릴 수 없다** — 휴지통이 없다.
+     * 목록의 주인이 폴더라, 목록에서만 지우면 새로고침에 도로 나타나기 때문에 여기까지 간다.
+     * @param {string} name
+     * @returns {Promise<boolean>} 서버가 없거나 실패하면 false
+     */
+    async remove(name) {
+      if (!String(name || '').trim()) return false;
+      const data = await call('DELETE', `/api/projects?name=${q(name)}`);
+      return Boolean(data && data.ok);
     },
 
     /** 지금 보관 폴더의 실제 경로. 설정 화면이 「어디에 쌓이는지」를 보여 줄 때 쓴다. */
