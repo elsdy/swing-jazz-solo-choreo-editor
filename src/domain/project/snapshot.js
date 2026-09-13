@@ -14,6 +14,9 @@ import { UNDO_FIELDS, ROUTINE_UNDO_FIELDS, DOC_FIELDS, LINK_FIELDS } from './sch
 //   media 의 기본값은 domain/tempo.js 의 DEFAULT_TEMPO 라 손으로 적으면 그 상수가 두 벌이 된다.
 //   그래서 media 만 정규화 함수를 빌려 온다(domain → domain 이라 계층 규칙 위반이 아니다).
 import { normalizeMedia } from './media.js';
+// 세 번째 import. phrasing 도 media 와 같은 이유다 — 기본값이 domain/phrasing.js 의 DEFAULT_PHRASING 이라
+// 손으로 적으면 그 상수가 두 벌이 된다.
+import { normalizePhrasing } from '../phrasing.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 복제 — 브라우저의 구조적 복제 내장 함수는 도메인에서 금지라 명시적 재귀 복제를 쓴다
@@ -114,6 +117,7 @@ export function pickUndoFields(source) {
   for (const key of UNDO_FIELDS) {
     if (key === 'links') out[key] = toLinkBundle(source.links);
     else if (key === 'media') out[key] = normalizeMedia(source.media);
+    else if (key === 'phrasing') out[key] = normalizePhrasing(source.phrasing);
     else out[key] = source[key];
   }
   return out;
@@ -189,7 +193,8 @@ export function applySnapshot(snapshot, deps = {}) {
     moveLibrary: data.moveLibrary || [],
     categories: normalizeCategories(data.categories || defaultCategories),
     links: toLinkBundle(data.links),
-    media: normalizeMedia(data.media)
+    media: normalizeMedia(data.media),
+    phrasing: normalizePhrasing(data.phrasing)
   };
   if (Array.isArray(data.routines)) patch.routines = data.routines;
   return patch;

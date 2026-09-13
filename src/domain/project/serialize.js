@@ -6,6 +6,7 @@
 
 import { LEGACY_FILE_VERSION } from './schema.js';
 import { serializeMedia } from './media.js';
+import { serializePhrasing } from '../phrasing.js';
 
 /** 프로젝트 파일이 이미 쓰는 최상위 키. passthrough 가 이것들을 덮어쓰지 못하게 막는다. */
 const PROJECT_KEYS = new Set([
@@ -13,7 +14,9 @@ const PROJECT_KEYS = new Set([
   'placements', 'routines', 'youtubeUrl', 'youtubeTitle', 'clickupUrl', 'customLinks',
   // 2026-09 신설. 값이 비면 아래에서 키를 아예 쓰지 않지만, 목록에는 있어야 한다 —
   // 없으면 passthrough 가 옛 파일의 media 를 되살려 우리가 뺀 자리에 도로 끼워 넣는다.
-  'media'
+  'media',
+  // 2026-09-13 신설. 위와 같은 이유로 목록에 있어야 한다.
+  'phrasing'
 ]);
 
 /** 카테고리 사전을 키 오름차순으로 재조립한다. 동작목록·카테고리 두 파일이 같은 규칙을 쓴다(4051·4062). */
@@ -60,6 +63,7 @@ export function buildProjectFile(source, options = {}) {
     ? favoriteRoutineIds
     : new Set(Array.isArray(favoriteRoutineIds) ? favoriteRoutineIds : []);
   const media = serializeMedia(source.media);
+  const phrasing = serializePhrasing(source.phrasing);
 
   return {
     version: LEGACY_FILE_VERSION,
@@ -79,6 +83,9 @@ export function buildProjectFile(source, options = {}) {
     // ⚠ 빈 media 는 키째로 빠진다(serializeMedia → null). 템포를 한 번도 안 정한 사용자의
     //   저장 파일은 영상 기능이 들어오기 전과 **바이트 단위로 같아야** 한다.
     ...(media ? { media } : {}),
+    // ⚠ 빈 phrasing 도 키째로 빠진다(serializePhrasing → null). 프레이즈 표시를 한 번도 켜지 않은
+    //   사용자의 저장 파일은 이 기능이 들어오기 전과 바이트가 같다.
+    ...(phrasing ? { phrasing } : {}),
     ...unknownKeys(passthrough, PROJECT_KEYS)
   };
 }

@@ -15,6 +15,7 @@ import { normalize as normalizeCategories } from '../categories.js';
 import { normalizeLibrary } from '../moves.js';
 import { normalizeRoutine } from '../routines.js';
 import { normalizeMedia } from './media.js';
+import { normalizePhrasing } from '../phrasing.js';
 
 /** ids 는 함수(`()=>string`)와 `{uid}` 객체를 모두 받는다 — domain/placements.js 와 같은 규약. */
 function uidOf(ids) {
@@ -114,6 +115,9 @@ export function normalizeProject(data, deps) {
   // DEFAULT_MEDIA(bpm 0 = 미설정)로 떨어뜨린다. 그 값은 isEmptyMedia 가 참이라 다시 저장할 때
   // 파일에서 키째로 빠진다 — 열었다 저장하는 왕복이 바이트를 늘리지 않는다.
   const media = normalizeMedia(data.media);
+  // phrasing 도 같다(2026-09-13). 없는 옛 파일은 DEFAULT_PHRASING(on:false)으로 떨어지고,
+  // 그 값은 isEmptyPhrasing 이 참이라 다시 저장할 때 키째로 빠진다.
+  const phrasing = normalizePhrasing(data.phrasing);
 
-  return { rows, cols, categories, moveLibrary, placements, routines, favoriteRoutineIds, media, fileName: data.fileName || '' };
+  return { rows, cols, categories, moveLibrary, placements, routines, favoriteRoutineIds, media, phrasing, fileName: data.fileName || '' };
 }

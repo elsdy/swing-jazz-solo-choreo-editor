@@ -294,6 +294,43 @@
       pointer-events: none;
     }
     .cell-overlay div { border-right: 1px solid rgba(148,163,184,0.14); }
+
+    /* ── 프레이즈·코러스 표시(2026-09-13) ──
+       ui/boardView.syncPhrasing 이 행에 붙인 data-* 와 --phraseColor/--chorusColor 만 읽는다.
+       색을 고르는 것은 domain/phrasing.js 이고 여기는 **어디에 칠할지**만 안다.
+
+       ⚠ 자리를 나눠 쓴다 — 가운데 트랙 테두리 = 프레이즈, 행 양 끝(마디 이름·비고) 테두리 = 코러스.
+         한 자리에 둘을 겹치면 어느 쪽이 바뀐 것인지 읽히지 않는다.
+       ⚠ **테두리 두께를 바꾸지 않는다.** `* { box-sizing: border-box }` 라 1px → 2px 이 되면
+         트랙 안쪽 원점이 1px 밀려 배치·오버레이가 전부 따라 움직인다. 굵기는 inset box-shadow 로 낸다. */
+    .board-row[data-phrase] .track {
+      border-color: var(--phraseColor);
+      box-shadow: inset 0 0 0 1px var(--phraseColor);
+    }
+    /* 프레이즈의 첫 마디는 윗변을 굵게 — 색이 바뀌는 자리를 눈이 먼저 잡는다. */
+    .board-row[data-phrase-start] .track {
+      box-shadow: inset 0 0 0 1px var(--phraseColor), inset 0 3px 0 0 var(--phraseColor);
+    }
+    .board-row[data-chorus] .row-label,
+    .board-row[data-chorus] .note-cell { border-color: var(--chorusColor); }
+    .board-row[data-chorus-start] .row-label {
+      box-shadow: inset 0 3px 0 0 var(--chorusColor);
+    }
+    /* 코러스가 바뀌는 자리에 숨을 준다. .board 가 grid + gap 이라 이 margin 은 그 위에 더해진다. */
+    .board-row[data-chorus-start] { margin-top: 10px; }
+    /* 마디 이름 아래의 `코러스-프레이즈` 꼬리표. ⚠ 자식이 아니라 ::after 다 —
+       renderRow 가 label.textContent 를 덮어쓰므로 자식은 행을 다시 그릴 때마다 사라진다. */
+    .row-label[data-phrase-tag] { flex-direction: column; gap: 3px; }
+    .row-label[data-phrase-tag]::after {
+      content: attr(data-phrase-tag);
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1.5;
+      padding: 0 7px;
+      border-radius: 999px;
+      color: var(--chorusColor, #94a3b8);
+      background: rgba(148,163,184,0.12);
+    }
     .preview-block {
       position: absolute;
       top: 6px;

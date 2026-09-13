@@ -45,6 +45,7 @@ import * as Grid from '../domain/grid.js';
  *   updateRows(rows: number[]|'all', deps?: any): void,
  *   renderRow(row: number, deps?: any): void,
  *   setSelected(ids: Iterable<string>|Set<string>): void,
+ *   syncPhrasing(markOf: ((row:number) => object|null)|null): void,
  *   signature(): string|null
  * }}
  */
@@ -278,6 +279,44 @@ export function createBoardView(options) {
    * @param {Iterable<string>|Set<string>|null|undefined} ids
    * @returns {void}
    */
+  /**
+   * 프레이즈·코러스 표시를 행에 입힌다(2026-09-13). **행을 다시 그리지 않는다** — 배치와 무관한
+   * 표시라 dataset 과 CSS 변수만 건드린다(selection 과 같은 결의 조작이다).
+   *
+   * ⚠ `markOf` 는 도메인(domain/phrasing.phraseMark)이 만든 것을 app/main 이 묶어 넘긴다. 여기서는
+   *   색도 번호도 계산하지 않는다 — ui 는 "어디에 칠할지"만 안다.
+   * ⚠ 마디 이름 칸의 꼬리표는 **자식이 아니라 `data-phrase-tag` + CSS ::after** 다. renderRow 가
+   *   `label.textContent` 를 덮어쓰므로 자식으로 넣으면 행을 다시 그릴 때마다 조용히 사라진다.
+   * ⚠ 골격을 다시 세우면 dataset 이 날아간다 — 호출부(app/render)가 skeleton 뒤에 다시 부른다.
+   * @param {((row:number) => object|null)|null} markOf
+   * @returns {void}
+   */
+  function syncPhrasing(markOf) {
+    for (const [row, ref] of rowRefs) {
+      const mark = typeof markOf === 'function' ? markOf(row) : null;
+      const { rowEl, label } = ref;
+      if (!mark) {
+        delete rowEl.dataset[DATA.phrase];
+        delete rowEl.dataset[DATA.chorus];
+        delete rowEl.dataset[DATA.phraseStart];
+        delete rowEl.dataset[DATA.chorusStart];
+        rowEl.style.removeProperty('--phraseColor');
+        rowEl.style.removeProperty('--chorusColor');
+        delete label.dataset[DATA.phraseTag];
+        label.removeAttribute('title');
+        continue;
+      }
+      rowEl.dataset[DATA.phrase] = String(mark.phrase);
+      rowEl.dataset[DATA.chorus] = String(mark.chorus);
+      if (mark.isPhraseStart) rowEl.dataset[DATA.phraseStart] = DATA.FLAG_ON; else delete rowEl.dataset[DATA.phraseStart];
+      if (mark.isChorusStart) rowEl.dataset[DATA.chorusStart] = DATA.FLAG_ON; else delete rowEl.dataset[DATA.chorusStart];
+      rowEl.style.setProperty('--phraseColor', mark.phraseColor);
+      rowEl.style.setProperty('--chorusColor', mark.chorusColor);
+      label.dataset[DATA.phraseTag] = mark.tag;
+      label.title = `코러스 ${mark.chorus} · 프레이즈 ${mark.phraseInChorus} (전체 ${mark.phrase}번째)`;
+    }
+  }
+
   function setSelected(ids) {
     const next = ids instanceof Set ? ids : new Set(ids || []);
     // ① 빠진 것 제거
@@ -305,6 +344,7 @@ export function createBoardView(options) {
     updateRows: renderRows,
     renderRow,
     setSelected,
+    syncPhrasing,
     /** 지금 세워져 있는 골격의 시그니처(테스트·디버그용). */
     signature() { return boardSig; },
   };

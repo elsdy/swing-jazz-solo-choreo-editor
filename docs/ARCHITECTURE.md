@@ -232,6 +232,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `bodyMesh.js` | 관절점 → 몸 표면 메시(2026-09-12). 뼈마다 통을 씌우고 몸통을 잇고 머리를 얹는다. 돌리기·평행 투영도 여기 있다(그리는 일은 `ui/meshView.js`). **몸매 복원이 아니라** 평균 몸을 관절 길이에 맞춰 늘리는 것이다 — 굵기 표(`RADII`)가 그 평균값이고, 관절이 없는 부위는 만들지 않는다 |
 | `markers.js` | 영상 구간 ↔ 안무표 카운트 구간 마커(2026-09-10). 정규화·추가·삭제·잘라내기 뒤 이동(`shiftMarkersForTrim`). id 는 값에서 결정론적으로 만들어 난수가 없다. 마커는 변환(tempo)을 건드리지 않는다 — 박자에 반영하는 것은 유스케이스의 명시적 조작이다 |
 | `choreoPlan.js` | LLM 플랜(`server.py` PLAN_SCHEMA) → 격자 항목. 이름을 동작 목록과 느슨하게 맞추고(공백·대소문자 무시, 3글자 이상 포함), 마디를 넘는 카운트를 다음 마디로 넘기며, 못 쓰는 항목은 버린 이유와 함께 남긴다 |
+| `phrasing.js` | 프레이즈·코러스 구조. 마디 번호 → 몇 번째 프레이즈·코러스인가와 그 색. 색을 **전역 순번**으로 고르는 한 줄 규칙이 32마디 곡과 블루스를 함께 맞춘다(팔레트 길이를 4·6 으로 어긋나게 둔 것도 같은 이유) |
 | `project/schema.js` | 저장 포맷 상수와 필드 목록. 로직이 없고 import 도 0개. `UNDO_FIELDS` 와 `DOC_FIELDS` 는 같은 집합이다(`rows` `cols` `placements` `moveLibrary` `categories` `routines` `links` `media`, 순서만 다르다) — 파일과 undo 가 같은 것을 상태로 본다 |
 | `project/media.js` | 영상 블록(`{tempo, source}`)의 정규화·직렬화. **비어 있으면 `serializeMedia` 가 `null` 을 돌려주고 파일에서 키가 통째로 빠진다** — 영상을 안 쓴 사용자의 저장 파일은 이 기능 전과 바이트가 같다. 로직이 있어야 해서 `schema.js`(import 0개 리프)가 아니라 여기다 |
 | `project/serialize.js` | 파일로 내보낼 페이로드 조립 |
@@ -279,6 +280,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `poseCommands.js` | 자세 분석의 화면 상태(2026-09-12). **관절점은 여기 들어오지 않는다** — 30초를 12fps 로 보면 숫자 수만 개라 undo 스냅샷이 통째로 불어난다. store 에는 요약(몇 장·몇 명·어느 궤적·앵커)만 있고 결과는 `app/main.js` 가 모듈 변수로 든다. undo 도 타지 않는다 — 분석은 안무가 아니라 영상을 들여다보는 일이다 |
 | `videoCommands.js` | 영상 패널 상태·두 점 앵커·탭 템포·소스 확정·`clearMedia`. **DOM 도 플레이어도 시계도 모른다** — 시각(초)은 전부 인자로 들어온다(`check-arch` 가 `performance` 를 막는다). 재생 위치·재생 상태는 여기에도 store 에도 없다 |
 | `planCommands.js` | 플랜 미리보기와 채우기. 새 배치 경로를 만들지 않고 `paletteCommands.createAndPlace`(빠른 동작 생성과 같은 길)로 하나씩 놓는다 — 겹침·스택·클램프가 손으로 놓을 때와 같아진다. 행이 모자라면 `setBoardRows` |
+| `phrasingCommands.js` | 곡 구조 바꾸기(프리셋·토글·직접 입력). Dirty 는 `{phrasing:true}` 하나 — 배치가 안 바뀌므로 행을 다시 그리지 않는다 |
 | `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 8필드(링크·영상 템포 포함), 루틴은 3필드. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
 
 ### `src/ui/` — DOM 렌더
@@ -301,6 +303,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
 | `composeView.js` | 상단 `✨ 말로 채우기` 팝업. 음성 인식(webkitSpeechRecognition) → 다듬기 → 스키마 → 미리보기 → 채우기의 세 단. LLM 은 주입받은 어댑터로, 배치는 주입받은 유스케이스로 |
 | `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 첫 항목이 영상 보관 폴더다. docsHub 처럼 자기 DOM·CSS 를 만들고, 어댑터는 함수로 주입받는다 |
+| `phrasingView.js` | 도구 모음의 `🎵 프레이즈` 버튼과 팝업. 숫자를 받는 창이고, 칠하는 것은 `boardView.syncPhrasing` 이다 |
 | `meshView.js` | 몸 메시를 캔버스에 그린다(2026-09-12). 가림은 화가 알고리즘 한 줄로 푼다 — 면을 먼 것부터 칠하면 가까운 면이 덮는다. 이 한 줄이 three.js 를 안 들이는 이유다. 영상 위에 겹칠 때는 `xScale` 로 가로 눌림을 다시 적용한다 |
 | `poseOverlay.js` | 영상 위에 관절·몸을 겹쳐 그린다(2026-09-12, 채널 B). `playhead.js` 와 같은 규약이다 — rAF 루프가 자기 캔버스에만 그리고 store 는 게터로만 읽는다. **프레임이 아니라 영상이 그려진 칸**에 맞춘다(레터박스), 측정은 `invalidate()` 뒤 한 번뿐이다 |
 | `poseView.js` | 영상 패널의 `자세 분석` 구획. 마크업은 `index.html` 이고 이 파일이 묶는다 — `videoPanel.js` 가 이미 커서 구획 하나를 뗐다. 히스토리를 건드리지 않는다 |

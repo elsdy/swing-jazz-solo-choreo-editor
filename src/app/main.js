@@ -58,6 +58,7 @@ import { createRoutineEditorView } from '../ui/routineEditorView.js';
 import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createDocsHub } from '../ui/docsHub.js';
 import { createSettingsView } from '../ui/settingsView.js';
+import { createPhrasingView } from '../ui/phrasingView.js';
 import { createClipLibrary } from '../adapters/clipLibrary.js';
 import { createClipServer } from '../adapters/clipServer.js';
 import { createProjectServer } from '../adapters/projectServer.js';
@@ -65,6 +66,8 @@ import { createModelServer } from '../adapters/modelServer.js';
 import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
 import * as PlanCmd from '../usecases/planCommands.js';
+import * as PhrasingCmd from '../usecases/phrasingCommands.js';
+import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
 import { clipDirParts, findStoredClip } from '../domain/clips.js';
 import { createVideoPanel } from '../ui/videoPanel.js';
@@ -1584,3 +1587,28 @@ createComposeView({
   getCols: () => store.board(BOARD_MAIN).cols,
   hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 20. 프레이즈·코러스 — 곡 구조를 색으로 드러낸다. 칠하는 곳은 boardView.syncPhrasing 이고
+//     이 뷰는 숫자를 받는 창이다. 첫 렌더는 아래 한 줄이 겸한다(켜져 있는 파일을 열었을 때).
+// ─────────────────────────────────────────────────────────────────────────────
+
+views.phrasing = createPhrasingView({
+  container: document.querySelector('.top-actions'),
+  getPhrasing: () => PhrasingCmd.phrasingState(store),
+  getRows: () => store.board(BOARD_MAIN).rows,
+  getPresetId: () => PhrasingCmd.matchedPresetId(store),
+  summarize: phrasingSummary,
+  presets: PHRASING_PRESETS,
+  palettes: { phrase: PHRASE_COLORS, chorus: CHORUS_COLORS },
+  commands: {
+    toggle: (args) => PhrasingCmd.togglePhrasing(store, args),
+    set: (patch) => PhrasingCmd.setPhrasing(store, patch),
+    applyPreset: (presetId) => PhrasingCmd.applyPhrasingPreset(store, presetId)
+  },
+  render,
+  commitHistory: () => render(commitHistory(BOARD_MAIN))
+});
+
+// 파일을 열거나 Undo 로 돌아온 구조도 그려야 한다 — 첫 화면에 한 번 맞춘다.
+render({ phrasing: true });

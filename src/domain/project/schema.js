@@ -9,6 +9,10 @@
 //   그 전에는 undo 6필드 / 파일 12필드로 "상태의 정의"가 갈려 있었고, 그 틈에서
 //   `전체 초기화` 가 지운 링크가 Undo 로 돌아오지 않는 결함이 나왔다(docs/PRINCIPLES.md D-4).
 //
+// ⚠ 2026-09-13 변경(프레이즈·코러스): 9번째 필드 `phrasing` 을 두 목록의 꼬리에 더했다. 프레이즈 길이와
+//   코러스당 프레이즈 수는 **곡의 구조**라 안무의 일부다 — 바꾼 것을 Undo 로 되돌릴 수 있어야 하고
+//   파일을 다시 열었을 때 그대로여야 한다. 기본값 그대로면 파일에 키를 쓰지 않는다(domain/phrasing.js).
+//
 // ⚠ 2026-09 변경(영상 패널): UNDO_FIELDS·DOC_FIELDS 에 `media` 를 더했다. 템포(bpm·앵커)는
 //   사용자가 공들여 찍는 **안무의 일부**라 Undo 로 돌아와야 하고 파일에도 실려야 한다.
 //   반대로 재생 위치·재생 상태는 여기에 **절대 들어오지 않는다** — 휘발성이고 초당 60번 바뀐다
@@ -52,7 +56,7 @@ export const LEGACY_FILE_VERSION = 1;
  *   **파일**에만 빈 블록을 쓰지 않는다(serialize.js).
  * @see index.html:2833
  */
-export const UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media']);
+export const UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing']);
 
 /**
  * 루틴 편집기 undo 스냅샷 필드. snapshotStateRe(2900-2902)의 리터럴 키 순서 그대로다.
@@ -68,7 +72,7 @@ export const ROUTINE_UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements'])
  *   지킨다). 한쪽에 필드를 더할 때 다른 쪽을 함께 보라: 파일에만 있으면 Undo 로 안 돌아오고,
  *   스냅샷에만 있으면 저장·불러오기에서 새어 나간다.
  */
-export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibrary', 'placements', 'routines', 'links', 'media']);
+export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibrary', 'placements', 'routines', 'links', 'media', 'phrasing']);
 
 /**
  * 영상 블록(`media`)의 필드. 키 순서가 곧 저장 바이트다.

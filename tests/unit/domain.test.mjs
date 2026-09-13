@@ -65,6 +65,11 @@ import { nameKey, matchMove, normalizePlan, cellLabel } from '../../src/domain/c
 import * as PlanCmd from '../../src/usecases/planCommands.js';
 import { createLlmServer } from '../../src/adapters/llmServer.js';
 import * as VideoCmd from '../../src/usecases/videoCommands.js';
+import {
+  DEFAULT_PHRASING, PHRASE_COLORS, CHORUS_COLORS, PHRASING_PRESETS,
+  normalizePhrasing, isEmptyPhrasing, serializePhrasing, phraseMark, phrasingSummary
+} from '../../src/domain/phrasing.js';
+import * as PhrasingCmd from '../../src/usecases/phrasingCommands.js';
 const { clipList } = VideoCmd;
 import * as CaptureCmd from '../../src/usecases/captureCommands.js';
 import { isPending, pendingGroupIds, nameGroup } from '../../src/domain/placements.js';
@@ -513,16 +518,18 @@ test('resolvePlacementColor 는 루틴 색을 실제로 칠하고 글자색을 �
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 링크·템포가 undo 로 되돌아오려면 스냅샷 필드여야 한다. 루틴 보드에는 링크바도 영상도 없다. */
-test('schema: UNDO_FIELDS 에 links·media 가 있고 ROUTINE_UNDO_FIELDS 에는 없다', () => {
+test('schema: UNDO_FIELDS 에 links·media·phrasing 이 있고 ROUTINE_UNDO_FIELDS 에는 없다', () => {
   assert.ok(UNDO_FIELDS.includes('links'), 'links 가 빠지면 전체 초기화한 링크가 Undo 로 안 돌아온다');
   assert.ok(UNDO_FIELDS.includes('media'), 'media 가 빠지면 애써 찍은 템포·앵커가 Undo 로 안 돌아온다');
+  assert.ok(UNDO_FIELDS.includes('phrasing'), 'phrasing 이 빠지면 맞춰 둔 곡 구조가 Undo 로 안 돌아온다');
   assert.ok(!ROUTINE_UNDO_FIELDS.includes('links'), '루틴 편집기에는 링크바가 없다');
   assert.ok(!ROUTINE_UNDO_FIELDS.includes('media'), '루틴 보드에는 시간 매핑이 없다');
+  assert.ok(!ROUTINE_UNDO_FIELDS.includes('phrasing'), '루틴 보드는 곡이 아니라 동작 묶음이다');
   // 두 목록의 집합이 같아야 한다 — 한쪽에만 있으면 "파일엔 있는데 Undo 는 못 하는" 결함이 다시 생긴다.
   assert.deepEqual([...UNDO_FIELDS].sort(), [...DOC_FIELDS].sort());
   // 키 순서 = 스냅샷 JSON 바이트 순서. 앞 6개는 원본 리터럴 순서 그대로이고 신설은 꼬리에 붙는다.
   assert.deepEqual([...UNDO_FIELDS],
-    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media']);
+    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing']);
   assert.deepEqual([...ROUTINE_UNDO_FIELDS], ['rows', 'cols', 'placements']);
 });
 
@@ -3886,4 +3893,145 @@ test('poseCommands: `분석 지우기` 는 결과만 지우고 보기 방식은 
   assert.equal(p.live, true, '실시간이 꺼졌다');
   assert.equal(p.showMesh, false, '메시/뼈대 선택이 되돌아갔다');
   assert.equal(p.delegate, 'GPU');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 프레이즈·코러스(2026-09-13) — 마디 번호 → 몇 번째 프레이즈·코러스인가
+// 사용자가 말한 두 경우를 그대로 시나리오로 둔다: 32마디 곡(4마디 × 4프레이즈)과 블루스(6마디 × 1프레이즈).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const P44 = { on: true, rowsPerPhrase: 4, phrasesPerChorus: 4, startRow: 1 };
+const P61 = { on: true, rowsPerPhrase: 6, phrasesPerChorus: 1, startRow: 1 };
+
+test('phrasing: 32마디 곡은 4마디마다 프레이즈, 16마디마다 코러스가 넘어간다', () => {
+  // 8x1..8x4 = 코러스1 프레이즈1, 8x5..8x8 = 코러스1 프레이즈2 … 8x17 = 코러스2 프레이즈1
+  const at = (row) => phraseMark(row, P44);
+  assert.deepEqual([at(1).chorus, at(1).phraseInChorus, at(1).rowInPhrase], [1, 1, 1]);
+  assert.deepEqual([at(4).chorus, at(4).phraseInChorus, at(4).rowInPhrase], [1, 1, 4]);
+  assert.deepEqual([at(5).chorus, at(5).phraseInChorus], [1, 2]);
+  assert.deepEqual([at(16).chorus, at(16).phraseInChorus], [1, 4]);
+  assert.deepEqual([at(17).chorus, at(17).phraseInChorus], [2, 1]);
+  assert.equal(at(17).phrase, 5, '전역 프레이즈 번호는 계속 올라간다');
+  assert.equal(at(17).tag, '2-1');
+
+  // 경계 표시 — 테두리를 굵게 그릴 자리다.
+  assert.ok(at(1).isPhraseStart && at(1).isChorusStart);
+  assert.ok(at(4).isPhraseEnd && !at(4).isChorusEnd);
+  assert.ok(at(16).isPhraseEnd && at(16).isChorusEnd);
+  assert.ok(at(17).isChorusStart);
+  assert.ok(!at(5).isChorusStart, '프레이즈는 시작이지만 코러스는 아니다');
+});
+
+test('phrasing: 블루스는 6마디마다 코러스와 프레이즈가 함께 넘어간다', () => {
+  const at = (row) => phraseMark(row, P61);
+  assert.deepEqual([at(1).chorus, at(1).phraseInChorus], [1, 1]);
+  assert.deepEqual([at(6).chorus, at(6).phraseInChorus], [1, 1]);
+  assert.ok(at(6).isChorusEnd);
+  assert.deepEqual([at(7).chorus, at(7).phrase], [2, 2], '코러스마다 프레이즈가 하나씩 지나간다');
+  assert.equal(at(13).chorus, 3);
+});
+
+test('phrasing: 색은 전역 번호로 고른다 — 코러스당 4프레이즈면 자리마다 색이 고정되고, 블루스는 코러스마다 바뀐다', () => {
+  // 32마디 곡: 각 코러스의 1번째 프레이즈는 언제나 같은 색이다(A·A·B·A 를 색으로 읽는다).
+  assert.equal(phraseMark(1, P44).phraseColor, PHRASE_COLORS[0]);
+  assert.equal(phraseMark(17, P44).phraseColor, PHRASE_COLORS[0], '다음 코러스의 1번 프레이즈도 같은 색');
+  assert.equal(phraseMark(5, P44).phraseColor, PHRASE_COLORS[1]);
+  assert.notEqual(phraseMark(1, P44).chorusColor, phraseMark(17, P44).chorusColor, '코러스 색은 넘어간다');
+
+  // 블루스: 코러스가 곧 프레이즈라 둘 다 넘어간다.
+  assert.notEqual(phraseMark(1, P61).phraseColor, phraseMark(7, P61).phraseColor);
+  assert.notEqual(phraseMark(1, P61).chorusColor, phraseMark(7, P61).chorusColor);
+  // 팔레트 길이를 4·6 으로 어긋나게 둔 값 — 두 색이 한꺼번에 되돌아오지 않는다.
+  assert.equal(PHRASE_COLORS.length, 4);
+  assert.equal(CHORUS_COLORS.length, 6);
+});
+
+test('phrasing: 꺼져 있거나 시작 마디 앞이면 표시가 없다', () => {
+  assert.equal(phraseMark(1, { ...P44, on: false }), null, '꺼져 있으면 어느 마디도 칠하지 않는다');
+  assert.equal(phraseMark(1, null), null);
+  assert.equal(phraseMark(0, P44), null, 'intro 행(0)은 어느 프레이즈도 아니다');
+  assert.equal(phraseMark(NaN, P44), null);
+
+  // 인트로가 2마디인 곡: 3마디부터 코러스 1이 시작한다.
+  const late = { ...P44, startRow: 3 };
+  assert.equal(phraseMark(2, late), null);
+  assert.deepEqual([phraseMark(3, late).chorus, phraseMark(3, late).phraseInChorus, phraseMark(3, late).rowInPhrase], [1, 1, 1]);
+  assert.equal(phraseMark(19, late).chorus, 2);
+});
+
+test('phrasing: 손상된 값은 범위 안으로 가두고, 기본값이면 파일에 쓰지 않는다', () => {
+  assert.deepEqual(normalizePhrasing(null), DEFAULT_PHRASING);
+  assert.deepEqual(normalizePhrasing('x'), DEFAULT_PHRASING);
+  assert.equal(normalizePhrasing({ rowsPerPhrase: 0 }).rowsPerPhrase, 1);
+  assert.equal(normalizePhrasing({ rowsPerPhrase: 999 }).rowsPerPhrase, 64);
+  assert.equal(normalizePhrasing({ phrasesPerChorus: 999 }).phrasesPerChorus, 32);
+  assert.equal(normalizePhrasing({ startRow: 0 }).startRow, 1);
+  assert.equal(normalizePhrasing({ rowsPerPhrase: 4.7 }).rowsPerPhrase, 4, '소수는 내림한다');
+  assert.equal(normalizePhrasing({ on: 'yes' }).on, false, 'on 은 true 일 때만 참이다');
+
+  assert.equal(isEmptyPhrasing(null), true);
+  assert.equal(serializePhrasing(null), null, '한 번도 안 만졌으면 저장 파일의 바이트가 늘지 않는다');
+  assert.equal(isEmptyPhrasing({ ...DEFAULT_PHRASING, on: true }), false);
+  // ⚠ 껐어도 숫자를 맞춰 뒀으면 저장한다 — 껐다 켜는 사이에 그 값이 날아가면 안 된다.
+  assert.deepEqual(serializePhrasing({ on: false, rowsPerPhrase: 6, phrasesPerChorus: 1, startRow: 1 }),
+    { on: false, rowsPerPhrase: 6, phrasesPerChorus: 1, startRow: 1 });
+  assert.deepEqual(Object.keys(serializePhrasing(P61)), ['on', 'rowsPerPhrase', 'phrasesPerChorus', 'startRow']);
+
+  assert.match(phrasingSummary(P44, 32), /한 코러스 = 16마디/);
+  assert.match(phrasingSummary(P44, 32), /코러스 2개/);
+  assert.match(phrasingSummary({ ...P44, startRow: 40 }, 32), /거기까지 오지 않습니다/);
+});
+
+test('phrasingCommands: 프리셋·토글·직접 입력이 store 를 바꾸고 Undo 를 탄다', () => {
+  const store = createStore({ ids: counterEnv() });
+  assert.deepEqual(PhrasingCmd.phrasingState(store), DEFAULT_PHRASING);
+  assert.equal(PhrasingCmd.matchedPresetId(store), 'standard', '기본값 4×4 는 32마디 곡 프리셋이다');
+
+  // 프리셋은 켜기까지 한다 — 고르는 것은 "이렇게 보여 달라"는 뜻이다.
+  assert.deepEqual(PhrasingCmd.applyPhrasingPreset(store, 'blues'), { phrasing: true });
+  assert.deepEqual(PhrasingCmd.phrasingState(store), { on: true, rowsPerPhrase: 6, phrasesPerChorus: 1, startRow: 1 });
+  assert.equal(PhrasingCmd.matchedPresetId(store), 'blues');
+  assert.deepEqual(PhrasingCmd.applyPhrasingPreset(store, '없는프리셋'), NONE);
+
+  // 껐다 켜도 숫자는 그대로다.
+  assert.deepEqual(PhrasingCmd.togglePhrasing(store), { phrasing: true });
+  assert.equal(PhrasingCmd.phrasingState(store).on, false);
+  assert.equal(PhrasingCmd.phrasingState(store).rowsPerPhrase, 6, '껐다고 맞춰 둔 구조가 날아가면 안 된다');
+  PhrasingCmd.togglePhrasing(store, { on: true });
+  assert.equal(PhrasingCmd.phrasingState(store).on, true);
+  assert.deepEqual(PhrasingCmd.togglePhrasing(store, { on: true }), NONE, '같은 값은 다시 그릴 이유가 없다');
+
+  // 직접 입력은 범위 안으로 가둔다. 프리셋과 안 맞으면 `직접 정한 값` 이다.
+  PhrasingCmd.setPhrasing(store, { rowsPerPhrase: 0, phrasesPerChorus: 3 });
+  assert.deepEqual(PhrasingCmd.phrasingState(store), { on: true, rowsPerPhrase: 1, phrasesPerChorus: 3, startRow: 1 });
+  assert.equal(PhrasingCmd.matchedPresetId(store), '');
+
+  // Undo: phrasing 은 UNDO_FIELDS 안이다.
+  const hist = History.createHistory(store);
+  History.commit(hist, 'main');
+  PhrasingCmd.applyPhrasingPreset(store, 'standard');
+  History.commit(hist, 'main');
+  assert.equal(PhrasingCmd.phrasingState(store).rowsPerPhrase, 4);
+  History.undo(hist, 'main');
+  assert.equal(PhrasingCmd.phrasingState(store).rowsPerPhrase, 1, '곡 구조가 Undo 로 돌아오지 않았다');
+  History.redo(hist, 'main');
+  assert.equal(PhrasingCmd.phrasingState(store).rowsPerPhrase, 4);
+
+  // 프리셋 목록은 화면에 그대로 나가는 문구다 — 둘 다 있는지만 확인한다.
+  assert.deepEqual(PHRASING_PRESETS.map(p => p.id), ['standard', 'blues', 'short', 'eights']);
+});
+
+test('phrasing: 저장 파일을 왕복해도 구조가 남고, 안 쓴 파일은 키가 생기지 않는다', () => {
+  const base = {
+    rows: 8, cols: 8, categories: {}, moveLibrary: [], placements: [], routines: [],
+    youtubeUrl: '', youtubeTitle: '', clickupUrl: '', customLinks: []
+  };
+  const plain = buildProjectFile(base, { fileName: 'a', savedAt: 'S' });
+  assert.equal('phrasing' in plain, false, '한 번도 안 켠 파일에 키가 생기면 바이트가 는다');
+
+  const withIt = buildProjectFile({ ...base, phrasing: P61 }, { fileName: 'a', savedAt: 'S' });
+  assert.deepEqual(withIt.phrasing, { on: true, rowsPerPhrase: 6, phrasesPerChorus: 1, startRow: 1 });
+  assert.deepEqual(normalizeProject(withIt, { ids: counterEnv() }).phrasing, withIt.phrasing);
+  // 옛 파일(키 없음)은 기본값으로 열린다 — 거부하지 않는다.
+  assert.deepEqual(normalizeProject(plain, { ids: counterEnv() }).phrasing, DEFAULT_PHRASING);
 });

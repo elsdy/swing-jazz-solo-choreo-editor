@@ -259,6 +259,20 @@ export const DATA = Object.freeze({
   routineId: 'routineId',
   routineIdAttr: 'data-routine-id',
 
+  // ── 프레이즈·코러스 표시(2026-09-13). ui/boardView.syncPhrasing 이 쓰고 CSS 가 읽는다.
+  //    ⚠ 값은 보여 주기용이 아니라 **CSS 선택자용**이다 — 번호는 dataset, 색은 CSS 변수로 간다.
+  phrase: 'phrase',
+  phraseAttr: 'data-phrase',
+  chorus: 'chorus',
+  chorusAttr: 'data-chorus',
+  phraseStart: 'phraseStart',
+  phraseStartAttr: 'data-phrase-start',
+  chorusStart: 'chorusStart',
+  chorusStartAttr: 'data-chorus-start',
+  /** 마디 이름 칸의 `코러스-프레이즈` 꼬리표. ::after 가 attr() 로 읽는다. */
+  phraseTag: 'phraseTag',
+  phraseTagAttr: 'data-phrase-tag',
+
   // 겹침 행의 레이어 수(3379). CSS 가 [data-layers] 로 구분선을 그린다.
   // ⚠ 0 이 아니라 **키 자체를 delete** 해서 끈다(3380).
   layers: 'layers',
