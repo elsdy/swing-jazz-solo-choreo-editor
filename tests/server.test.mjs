@@ -552,3 +552,54 @@ test('server.py: 저장장치 목록은 지금 루트를 표시하고 남은 자
     assert.ok(data.volumes.some(v => v.kind === 'home'), '홈 폴더가 목록에 없다');
   } finally { s.stop(); }
 });
+
+test('server.py: 설정 하나를 바꿔도 나머지가 떨어지지 않는다(Config.replace)', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    const cfgOf = () => fetch(`${s.base}/api/config`, { cache: 'no-store' }).then(r => r.json());
+    const put = (path, body) => fetch(`${s.base}${path}`,
+      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+    // 세 값을 서로 다르게 세워 둔다.
+    await put('/api/config', { root: s.root, subdir: '영상모음', projectsSubdir: '안무표모음' });
+    await put('/api/models/config', { dir: path.join(s.root, 'm1'), poseModel: 'heavy' });
+
+    // 보관 루트만 바꾼다 — 모델과 안무표 폴더가 따라 떨어지면 안 된다.
+    await put('/api/config', { root: path.join(s.root, 'sub') });
+    let cfg = await cfgOf();
+    assert.equal(cfg.subdir, '영상모음');
+    assert.equal(cfg.projectsSubdir, '안무표모음');
+    let models = await (await fetch(`${s.base}/api/models`)).json();
+    assert.equal(models.poseModel, 'heavy', '루트를 바꿨더니 모델 설정이 기본값으로 돌아갔다');
+    assert.equal(models.dir, path.join(s.root, 'm1'));
+
+    // 거꾸로 모델만 바꾼다 — 안무표 하위 폴더가 떨어지던 자리다(2026-09-13 에 찾음).
+    await put('/api/models/config', { dir: path.join(s.root, 'm2'), poseModel: 'lite' });
+    cfg = await cfgOf();
+    assert.equal(cfg.projectsSubdir, '안무표모음', '모델을 바꿨더니 안무표 폴더가 기본값으로 돌아갔다');
+    assert.equal(cfg.subdir, '영상모음');
+    models = await (await fetch(`${s.base}/api/models`)).json();
+    assert.equal(models.poseModel, 'lite');
+  } finally { s.stop(); }
+});
+
+test('server.py: /admin 은 서버의 관리 화면을 내주고, 편집기와 다른 페이지다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    const res = await fetch(`${s.base}/admin`);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /서버 설정/, '관리 화면이 아니라 다른 것이 왔다');
+    // ⚠ 이 화면은 앱의 모듈을 쓰지 않는다 — 앱이 깨져도, 앱을 안 열었어도 떠야 한다.
+    assert.ok(!/src\/app\/main\.js/.test(html), '관리 화면이 앱 모듈을 불러오고 있다');
+
+    // 보관 현황은 서버가 세어 준다(관리 화면이 여러 API 를 긁어모으지 않게).
+    const usage = await (await fetch(`${s.base}/api/storage`)).json();
+    assert.equal(usage.ok, true);
+    for (const key of ['clips', 'projects', 'models']) {
+      assert.equal(typeof usage[key].count, 'number');
+      assert.equal(typeof usage[key].bytes, 'number');
+    }
+    assert.equal(usage.root, s.root);
+  } finally { s.stop(); }
+});

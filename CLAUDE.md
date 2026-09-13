@@ -39,6 +39,7 @@ node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
 - `src/adapters/` — 브라우저 전역을 만지는 유일한 계층. `usecases` 는 어댑터를 import 하지 않고 주입받는다. `src/` 안에서 어댑터를 import 하는 파일은 `app/main.js` 하나뿐이다.
 - `src/ui/`, `src/input/` — DOM 렌더와 제스처. **서로 import 하지 않는다.** 협력자는 `app/main.js` 가 주입한다. 유일한 예외가 `src/ui/domContract.js`.
 - `src/app/` — 조립과 렌더 라우팅.
+- `admin.html` — **서버가 내는 관리 화면**(`/admin`). 보관 위치·모델·LLM 을 정하는 자리다. `src/` 를 import 하지 않는다 — 앱의 모듈이 아니라 서버의 화면이고, 앱이 깨져도 떠야 한다. 앱(`ui/settingsView`)은 서버 설정을 **읽기만** 하고 이 화면으로 보낸다.
 - `server.py` — 저장소 밖의 두 번째 런타임. 정적 파일 + 클립 API(`/api/*`, `/clips/*`, 자르기 `/api/clips/trim` 은 **선택 의존성 ffmpeg** 을 자식 프로세스로 띄운다 — 없으면 그 기능만 501) + 자세 분석 모델 보관(`/api/models/*`, `/models/*` — 파일을 받아 두고 내주기만 한다. 계산은 브라우저가 하므로 파이썬 패키지는 늘지 않는다) + LLM 중계(`/api/llm/*`, Claude·OpenAI·Ollama, 키는 서버에만). `src/` 를 import 하지 않고 `src/` 도 서버 코드를 모른다 — 둘 사이는 HTTP 뿐이다. 경로 규칙(`<subdir>/<프로젝트>/<파일>`)은 `src/domain/clips.js` 와, 안무표 스키마(`PLAN_SCHEMA`)는 `src/domain/choreoPlan.js` 와 **같은 모양으로 두 번** 적혀 있으니 한쪽을 고치면 다른 쪽도 고친다.
 
 `node tools/check-arch.mjs` 가 이 규칙을 강제한다. 규칙을 우회하고 싶어지면 대개 파일 위치가 틀린 것이다.

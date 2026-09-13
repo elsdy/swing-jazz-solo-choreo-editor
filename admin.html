@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>서버 설정 — 안무 편집기</title>
+<!--
+  server.py 의 관리 화면이다(2026-09-13).
+
+  왜 안무 편집기 안이 아니라 여기 있나 — **보관 위치를 정하는 것은 서버의 일**이기 때문이다.
+  편집기는 클라이언트다. 클라이언트가 서버의 디스크를 고르면, 브라우저마다 다른 답을 들고
+  같은 서버를 서로 다르게 설정하게 된다(폰과 PC 가 같은 서버를 보면서 설정이 갈렸다).
+  그래서 결정권은 서버가 갖고, 편집기는 `GET /api/config` 로 **읽기만** 한다.
+
+  ⚠ 이 파일은 `src/` 를 import 하지 않는다. 앱의 모듈이 아니라 서버의 화면이다 —
+    앱이 죽어도, 앱을 아직 안 열었어도 여기는 떠야 한다.
+  ⚠ 빌드 도구가 없다. 스타일과 스크립트를 이 파일 안에 그대로 둔다(저장소 규칙).
+  ⚠ 폰에서 연다. 누르는 것은 최소 44px 로 잡는다.
+-->
+<style>
+  :root {
+    --bg: #0b1220; --panel: #111a2e; --line: rgba(148,163,184,0.18);
+    --fg: #e2e8f0; --muted: #94a3b8; --accent: #22c55e; --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 40px; background: var(--bg); color: var(--fg);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; background: rgba(11,18,32,0.94); border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(6px);
+  }
+  header h1 { margin: 0; font-size: 15px; }
+  header .spacer { flex: 1; }
+  main { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+  section {
+    margin: 16px 0; padding: 14px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px;
+  }
+  h2 { margin: 0 0 4px; font-size: 14px; }
+  .helper { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+  .label { min-width: 6.5em; font-size: 12px; color: var(--muted); }
+  input[type=text], input[type=password], select {
+    flex: 1; min-width: 12em; min-height: 44px; padding: 6px 10px; color: var(--fg);
+    background: rgba(148,163,184,0.10); border: 1px solid var(--line); border-radius: 8px; font-size: 14px;
+  }
+  button {
+    min-height: 44px; padding: 6px 14px; color: var(--fg); background: rgba(148,163,184,0.12);
+    border: 1px solid var(--line); border-radius: 8px; font-size: 14px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: rgba(148,163,184,0.2); }
+  button.accent { color: #052e16; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .path {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #cbd5e1;
+    background: rgba(148,163,184,0.10); border-radius: 6px; padding: 6px 8px; word-break: break-all;
+  }
+  .vols { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+  .vol {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
+    min-height: 44px; padding: 6px 10px; text-align: left; font-size: 13px;
+  }
+  .vol.is-current { border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.10); }
+  .vol span { font-size: 10px; color: var(--muted); word-break: break-all; }
+  .stat { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .stat:first-of-type { border-top: 0; }
+  .stat b { font-weight: 600; }
+  .stat i { font-style: normal; color: var(--muted); font-size: 11px; }
+  .note { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .note.is-error { color: var(--danger); }
+  .badge { font-size: 11px; color: #a7f3d0; background: rgba(34,197,94,0.14);
+    border: 1px solid rgba(34,197,94,0.25); border-radius: 999px; padding: 2px 8px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>서버 설정</h1>
+  <span class="badge" id="hostBadge">—</span>
+  <span class="spacer"></span>
+  <a href="/">← 안무 편집기</a>
+</header>
+
+<main>
+  <section>
+    <h2>보관 위치</h2>
+    <p class="helper">
+      올린 영상과 저장한 안무표가 <b>이 서버의 어느 디스크</b>에 쌓일지 정합니다.
+      편집기(브라우저)는 이 값을 읽기만 하므로, 폰에서 보든 PC 에서 보든 같은 자리를 가리킵니다.
+    </p>
+    <div class="vols" id="vols"></div>
+    <div class="row">
+      <span class="label">루트</span>
+      <input id="root" type="text" placeholder="/절대/경로" />
+    </div>
+    <div class="row">
+      <span class="label">영상 하위 폴더</span>
+      <input id="subdir" type="text" placeholder="video-clip" />
+    </div>
+    <div class="row">
+      <span class="label">안무표 하위 폴더</span>
+      <input id="projectsSubdir" type="text" placeholder="projects" />
+    </div>
+    <div class="path" id="preview">—</div>
+    <div class="row">
+      <button class="accent" id="applyStorage" type="button">적용</button>
+      <button id="revertStorage" type="button">되돌리기</button>
+    </div>
+    <div class="note" id="storageNote"></div>
+  </section>
+
+  <section>
+    <h2>지금 쌓인 것</h2>
+    <p class="helper">보관 위치를 바꾸기 전에 무엇이 얼마나 있는지 봅니다. <b>바꿔도 옛 파일은 따라가지 않습니다</b> — 폴더를 손으로 옮기고 새 자리를 가리키세요.</p>
+    <div id="usage"></div>
+    <div class="row"><button id="refreshUsage" type="button">다시 읽기</button></div>
+  </section>
+
+  <section>
+    <h2>자세 분석 모델</h2>
+    <p class="helper">관절을 찾는 모델 파일을 둘 자리와, 어느 크기를 쓸지 정합니다. 계산은 브라우저가 하고 서버는 파일을 내주기만 합니다.</p>
+    <div class="row">
+      <span class="label">모델 폴더</span>
+      <input id="modelsDir" type="text" placeholder="…/models" />
+    </div>
+    <div class="row">
+      <span class="label">쓸 모델</span>
+      <select id="poseModel">
+        <option value="lite">lite — 17.2MB · 가장 빠름</option>
+        <option value="full">full — 20.6MB · 기본</option>
+        <option value="heavy">heavy — 41.9MB · 가장 정확</option>
+      </select>
+      <button class="accent" id="applyModels" type="button">적용</button>
+    </div>
+    <div class="note" id="modelsNote"></div>
+  </section>
+
+  <section>
+    <h2>말로 채우기 — LLM</h2>
+    <p class="helper">받아 적은 말을 동작으로 다듬는 데 씁니다. <b>키는 서버에만 남고 브라우저로 내려가지 않습니다.</b></p>
+    <div class="row">
+      <span class="label">제공자</span>
+      <select id="llmProvider">
+        <option value="anthropic">Claude (Anthropic)</option>
+        <option value="openai">OpenAI</option>
+        <option value="ollama">Ollama · LM Studio (로컬)</option>
+      </select>
+    </div>
+    <div class="row"><span class="label">모델</span><input id="llmModel" type="text" /></div>
+    <div class="row"><span class="label">주소</span><input id="llmBase" type="text" placeholder="https://…" /></div>
+    <div class="row">
+      <span class="label">키</span>
+      <input id="llmKey" type="password" placeholder="바꿀 때만 입력합니다" autocomplete="off" />
+      <button class="accent" id="applyLlm" type="button">적용</button>
+    </div>
+    <div class="note" id="llmNote"></div>
+  </section>
+</main>
+
+<script>
+// ⚠ 모듈이 아니다(type=module 아님). 이 화면은 앱과 아무것도 나눠 쓰지 않는다 — 서버의 것이다.
+(function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const state = { config: null, llm: null, models: null };
+
+  /** 바이트를 사람이 읽는 크기로. 영상은 GB 단위로 쌓이므로 GB 아래는 뭉갠다. */
+  function human(bytes) {
+    const n = Number(bytes);
+    if (!Number.isFinite(n) || n <= 0) return '0';
+    if (n >= 1e12) return (n / 1e12).toFixed(1) + 'TB';
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'GB';
+    if (n >= 1e6) return Math.round(n / 1e6) + 'MB';
+    return Math.round(n / 1e3) + 'KB';
+  }
+
+  /** 던지지 않는 JSON 호출. 관리 화면이 오류 하나로 하얗게 되면 안 된다. */
+  async function api(method, path, body) {
+    try {
+      const res = await fetch(path, {
+        method,
+        cache: 'no-store',
+        headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => null);
+      return res.ok ? data : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function note(el, text, isError) {
+    el.textContent = text;
+    el.classList.toggle('is-error', !!isError);
+  }
+
+  // ── 보관 위치 ──────────────────────────────────────────────────────────────
+
+  function renderPreview() {
+    const root = $('root').value.trim() || '<루트>';
+    const sub = $('subdir').value.trim() || 'video-clip';
+    const proj = $('projectsSubdir').value.trim() || 'projects';
+    $('preview').textContent =
+      root + '/' + sub + '/<프로젝트 이름>/<영상 파일>\n' + root + '/' + proj + '/<안무표 이름>.json';
+  }
+
+  async function renderVolumes() {
+    const data = await api('GET', '/api/volumes');
+    const vols = (data && data.volumes) || [];
+    const box = $('vols');
+    box.textContent = '';
+    const chosen = $('root').value.trim();
+    for (const v of vols) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'vol' + (v.path === chosen ? ' is-current' : '');
+      btn.disabled = !v.writable;
+      const b = document.createElement('b');
+      b.textContent = (v.path === chosen ? '◉ ' : '○ ') + v.label;
+      const s = document.createElement('span');
+      s.textContent = (v.writable ? human(v.freeBytes) + ' 남음' : '쓸 수 없음(권한·읽기 전용)') + ' · ' + v.path;
+      btn.append(b, s);
+      // 누르는 것만으로 서버를 바꾸지 않는다 — 하위 폴더까지 보고 `적용` 을 눌러야 한다.
+      btn.onclick = () => { $('root').value = v.path; renderPreview(); renderVolumes(); };
+      box.appendChild(btn);
+    }
+  }
+
+  function fillStorage(cfg) {
+    if (!cfg) return;
+    $('root').value = cfg.root || '';
+    $('subdir').value = cfg.subdir || '';
+    $('projectsSubdir').value = cfg.projectsSubdir || '';
+    renderPreview();
+    renderVolumes();
+  }
+
+  async function loadConfig() {
+    state.config = await api('GET', '/api/config');
+    if (!state.config) {
+      note($('storageNote'), '서버 설정을 읽지 못했습니다. server.py 가 켜져 있는지 확인하세요.', true);
+      return;
+    }
+    fillStorage(state.config);
+    // 모델 폴더는 /api/config 가 아니라 /api/models 가 안다(loadModels 가 채운다).
+    note($('storageNote'), '지금 영상은 ' + state.config.dir + ' 에, 안무표는 ' + state.config.projectsDir + ' 에 쌓입니다.');
+  }
+
+  $('applyStorage').onclick = async () => {
+    const next = {
+      root: $('root').value.trim(),
+      subdir: $('subdir').value.trim(),
+      projectsSubdir: $('projectsSubdir').value.trim()
+    };
+    if (!next.root) { note($('storageNote'), '루트가 비어 있습니다.', true); return; }
+    note($('storageNote'), '적용하는 중…');
+    const cfg = await api('PUT', '/api/config', next);
+    if (!cfg) {
+      note($('storageNote'), '그 자리를 쓰지 못했습니다. 경로가 맞는지, 쓰기 권한이 있는지 보세요.', true);
+      return;
+    }
+    state.config = cfg;
+    fillStorage(cfg);
+    note($('storageNote'), '바뀌었습니다. 지금부터 올리는 영상은 ' + cfg.dir + ' 에 쌓입니다. 옛 파일은 따라가지 않았습니다.');
+    loadUsage();
+  };
+
+  $('revertStorage').onclick = () => { fillStorage(state.config); note($('storageNote'), ''); };
+  $('root').oninput = renderPreview;
+  $('subdir').oninput = renderPreview;
+  $('projectsSubdir').oninput = renderPreview;
+
+  // ── 지금 쌓인 것 ───────────────────────────────────────────────────────────
+
+  async function loadUsage() {
+    const u = await api('GET', '/api/storage');
+    const box = $('usage');
+    box.textContent = '';
+    if (!u) { note($('storageNote'), '보관 현황을 읽지 못했습니다.', true); return; }
+    const rows = [
+      ['영상', u.clips, u.clipsDir],
+      ['안무표', u.projects, u.projectsDir],
+      ['자세 분석 모델', u.models, u.modelsDir]
+    ];
+    for (const [label, usage, dir] of rows) {
+      const row = document.createElement('div');
+      row.className = 'stat';
+      const left = document.createElement('div');
+      left.innerHTML = '<b>' + label + '</b><br><i>' + dir + '</i>';
+      const right = document.createElement('div');
+      right.textContent = usage.count + '개 · ' + human(usage.bytes);
+      row.append(left, right);
+      box.appendChild(row);
+    }
+  }
+  $('refreshUsage').onclick = loadUsage;
+
+  // ── 모델 ───────────────────────────────────────────────────────────────────
+
+  async function loadModels() {
+    state.models = await api('GET', '/api/models');
+    if (!state.models) return;
+    if (state.models.dir) $('modelsDir').value = state.models.dir;
+    if (state.models.poseModel) $('poseModel').value = state.models.poseModel;
+    const ready = state.models.ready;
+    note($('modelsNote'), ready
+      ? '모델이 준비됐습니다 — 영상 패널의 `⑥ 자세 분석` 을 쓸 수 있습니다.'
+      : '아직 모델 파일이 없습니다. 편집기의 `⚙ 설정` 에서 받아 두거나, 이 폴더에 직접 넣으세요.');
+  }
+
+  $('applyModels').onclick = async () => {
+    note($('modelsNote'), '적용하는 중…');
+    // ⚠ 서버가 받는 키는 `dir` 이다(`modelsDir` 이 아니다 — /api/config 와 이름이 다르다).
+    const data = await api('PUT', '/api/models/config', {
+      dir: $('modelsDir').value.trim(),
+      poseModel: $('poseModel').value
+    });
+    if (!data) { note($('modelsNote'), '그 폴더를 쓰지 못했습니다.', true); return; }
+    await loadModels();
+    loadUsage();
+  };
+
+  // ── LLM ────────────────────────────────────────────────────────────────────
+
+  async function loadLlm() {
+    state.llm = await api('GET', '/api/llm/config');
+    if (!state.llm) return;
+    if (state.llm.provider) $('llmProvider').value = state.llm.provider;
+    $('llmModel').value = state.llm.model || '';
+    $('llmBase').value = state.llm.baseUrl || '';
+    note($('llmNote'), state.llm.hasKey
+      ? '키가 저장되어 있습니다. 바꿀 때만 새로 입력하세요 — 저장된 키는 화면에 내려오지 않습니다.'
+      : '키가 없습니다. 로컬 제공자(Ollama·LM Studio)는 키 없이 씁니다.');
+  }
+
+  $('applyLlm').onclick = async () => {
+    const body = {
+      provider: $('llmProvider').value,
+      model: $('llmModel').value.trim(),
+      baseUrl: $('llmBase').value.trim()
+    };
+    // ⚠ 빈 칸은 **보내지 않는다.** 보내면 저장된 키를 빈 값으로 덮어쓴다.
+    const key = $('llmKey').value.trim();
+    if (key) body.apiKey = key;
+    note($('llmNote'), '적용하는 중…');
+    const data = await api('PUT', '/api/llm/config', body);
+    if (!data) { note($('llmNote'), '저장하지 못했습니다.', true); return; }
+    $('llmKey').value = '';
+    await loadLlm();
+  };
+
+  // ── 시작 ───────────────────────────────────────────────────────────────────
+
+  $('hostBadge').textContent = location.host;
+  loadConfig().then(loadUsage);
+  loadModels();
+  loadLlm();
+})();
+</script>
+</body>
+</html>

@@ -1397,12 +1397,13 @@ views.settings = createSettingsView({
   clips: clipLibrary,
   llm: llmServer,
   models: modelServer,
-  // 서버 모드면 설정은 서버의 것이다 — 폴더 선택 대신 경로 입력이고, 서버의 설정 파일에 남는다
-  //  (저장소 밖. 2026-09-13 에 데이터·설정·캐시가 각각 다른 자리로 갈렸다).
+  // ⚠ 서버 모드면 설정은 **서버의 것**이라 앱은 읽기만 한다(2026-09-13). 보관 위치를 클라이언트가
+  //   정하면 브라우저마다 다른 답을 들고 같은 서버를 서로 다르게 설정하게 된다 — 폰과 PC 가 같은
+  //   서버를 보면서 갈렸다. 바꾸는 자리는 서버의 관리 화면(/admin) 하나다.
+  //   setConfig 는 남겨 둔다: 모델 폴더처럼 서버가 자기 창으로 고르게 하는 갈래가 아직 쓴다.
   server: {
     isActive: () => !!clipServerConfig,
     getConfig: () => clipServer.getConfig(),
-    listVolumes: () => clipServer.listVolumes(),
     setConfig: async (next) => {
       const cfg = await clipServer.setConfig(next);
       if (cfg) clipServerConfig = cfg;

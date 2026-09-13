@@ -132,13 +132,13 @@ export function createSettingsView(deps) {
             <button class="ghost accent" data-act="pick" type="button">폴더 지정</button>
             <button class="ghost" data-act="forget" type="button">해제</button>
           </div>
-          <!-- 저장장치 고르기(2026-09-13). 폰에서 긴 경로를 손으로 치는 것은 사실상 불가능하다 —
-               서버가 자기에게 붙어 있는 디스크를 알려 주면 누르기만 하면 된다. -->
-          <div class="settings-volumes" data-role="volumes" hidden></div>
+          <!-- ⚠ 서버 모드에서는 **읽기만** 한다(2026-09-13). 보관 위치를 정하는 것은 서버의 일이다 —
+               클라이언트가 정하면 브라우저마다 다른 답을 들고 같은 서버를 서로 다르게 설정하게 된다.
+               바꾸는 자리는 서버의 관리 화면(/admin) 하나다. -->
           <div class="settings-row" data-role="server-row" hidden>
-            <span class="settings-label">서버 보관 루트</span>
-            <input class="settings-text" data-role="root" type="text" style="width: 22em; max-width: 100%;" placeholder="/절대/경로" />
-            <button class="ghost accent" data-act="apply-root" type="button">적용</button>
+            <span class="settings-label">보관 위치</span>
+            <span class="settings-chip" data-role="server-root">—</span>
+            <button class="ghost accent" data-act="open-admin" type="button">서버 설정 열기 ↗</button>
           </div>
           <div class="settings-row">
             <span class="settings-label">하위 폴더</span>
@@ -154,8 +154,8 @@ export function createSettingsView(deps) {
           <div class="helper"><code>프로젝트 저장</code> 을 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
           <div class="settings-row">
             <span class="settings-label">하위 폴더</span>
-            <input class="settings-text" data-role="projects-subdir" type="text" placeholder="projects" />
-            <button class="ghost accent" data-act="apply-projects" type="button">적용</button>
+            <input class="settings-text" data-role="projects-subdir" type="text" placeholder="projects" disabled />
+            <button class="ghost accent" data-act="open-admin" type="button">서버 설정 열기 ↗</button>
             <span class="settings-label">/ 프로젝트 이름.json</span>
           </div>
           <div class="settings-path" data-role="projects-preview"></div>
@@ -225,9 +225,8 @@ export function createSettingsView(deps) {
 
   const folderChip = overlay.querySelector('[data-role="folder"]');
   const browserRow = overlay.querySelector('[data-role="browser-row"]');
-  const volumesEl = overlay.querySelector('[data-role="volumes"]');
   const serverRow = overlay.querySelector('[data-role="server-row"]');
-  const rootInput = overlay.querySelector('[data-role="root"]');
+  const serverRootChip = overlay.querySelector('[data-role="server-root"]');
   const subdirInput = overlay.querySelector('[data-role="subdir"]');
   const previewEl = overlay.querySelector('[data-role="preview"]');
   const projectsSection = overlay.querySelector('[data-role="projects-section"]');
@@ -473,59 +472,25 @@ export function createSettingsView(deps) {
     }
   }
 
-  /** 바이트 → 사람이 읽는 크기. 남은 자리는 GB 단위면 충분하다(영상은 GB 단위로 쌓인다). */
-  function humanSize(bytes) {
-    const n = Number(bytes);
-    if (!Number.isFinite(n) || n <= 0) return '';
-    const gb = n / 1e9;
-    return gb >= 1000 ? `${(gb / 1000).toFixed(1)}TB` : `${Math.round(gb)}GB`;
-  }
-
-  /**
-   * 서버가 쓸 수 있는 저장장치를 눌러 고르게 한다(2026-09-13).
-   * ⚠ 쓸 수 없는 자리도 **감추지 않고** 흐리게 남긴다 — 목록에서 사라지면 "왜 내 외장이 안 보이지" 가 된다.
-   */
-  async function renderVolumes(currentRoot) {
-    if (!volumesEl || !server.listVolumes) return;
-    const vols = await server.listVolumes();
-    volumesEl.hidden = vols.length === 0;
-    volumesEl.textContent = '';
-    for (const v of vols) {
-      const btn = doc.createElement('button');
-      btn.type = 'button';
-      btn.className = 'settings-volume';
-      btn.disabled = !v.writable;
-      btn.classList.toggle('is-current', v.path === currentRoot);
-      const label = doc.createElement('b');
-      label.textContent = (v.path === currentRoot ? '◉ ' : '○ ') + v.label;
-      const sub = doc.createElement('span');
-      const free = humanSize(v.freeBytes);
-      sub.textContent = [v.writable ? (free && `${free} 남음`) : '쓸 수 없음(권한·읽기 전용)', v.path]
-        .filter(Boolean).join(' · ');
-      btn.append(label, sub);
-      btn.onclick = () => {
-        if (!rootInput) return;
-        rootInput.value = v.path;                   // 눌러도 바로 적용하지 않는다 — 하위 폴더까지 보고 `적용`
-        render();
-      };
-      volumesEl.appendChild(btn);
-    }
-  }
-
   async function renderServer() {
     if (browserRow) browserRow.hidden = true;
     if (serverRow) serverRow.hidden = false;
     const cfg = await server.getConfig();
-    await renderVolumes(rootInput && rootInput.value.trim() ? rootInput.value.trim() : (cfg ? cfg.root : ''));
-    if (rootInput && doc.activeElement !== rootInput) rootInput.value = cfg ? cfg.root : '';
-    if (subdirInput && doc.activeElement !== subdirInput) subdirInput.value = cfg ? cfg.subdir : '';
+    if (serverRootChip) serverRootChip.textContent = cfg ? cfg.root : '읽지 못했습니다';
+    // ⚠ 서버 모드에서는 칸을 **잠근다.** 바꾸는 자리는 서버의 관리 화면 하나다.
+    if (subdirInput) {
+      subdirInput.value = cfg ? cfg.subdir : '';
+      subdirInput.disabled = true;
+      subdirInput.title = '보관 위치는 서버가 정합니다 — `서버 설정 열기` 에서 바꿉니다.';
+    }
     if (previewEl) {
       const parts = previewDirParts(cfg ? cfg.subdir : '', getProjectName());
       previewEl.textContent = `${cfg ? cfg.root : '<서버 루트>'}/${parts.join('/')}/<파일 이름>`;
     }
     if (noteEl) {
       noteEl.textContent = cfg
-        ? `로컬 서버(server.py)가 영상을 보관합니다. 지금 보관 폴더는 ${cfg.dir} 이고, 서버를 다시 켜도 유지됩니다. 서버는 이 컴퓨터에서만 접속됩니다.`
+        ? `로컬 서버(server.py)가 영상을 보관합니다. 지금 보관 폴더는 ${cfg.dir} 이고, 서버를 다시 켜도 유지됩니다. `
+          + '어느 디스크에 쌓을지는 서버가 정합니다 — 바꾸려면 `서버 설정 열기` 를 누르세요(같은 서버를 보는 모든 기기에 함께 적용됩니다).'
         : '로컬 서버에서 설정을 읽지 못했습니다. 서버가 켜져 있는지 확인하세요.';
     }
   }
@@ -638,19 +603,10 @@ export function createSettingsView(deps) {
       downloadModels();
       return;
     }
-    if (kind === 'apply-root' && server && rootInput) {
-      server.setConfig({ root: rootInput.value.trim() }).then((cfg) => {
-        if (!cfg && noteEl) noteEl.textContent = '서버가 그 경로를 만들지 못했습니다. 절대 경로인지, 쓸 수 있는 곳인지 확인하세요.';
-        else { render(); onChange(); }
-      });
-      return;
-    }
-    // 프로젝트 보관 하위 폴더(2026-09-13). 영상과 같은 PUT /api/config 를 쓰되 키가 다르다.
-    if (kind === 'apply-projects' && server && projectsSubdirInput) {
-      server.setConfig({ projectsSubdir: projectsSubdirInput.value.trim() }).then((cfg) => {
-        if (!cfg && projectsNote) projectsNote.textContent = '서버가 그 폴더를 만들지 못했습니다. 이름에 / 나 .. 가 들어가지 않았는지 확인하세요.';
-        else { render(); onChange(); }
-      });
+    // 보관 위치(영상·안무표 둘 다)를 정하는 것은 **서버의 일**이다 — 앱은 그 화면으로 보내기만 한다.
+    // 여기서 PUT /api/config 를 부르던 두 갈래를 2026-09-13 에 닫았다.
+    if (kind === 'open-admin') {
+      window.open('/admin', '_blank', 'noopener');
     }
   });
   if (modelsSize && models) {

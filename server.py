@@ -16,6 +16,8 @@
     GET  /api/health                      서버가 있는지. {ok, mode:'server', root, subdir, dir}
     GET  /api/config                      {root, subdir, dir}
     GET  /api/volumes                     이 서버가 쓸 수 있는 저장장치 [{path,label,freeBytes,writable,current}]
+    GET  /api/storage                     지금 어디에 얼마나 쌓였나 {root, clipsDir, clips:{count,bytes}, …}
+    GET  /admin                           **서버 관리 화면.** 보관 위치·모델·LLM 은 여기서 정한다
     PUT  /api/config  {root?, subdir?}    보관 루트·하위 폴더 변경. 없는 폴더는 만든다. .clipserver.json 에 남는다
     PUT  /api/clips?project=P&name=N      본문 = 파일 바이트. <root>/<subdir>/<P>/<N> 으로 저장(겹치면 " (2)").
                                           → {path:'<subdir>/<P>/<N>', url:'/clips/<path>', size}
@@ -129,6 +131,36 @@ def config_home():
 def cache_home():
     """지워도 되는 것. 지우면 모델을 다시 받을 뿐 데이터는 그대로다."""
     return _xdg('XDG_CACHE_HOME', 'Library/Caches', '.cache') / APP_NAME
+
+
+def _tree_usage(folder):
+    """폴더 하나가 파일 몇 개에 몇 바이트인가. 읽을 수 없는 자리는 0 으로 친다(관리 화면은 멈추면 안 된다)."""
+    count = total = 0
+    try:
+        for entry in Path(folder).rglob('*'):
+            if entry.is_file() and not entry.name.startswith('.'):
+                count += 1
+                total += entry.stat().st_size
+    except OSError:
+        pass
+    return {'count': count, 'bytes': total}
+
+
+def storage_usage(config):
+    """관리 화면이 「지금 어디에 얼마나 쌓였나」를 한 번에 읽는 자리(2026-09-13).
+
+    쪼개진 API 를 관리 화면이 여러 번 부르게 하지 않는다 — 보관 위치를 **바꾸기 전에** 무엇이
+    얼마나 있는지 한 화면에서 보여야 판단이 된다.
+    """
+    return {
+        'root': str(config.root),
+        'clipsDir': str(config.dir),
+        'projectsDir': str(config.projects_dir),
+        'modelsDir': str(config.models_dir),
+        'clips': _tree_usage(config.dir),
+        'projects': _tree_usage(config.projects_dir),
+        'models': _tree_usage(config.models_dir),
+    }
 
 
 def storage_volumes(current_root):
@@ -518,6 +550,22 @@ class Config:
                 'version': MEDIAPIPE_VERSION, 'sizes': POSE_MODEL_BYTES,
                 'canChoose': folder_chooser() is not None, 'suggestions': models_suggestions(),
                 'files': files}
+
+    def replace(self, **changes):
+        """바꿀 것만 주고 나머지는 그대로 이어받은 새 Config(2026-09-13).
+
+        ⚠ **필드를 나열해 다시 짓는 코드를 더 만들지 않는다.** 그렇게 하던 자리가 다섯 군데였고
+          그중 셋이 실제로 값을 떨어뜨렸다 — 보관 루트를 바꾸면 모델 설정이, 모델 폴더를 바꾸면
+          안무표 하위 폴더가 기본값으로 돌아갔다. 필드가 늘 때 여기만 고치면 된다.
+          → 개발 원칙 D-4 / 버그 기록 「보관 루트를 바꾸면 …」
+        """
+        fields = {
+            'root': self.root, 'subdir': self.subdir, 'path': self.path, 'llm': self.llm,
+            'models_dir': self.models_dir, 'pose_model': self.pose_model,
+            'projects_subdir': self.projects_subdir,
+        }
+        fields.update(changes)
+        return Config(**fields)
 
     def llm_key(self):
         """설정 파일의 키가 있으면 그것, 없으면 환경 변수. 로컬(ollama)은 키가 필요 없다."""
@@ -960,6 +1008,13 @@ class Handler(SimpleHTTPRequestHandler):
             return self._serve_model(unquote(url.path[len('/models/'):]))
         if url.path == '/api/clips':
             return self._list_clips(parse_qs(url.query))
+        # 서버의 관리 화면(2026-09-13). 보관 위치를 정하는 것은 **서버의 일**이라 서버가 자기 화면을 낸다 —
+        # 안무 편집기(클라이언트)는 그 값을 읽기만 한다.
+        if url.path in ('/admin', '/admin/'):
+            self.path = '/admin.html'
+            return super().do_GET()
+        if url.path == '/api/storage':
+            return self._json(HTTPStatus.OK, {'ok': True, **storage_usage(self.config)})
         if url.path == '/api/volumes':
             return self._json(HTTPStatus.OK, {'ok': True, 'volumes': storage_volumes(self.config.root)})
         if url.path == '/api/projects':
@@ -1085,8 +1140,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._error(HTTPStatus.BAD_REQUEST, 'root must be a non-empty path')
         # ⚠ **바꾸지 않는 값을 전부 이어 준다.** 그전에는 llm 만 넘겨서, 보관 루트를 바꾸는 순간
         #   modelsDir·poseModel 이 조용히 기본값으로 돌아갔다(2026-09-13 에 projectsSubdir 을 더하며 찾음).
-        candidate = Config(root.strip(), subdir, self.config.path, self.config.llm,
-                           self.config.models_dir, self.config.pose_model, projects_subdir)
+        candidate = self.config.replace(root=root.strip(), subdir=subdir, projects_subdir=projects_subdir)
         try:
             candidate.dir.mkdir(parents=True, exist_ok=True)
             candidate.projects_dir.mkdir(parents=True, exist_ok=True)
@@ -1178,8 +1232,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self._error(HTTPStatus.BAD_REQUEST, 'dir must be a non-empty path')
         if pose_model not in POSE_MODELS:
             return self._error(HTTPStatus.BAD_REQUEST, f'poseModel must be one of {", ".join(POSE_MODELS)}')
-        candidate = Config(self.config.root, self.config.subdir, self.config.path, self.config.llm,
-                           models_dir.strip(), pose_model)
+        # ⚠ 2026-09-13 까지 여기가 projects_subdir 를 떨어뜨렸다 — 모델 폴더를 바꾸면 안무표 하위
+        #   폴더가 조용히 기본값으로 돌아갔다. replace 가 그 부류를 끝낸다.
+        candidate = self.config.replace(models_dir=models_dir.strip(), pose_model=pose_model)
         try:
             candidate.models_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -1199,8 +1254,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._error(HTTPStatus.SERVICE_UNAVAILABLE, err)
         if not path:
             return self._json(HTTPStatus.OK, {'ok': False, 'canceled': True})
-        candidate = Config(self.config.root, self.config.subdir, self.config.path, self.config.llm,
-                           path, self.config.pose_model)
+        candidate = self.config.replace(models_dir=path)
         try:
             candidate.models_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -1474,13 +1528,7 @@ def main(argv=None):
     #   같이 고쳐야 해서, 빠뜨리면 그 값이 조용히 기본값으로 떨어진다(projectsSubdir 을 더하며 실제로
     #   그럴 뻔했다). 그래서 바꿀 것만 이름으로 주는 한 함수로 모은다.
     def override(**changes):
-        fields = {
-            'root': config.root, 'subdir': config.subdir, 'path': config.path, 'llm': config.llm,
-            'models_dir': config.models_dir, 'pose_model': config.pose_model,
-            'projects_subdir': config.projects_subdir,
-        }
-        fields.update(changes)
-        return Config(**fields)
+        return config.replace(**changes)
 
     if args.root:
         config = override(root=args.root)
