@@ -156,11 +156,13 @@ export function createSavedListsView(deps) {
       ));
       actions.appendChild(makeBtn(
         CLS.ghost + ' ' + CLS.accent, '부분 불러오기',
-        () => render(commands.mergeProjectFromRecent(item.data))   // 4274
+        // ⚠ 두 번째 인자로 **항목 전체**를 함께 준다(2026-09-13). 보관 폴더에서 온 항목은 `data` 가
+        //   없고 이름으로 읽어 와야 한다 — 옛 항목(브라우저에 내용이 든 것)은 첫 인자만 쓰므로 그대로다.
+        () => render(commands.mergeProjectFromRecent(item.data, item))   // 4274
       ));
       actions.appendChild(makeBtn(
         CLS.ghost, '전체 불러오기',
-        () => render(commands.loadProjectFromRecent(item.data))    // 4275
+        () => render(commands.loadProjectFromRecent(item.data, item))    // 4275
       ));
     } else if (kind === 'moves') {
       // 원본 4293 의 버튼 2개

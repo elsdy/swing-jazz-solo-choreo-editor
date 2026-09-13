@@ -58,6 +58,7 @@ import { createYouTubePlayer, YT_CAPABILITIES } from '../../src/adapters/media/y
 import { mediaSourceFromUrl, pickPlayer, pickPlayerKind, toMediaSource } from '../../src/adapters/media/pickPlayer.js';
 import { createFilePlayer, FILE_CAPABILITIES } from '../../src/adapters/media/filePlayer.js';
 import { createClipLibrary } from '../../src/adapters/clipLibrary.js';
+import { createProjectServer } from '../../src/adapters/projectServer.js';
 import { safeSegment, projectDirName, clipDirParts, joinClipPath, splitClipPath, numberedName } from '../../src/domain/clips.js';
 import { DEFAULT_CLIP_SUBDIR, CLIP_UNFILED_DIR } from '../../src/ports/clips.js';
 import { nameKey, matchMove, normalizePlan, cellLabel } from '../../src/domain/choreoPlan.js';
@@ -3636,4 +3637,77 @@ test('kinematics: 재는 방법이 다르면 견주기를 거절한다', () => {
   assert.equal(ok.ok, true);
   assert.equal(ok.points.rightWrist.deltaPeakSpeed, 1);
   assert.equal(ok.points.rightWrist.deltaPeakAccel, 2);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 프로젝트 파일 보관 (2026-09-13) — adapters/projectServer
+//
+// 그전에는 `프로젝트 저장` 이 브라우저 다운로드 폴더로 떨어뜨리는 것이 전부였고 앱은 그 자리를
+// 몰랐다. 여기서 지키는 것은 계약 셋이다 — **던지지 않는다**(서버가 없으면 null·빈 배열),
+// 이름을 URL 에 안전하게 싣는다, 덮어쓰기가 기본이다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 요청을 기록하는 가짜 fetch. res 를 함수로 주면 경로별로 다르게 답한다. */
+function fakeFetch(res) {
+  const calls = [];
+  const impl = async (url, init = {}) => {
+    calls.push({ url, method: init.method || 'GET', body: init.body });
+    const out = typeof res === 'function' ? res(url, init) : res;
+    if (out instanceof Error) throw out;
+    return out;
+  };
+  impl.calls = calls;
+  return impl;
+}
+const okJson = (data) => ({ ok: true, status: 200, json: async () => data });
+
+test('projectServer: 서버가 없으면 던지지 않고 null·빈 배열이다', async () => {
+  const none = createProjectServer({ fetchImpl: null });
+  assert.equal(await none.save('가', { a: 1 }), null);
+  assert.deepEqual(await none.list(), []);
+  assert.equal(await none.read('가'), null);
+  assert.equal(await none.dirOf(), '');
+
+  // fetch 가 던져도 마찬가지다 — 정적 호스팅에서 기능만 꺼지고 앱은 살아야 한다.
+  const boom = createProjectServer({ fetchImpl: fakeFetch(new Error('network')) });
+  assert.equal(await boom.save('가', {}), null);
+  assert.deepEqual(await boom.list(), []);
+});
+
+test('projectServer: 한글·공백 이름을 URL 에 싣고 JSON 본문으로 보낸다', async () => {
+  // 실측으로 인코딩 없이 보내면 요청 줄이 깨져 400 이 난다.
+  const f = fakeFetch(okJson({ ok: true, name: '9월 공연.json', size: 12, dir: '/p' }));
+  const api = createProjectServer({ fetchImpl: f });
+  const saved = await api.save('9월 공연', { version: 1 });
+  assert.deepEqual(saved, { name: '9월 공연.json', size: 12, dir: '/p' });
+  assert.equal(f.calls[0].method, 'PUT');
+  assert.equal(f.calls[0].url, `/api/projects?name=${encodeURIComponent('9월 공연')}`);
+  assert.ok(!f.calls[0].url.includes(' '), '공백이 날것으로 실렸다');
+  assert.deepEqual(JSON.parse(f.calls[0].body), { version: 1 });
+
+  assert.equal(await api.save('   ', {}), null, '빈 이름은 보내지도 않는다');
+  assert.equal(f.calls.length, 1);
+});
+
+test('projectServer: 목록은 서버가 준 순서 그대로 돌려준다(정렬은 서버 몫)', async () => {
+  const items = [{ name: 'b.json', size: 2, mtime: 200 }, { name: 'a.json', size: 1, mtime: 100 }];
+  const api = createProjectServer({ fetchImpl: fakeFetch(okJson({ ok: true, dir: '/p', projects: items })) });
+  assert.deepEqual(await api.list(), items);
+  assert.equal(await api.dirOf(), '/p');
+
+  // 모양이 틀린 응답은 빈 배열로 흡수한다(던지지 않는다).
+  const weird = createProjectServer({ fetchImpl: fakeFetch(okJson({ ok: true })) });
+  assert.deepEqual(await weird.list(), []);
+});
+
+test('projectServer: 없는 파일을 읽으면 null 이고, 있으면 내용 그대로다', async () => {
+  const api = createProjectServer({
+    // 경로에도 인코딩이 걸리므로 가짜 서버도 디코드해서 본다.
+    fetchImpl: fakeFetch((url) => (decodeURIComponent(url).includes('있는것')
+      ? okJson({ version: 1, fileName: '있는것' })
+      : { ok: false, status: 404, json: async () => ({ ok: false }) }))
+  });
+  assert.deepEqual(await api.read('있는것'), { version: 1, fileName: '있는것' });
+  assert.equal(await api.read('없는것'), null);
+  assert.equal(await api.read(''), null, '빈 이름은 보내지도 않는다');
 });

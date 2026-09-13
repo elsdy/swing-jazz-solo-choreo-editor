@@ -60,6 +60,7 @@ import { createDocsHub } from '../ui/docsHub.js';
 import { createSettingsView } from '../ui/settingsView.js';
 import { createClipLibrary } from '../adapters/clipLibrary.js';
 import { createClipServer } from '../adapters/clipServer.js';
+import { createProjectServer } from '../adapters/projectServer.js';
 import { createModelServer } from '../adapters/modelServer.js';
 import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
@@ -396,13 +397,55 @@ views.category = createCategoryView({
 
 views.toolbar = createToolbarView({ store, canUndo, canRedo });
 
+/**
+ * 보관 폴더의 목록을 최근 프로젝트 목록으로 삼는다(2026-09-13).
+ *
+ * **폴더가 주인이다** — 브라우저에 안무표 내용을 이고 있던 것이 용량 한계에 부딪히던 문제를 여기서
+ * 끝낸다(버그 기록: 최근 10개의 payload 전체를 localStorage 에 넣으면서 예외 처리가 없다).
+ * ⚠ 서버가 없으면 **아무것도 하지 않는다** — 지금까지의 localStorage 목록이 그대로 보인다.
+ * ⚠ 항목에 `data` 를 넣지 않는다. 열 때 이름으로 읽어 온다(openFromFolder).
+ */
+function refreshProjectFolder() {
+  return projectServer.list().then((items) => {
+    if (!items.length) return;
+    store.patch('recents', {
+      projects: items.map(it => ({
+        fileName: it.name.replace(/\.json$/i, ''),
+        savedAt: new Date(it.mtime * 1000).toISOString(),
+        data: null
+      }))
+    });
+    render({ savedLists: ['projects'] });
+  });
+}
+
+/**
+ * 최근 목록의 한 줄을 연다. 브라우저에 내용이 있으면 그대로, 폴더에서 온 것이면 읽어 와서.
+ * @param {any} data 항목이 들고 있는 내용(폴더에서 온 것이면 null)
+ * @param {{fileName?:string}} item 항목 전체
+ * @param {(deps:any, payload:any) => any} run 실제 커맨드
+ * @returns {any} 동기로 열었으면 Dirty, 읽어 와야 하면 undefined(렌더는 여기서 한다)
+ */
+function openFromFolder(data, item, run) {
+  if (data) return run(projectDeps, data);
+  const name = item && item.fileName;
+  if (!name) return undefined;
+  projectServer.read(name).then((payload) => {
+    if (payload) render(run(projectDeps, payload));
+    else browserDialogs.alert(`보관 폴더에서 '${name}' 을 읽지 못했습니다.`);
+  });
+  return undefined;
+}
+
 views.savedLists = createSavedListsView({
   store,
   render,
   setProjectFileName,                                   // 안 넘기면 '이름 복사'가 조용히 죽는다
   commands: {
-    loadProjectFromRecent: (data) => ProjectCmd.loadProjectFromRecent(projectDeps, data),
-    mergeProjectFromRecent: (data) => ProjectCmd.mergeProjectFromRecent(projectDeps, data),
+    // ⚠ 보관 폴더에서 온 항목은 `data` 가 없다 — 이름으로 읽어 와서 연다. 읽기는 비동기라
+    //   **여기서 render 를 부르고 undefined 를 돌려준다**(render 는 falsy 를 조용히 넘긴다).
+    loadProjectFromRecent: (data, item) => openFromFolder(data, item, ProjectCmd.loadProjectFromRecent),
+    mergeProjectFromRecent: (data, item) => openFromFolder(data, item, ProjectCmd.mergeProjectFromRecent),
     loadMoveListFromRecent: (data) => ProjectCmd.loadMoveListFromRecent(projectDeps, data),
     loadCategoriesFromRecent: (data) => ProjectCmd.loadCategoriesFromRecent(projectDeps, data),
     removeRecent: (kind, fileName) => ProjectCmd.removeRecent(projectDeps, kind, fileName),
@@ -565,7 +608,17 @@ bindControls({
     commitHistory,
     undo,
     redo,
-    saveProject: (options) => ProjectCmd.saveProject(projectDeps, options),
+    // ⚠ 다운로드는 유스케이스가 그대로 한다(정적 호스팅에서도 저장이 되어야 한다). 보관 폴더 쓰기는
+    //   **여기서** 한다 — 비동기이고 어댑터를 아는 자리가 app/main 뿐이기 때문이다(clipServer 와 같은 규약).
+    saveProject: (options) => {
+      const dirty = ProjectCmd.saveProject(projectDeps, options);
+      const fileName = (store.get().recents.projects[0] || {}).fileName;
+      const payload = (store.get().recents.projects[0] || {}).data;
+      if (fileName && payload) {
+        projectServer.save(fileName, payload).then((saved) => { if (saved) refreshProjectFolder(); });
+      }
+      return dirty;
+    },
     saveMoveList: (options) => ProjectCmd.saveMoveList(projectDeps, options),
     saveCategories: (options) => ProjectCmd.saveCategories(projectDeps, options),
     loadProjectFromFile: (input) => ProjectCmd.loadProjectFromFile(projectDeps, input),
@@ -773,6 +826,9 @@ function ensurePlayer() {
  */
 const clipLibrary = createClipLibrary();
 const clipServer = createClipServer();
+// 프로젝트 파일 보관(2026-09-13). 영상과 같은 root 아래 형제 폴더(<root>/projects/)를 쓴다.
+// ⚠ 서버가 없으면 모든 함수가 null·빈 배열이다 — 그때는 지금까지처럼 다운로드와 localStorage 로 돈다.
+const projectServer = createProjectServer();
 /** 서버가 있으면 그 설정, 없으면 null. probe 가 끝나기 전에는 null 이라 브라우저 모드처럼 군다. */
 let clipServerConfig = null;
 /** 서버에 있다고 확인한 경로. 소스가 바뀌면 다시 확인한다. */
@@ -949,6 +1005,9 @@ clipServer.probe().then((cfg) => {
   libraryAutoTriedFor = '';
   views.settings?.render();
   views.video?.render();
+  // 서버가 있으면 **보관 폴더가 최근 프로젝트 목록의 주인**이다(2026-09-13).
+  // ⚠ 여기서만 부른다 — 매 렌더마다 폴더를 읽으면 목록이 스크롤 중에 다시 그려진다.
+  refreshProjectFolder();
 });
 
 /** 보간된 현재 미디어 시각(초). 표본은 캐시된 값이라 매 프레임 불러도 iframe 경계를 넘지 않는다. */

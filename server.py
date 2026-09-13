@@ -14,6 +14,9 @@
     PUT  /api/clips?project=P&name=N      본문 = 파일 바이트. <root>/<subdir>/<P>/<N> 으로 저장(겹치면 " (2)").
                                           → {path:'<subdir>/<P>/<N>', url:'/clips/<path>', size}
     GET  /api/clips?project=P             그 프로젝트의 클립 목록 [{path, name, size, mtime}]
+    PUT  /api/projects?name=N             본문 = 안무표 JSON. <root>/<projectsSubdir>/<N>.json 으로 저장(**덮어쓴다**)
+    GET  /api/projects                    보관된 안무표 목록 [{name, size, mtime}] — 최근 목록의 주인
+    GET  /api/projects/<이름>             그 파일을 그대로 내준다
     HEAD /api/clips/<path>                있는지(200/404)
     GET  /clips/<path>                    파일. Range 를 지원한다(<video> 탐색에 필수)
     POST /api/clips/trim {path, inSec, outSec}   보관된 클립을 [inSec, outSec) 로 잘라 **다시 인코딩**해 같은 폴더에
@@ -73,6 +76,9 @@ from urllib.parse import parse_qs, unquote, urlsplit
 REPO_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = REPO_DIR / '.clipserver.json'
 DEFAULT_SUBDIR = 'video-clip'
+# ⚠ 프로젝트 파일은 영상과 **다른 폴더**다(2026-09-13). 같은 root 아래 형제로 두어 한 자리만
+#   백업하면 둘 다 들어가되, 안무표(수 KB)와 영상(수십 MB)이 한 폴더에 섞이지 않는다.
+DEFAULT_PROJECTS_SUBDIR = 'projects'
 UNFILED = '_미지정'
 BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
@@ -321,9 +327,12 @@ def normalize_llm(raw):
 
 
 class Config:
-    def __init__(self, root, subdir, path=CONFIG_FILE, llm=None, models_dir=None, pose_model=None):
+    def __init__(self, root, subdir, path=CONFIG_FILE, llm=None, models_dir=None, pose_model=None,
+                 projects_subdir=None):
         self.root = Path(root).expanduser().resolve()
         self.subdir = safe_segment(subdir, DEFAULT_SUBDIR)
+        # 프로젝트 파일 폴더. 영상과 같은 root 아래 형제다 — 이름만 따로 바꿀 수 있다.
+        self.projects_subdir = safe_segment(projects_subdir, DEFAULT_PROJECTS_SUBDIR)
         self.path = path
         self.llm = normalize_llm(llm)
         # ⚠ 모델 보관 위치는 영상 보관 루트와 **따로**다. 영상은 외장 디스크에 두고 모델은 저장소 옆에
@@ -335,8 +344,15 @@ class Config:
     def dir(self):
         return self.root / self.subdir
 
+    @property
+    def projects_dir(self):
+        return self.root / self.projects_subdir
+
     def to_json(self):
-        return {'root': str(self.root), 'subdir': self.subdir, 'dir': str(self.dir)}
+        return {
+            'root': str(self.root), 'subdir': self.subdir, 'dir': str(self.dir),
+            'projectsSubdir': self.projects_subdir, 'projectsDir': str(self.projects_dir),
+        }
 
     def models_json(self):
         """모델 보관 위치와 파일별 있음/없음. 브라우저가 이걸 보고 '받아 두세요' 를 띄운다."""
@@ -389,6 +405,7 @@ class Config:
             self.path.write_text(json.dumps({
                 'root': str(self.root), 'subdir': self.subdir, 'llm': self.llm,
                 'modelsDir': str(self.models_dir), 'poseModel': self.pose_model,
+                'projectsSubdir': self.projects_subdir,
             }, ensure_ascii=False, indent=2))
         except OSError:
             pass
@@ -396,7 +413,7 @@ class Config:
     @staticmethod
     def load(default_root, default_subdir, path=CONFIG_FILE):
         root, subdir, llm = default_root, default_subdir, None
-        models_dir, pose_model = None, None
+        models_dir, pose_model, projects_subdir = None, None, None
         try:
             data = json.loads(Path(path).read_text())
             root = data.get('root') or root
@@ -404,9 +421,10 @@ class Config:
             llm = data.get('llm')
             models_dir = data.get('modelsDir')
             pose_model = data.get('poseModel')
+            projects_subdir = data.get('projectsSubdir')
         except (OSError, ValueError):
             pass
-        return Config(root, subdir, path, llm, models_dir, pose_model)
+        return Config(root, subdir, path, llm, models_dir, pose_model, projects_subdir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -802,6 +820,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self._serve_model(unquote(url.path[len('/models/'):]))
         if url.path == '/api/clips':
             return self._list_clips(parse_qs(url.query))
+        if url.path == '/api/projects':
+            return self._list_projects()
+        if url.path.startswith('/api/projects/'):
+            return self._read_project(unquote(url.path[len('/api/projects/'):]))
         if url.path.startswith('/api/clips/'):
             return self._head_clip(unquote(url.path[len('/api/clips/'):]))
         if url.path.startswith('/clips/'):
@@ -835,6 +857,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._put_llm_config()
         if url.path == '/api/clips':
             return self._put_clip(parse_qs(url.query))
+        if url.path == '/api/projects':
+            return self._put_project(parse_qs(url.query))
         if url.path == '/api/models/config':
             return self._put_models_config()
         return self._error(HTTPStatus.NOT_FOUND, 'no such endpoint')
@@ -906,11 +930,16 @@ class Handler(SimpleHTTPRequestHandler):
             return self._error(HTTPStatus.BAD_REQUEST, 'invalid json')
         root = data.get('root', str(self.config.root))
         subdir = data.get('subdir', self.config.subdir)
+        projects_subdir = data.get('projectsSubdir', self.config.projects_subdir)
         if not isinstance(root, str) or not root.strip():
             return self._error(HTTPStatus.BAD_REQUEST, 'root must be a non-empty path')
-        candidate = Config(root.strip(), subdir, self.config.path, self.config.llm)
+        # ⚠ **바꾸지 않는 값을 전부 이어 준다.** 그전에는 llm 만 넘겨서, 보관 루트를 바꾸는 순간
+        #   modelsDir·poseModel 이 조용히 기본값으로 돌아갔다(2026-09-13 에 projectsSubdir 을 더하며 찾음).
+        candidate = Config(root.strip(), subdir, self.config.path, self.config.llm,
+                           self.config.models_dir, self.config.pose_model, projects_subdir)
         try:
             candidate.dir.mkdir(parents=True, exist_ok=True)
+            candidate.projects_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
             return self._error(HTTPStatus.BAD_REQUEST, f'cannot create {candidate.dir}: {e}')
         type(self).config = candidate
@@ -1101,6 +1130,84 @@ class Handler(SimpleHTTPRequestHandler):
             'size': dst.stat().st_size, 'durationSec': round(out_sec - in_sec, 3),
         })
 
+    # ── 프로젝트 파일 보관 (2026-09-13) ──
+    #
+    # 영상 클립과 **같은 틀**이되 폴더가 다르다(<root>/projects/). 안무표는 수 KB 이고 영상은 수십 MB 라
+    # 한 폴더에 섞으면 목록도 백업도 지저분해진다.
+    #
+    # ⚠ 프로젝트 파일은 클립과 달리 **덮어쓴다.** 같은 안무를 여러 번 저장하는 것이 정상이고,
+    #   저장할 때마다 " (2)" 가 붙으면 목록이 같은 이름으로 가득 찬다. 클립은 반대다(영상은 지우면 끝).
+    # ⚠ 이름은 safe_segment 로 한 조각으로 접는다 — `../` 이 들어와도 폴더 밖으로 못 나간다.
+
+    def _project_file(self, name):
+        """프로젝트 이름 → 실제 파일 경로. 이름이 비었거나 폴더 밖이면 None."""
+        safe = safe_segment(name, '')
+        if not safe:
+            return None
+        if not safe.endswith('.json'):
+            safe += '.json'
+        target = (self.config.projects_dir / safe).resolve()
+        try:
+            target.relative_to(self.config.projects_dir.resolve())
+        except ValueError:
+            return None
+        return target
+
+    def _put_project(self, query):
+        """본문(JSON 바이트)을 <root>/<projectsSubdir>/<이름>.json 으로 쓴다. 같은 이름은 덮어쓴다."""
+        name = (query.get('name') or [''])[0]
+        target = self._project_file(name)
+        if not target:
+            return self._error(HTTPStatus.BAD_REQUEST, 'name required')
+        length = int(self.headers.get('Content-Length') or 0)
+        if length <= 0:
+            return self._error(HTTPStatus.BAD_REQUEST, 'empty body')
+        raw = self.rfile.read(length)
+        # ⚠ 내용이 JSON 인지 여기서 확인한다. 깨진 바이트를 받아 두면 다음에 여는 쪽에서 터진다.
+        try:
+            json.loads(raw.decode('utf-8'))
+        except (ValueError, UnicodeDecodeError):
+            return self._error(HTTPStatus.BAD_REQUEST, 'body must be json')
+        try:
+            self.config.projects_dir.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+        except OSError as exc:
+            return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f'write failed: {exc}')
+        st = target.stat()
+        return self._json(HTTPStatus.CREATED, {
+            'ok': True, 'name': target.name, 'size': st.st_size, 'mtime': int(st.st_mtime),
+            'dir': str(self.config.projects_dir),
+        })
+
+    def _list_projects(self):
+        """보관 폴더의 .json 목록. **이것이 최근 프로젝트 목록의 주인**이다(브라우저는 순서만 기억한다)."""
+        items = []
+        folder = self.config.projects_dir
+        if folder.is_dir():
+            for entry in sorted(folder.iterdir()):
+                if not entry.is_file() or entry.name.startswith('.') or entry.suffix != '.json':
+                    continue
+                st = entry.stat()
+                items.append({'name': entry.name, 'size': st.st_size, 'mtime': int(st.st_mtime)})
+        items.sort(key=lambda it: it['mtime'], reverse=True)
+        return self._json(HTTPStatus.OK, {'ok': True, 'dir': str(folder), 'projects': items})
+
+    def _read_project(self, name):
+        """파일 하나를 그대로 내준다. 목록에서 고른 것을 여는 길이다."""
+        target = self._project_file(unquote(name))
+        if not target or not target.is_file():
+            return self._error(HTTPStatus.NOT_FOUND, 'no such project')
+        try:
+            raw = target.read_bytes()
+        except OSError as exc:
+            return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f'read failed: {exc}')
+        self.send_response(HTTPStatus.OK)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(raw)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(raw)
+
     def _list_clips(self, query):
         project = project_dir_name((query.get('project') or [''])[0])
         folder = self.config.dir / project
@@ -1183,6 +1290,7 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=8000)
     ap.add_argument('--root', default=None, help='클립 보관 루트(기본: 저장소 폴더). 설정 파일보다 우선한다')
     ap.add_argument('--subdir', default=None, help='루트 아래 하위 폴더(기본: video-clip)')
+    ap.add_argument('--projects', default=None, help='프로젝트 파일 하위 폴더(기본: projects). 영상과 같은 루트 아래 형제다')
     ap.add_argument('--config', default=str(CONFIG_FILE), help='설정 파일 경로(기본: 저장소의 .clipserver.json)')
     ap.add_argument('--models', default=None, help='자세 분석 모델 보관 폴더(기본: 저장소의 models/). 설정에서도 바꾼다')
     ap.add_argument('--ffmpeg', default=None, help='ffmpeg 실행 파일(기본: 환경 변수 CHOREO_FFMPEG 또는 PATH 의 ffmpeg). 없으면 자르기만 꺼진다')
@@ -1190,12 +1298,27 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     config = Config.load(str(REPO_DIR), DEFAULT_SUBDIR, Path(args.config))
+
+    # ⚠ 덮어쓰기는 **한 칸만 바꾸고 나머지를 그대로 이어 준다.** 인자를 하나 더할 때마다 이 네 줄을
+    #   같이 고쳐야 해서, 빠뜨리면 그 값이 조용히 기본값으로 떨어진다(projectsSubdir 을 더하며 실제로
+    #   그럴 뻔했다). 그래서 바꿀 것만 이름으로 주는 한 함수로 모은다.
+    def override(**changes):
+        fields = {
+            'root': config.root, 'subdir': config.subdir, 'path': config.path, 'llm': config.llm,
+            'models_dir': config.models_dir, 'pose_model': config.pose_model,
+            'projects_subdir': config.projects_subdir,
+        }
+        fields.update(changes)
+        return Config(**fields)
+
     if args.root:
-        config = Config(args.root, config.subdir, config.path, config.llm, config.models_dir, config.pose_model)
+        config = override(root=args.root)
     if args.subdir:
-        config = Config(config.root, args.subdir, config.path, config.llm, config.models_dir, config.pose_model)
+        config = override(subdir=args.subdir)
     if args.models:
-        config = Config(config.root, config.subdir, config.path, config.llm, args.models, config.pose_model)
+        config = override(models_dir=args.models)
+    if args.projects:
+        config = override(projects_subdir=args.projects)
     config.dir.mkdir(parents=True, exist_ok=True)
 
     Handler.config = config

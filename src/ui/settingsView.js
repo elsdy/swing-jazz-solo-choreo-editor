@@ -136,6 +136,19 @@ export function createSettingsView(deps) {
           <div class="helper" data-role="note"></div>
         </section>
 
+        <section class="settings-section" data-role="projects-section" hidden>
+          <h3>프로젝트 보관 폴더</h3>
+          <div class="helper"><code>프로젝트 저장</code> 을 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
+          <div class="settings-row">
+            <span class="settings-label">하위 폴더</span>
+            <input class="settings-text" data-role="projects-subdir" type="text" placeholder="projects" />
+            <button class="ghost accent" data-act="apply-projects" type="button">적용</button>
+            <span class="settings-label">/ 프로젝트 이름.json</span>
+          </div>
+          <div class="settings-path" data-role="projects-preview"></div>
+          <div class="helper" data-role="projects-note"></div>
+        </section>
+
         <section class="settings-section" data-role="models-section" hidden>
           <h3>자세 분석 모델</h3>
           <div class="helper">영상에서 관절 위치를 찾아 주는 파일입니다. 계산은 <b>이 브라우저가</b> 하고 서버는 파일을 받아 두고 내주기만 합니다 — 영상은 이 컴퓨터 밖으로 나가지 않습니다. 한 번 받아 두면 그 뒤로는 인터넷 없이 됩니다. 받지 않아도 나머지 기능은 전부 그대로입니다.</div>
@@ -203,6 +216,10 @@ export function createSettingsView(deps) {
   const rootInput = overlay.querySelector('[data-role="root"]');
   const subdirInput = overlay.querySelector('[data-role="subdir"]');
   const previewEl = overlay.querySelector('[data-role="preview"]');
+  const projectsSection = overlay.querySelector('[data-role="projects-section"]');
+  const projectsSubdirInput = overlay.querySelector('[data-role="projects-subdir"]');
+  const projectsPreview = overlay.querySelector('[data-role="projects-preview"]');
+  const projectsNote = overlay.querySelector('[data-role="projects-note"]');
   const noteEl = overlay.querySelector('[data-role="note"]');
   const pickBtn = overlay.querySelector('[data-act="pick"]');
   const modelsSection = overlay.querySelector('[data-role="models-section"]');
@@ -387,6 +404,7 @@ export function createSettingsView(deps) {
   async function render() {
     await renderModels();
     await renderLlm();
+    await renderProjects();
     if (server && server.isActive()) { await renderServer(); return; }
     if (browserRow) browserRow.hidden = false;
     if (serverRow) serverRow.hidden = true;
@@ -419,6 +437,28 @@ export function createSettingsView(deps) {
   }
 
   /** 서버 모드. 폴더는 서버의 루트이고, 변경은 서버의 설정 파일에 남는다(브라우저 저장소는 쓰지 않는다). */
+  /**
+   * 프로젝트 보관 폴더 절(2026-09-13).
+   * ⚠ **서버가 있을 때만 보인다.** 정적 호스팅에서는 파일을 쓸 자리가 없어 지금까지처럼 다운로드로만
+   *   돌아가므로, 고칠 수 없는 설정을 보여 주면 거짓말이 된다(모델 절과 같은 규칙).
+   */
+  async function renderProjects() {
+    const active = !!(server && server.isActive());
+    if (projectsSection) projectsSection.hidden = !active;
+    if (!active) return;
+    const cfg = await server.getConfig();
+    const sub = (cfg && cfg.projectsSubdir) || 'projects';
+    if (projectsSubdirInput && doc.activeElement !== projectsSubdirInput) projectsSubdirInput.value = sub;
+    if (projectsPreview) {
+      projectsPreview.textContent = `${cfg ? cfg.root : '<서버 루트>'}/${sub}/<프로젝트 이름>.json`;
+    }
+    if (projectsNote) {
+      projectsNote.textContent = cfg
+        ? `지금 보관 폴더는 ${cfg.projectsDir} 입니다. 같은 이름으로 저장하면 덮어씁니다 — 같은 안무를 여러 번 저장하는 것이 정상이기 때문입니다(영상 클립은 반대로 " (2)" 가 붙습니다).`
+        : '로컬 서버에서 설정을 읽지 못했습니다. 서버가 켜져 있는지 확인하세요.';
+    }
+  }
+
   async function renderServer() {
     if (browserRow) browserRow.hidden = true;
     if (serverRow) serverRow.hidden = false;
@@ -547,6 +587,14 @@ export function createSettingsView(deps) {
     if (kind === 'apply-root' && server && rootInput) {
       server.setConfig({ root: rootInput.value.trim() }).then((cfg) => {
         if (!cfg && noteEl) noteEl.textContent = '서버가 그 경로를 만들지 못했습니다. 절대 경로인지, 쓸 수 있는 곳인지 확인하세요.';
+        else { render(); onChange(); }
+      });
+      return;
+    }
+    // 프로젝트 보관 하위 폴더(2026-09-13). 영상과 같은 PUT /api/config 를 쓰되 키가 다르다.
+    if (kind === 'apply-projects' && server && projectsSubdirInput) {
+      server.setConfig({ projectsSubdir: projectsSubdirInput.value.trim() }).then((cfg) => {
+        if (!cfg && projectsNote) projectsNote.textContent = '서버가 그 폴더를 만들지 못했습니다. 이름에 / 나 .. 가 들어가지 않았는지 확인하세요.';
         else { render(); onChange(); }
       });
     }
