@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """안무 편집기의 로컬 서버 — 정적 파일 + 영상 클립 보관 API. 표준 라이브러리만 쓴다.
 
-    python3 server.py                      # http://127.0.0.1:8000, 클립은 ./video-clip 아래
+    python3 server.py                      # http://127.0.0.1:8000
     python3 server.py --port 8080
-    python3 server.py --root ~/Movies      # 클립 보관 루트를 바꾼다(하위 폴더 video-clip 는 그대로)
-    python3 server.py --subdir clips       # 하위 폴더 이름을 바꾼다
+    python3 server.py --root ~/Movies      # 보관 루트를 바꾼다(아래의 video-clip·projects 는 그대로)
+    python3 server.py --subdir clips       # 영상 하위 폴더 이름을 바꾼다
+
+보관 자리는 **저장소 밖**이 기본이다(2026-09-13). 저장소는 코드의 자리이고, 안무표와 영상은
+잃으면 복구할 수 없는 사용자의 것이라 수명이 다르다. 데이터·설정·캐시 셋으로 갈라 둔다 —
+자세한 까닭은 아래 `data_home()` 위의 주석에 있다. 옛 자리(저장소 안)에 이미 쌓인 것이 있으면
+그 자리를 계속 쓴다.
 
 `python3 -m http.server 8000` 이 하던 일(저장소를 정적으로 내주기)을 그대로 하고, 그 위에 다음을 얹는다.
 
@@ -75,8 +80,86 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 REPO_DIR = Path(__file__).resolve().parent
-CONFIG_FILE = REPO_DIR / '.clipserver.json'
 DEFAULT_SUBDIR = 'video-clip'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 어디에 두는가 — 저장소 밖 (2026-09-13)
+#
+# 저장소는 **코드의 자리**다. 다시 클론하면 그대로 돌아오고 지워도 잃는 것이 없다. 안무표와
+# 영상은 반대다 — 잃으면 복구할 길이 없고 git 이 주인도 아니다. 그런데 둘이 한 폴더에 섞여
+# 있었고 `.gitignore` 다섯 줄이 그 사실을 덮고 있었다. 덮개를 걷고 기본값을 밖으로 돌린다.
+#
+# 셋으로 가른다. 수명과 주인이 다르기 때문이다.
+#   데이터  안무표·영상       잃으면 끝이다 — 백업 대상. 한 부모 아래 형제로 둔다
+#   설정    루트·모델·LLM 키  이 기기의 것. **API 키가 평문으로 들어 있어** 데이터와 같이
+#                            두면 안 된다(안무 폴더는 통째로 건네거나 클라우드에 올린다)
+#   캐시    자세 분석 모델     다시 받을 수 있다. 클론 여럿이 하나를 나눠 쓰는 편이 낫다
+#
+# ⚠ **옛 자리에 이미 쌓인 것이 있으면 그 자리를 계속 쓴다.** 말없이 옮기지 않는다 — 사용자가
+#   저장해 둔 안무표가 사라진 것처럼 보이는 것이 이 변경에서 가장 나쁜 실패다. 옮기고 싶으면
+#   폴더를 손으로 옮기고 `--root` 나 `⚙ 설정` 으로 새 자리를 가리키면 된다.
+APP_NAME = 'choreo'
+
+
+def _xdg(env, mac_tail, linux_tail):
+    """XDG 환경 변수 > macOS 관례 > 리눅스 기본. 윈도는 리눅스 쪽으로 떨어진다(홈 아래 점폴더)."""
+    base = os.environ.get(env, '').strip()
+    if base:
+        return Path(base).expanduser()
+    home = Path.home()
+    return home / mac_tail if sys.platform == 'darwin' else home / linux_tail
+
+
+def data_home():
+    """잃으면 복구 못 하는 것. macOS 에서는 Time Machine 이 알아서 담는 자리다."""
+    return _xdg('XDG_DATA_HOME', 'Library/Application Support', '.local/share') / APP_NAME
+
+
+def config_home():
+    """이 기기의 설정. 데이터와 **다른 자리**여야 한다 — LLM 키가 여기 있다.
+
+    ⚠ macOS 관례대로면 설정도 Application Support 라 데이터와 같은 폴더가 된다. 그러면 안무
+      폴더를 통째로 건네거나 클라우드에 올릴 때 키가 따라간다 — 가르려던 까닭이 그 자리에서
+      무너진다. 그래서 macOS 에서만 Preferences 쪽으로 뺀다.
+    """
+    return _xdg('XDG_CONFIG_HOME', 'Library/Preferences', '.config') / APP_NAME
+
+
+def cache_home():
+    """지워도 되는 것. 지우면 모델을 다시 받을 뿐 데이터는 그대로다."""
+    return _xdg('XDG_CACHE_HOME', 'Library/Caches', '.cache') / APP_NAME
+
+
+LEGACY_CONFIG_FILE = REPO_DIR / '.clipserver.json'
+LEGACY_MODELS_DIR = REPO_DIR / 'models'
+
+
+def _has_anything(path, pattern='*'):
+    """폴더가 있고 안에 무엇이든 있는가. 읽을 수 없으면 없는 것으로 친다."""
+    try:
+        return path.is_dir() and any(path.glob(pattern))
+    except OSError:
+        return False
+
+
+def default_config_file():
+    """옛 설정이 저장소에 남아 있으면 그것을 계속 쓴다(이 기기의 설정을 잃지 않는다)."""
+    return LEGACY_CONFIG_FILE if LEGACY_CONFIG_FILE.is_file() else config_home() / 'config.json'
+
+
+def default_data_root():
+    """저장소 안에 이미 영상이나 안무표가 쌓여 있으면 거기가 그대로 루트다."""
+    for name in (DEFAULT_SUBDIR, 'projects'):
+        if _has_anything(REPO_DIR / name):
+            return REPO_DIR
+    return data_home()
+
+
+def default_models_dir():
+    """받아 둔 모델이 저장소 안에 있으면 다시 받게 하지 않는다(17~42MB 다)."""
+    return LEGACY_MODELS_DIR if _has_anything(LEGACY_MODELS_DIR, '*.task') else cache_home() / 'models'
+
+
 # ⚠ 프로젝트 파일은 영상과 **다른 폴더**다(2026-09-13). 같은 root 아래 형제로 두어 한 자리만
 #   백업하면 둘 다 들어가되, 안무표(수 KB)와 영상(수십 MB)이 한 폴더에 섞이지 않는다.
 DEFAULT_PROJECTS_SUBDIR = 'projects'
@@ -283,15 +366,14 @@ def choose_folder(start=None):
 
 def models_suggestions():
     """추천 위치. 대화상자를 못 띄우는 환경에서도 한 번 눌러 고를 수 있게 한다."""
-    home = Path.home()
     out = [
-        {'label': '홈 캐시', 'dir': str(home / '.cache' / 'choreo-models'), 'note': '저장소를 다시 받아도 남습니다'},
-        {'label': '저장소 안', 'dir': str(REPO_DIR / 'models'), 'note': '프로젝트와 함께 있고 커밋되지 않습니다'},
+        {'label': '기본 캐시', 'dir': str(cache_home() / 'models'),
+         'note': '저장소를 다시 받아도 남고, 클론 여럿이 하나를 나눠 씁니다'},
+        {'label': '데이터 폴더 옆', 'dir': str(data_home() / 'models'),
+         'note': '안무·영상과 한자리 — 백업에 함께 들어갑니다'},
+        {'label': '저장소 안', 'dir': str(LEGACY_MODELS_DIR),
+         'note': '옛 기본값입니다. 저장소를 지우면 다시 받아야 합니다'},
     ]
-    if sys.platform == 'darwin':
-        out.append({'label': '앱 지원 폴더',
-                    'dir': str(home / 'Library' / 'Application Support' / 'choreo-editor' / 'models'),
-                    'note': 'macOS 관례라 백업에 포함됩니다'})
     return out
 
 
@@ -328,17 +410,19 @@ def normalize_llm(raw):
 
 
 class Config:
-    def __init__(self, root, subdir, path=CONFIG_FILE, llm=None, models_dir=None, pose_model=None,
+    def __init__(self, root, subdir, path=None, llm=None, models_dir=None, pose_model=None,
                  projects_subdir=None):
         self.root = Path(root).expanduser().resolve()
         self.subdir = safe_segment(subdir, DEFAULT_SUBDIR)
         # 프로젝트 파일 폴더. 영상과 같은 root 아래 형제다 — 이름만 따로 바꿀 수 있다.
         self.projects_subdir = safe_segment(projects_subdir, DEFAULT_PROJECTS_SUBDIR)
-        self.path = path
+        # ⚠ 기본값을 인자 자리에 두지 않는다 — 파이썬은 import 때 한 번만 재고, 그러면 옛 설정이
+        #   생기거나 사라져도 이 값이 따라오지 않는다.
+        self.path = Path(path) if path else default_config_file()
         self.llm = normalize_llm(llm)
         # ⚠ 모델 보관 위치는 영상 보관 루트와 **따로**다. 영상은 외장 디스크에 두고 모델은 저장소 옆에
         #   두는 것이 흔하고, 무엇보다 사용자가 "어디에 저장할지" 를 이 항목 하나로 정하기를 원한다.
-        self.models_dir = Path(models_dir or (REPO_DIR / 'models')).expanduser().resolve()
+        self.models_dir = Path(models_dir or default_models_dir()).expanduser().resolve()
         self.pose_model = pose_model if pose_model in POSE_MODELS else DEFAULT_POSE_MODEL
 
     @property
@@ -403,6 +487,7 @@ class Config:
 
     def save(self):
         try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)   # 설정 폴더는 첫 저장 때 생긴다
             self.path.write_text(json.dumps({
                 'root': str(self.root), 'subdir': self.subdir, 'llm': self.llm,
                 'modelsDir': str(self.models_dir), 'poseModel': self.pose_model,
@@ -412,7 +497,7 @@ class Config:
             pass
 
     @staticmethod
-    def load(default_root, default_subdir, path=CONFIG_FILE):
+    def load(default_root, default_subdir, path=None):
         root, subdir, llm = default_root, default_subdir, None
         models_dir, pose_model, projects_subdir = None, None, None
         try:
@@ -1317,16 +1402,17 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description='안무 편집기 로컬 서버 (정적 파일 + 영상 클립 보관)')
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=8000)
-    ap.add_argument('--root', default=None, help='클립 보관 루트(기본: 저장소 폴더). 설정 파일보다 우선한다')
+    ap.add_argument('--root', default=None, help='보관 루트 — 영상과 안무표가 이 아래 형제로 선다(기본: 저장소 밖의 데이터 폴더). 설정 파일보다 우선한다')
     ap.add_argument('--subdir', default=None, help='루트 아래 하위 폴더(기본: video-clip)')
     ap.add_argument('--projects', default=None, help='프로젝트 파일 하위 폴더(기본: projects). 영상과 같은 루트 아래 형제다')
-    ap.add_argument('--config', default=str(CONFIG_FILE), help='설정 파일 경로(기본: 저장소의 .clipserver.json)')
-    ap.add_argument('--models', default=None, help='자세 분석 모델 보관 폴더(기본: 저장소의 models/). 설정에서도 바꾼다')
+    ap.add_argument('--config', default=None, help='설정 파일 경로(기본: 저장소 밖의 설정 폴더. 옛 .clipserver.json 이 저장소에 남아 있으면 그것)')
+    ap.add_argument('--models', default=None, help='자세 분석 모델 보관 폴더(기본: 저장소 밖의 캐시 폴더). 설정에서도 바꾼다')
     ap.add_argument('--ffmpeg', default=None, help='ffmpeg 실행 파일(기본: 환경 변수 CHOREO_FFMPEG 또는 PATH 의 ffmpeg). 없으면 자르기만 꺼진다')
     ap.add_argument('--quiet', action='store_true')
     args = ap.parse_args(argv)
 
-    config = Config.load(str(REPO_DIR), DEFAULT_SUBDIR, Path(args.config))
+    config = Config.load(str(default_data_root()), DEFAULT_SUBDIR,
+                         Path(args.config) if args.config else default_config_file())
 
     # ⚠ 덮어쓰기는 **한 칸만 바꾸고 나머지를 그대로 이어 준다.** 인자를 하나 더할 때마다 이 네 줄을
     #   같이 고쳐야 해서, 빠뜨리면 그 값이 조용히 기본값으로 떨어진다(projectsSubdir 을 더하며 실제로
@@ -1349,6 +1435,7 @@ def main(argv=None):
     if args.projects:
         config = override(projects_subdir=args.projects)
     config.dir.mkdir(parents=True, exist_ok=True)
+    config.projects_dir.mkdir(parents=True, exist_ok=True)   # 안무표 폴더도 첫 실행에 만든다
 
     Handler.config = config
     Handler.quiet = args.quiet
@@ -1358,7 +1445,14 @@ def main(argv=None):
     cut = f'자르기: {Handler.ffmpeg}' if Handler.ffmpeg else '자르기: 꺼짐(ffmpeg 없음)'
     m = config.models_json()
     pose = f'자세 분석: 준비됨({config.pose_model})' if m['ready'] else f'자세 분석: 모델 {m["missing"]}개 필요 — 설정에서 내려받기'
-    print(f'안무 편집기: http://{args.host}:{port}/   클립 보관: {config.dir}   {cut}   {pose}', flush=True)
+    # 어디에 쌓이는지를 첫 줄에 밝힌다 — 기본값이 저장소 밖으로 나갔으니(2026-09-13) 말해 주지
+    # 않으면 사용자가 자기 안무표를 찾지 못한다.
+    print(f'안무 편집기: http://{args.host}:{port}/   {cut}   {pose}', flush=True)
+    print(f'  보관: 영상 {config.dir}\n        안무표 {config.projects_dir}\n'
+          f'        모델 {config.models_dir}\n        설정 {config.path}', flush=True)
+    if config.root == REPO_DIR:
+        print('  ⚠ 보관 루트가 저장소 안입니다(옛 자리). 옮기려면 폴더를 옮기고 --root 로 가리키세요.',
+              flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

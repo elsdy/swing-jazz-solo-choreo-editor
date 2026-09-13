@@ -175,7 +175,7 @@ export function createSettingsView(deps) {
 
         <section class="settings-section" data-role="llm-section" hidden>
           <h3>말로 채우기 — LLM</h3>
-          <div class="helper"><code>✨ 말로 채우기</code> 가 쓰는 모델입니다. 호출은 로컬 서버가 대신 하고, API 키는 서버의 설정 파일(<code>.clipserver.json</code>)에만 남습니다 — 브라우저로 오지 않습니다.</div>
+          <div class="helper"><code>✨ 말로 채우기</code> 가 쓰는 모델입니다. 호출은 로컬 서버가 대신 하고, API 키는 서버의 설정 파일에만 남습니다 — 저장소 밖, 안무·영상 폴더와도 다른 자리입니다. 브라우저로 오지 않습니다.</div>
           <div class="settings-row">
             <span class="settings-label">제공자</span>
             <select data-role="llm-provider" class="video-pick">
@@ -471,7 +471,7 @@ export function createSettingsView(deps) {
     }
     if (noteEl) {
       noteEl.textContent = cfg
-        ? `로컬 서버(server.py)가 영상을 보관합니다. 지금 보관 폴더는 ${cfg.dir} 이고, 서버를 다시 켜도 유지됩니다(저장소의 .clipserver.json). 서버는 이 컴퓨터에서만 접속됩니다.`
+        ? `로컬 서버(server.py)가 영상을 보관합니다. 지금 보관 폴더는 ${cfg.dir} 이고, 서버를 다시 켜도 유지됩니다. 서버는 이 컴퓨터에서만 접속됩니다.`
         : '로컬 서버에서 설정을 읽지 못했습니다. 서버가 켜져 있는지 확인하세요.';
     }
   }

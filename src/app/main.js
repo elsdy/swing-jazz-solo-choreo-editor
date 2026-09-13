@@ -1376,7 +1376,8 @@ views.settings = createSettingsView({
   clips: clipLibrary,
   llm: llmServer,
   models: modelServer,
-  // 서버 모드면 설정은 서버의 것이다 — 폴더 선택 대신 경로 입력이고, 서버의 .clipserver.json 에 남는다.
+  // 서버 모드면 설정은 서버의 것이다 — 폴더 선택 대신 경로 입력이고, 서버의 설정 파일에 남는다
+  //  (저장소 밖. 2026-09-13 에 데이터·설정·캐시가 각각 다른 자리로 갈렸다).
   server: {
     isActive: () => !!clipServerConfig,
     getConfig: () => clipServer.getConfig(),

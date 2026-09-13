@@ -482,3 +482,49 @@ test('server.py: 안무표는 projects 폴더에 덮어쓰기로 쌓이고, 지�
     assert.equal((await fetch(`${s.base}/api/projects?name=`, { method: 'DELETE' })).status, 400);
   } finally { s.stop(); }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 보관 자리는 저장소 밖이다 (2026-09-13)
+//
+// 저장소는 코드의 자리이고 안무표·영상은 잃으면 복구 못 하는 사용자의 것이라 수명이 다르다.
+// 여기서 지키는 것은 셋이다 — **데이터·설정·캐시가 서로 다른 자리**일 것, XDG 환경 변수를
+// 따를 것, 그리고 **옛 자리에 쌓인 것이 있으면 말없이 옮기지 않을** 것.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** server.py 를 모듈로 읽어 한 줄을 물어본다(서버를 띄우지 않는다). */
+function askPython(expr, env = {}) {
+  const res = spawnSync('python3', ['-c', `import server; print(${expr})`],
+    { cwd: REPO, env: { ...process.env, ...env }, encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  return res.stdout.trim();
+}
+
+test('server.py: 데이터·설정·캐시가 저장소 밖의 서로 다른 자리다', { skip: !hasPython && 'python3 없음' }, () => {
+  const [data, config, cache] = askPython(
+    "'\\n'.join(str(f()) for f in (server.data_home, server.config_home, server.cache_home))"
+  ).split('\n');
+
+  for (const dir of [data, config, cache]) {
+    assert.ok(!dir.startsWith(REPO + path.sep), `저장소 안이다: ${dir}`);
+  }
+  // ⚠ 설정에는 LLM 키가 평문으로 있다. 안무 폴더는 통째로 건네거나 올리는 것이라 같이 두면 안 된다.
+  assert.notEqual(data, config, '설정이 데이터와 같은 자리다 — 키가 따라간다');
+  assert.notEqual(data, cache);
+});
+
+test('server.py: XDG 환경 변수를 따른다', { skip: !hasPython && 'python3 없음' }, () => {
+  const fake = path.join(tmpdir(), 'choreo-xdg-데이터');
+  const got = askPython('server.data_home()', { XDG_DATA_HOME: fake });
+  assert.equal(got, path.join(fake, 'choreo'));
+});
+
+test('server.py: 옛 자리에 쌓인 것이 있으면 그 자리를 계속 쓴다', { skip: !hasPython && 'python3 없음' }, () => {
+  // 이 저장소에는 실제로 옛 폴더가 남아 있을 수도, 없을 수도 있다. 둘 중 어느 쪽이든
+  // **규칙이 같은지**만 본다 — 폴더가 있으면 저장소, 없으면 밖.
+  const root = askPython('server.default_data_root()');
+  const legacyHas = askPython(
+    "server._has_anything(server.REPO_DIR / 'video-clip') or server._has_anything(server.REPO_DIR / 'projects')"
+  ) === 'True';
+  if (legacyHas) assert.equal(root, REPO, '쌓인 것이 있는데 새 자리를 가리킨다 — 사라진 것처럼 보인다');
+  else assert.ok(!root.startsWith(REPO + path.sep) && root !== REPO, '빈 저장소인데 안쪽을 가리킨다');
+});

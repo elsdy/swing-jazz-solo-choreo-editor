@@ -384,7 +384,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 엔드포인트 | 하는 일 |
 |---|---|
 | `GET /api/health` | 서버가 있는지. `{ok, mode:'server', root, subdir, dir}` |
-| `GET` · `PUT /api/config` | 보관 루트·하위 폴더. 변경은 저장소의 `.clipserver.json` 에 남는다 |
+| `GET` · `PUT /api/config` | 보관 루트·하위 폴더. 변경은 **저장소 밖** 설정 폴더의 `config.json` 에 남는다(LLM 키가 여기 있어 데이터와 다른 자리다) |
 | `PUT /api/clips?project=&name=` | 본문 = 파일 바이트. `<root>/<subdir>/<프로젝트>/<파일>` 로 저장(겹치면 ` (2)`) |
 | `GET /api/clips?project=` · `GET /api/clips/<path>` | 목록 · 존재 확인 |
 | `GET /clips/<path>` | 파일 스트리밍. `Range` 를 지원한다 — `<video>` 탐색에 필수다 |
