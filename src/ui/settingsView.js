@@ -75,6 +75,7 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  * @property {() => string} [getProjectName] 경로 미리보기에 쓸 지금 프로젝트 이름
  * @property {(subdir: string, projectName: string) => string[]} [previewDirParts] 미리보기 경로 조각(domain/clips.clipDirParts)
  * @property {() => void} [onChange] 설정이 바뀌었다 — 호출부가 패널 문구 등을 다시 그린다
+ * @property {Window} [win] `location.hostname` 으로 관리 화면을 열 수 있는 기기인지 본다
  * @property {Document} [doc]
  */
 
@@ -95,7 +96,9 @@ export function createSettingsView(deps) {
     getProjectName = () => '',
     previewDirParts = (subdir, name) => [subdir || 'video-clip', name || '_미지정'],
     onChange = () => {},
-    doc = document
+    doc = document,
+    // 관리 화면을 열 수 있는 기기인지 판정하고 새 탭을 여는 데 쓴다. 테스트가 가짜를 준다.
+    win = typeof window === 'undefined' ? { location: { hostname: '' }, open() {} } : window
   } = deps;
 
   if (!doc.getElementById(STYLE_ID)) {
@@ -227,6 +230,12 @@ export function createSettingsView(deps) {
   const browserRow = overlay.querySelector('[data-role="browser-row"]');
   const serverRow = overlay.querySelector('[data-role="server-row"]');
   const serverRootChip = overlay.querySelector('[data-role="server-root"]');
+  const adminBtns = [...overlay.querySelectorAll('[data-act="open-admin"]')];
+  /** 지금 이 브라우저가 서버를 도는 바로 그 기계인가. 서버의 판정과 같은 규칙이다(server.py is_loopback). */
+  const isLocalHost = () => {
+    const h = (win.location && win.location.hostname) || '';
+    return h === 'localhost' || h === '::1' || h.split('.')[0] === '127';
+  };
   const subdirInput = overlay.querySelector('[data-role="subdir"]');
   const previewEl = overlay.querySelector('[data-role="preview"]');
   const projectsSection = overlay.querySelector('[data-role="projects-section"]');
@@ -477,6 +486,15 @@ export function createSettingsView(deps) {
     if (serverRow) serverRow.hidden = false;
     const cfg = await server.getConfig();
     if (serverRootChip) serverRootChip.textContent = cfg ? cfg.root : '읽지 못했습니다';
+    // ⚠ 관리 화면은 **서버를 도는 기계에서만** 열린다(2026-09-13). 폰에서 눌러 403 을 보게 두지 않는다 —
+    //   눌러도 안 되는 버튼은 없느니만 못하다(U-13 과 같은 규칙).
+    const local = isLocalHost();
+    for (const btn of adminBtns) {
+      btn.disabled = !local;
+      btn.title = local
+        ? '서버 설정 화면을 새 탭에서 엽니다.'
+        : '보관 위치는 서버를 도는 기계에서만 바꿉니다 — 그 기계에서 /admin 을 여세요.';
+    }
     // ⚠ 서버 모드에서는 칸을 **잠근다.** 바꾸는 자리는 서버의 관리 화면 하나다.
     if (subdirInput) {
       subdirInput.value = cfg ? cfg.subdir : '';
@@ -490,7 +508,9 @@ export function createSettingsView(deps) {
     if (noteEl) {
       noteEl.textContent = cfg
         ? `로컬 서버(server.py)가 영상을 보관합니다. 지금 보관 폴더는 ${cfg.dir} 이고, 서버를 다시 켜도 유지됩니다. `
-          + '어느 디스크에 쌓을지는 서버가 정합니다 — 바꾸려면 `서버 설정 열기` 를 누르세요(같은 서버를 보는 모든 기기에 함께 적용됩니다).'
+          + (isLocalHost()
+            ? '어느 디스크에 쌓을지는 서버가 정합니다 — 바꾸려면 `서버 설정 열기` 를 누르세요(같은 서버를 보는 모든 기기에 함께 적용됩니다).'
+            : '어느 디스크에 쌓을지는 서버가 정합니다 — 바꾸려면 서버를 도는 기계에서 `/admin` 을 여세요. 이 기기에서는 바꿀 수 없습니다.')
         : '로컬 서버에서 설정을 읽지 못했습니다. 서버가 켜져 있는지 확인하세요.';
     }
   }
@@ -606,7 +626,8 @@ export function createSettingsView(deps) {
     // 보관 위치(영상·안무표 둘 다)를 정하는 것은 **서버의 일**이다 — 앱은 그 화면으로 보내기만 한다.
     // 여기서 PUT /api/config 를 부르던 두 갈래를 2026-09-13 에 닫았다.
     if (kind === 'open-admin') {
-      window.open('/admin', '_blank', 'noopener');
+      if (!isLocalHost()) return;
+      win.open('/admin', '_blank', 'noopener');
     }
   });
   if (modelsSize && models) {

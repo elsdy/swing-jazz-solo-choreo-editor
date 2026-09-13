@@ -583,15 +583,29 @@ test('server.py: 설정 하나를 바꿔도 나머지가 떨어지지 않는다(
   } finally { s.stop(); }
 });
 
-test('server.py: /admin 은 서버의 관리 화면을 내주고, 편집기와 다른 페이지다', { skip: !hasPython && 'python3 없음' }, async () => {
+test('server.py: /admin 은 로컬호스트에서만 열리고, 밖에서는 까닭을 말하며 거절한다', { skip: !hasPython && 'python3 없음' }, async () => {
+  // 주소 판정 자체는 파이썬 쪽에서 직접 잰다 — 테스트가 다른 기계인 척할 수는 없다.
+  const probe = spawnSync('python3', ['-c',
+    'import sys; sys.path.insert(0, ".."); import server; '
+    + 'print(",".join(str(server.is_loopback(a)) for a in '
+    + '["127.0.0.1", "::1", "::ffff:127.0.0.1", "192.168.50.7", "100.86.195.60", "1.127.0.0", ""]))'
+  ], { cwd: path.join(REPO, 'tests'), encoding: 'utf8' });
+  assert.equal(probe.status, 0, probe.stderr);
+  assert.equal(probe.stdout.trim(), 'True,True,True,False,False,False,False',
+    '로컬호스트 판정이 헐겁거나 너무 빡빡하다');
+
   const s = await startServer();
   try {
+    // 테스트는 127.0.0.1 로 붙으므로 열려야 한다.
     const res = await fetch(`${s.base}/admin`);
     assert.equal(res.status, 200);
     const html = await res.text();
     assert.match(html, /서버 설정/, '관리 화면이 아니라 다른 것이 왔다');
     // ⚠ 이 화면은 앱의 모듈을 쓰지 않는다 — 앱이 깨져도, 앱을 안 열었어도 떠야 한다.
     assert.ok(!/src\/app\/main\.js/.test(html), '관리 화면이 앱 모듈을 불러오고 있다');
+    // ⚠ 이 화면이 소유하는 것은 보관 위치 하나다 — 모델·LLM 은 앱의 `⚙ 설정` 이 갖는다.
+    assert.ok(!/id="llmKey"/.test(html), '관리 화면에 LLM 키 칸이 남아 있다');
+    assert.ok(!/id="poseModel"/.test(html), '관리 화면에 모델 고르개가 남아 있다');
 
     // 보관 현황은 서버가 세어 준다(관리 화면이 여러 API 를 긁어모으지 않게).
     const usage = await (await fetch(`${s.base}/api/storage`)).json();

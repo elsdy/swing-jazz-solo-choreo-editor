@@ -7,6 +7,10 @@
 <!--
   server.py 의 관리 화면이다(2026-09-13).
 
+  **이 화면이 소유하는 것은 보관 위치 하나다.** 모델 폴더와 LLM 설정은 편집기의 `⚙ 설정` 이 갖는다 —
+  그 둘은 "어느 디스크에 쌓을지" 와 달리 기기에서 골라도 탈이 없고, 주인이 둘이면 어느 쪽이
+  맞는지 아무도 모르게 된다(2026-09-13 결정).
+
   왜 안무 편집기 안이 아니라 여기 있나 — **보관 위치를 정하는 것은 서버의 일**이기 때문이다.
   편집기는 클라이언트다. 클라이언트가 서버의 디스크를 고르면, 브라우저마다 다른 답을 들고
   같은 서버를 서로 다르게 설정하게 된다(폰과 PC 가 같은 서버를 보면서 설정이 갈렸다).
@@ -119,45 +123,6 @@
     <div class="row"><button id="refreshUsage" type="button">다시 읽기</button></div>
   </section>
 
-  <section>
-    <h2>자세 분석 모델</h2>
-    <p class="helper">관절을 찾는 모델 파일을 둘 자리와, 어느 크기를 쓸지 정합니다. 계산은 브라우저가 하고 서버는 파일을 내주기만 합니다.</p>
-    <div class="row">
-      <span class="label">모델 폴더</span>
-      <input id="modelsDir" type="text" placeholder="…/models" />
-    </div>
-    <div class="row">
-      <span class="label">쓸 모델</span>
-      <select id="poseModel">
-        <option value="lite">lite — 17.2MB · 가장 빠름</option>
-        <option value="full">full — 20.6MB · 기본</option>
-        <option value="heavy">heavy — 41.9MB · 가장 정확</option>
-      </select>
-      <button class="accent" id="applyModels" type="button">적용</button>
-    </div>
-    <div class="note" id="modelsNote"></div>
-  </section>
-
-  <section>
-    <h2>말로 채우기 — LLM</h2>
-    <p class="helper">받아 적은 말을 동작으로 다듬는 데 씁니다. <b>키는 서버에만 남고 브라우저로 내려가지 않습니다.</b></p>
-    <div class="row">
-      <span class="label">제공자</span>
-      <select id="llmProvider">
-        <option value="anthropic">Claude (Anthropic)</option>
-        <option value="openai">OpenAI</option>
-        <option value="ollama">Ollama · LM Studio (로컬)</option>
-      </select>
-    </div>
-    <div class="row"><span class="label">모델</span><input id="llmModel" type="text" /></div>
-    <div class="row"><span class="label">주소</span><input id="llmBase" type="text" placeholder="https://…" /></div>
-    <div class="row">
-      <span class="label">키</span>
-      <input id="llmKey" type="password" placeholder="바꿀 때만 입력합니다" autocomplete="off" />
-      <button class="accent" id="applyLlm" type="button">적용</button>
-    </div>
-    <div class="note" id="llmNote"></div>
-  </section>
 </main>
 
 <script>
@@ -166,7 +131,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const state = { config: null, llm: null, models: null };
+  const state = { config: null };
 
   /** 바이트를 사람이 읽는 크기로. 영상은 GB 단위로 쌓이므로 GB 아래는 뭉갠다. */
   function human(bytes) {
@@ -247,7 +212,6 @@
       return;
     }
     fillStorage(state.config);
-    // 모델 폴더는 /api/config 가 아니라 /api/models 가 안다(loadModels 가 채운다).
     note($('storageNote'), '지금 영상은 ' + state.config.dir + ' 에, 안무표는 ' + state.config.projectsDir + ' 에 쌓입니다.');
   }
 
@@ -300,66 +264,10 @@
   }
   $('refreshUsage').onclick = loadUsage;
 
-  // ── 모델 ───────────────────────────────────────────────────────────────────
-
-  async function loadModels() {
-    state.models = await api('GET', '/api/models');
-    if (!state.models) return;
-    if (state.models.dir) $('modelsDir').value = state.models.dir;
-    if (state.models.poseModel) $('poseModel').value = state.models.poseModel;
-    const ready = state.models.ready;
-    note($('modelsNote'), ready
-      ? '모델이 준비됐습니다 — 영상 패널의 `⑥ 자세 분석` 을 쓸 수 있습니다.'
-      : '아직 모델 파일이 없습니다. 편집기의 `⚙ 설정` 에서 받아 두거나, 이 폴더에 직접 넣으세요.');
-  }
-
-  $('applyModels').onclick = async () => {
-    note($('modelsNote'), '적용하는 중…');
-    // ⚠ 서버가 받는 키는 `dir` 이다(`modelsDir` 이 아니다 — /api/config 와 이름이 다르다).
-    const data = await api('PUT', '/api/models/config', {
-      dir: $('modelsDir').value.trim(),
-      poseModel: $('poseModel').value
-    });
-    if (!data) { note($('modelsNote'), '그 폴더를 쓰지 못했습니다.', true); return; }
-    await loadModels();
-    loadUsage();
-  };
-
-  // ── LLM ────────────────────────────────────────────────────────────────────
-
-  async function loadLlm() {
-    state.llm = await api('GET', '/api/llm/config');
-    if (!state.llm) return;
-    if (state.llm.provider) $('llmProvider').value = state.llm.provider;
-    $('llmModel').value = state.llm.model || '';
-    $('llmBase').value = state.llm.baseUrl || '';
-    note($('llmNote'), state.llm.hasKey
-      ? '키가 저장되어 있습니다. 바꿀 때만 새로 입력하세요 — 저장된 키는 화면에 내려오지 않습니다.'
-      : '키가 없습니다. 로컬 제공자(Ollama·LM Studio)는 키 없이 씁니다.');
-  }
-
-  $('applyLlm').onclick = async () => {
-    const body = {
-      provider: $('llmProvider').value,
-      model: $('llmModel').value.trim(),
-      baseUrl: $('llmBase').value.trim()
-    };
-    // ⚠ 빈 칸은 **보내지 않는다.** 보내면 저장된 키를 빈 값으로 덮어쓴다.
-    const key = $('llmKey').value.trim();
-    if (key) body.apiKey = key;
-    note($('llmNote'), '적용하는 중…');
-    const data = await api('PUT', '/api/llm/config', body);
-    if (!data) { note($('llmNote'), '저장하지 못했습니다.', true); return; }
-    $('llmKey').value = '';
-    await loadLlm();
-  };
-
   // ── 시작 ───────────────────────────────────────────────────────────────────
 
   $('hostBadge').textContent = location.host;
   loadConfig().then(loadUsage);
-  loadModels();
-  loadLlm();
 })();
 </script>
 </body>

@@ -17,7 +17,8 @@
     GET  /api/config                      {root, subdir, dir}
     GET  /api/volumes                     이 서버가 쓸 수 있는 저장장치 [{path,label,freeBytes,writable,current}]
     GET  /api/storage                     지금 어디에 얼마나 쌓였나 {root, clipsDir, clips:{count,bytes}, …}
-    GET  /admin                           **서버 관리 화면.** 보관 위치·모델·LLM 은 여기서 정한다
+    GET  /admin                           **서버 관리 화면 — 보관 위치를 정한다.** 로컬호스트에서만 열린다
+                                          (PUT /api/config 도 마찬가지다. 모델·LLM 은 앱의 `⚙ 설정` 이 갖는다)
     PUT  /api/config  {root?, subdir?}    보관 루트·하위 폴더 변경. 없는 폴더는 만든다. .clipserver.json 에 남는다
     PUT  /api/clips?project=P&name=N      본문 = 파일 바이트. <root>/<subdir>/<P>/<N> 으로 저장(겹치면 " (2)").
                                           → {path:'<subdir>/<P>/<N>', url:'/clips/<path>', size}
@@ -131,6 +132,22 @@ def config_home():
 def cache_home():
     """지워도 되는 것. 지우면 모델을 다시 받을 뿐 데이터는 그대로다."""
     return _xdg('XDG_CACHE_HOME', 'Library/Caches', '.cache') / APP_NAME
+
+
+def is_loopback(addr):
+    """이 주소가 **서버를 도는 바로 그 기계**인가(2026-09-13).
+
+    보관 위치를 바꾸는 것은 서버의 살림이라, 같은 망의 아무 기기가 아니라 서버 앞에 앉은
+    사람만 한다. 영상 올리기·안무표 저장은 그대로 열려 있다 — 그건 클라이언트가 하는 일이다.
+
+    ⚠ **헤더를 믿지 않는다.** `X-Forwarded-For` 같은 것은 누구나 지어낼 수 있으므로 보지 않고,
+      TCP 연결의 상대 주소만 본다. 그래서 앞단에 프록시를 두면 전부 로컬로 보인다 —
+      이 도구는 프록시 뒤에 두는 물건이 아니다.
+    """
+    raw = str(addr or '')
+    if raw.startswith('::ffff:'):
+        raw = raw[len('::ffff:'):]
+    return raw == '::1' or raw == 'localhost' or raw.split('.')[0] == '127'
 
 
 def _tree_usage(folder):
@@ -1010,7 +1027,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self._list_clips(parse_qs(url.query))
         # 서버의 관리 화면(2026-09-13). 보관 위치를 정하는 것은 **서버의 일**이라 서버가 자기 화면을 낸다 —
         # 안무 편집기(클라이언트)는 그 값을 읽기만 한다.
-        if url.path in ('/admin', '/admin/'):
+        if url.path in ('/admin', '/admin/', '/admin.html'):
+            if not is_loopback(self.client_address[0]):
+                return self._deny_admin()
             self.path = '/admin.html'
             return super().do_GET()
         if url.path == '/api/storage':
@@ -1130,6 +1149,10 @@ class Handler(SimpleHTTPRequestHandler):
     # ── 설정 ──
 
     def _put_config(self):
+        # ⚠ 보관 위치는 **서버 앞에 앉은 사람만** 바꾼다(2026-09-13 결정). 같은 망의 다른 기기는
+        #   영상을 올리고 안무표를 저장할 수 있지만, 그것이 *어느 디스크에 쌓일지* 는 정하지 못한다.
+        if not is_loopback(self.client_address[0]):
+            return self._deny_admin(as_json=True)
         data = self._read_json()
         if data is None or not isinstance(data, dict):
             return self._error(HTTPStatus.BAD_REQUEST, 'invalid json')
@@ -1356,6 +1379,27 @@ class Handler(SimpleHTTPRequestHandler):
         except ValueError:
             return None
         return target
+
+    def _deny_admin(self, as_json=False):
+        """서버 밖 기기의 관리 요청을 돌려보낸다. **왜 막혔는지와 어디로 가야 하는지**를 말한다 —
+        그냥 403 만 주면 고장으로 읽힌다."""
+        msg = ('보관 위치는 서버를 도는 기계에서만 바꿉니다. '
+               f'그 기계에서 http://localhost:{self.server.server_address[1]}/admin 을 여세요.')
+        if as_json:
+            return self._error(HTTPStatus.FORBIDDEN, msg)
+        body = (
+            '<!doctype html><meta charset="utf-8"><title>서버 설정 — 이 기기에서는 열 수 없습니다</title>'
+            '<body style="margin:0;padding:40px 20px;background:#0b1220;color:#e2e8f0;'
+            'font:15px/1.7 -apple-system,BlinkMacSystemFont,\'Apple SD Gothic Neo\',sans-serif;text-align:center">'
+            '<h1 style="font-size:17px">서버 설정은 서버 앞에서만 엽니다</h1>'
+            f'<p style="color:#94a3b8">{msg}</p>'
+            '<p><a href="/" style="color:#22c55e">← 안무 편집기로</a></p>'
+        ).encode('utf-8')
+        self.send_response(HTTPStatus.FORBIDDEN)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _put_project(self, query):
         """본문(JSON 바이트)을 <root>/<projectsSubdir>/<이름>.json 으로 쓴다. 같은 이름은 덮어쓴다."""
