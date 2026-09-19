@@ -302,7 +302,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
 | `composeView.js` | 상단 `✨ 말로 채우기` 팝업. 음성 인식(webkitSpeechRecognition) → 다듬기 → 스키마 → 미리보기 → 채우기의 세 단. LLM 은 주입받은 어댑터로, 배치는 주입받은 유스케이스로 |
-| `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 첫 항목이 영상 보관 폴더다. docsHub 처럼 자기 DOM·CSS 를 만들고, 어댑터는 함수로 주입받는다 |
+| `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 절을 갈래(`data-cat`)로 묶어 옆단에서 고르고, 제목 옆 검색칸이 절의 글자와 `data-keywords` 를 함께 훑는다. **절의 `hidden` 을 정하는 자리는 `applyFilter` 하나다** — 쓸 수 있는가(`data-available`)와 갈래·검색에 걸리는가가 곱해진다 |
 | `phrasingView.js` | 도구 모음의 `🎵 프레이즈` 버튼과 팝업. 숫자를 받는 창이고, 칠하는 것은 `boardView.syncPhrasing` 이다 |
 | `meshView.js` | 몸 메시를 캔버스에 그린다(2026-09-12). 가림은 화가 알고리즘 한 줄로 푼다 — 면을 먼 것부터 칠하면 가까운 면이 덮는다. 이 한 줄이 three.js 를 안 들이는 이유다. 영상 위에 겹칠 때는 `xScale` 로 가로 눌림을 다시 적용한다 |
 | `poseOverlay.js` | 영상 위에 관절·몸을 겹쳐 그린다(2026-09-12, 채널 B). `playhead.js` 와 같은 규약이다 — rAF 루프가 자기 캔버스에만 그리고 store 는 게터로만 읽는다. **프레임이 아니라 영상이 그려진 칸**에 맞춘다(레터박스), 측정은 `invalidate()` 뒤 한 번뿐이다 |

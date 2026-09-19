@@ -13,17 +13,48 @@ const CSS = `
   background: rgba(6,10,20,0.72); backdrop-filter: blur(3px); }
 .settings-overlay[data-open="1"] { display: block; }
 .settings-shell { position: absolute; left: 50%; top: 8vh; transform: translateX(-50%);
-  width: min(560px, 94vw); max-height: 84vh; overflow-y: auto;
+  width: min(780px, 96vw); max-height: 84vh;
+  display: flex; flex-direction: column; overflow: hidden;
   background: #0f1729; border: 1px solid rgba(148,163,184,0.22); border-radius: 14px;
   box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
 .settings-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  border-bottom: 1px solid rgba(148,163,184,0.16); }
-.settings-head h2 { margin: 0; font-size: 14px; font-weight: 800; color: #e5e7eb; }
-.settings-head .settings-spacer { flex: 1; }
-.settings-body { padding: 14px; display: grid; gap: 16px; }
+  border-bottom: 1px solid rgba(148,163,184,0.16); flex: 0 0 auto; }
+.settings-head h2 { margin: 0; font-size: 14px; font-weight: 800; color: #e5e7eb; white-space: nowrap; }
+.settings-search { flex: 1; min-width: 0; }
+/* 갈래 옆단 + 본문. ⚠ 스크롤은 shell 이 아니라 **본문이** 한다 — 옆단이 같이 흘러가면
+   긴 설정에서 갈래를 누르러 위로 되돌아가야 한다. */
+.settings-main { display: grid; grid-template-columns: 176px 1fr; min-height: 0; flex: 1 1 auto; }
+.settings-side { border-right: 1px solid rgba(148,163,184,0.16); padding: 10px 8px;
+  overflow-y: auto; display: grid; gap: 4px; align-content: start; }
+.settings-nav-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+  min-height: 38px; padding: 6px 9px; cursor: pointer; border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: #cbd5e1; font-size: 12px; font-weight: 700; }
+.settings-nav-item:hover { background: rgba(148,163,184,0.10); transform: none; }
+.settings-nav-item[aria-current="true"] { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.30); color: #eafff1; }
+.settings-nav-item .settings-nav-count { margin-left: auto; font-size: 10px; font-weight: 800; color: #7c8aa3; }
+.settings-nav-item[aria-current="true"] .settings-nav-count { color: #a7d8bb; }
+.settings-nav-item:disabled { opacity: 0.4; cursor: default; }
+.settings-nav-hint { font-size: 10px; color: #64748b; padding: 2px 9px 8px; line-height: 1.4; }
+.settings-body { padding: 14px; display: grid; gap: 16px; align-content: start; overflow-y: auto; min-height: 0; }
+/* 검색어에 걸린 줄. ⚠ 배경이 아니라 왼쪽 테두리다 — 배경은 갈래 선택이 이미 쓰고 있다. */
+.settings-row.is-hit { border-left: 2px solid #86efac; padding-left: 7px; margin-left: -9px; }
+.settings-empty { font-size: 12px; color: #94a3b8; line-height: 1.6; }
+@media (max-width: 640px) {
+  /* 폰: 옆단을 위로 눕힌다. 손가락 과녁이 되도록 줄 높이는 그대로 둔다. */
+  .settings-main { grid-template-columns: 1fr; }
+  .settings-side { border-right: 0; border-bottom: 1px solid rgba(148,163,184,0.16);
+    grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; align-content: center; }
+  .settings-nav-hint { display: none; }
+}
 .settings-section h3 { margin: 0 0 6px; font-size: 12.5px; color: #dbe4ef; }
 .settings-section .helper { margin: 6px 0 0; }
 .settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+/* ⚠ 반드시 있어야 한다. 위의 display:flex 가 브라우저 기본 [hidden]{display:none} 을 이겨서,
+   이 줄이 없으면 row.hidden = true 가 아무 일도 하지 않는다 — 서버 모드에서 브라우저 전용 줄
+   (폴더 지정·해제)이 그대로 보이고, 눌러도 되는 일이 없어 "버튼이 안 눌린다" 로 보인다.
+   같은 함정을 이 저장소가 다섯 번 막았다(.video-panel · .video-field · .docs-toc-children …).
+   ⚠ 이 CSS 는 템플릿 문자열 안이다 — 주석에 백틱을 쓰면 문자열이 거기서 끊겨 모듈 전체가 죽는다. */
+.settings-row[hidden] { display: none; }
 .settings-label { font-size: 11px; color: #8892a4; white-space: nowrap; }
 .settings-chip { font-size: 11px; color: #a7f3d0; background: rgba(34,197,94,0.14);
   border: 1px solid rgba(34,197,94,0.25); border-radius: 999px; padding: 2px 8px;
@@ -122,11 +153,14 @@ export function createSettingsView(deps) {
     <div class="settings-shell" role="dialog" aria-modal="true" aria-label="설정">
       <div class="settings-head">
         <h2>설정</h2>
-        <span class="settings-spacer"></span>
+        <input class="settings-search" data-role="search" type="search" placeholder="설정 검색 — 폴더 · 모델 · API 키 …" autocomplete="off" />
         <button class="ghost" data-act="close" type="button">✕ 닫기</button>
       </div>
+      <div class="settings-main">
+        <nav class="settings-side" data-role="nav" aria-label="설정 갈래"></nav>
       <div class="settings-body">
-        <section class="settings-section">
+        <section class="settings-section" data-cat="storage" data-available="1"
+          data-keywords="영상 클립 video clip 경로 path 폴더 디렉터리 저장 업로드 보관">
           <h3>영상 보관 폴더</h3>
           <div class="helper">영상 패널의 <code>📁 영상 파일 열기</code> 로 고른 영상을 이 폴더 아래에 복사해 둡니다. 그러면 저장한 안무표를 다시 열 때 같은 파일을 다시 고르지 않아도 됩니다. 폴더는 이 브라우저에만 기억되고, 어디로도 올라가지 않습니다.</div>
           <div class="settings-row" data-role="browser-row">
@@ -152,7 +186,8 @@ export function createSettingsView(deps) {
           <div class="helper" data-role="note"></div>
         </section>
 
-        <section class="settings-section" data-role="projects-section" hidden>
+        <section class="settings-section" data-role="projects-section" data-cat="storage"
+          data-keywords="프로젝트 안무표 json 저장 최근 목록 폴더 경로 백업 보관">
           <h3>프로젝트 보관 폴더</h3>
           <div class="helper"><code>프로젝트 저장</code> 을 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
           <div class="settings-row">
@@ -165,7 +200,8 @@ export function createSettingsView(deps) {
           <div class="helper" data-role="projects-note"></div>
         </section>
 
-        <section class="settings-section" data-role="models-section" hidden>
+        <section class="settings-section" data-role="models-section" data-cat="models"
+          data-keywords="자세 관절 포즈 pose mediapipe 모델 다운로드 내려받기 GPU 분석 크기 lite full heavy">
           <h3>자세 분석 모델</h3>
           <div class="helper">영상에서 관절 위치를 찾아 주는 파일입니다. 계산은 <b>이 브라우저가</b> 하고 서버는 파일을 받아 두고 내주기만 합니다 — 영상은 이 컴퓨터 밖으로 나가지 않습니다. 한 번 받아 두면 그 뒤로는 인터넷 없이 됩니다. 받지 않아도 나머지 기능은 전부 그대로입니다.</div>
           <div class="settings-row">
@@ -189,7 +225,8 @@ export function createSettingsView(deps) {
           <div class="helper" data-role="models-note"></div>
         </section>
 
-        <section class="settings-section" data-role="llm-section" hidden>
+        <section class="settings-section" data-role="llm-section" data-cat="models"
+          data-keywords="말로 채우기 LLM AI 프롬프트 claude anthropic openai gpt codex ollama lm studio 모델 API 키 key token 주소 baseurl">
           <h3>말로 채우기 — LLM</h3>
           <div class="helper"><code>✨ 말로 채우기</code> 가 쓰는 모델입니다. 호출은 로컬 서버가 대신 하고, API 키는 서버의 설정 파일에만 남습니다 — 저장소 밖, 안무·영상 폴더와도 다른 자리입니다. 브라우저로 오지 않습니다.</div>
           <div class="settings-row">
@@ -222,9 +259,128 @@ export function createSettingsView(deps) {
           </div>
           <div class="helper" data-role="llm-note"></div>
         </section>
+        <div class="settings-empty" data-role="empty" hidden></div>
+      </div>
       </div>
     </div>`;
   doc.body.appendChild(overlay);
+
+  // ── 갈래와 검색 ──────────────────────────────────────────────────────────
+  //
+  // 설정이 넷을 넘어가면서 한 줄로 이어 놓은 화면이 읽히지 않게 됐다. 갈래로 묶고, 갈래를 몰라도
+  // 닿을 수 있게 검색을 둔다. **목록의 주인은 아래 CATEGORIES 하나이고** 절은 `data-cat` 으로
+  // 자기 갈래를 밝힌다 — 설정 하나를 더하는 일이 `<section data-cat="…">` 한 줄로 끝나야 한다.
+  //
+  // ⚠ 절의 보임/숨김은 이제 **두 가지가 곱해져** 정해진다: 지금 쓸 수 있는가(`data-available`,
+  //   서버 모드에서만 나오는 절이 있다)와 지금 고른 갈래·검색어에 걸리는가. 그래서 `section.hidden`
+  //   을 직접 대입하는 자리를 남기지 않고 전부 applyFilter 를 거친다.
+  const CATEGORIES = Object.freeze([
+    Object.freeze({ id: 'storage', label: '보관 자리', hint: '파일이 어디에 쌓이는가' }),
+    Object.freeze({ id: 'models', label: '모델', hint: '자세 분석과 말로 채우기가 쓰는 모델' })
+  ]);
+  const ALL_CAT = 'all';
+
+  const sections = [...overlay.querySelectorAll('.settings-section')];
+  const navEl = overlay.querySelector('[data-role="nav"]');
+  const searchEl = overlay.querySelector('[data-role="search"]');
+  const emptyEl = overlay.querySelector('[data-role="empty"]');
+
+  /** 지금 고른 갈래. 검색 중에는 무시한다(검색은 언제나 전부에서 찾는다). */
+  let activeCat = ALL_CAT;
+  /** 지금 검색어(소문자·앞뒤 공백 제거). 빈 문자열이면 검색하지 않는 상태다. */
+  let query = '';
+
+  /** 지금 화면에 낼 수 있는 절인가. 서버가 없으면 서버 전용 절이 여기서 걸린다. */
+  const isAvailable = (sec) => sec.dataset.available === '1';
+
+  /**
+   * 절을 쓸 수 있게/없게 표시한다. 호출부는 `section.hidden` 을 직접 만지지 않는다 —
+   * 최종 보임 여부는 갈래·검색과 함께 applyFilter 가 정한다.
+   */
+  function setAvailable(sec, on) {
+    if (!sec) return;
+    if (on) sec.dataset.available = '1'; else delete sec.dataset.available;
+    applyFilter();
+  }
+
+  /** 검색 대상 문자열. 화면에 보이는 글자 + 절이 밝힌 키워드(`data-keywords`)다. */
+  function haystack(sec) {
+    return `${sec.textContent} ${sec.dataset.keywords || ''}`.toLowerCase();
+  }
+
+  /** 갈래·검색어를 한 번에 적용한다. 이 함수가 절의 `hidden` 을 정하는 **유일한 자리**다. */
+  function applyFilter() {
+    const searching = query !== '';
+    let shown = 0;
+    const hitsByCat = new Map(CATEGORIES.map(c => [c.id, 0]));
+
+    for (const sec of sections) {
+      const usable = isAvailable(sec);
+      const inCat = searching || activeCat === ALL_CAT || sec.dataset.cat === activeCat;
+      const hit = !searching || haystack(sec).includes(query);
+      const visible = usable && inCat && hit;
+      sec.hidden = !visible;
+      if (usable && hit) hitsByCat.set(sec.dataset.cat, (hitsByCat.get(sec.dataset.cat) || 0) + 1);
+      if (visible) shown += 1;
+
+      // 걸린 줄에 표시를 남긴다. 절 제목·설명만 걸린 경우에는 어느 줄에도 붙지 않는다.
+      for (const row of sec.querySelectorAll('.settings-row')) {
+        const rowHit = searching && !row.hidden && row.textContent.toLowerCase().includes(query);
+        row.classList.toggle('is-hit', rowHit);
+      }
+    }
+
+    for (const btn of navEl.querySelectorAll('.settings-nav-item')) {
+      const id = btn.dataset.cat;
+      const count = id === ALL_CAT
+        ? [...hitsByCat.values()].reduce((a, b) => a + b, 0)
+        : (hitsByCat.get(id) || 0);
+      btn.querySelector('.settings-nav-count').textContent = count === 0 ? '' : String(count);
+      btn.disabled = count === 0 && !searching;
+      // 검색 중에는 갈래가 아니라 `전체` 가 켜진 것으로 보인다 — 실제로 전부에서 찾기 때문이다.
+      btn.setAttribute('aria-current', String((searching ? ALL_CAT : activeCat) === id));
+    }
+
+    if (emptyEl) {
+      emptyEl.hidden = shown > 0;
+      emptyEl.textContent = shown > 0 ? ''
+        : (searching ? `‘${searchEl.value.trim()}’ 에 맞는 설정이 없습니다. 다른 말로 찾아보세요 — 폴더 · 모델 · 키 · 주소.`
+          : '이 갈래에 지금 쓸 수 있는 설정이 없습니다. 서버로 열면(python3 server.py) 더 나옵니다.');
+    }
+  }
+
+  // 옆단은 CATEGORIES 에서 만든다(화면 코드에 갈래를 손으로 적지 않는다).
+  for (const cat of [{ id: ALL_CAT, label: '전체', hint: '' }, ...CATEGORIES]) {
+    const btn = doc.createElement('button');
+    btn.className = 'settings-nav-item';
+    btn.type = 'button';
+    btn.dataset.cat = cat.id;
+    btn.innerHTML = `<span>${cat.label}</span><span class="settings-nav-count"></span>`;
+    if (cat.hint) btn.title = cat.hint;
+    navEl.appendChild(btn);
+    if (cat.hint) {
+      const hint = doc.createElement('div');
+      hint.className = 'settings-nav-hint';
+      hint.textContent = cat.hint;
+      navEl.appendChild(hint);
+    }
+  }
+  navEl.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('.settings-nav-item') : null;
+    if (!btn) return;
+    activeCat = btn.dataset.cat;
+    // 갈래를 고르는 것은 "검색을 그만두고 이 묶음을 본다"는 뜻이다.
+    if (query) { query = ''; searchEl.value = ''; }
+    applyFilter();
+  });
+  if (searchEl) {
+    // ⚠ input 에 건다(change 가 아니다). 설정 검색은 값을 확정하는 것이 아니라 좁혀 가는 것이라
+    //   글자마다 결과가 따라와야 한다 — 여기서는 되돌리기도 저장도 일어나지 않는다.
+    searchEl.oninput = () => { query = searchEl.value.trim().toLowerCase(); applyFilter(); };
+  }
+  // 첫 상태를 한 번 맞춘다. 서버 전용 절은 아직 `data-available` 이 없어 여기서 접힌다 —
+  // 마크업의 `hidden` 을 뺀 자리를 이 한 줄이 대신한다.
+  applyFilter();
 
   const folderChip = overlay.querySelector('[data-role="folder"]');
   const browserRow = overlay.querySelector('[data-role="browser-row"]');
@@ -289,7 +445,7 @@ export function createSettingsView(deps) {
   async function renderModels() {
     if (!modelsSection) return;
     const active = !!(models && server && server.isActive());
-    modelsSection.hidden = !active;
+    setAvailable(modelsSection, active);
     if (!active) return;
     const st = await models.getStatus();
     if (!st) {
@@ -397,7 +553,7 @@ export function createSettingsView(deps) {
   async function renderLlm() {
     if (!llmSection) return;
     const active = !!(llm && server && server.isActive());
-    llmSection.hidden = !active;
+    setAvailable(llmSection, active);
     if (!active) return;
     const cfg = await llm.getConfig();
     if (!cfg) { if (llmNote) llmNote.textContent = '서버에서 LLM 설정을 읽지 못했습니다.'; return; }
@@ -466,7 +622,7 @@ export function createSettingsView(deps) {
    */
   async function renderProjects() {
     const active = !!(server && server.isActive());
-    if (projectsSection) projectsSection.hidden = !active;
+    setAvailable(projectsSection, active);
     if (!active) return;
     const cfg = await server.getConfig();
     const sub = (cfg && cfg.projectsSubdir) || 'projects';
@@ -517,6 +673,9 @@ export function createSettingsView(deps) {
 
   function open() {
     overlay.dataset.open = '1';
+    // 열 때마다 검색어를 비운다 — 지난번에 찾다 만 말이 남아 있으면 "설정이 사라졌다"로 보인다.
+    if (searchEl && searchEl.value) { searchEl.value = ''; query = ''; }
+    applyFilter();
     render();
   }
 
