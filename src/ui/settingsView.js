@@ -49,6 +49,12 @@ const CSS = `
 .settings-section h3 { margin: 0 0 6px; font-size: 12.5px; color: #dbe4ef; }
 .settings-section .helper { margin: 6px 0 0; }
 .settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+/* ⚠ 반드시 있어야 한다. 위의 display:flex 가 브라우저 기본 [hidden]{display:none} 을 이겨서,
+   이 줄이 없으면 row.hidden = true 가 아무 일도 하지 않는다 — 서버 모드에서 브라우저 전용 줄
+   (폴더 지정·해제)이 그대로 보이고, 눌러도 되는 일이 없어 "버튼이 안 눌린다" 로 보인다.
+   같은 함정을 이 저장소가 다섯 번 막았다(.video-panel · .video-field · .docs-toc-children …).
+   ⚠ 이 CSS 는 템플릿 문자열 안이다 — 주석에 백틱을 쓰면 문자열이 거기서 끊겨 모듈 전체가 죽는다. */
+.settings-row[hidden] { display: none; }
 .settings-label { font-size: 11px; color: #8892a4; white-space: nowrap; }
 .settings-chip { font-size: 11px; color: #a7f3d0; background: rgba(34,197,94,0.14);
   border: 1px solid rgba(34,197,94,0.25); border-radius: 999px; padding: 2px 8px;
