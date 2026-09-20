@@ -1489,7 +1489,11 @@ views.video = createVideoPanel({
     captureSkip: (args) => CaptureCmd.captureSkip(store, args),
     stopCapture: () => CaptureCmd.stopCapture(store),
     markersToBlocks: () => CaptureCmd.markersToBlocks(store, {}, { ids: browserEnv }),
-    nameSelected: () => CaptureCmd.nameSelected(store, {}, { dialogs: browserDialogs })
+    nameSelected: () => CaptureCmd.nameSelected(store, {}, { dialogs: browserDialogs }),
+    // 표 전체 옮기기(2026-09-20). 받아 적기와 같은 자리에 두지만 박자와는 무관하다 —
+    // 놓인 블록을 카운트 축에서 통째로 민다.
+    canShiftAll: () => store.board(BOARD_MAIN).placements.length > 0,
+    shiftAll: (args) => BoardCmd.shiftAllCounts(store, { boardId: BOARD_MAIN, ...args }, { ids: browserEnv })
   }
 });
 

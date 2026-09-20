@@ -46,7 +46,7 @@ import {
 } from '../../src/domain/project/schema.js';
 import { applySnapshot, pickUndoFields, toLinkBundle } from '../../src/domain/project/snapshot.js';
 import * as History from '../../src/usecases/historyCommands.js';
-import { clearBoard, setBoardRows } from '../../src/usecases/boardCommands.js';
+import { clearBoard, setBoardRows, shiftAllCounts } from '../../src/usecases/boardCommands.js';
 import { serializeLinks } from '../../src/domain/links.js';
 import { CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
@@ -73,7 +73,7 @@ import {
 import * as PhrasingCmd from '../../src/usecases/phrasingCommands.js';
 const { clipList } = VideoCmd;
 import * as CaptureCmd from '../../src/usecases/captureCommands.js';
-import { isPending, pendingGroupIds, nameGroup } from '../../src/domain/placements.js';
+import { isPending, pendingGroupIds, nameGroup, shiftAllPlacements } from '../../src/domain/placements.js';
 import * as Kin from '../../src/domain/kinematics.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
@@ -4201,4 +4201,87 @@ test('받아 적기: 경계를 아무 데서나 찍어도 한 마디가 두 줄�
       seen.add(key);
     }
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 표 전체 옮기기 (2026-09-20)
+//
+// 받아 적기는 반응 지연을 한 칸까지만 흡수한다. 그 이상 밀린 날 블록을 하나씩 고치는 대신
+// 표 전체를 같은 만큼 움직인다. 지켜야 하는 것은 둘 — 그룹이 조각으로 다시 잘리는 것,
+// 그리고 **하나라도 밖으로 나가면 아무것도 옮기지 않는 것**이다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('shiftAllPlacements: 마디에 걸친 그룹은 조각을 다시 잘라 옮긴다', () => {
+  let n = 0;
+  const ids = () => `s${++n}`;
+  const board = { rows: 4, cols: 8, hasIntroRow: true };
+  // 8x1 의 4카운트에서 시작하는 10칸 그룹 = 5 + 5 두 조각.
+  const ps = [
+    { id: 'a', groupId: 'g1', name: 'A', category: 'step', row: 1, startIndex: 3, length: 5, subRow: 0 },
+    { id: 'b', groupId: 'g1', name: 'A', category: 'step', row: 2, startIndex: 0, length: 5, subRow: 0 }
+  ];
+  const shape = (arr) => arr.map(p => `${p.row}:${p.startIndex}+${p.length}`).join(' ');
+
+  // 한 칸 당기면 첫 조각이 6칸이 된다 — 조각 나누는 자리가 달라진다.
+  assert.equal(shape(shiftAllPlacements(ps, board, -1, ids)), '1:2+6 2:0+4');
+  assert.equal(shape(shiftAllPlacements(ps, board, 1, ids)), '1:4+4 2:0+6');
+  // 카운트 총합은 언제나 보존된다.
+  for (const d of [-1, 1, -3, 2]) {
+    const moved = shiftAllPlacements(ps, board, d, ids);
+    assert.equal(moved.reduce((t, p) => t + p.length, 0), 10, `${d} 칸 옮겼더니 길이가 달라졌다`);
+    assert.equal(new Set(moved.map(p => p.groupId)).size, 1, '그룹이 갈라지면 안 된다');
+  }
+
+  // 인트로 행(row 0)은 격자 안이다 — 거기까지는 당겨진다.
+  assert.equal(shape(shiftAllPlacements(ps, board, -4, ids)), '0:7+1 1:0+8 2:0+1');
+
+  // 이름·카테고리·pending·subRow 는 살아남는다.
+  const pending = [{ id: 'c', groupId: 'g2', name: '', category: 'step', row: 2, startIndex: 0, length: 4, subRow: 1, pending: true }];
+  const [one] = shiftAllPlacements(pending, board, 1, ids);
+  assert.equal(isPending(one), true);
+  assert.equal(one.subRow, 1);
+  assert.equal(one.groupId, 'g2');
+});
+
+test('shiftAllPlacements: 하나라도 밖으로 나가면 아무것도 옮기지 않는다', () => {
+  let n = 0;
+  const ids = () => `s${++n}`;
+  const board = { rows: 4, cols: 8, hasIntroRow: true };
+  const ps = [
+    { id: 'a', groupId: 'g1', name: 'A', category: 'step', row: 1, startIndex: 0, length: 4, subRow: 0 },
+    { id: 'b', groupId: 'g2', name: 'B', category: 'step', row: 4, startIndex: 4, length: 4, subRow: 0 }
+  ];
+  // g2 가 표 끝(4마디 8카운트)에 붙어 있다 — 한 칸도 못 민다. g1 만 옮기면 안무가 잘린다.
+  assert.equal(shiftAllPlacements(ps, board, 1, ids), null);
+  // 앞으로는 인트로가 있어 당겨진다.
+  assert.notEqual(shiftAllPlacements(ps, board, -1, ids), null);
+  // 인트로 앞으로는 못 간다(8칸짜리 인트로 + g1 이 0칸에서 시작).
+  assert.equal(shiftAllPlacements(ps, board, -9, ids), null);
+});
+
+test('shiftAllCounts: 막히면 blocked 를 주고 보드를 건드리지 않는다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  // 8마디 표 맨 끝에 블록을 하나 놓는다(60~64초 = 120~127카운트 = 16마디… 이므로 먼저 늘린다).
+  setBoardRows(store, { boardId: BOARD_MAIN, rows: 2 });
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 8 }, { ids });   // 0~16카운트 = 2마디 전부
+  const before = JSON.stringify(store.board(BOARD_MAIN).placements);
+
+  const blocked = shiftAllCounts(store, { boardId: BOARD_MAIN, delta: 1 }, { ids });
+  assert.equal(blocked.blocked, true, '표 끝을 넘으므로 막혀야 한다');
+  assert.equal(JSON.stringify(store.board(BOARD_MAIN).placements), before, '막혔으면 한 글자도 안 바뀐다');
+
+  const moved = shiftAllCounts(store, { boardId: BOARD_MAIN, delta: -1 }, { ids });
+  assert.equal(moved.moved, true);
+  assert.deepEqual(moved.boards[BOARD_MAIN], { rows: 'all' }, '전부 옮겼으니 전 행을 다시 그린다');
+  assert.equal(store.board(BOARD_MAIN).placements[0].startIndex, 7, '인트로 마지막 칸으로 당겨진다');
+  assert.equal(store.board(BOARD_MAIN).placements[0].row, 0);
+
+  // 놓인 것이 없으면 아무 일도 하지 않는다.
+  store.setBoard(BOARD_MAIN, { placements: [] });
+  const none = shiftAllCounts(store, { boardId: BOARD_MAIN, delta: 1 }, { ids });
+  assert.equal(none.moved, undefined);
+  assert.equal(none.blocked, undefined);
+  assert.equal(none.boards, undefined, '그릴 것이 없으면 Dirty 도 비어야 한다');
 });

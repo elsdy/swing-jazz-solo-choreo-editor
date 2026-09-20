@@ -5,7 +5,7 @@
 // 6곳에 흩어져 있던 placement 리터럴 생성(3585·3627·3660·3694·3717·4668)을 makeSegmentPlacements 하나로 모았다.
 // 이름 기준 전수 치환(3120·3191·3273)도 여기로 옮겼다.
 
-import { linearOf } from './grid.js';
+import { buildSegments, cellOf, linearOf } from './grid.js';
 
 /**
  * @typedef {Object} Placement
@@ -264,4 +264,73 @@ export function nameGroup(placements, groupId, name, category) {
     return { ...rest, name: label, ...(category ? { category } : {}) };
   });
   return touched ? next : placements;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 전체 밀기·당기기 — 받아 적은 뒤 타이밍을 통째로 고친다 (2026-09-20)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 보드의 **모든 배치**를 카운트 축에서 `delta` 만큼 옮긴다. 음수면 앞으로 당긴다.
+ *
+ * 받아 적기는 사람의 반응 지연을 한 칸까지만 흡수한다(domain/tempo.boundarySpanToCountRange).
+ * 곡이 빠르거나 그날 손이 늦으면 통째로 한두 칸이 밀리는데, 그때 블록을 하나씩 옮기는 대신
+ * 표 전체를 같은 만큼 움직이는 길이다. 변환에 상수 보정을 박는 것과 다르다 — 이건 사람이
+ * 결과를 보고 고치는 것이라, 제때 누른 표까지 함께 당겨지지 않는다.
+ *
+ * **그룹 단위로 다시 자른다.** 한 그룹이 마디 경계에 걸쳐 있으면 배치가 여러 조각인데,
+ * 한 칸 옮기면 조각 나누는 자리도 달라진다(8칸 그룹이 2조각에서 3조각이 되기도 한다).
+ * 그래서 조각의 row/startIndex 를 손대는 대신 **선형 카운트로 펴서 옮기고 다시 자른다.**
+ *
+ * ⚠ **하나라도 격자 밖으로 나가면 아무것도 옮기지 않는다**(`null`). 반만 옮기면 안무가
+ *   소리 없이 잘린다 — 표 끝에서 밀면 마지막 동작이, 인트로 앞에서 당기면 첫 동작이 사라진다.
+ *   호출부는 null 을 보고 "더 갈 곳이 없다"를 알린다.
+ * ⚠ 인트로 행(row 0)은 격자 안이다. 메인 보드의 하한은 1행이 아니라 **0행**이고, 선형
+ *   카운트로는 `-cols` 다(domain/tempo 머리말의 "intro 는 분기가 아니라 음수 구간").
+ * ⚠ id 는 새로 받는다(조각 수가 달라질 수 있다). groupId·이름·카테고리·pending·subRow 는 살린다.
+ *
+ * @param {Placement[]} placements
+ * @param {import('./grid.js').BoardGrid} board
+ * @param {number} delta 옮길 카운트 수. `-1` 이면 한 칸 당기고 `+1` 이면 한 칸 민다
+ * @param {(() => string) | { uid: () => string }} ids
+ * @returns {Placement[]|null} 옮긴 배치 전부. 하나라도 밖으로 나가면 null
+ */
+export function shiftAllPlacements(placements, board, delta, ids) {
+  const step = Math.trunc(Number(delta));
+  if (!Number.isFinite(step) || step === 0) return placements;
+  if (!placements.length) return placements;
+
+  const cols = board.cols;
+  const minLinear = (board.hasIntroRow ? 0 : 1) * cols - cols;   // 0행이면 -cols, 1행이면 0
+  const maxLinear = board.rows * cols - 1;                        // 마지막 마디의 마지막 칸
+
+  const out = [];
+  for (const [groupId, segs] of groupsOf(placements)) {
+    // 조각을 선형 카운트로 편다. 조각은 언제나 이어져 있다(makeSegmentPlacements 가 그렇게 만든다).
+    const starts = segs.map(p => (p.row - 1) * cols + p.startIndex);
+    const from = Math.min(...starts);
+    const total = segs.reduce((n, p) => n + p.length, 0);
+    const nextFrom = from + step;
+    const nextTo = nextFrom + total - 1;
+    if (nextFrom < minLinear || nextTo > maxLinear) return null;   // 하나라도 밖이면 전부 취소
+
+    const head = segs[0];
+    // ⚠ 조각 나누는 규칙은 grid.buildSegments 하나다 — 여기서 다시 적지 않는다.
+    //   위에서 격자 안을 이미 확인했으므로 buildSegments 의 `row <= board.rows` 가 자르는 일은 없다.
+    const start = cellOf(nextFrom, cols);
+    const segments = buildSegments(start.row, start.index, total, board);
+    out.push(...makeSegmentPlacements(
+      segments,
+      {
+        groupId,
+        name: head.name,
+        category: head.category,
+        ...(isPending(head) ? { pending: true } : {}),
+        ...(head.type === 'routine' ? { type: 'routine', routineId: head.routineId } : {})
+      },
+      ids,
+      { subRow: head.subRow || 0 }
+    ));
+  }
+  return out;
 }

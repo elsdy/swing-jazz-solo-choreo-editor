@@ -298,6 +298,9 @@ export function createVideoPanel(deps) {
   const captureBtn = byId('videoCaptureBtn');
   const captureCancelBtn = byId('videoCaptureCancelBtn');
   const captureSkipBtn = byId('videoCaptureSkipBtn');
+  const shiftBackBtn = byId('videoShiftBackBtn');
+  const shiftFwdBtn = byId('videoShiftFwdBtn');
+  const shiftHelp = byId('videoShiftHelp');
   const markerBlocksBtn = byId('videoMarkerBlocksBtn');
   const nameSelBtn = byId('videoNameSelBtn');
   const captureHelp = byId('videoCaptureHelp');
@@ -587,6 +590,10 @@ export function createVideoPanel(deps) {
     }
     if (captureSkipBtn) captureSkipBtn.disabled = !ready;
     if (captureCancelBtn) captureCancelBtn.disabled = !running;
+    // 표 전체 옮기기는 박자와 무관하다 — 놓인 블록이 있으면 쓸 수 있다.
+    const hasBlocks = typeof commands.canShiftAll === 'function' ? commands.canShiftAll() : false;
+    if (shiftBackBtn) shiftBackBtn.disabled = !hasBlocks;
+    if (shiftFwdBtn) shiftFwdBtn.disabled = !hasBlocks;
     if (markerBlocksBtn) markerBlocksBtn.disabled = markers().length === 0;
     const pending = pendingSelected();
     if (nameSelBtn) {
@@ -1238,6 +1245,30 @@ export function createVideoPanel(deps) {
   if (captureSkipBtn && commands.captureSkip) {
     captureSkipBtn.onclick = () => { render(strip(commands.captureSkip({ sec: getCurrentSec() }))); renderCapture(); };
   }
+
+  /**
+   * 표 전체를 한 카운트 옮긴다(2026-09-20). 한 번 누름이 Undo 한 단계다.
+   * ⚠ 격자 밖으로 나가는 블록이 하나라도 있으면 커맨드가 아무것도 옮기지 않고 `blocked` 를 준다 —
+   *   반만 옮기면 표 끝이나 인트로 앞의 동작이 소리 없이 사라진다. 그 사실을 한 줄로 적는다.
+   * @param {number} delta
+   */
+  function shiftAll(delta) {
+    if (typeof commands.shiftAll !== 'function') return;
+    const { moved, blocked, ...dirty } = commands.shiftAll({ delta }) || {};
+    render(dirty);
+    renderCapture();
+    if (shiftHelp) {
+      shiftHelp.textContent = blocked
+        ? (delta < 0
+          ? '더 당길 수 없습니다 — 인트로 마디 앞으로 나가는 블록이 있습니다.'
+          : '더 밀 수 없습니다 — 표 끝을 넘는 블록이 있습니다. 안무표 크기를 늘린 뒤 다시 누르세요.')
+        : (moved ? `표 전체를 ${delta < 0 ? '한 카운트 앞으로 당겼습니다' : '한 카운트 뒤로 밀었습니다'}.` : '');
+    }
+    if (moved) commitHistory();
+  }
+
+  if (shiftBackBtn) shiftBackBtn.onclick = () => shiftAll(-1);
+  if (shiftFwdBtn) shiftFwdBtn.onclick = () => shiftAll(1);
   if (nameSelBtn && commands.nameSelected) {
     nameSelBtn.onclick = () => {
       const { named, ...dirty } = commands.nameSelected() || {};
@@ -1287,6 +1318,13 @@ export function createVideoPanel(deps) {
     },
     /** 선택이 바뀌었다 — `선택한 블록이 여기서 시작`·`선택한 블록에 맵핑` 의 활성 여부만 다시 잰다(패널이 닫혀 있으면 값만 바뀌고 안 보인다). */
     syncSelection: () => { renderTempo(); renderCapture(); renderCut(); },
+    syncSelection: () => { renderTempo(); renderCapture(); renderCut(); },
+    /**
+     * 메인 보드의 배치가 바뀌었다 — `③ 받아 적기` 의 버튼 활성만 다시 잰다(2026-09-20).
+     * `표 전체 옮기기` 는 놓인 블록이 있어야 눌리는데, 블록이 놓이는 것은 선택이 바뀌는 것과
+     * 다른 사건이라 syncSelection 으로는 안 온다. 패널 전체를 다시 그리지 않는다 — 구획만이다.
+     */
+    syncCapture: () => { renderCapture(); },
     /** YT.Player 가 iframe 으로 갈아치울 자리. app/main 이 여기에 컨테이너를 만든다. */
     renderPip,
     playerHost: () => frame
