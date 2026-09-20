@@ -414,6 +414,37 @@ export function renameClip(store, args = {}) {
 }
 
 /**
+ * 영상에 **언제 찍었는지**와 **한 줄 메모**를 단다 (2026-09-20).
+ *
+ * 한 프로젝트는 한 안무이고 그 안에 영상이 날짜를 달고 쌓인다 — 첫 연습, 2주차, 공연본.
+ * 날짜가 그 줄의 축이라 목록이 저절로 진행 순서가 된다.
+ *
+ * ⚠ 준 것만 바꾼다. `takenAt` 만 넘기면 메모는 그대로다 — 한 칸을 고치려고 나머지를 다시
+ *   적어 보내야 하면 호출부가 낡은 값을 덮어쓰는 사고가 난다.
+ * ⚠ **빈 문자열은 「지운다」는 뜻이다**(undefined 와 다르다). 날짜를 잘못 적었을 때 비울 길이 있어야 한다.
+ * ⚠ 모양이 아닌 날짜는 도메인이 빈 문자열로 만든다 — 여기서 거절하지 않는다. 사용자가 치는
+ *   중간 상태(`2026-0`)마다 커맨드가 튕기면 입력칸이 못 쓰게 된다.
+ *
+ * @param {object} store
+ * @param {{id?: string, takenAt?: string, note?: string}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function setClipMeta(store, args = {}) {
+  const cur = normalizeMedia(store.get().media);
+  const id = String(args.id == null ? '' : args.id);
+  const clip = cur.clips.find(c => c.id === id);
+  if (!clip) return NONE;
+  const next = { ...clip };
+  if (args.takenAt !== undefined) next.takenAt = String(args.takenAt);
+  if (args.note !== undefined) next.note = String(args.note);
+  const normalized = normalizeMedia({ ...cur, clips: cur.clips.map(c => (c.id === id ? next : c)) });
+  const after = normalized.clips.find(c => c.id === id);
+  if (after && after.takenAt === clip.takenAt && after.note === clip.note) return NONE;
+  store.update({ media: normalized });
+  return VIDEO;
+}
+
+/**
  * 영상 하나를 목록에서 뺀다. **그 영상에 찍어 둔 박자와 마커가 함께 사라진다** —
  * 되돌리는 길은 Undo 하나뿐이므로 호출부가 확인을 받아야 한다(뷰의 confirmOnce).
  * ⚠ 지우는 것은 목록의 항목이지 파일이 아니다. 보관 폴더의 영상 파일은 그대로 남는다.

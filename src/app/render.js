@@ -46,6 +46,7 @@ import { phraseMark } from '../domain/phrasing.js';
  *   linksBar?: { render(links?: object, titleFetch?: object): void },
  *   video?: { render(): void, renderStatus(): void, renderCut(): void, syncCapture(): void },
  *   pose?: { render(): void },
+ *   project?: { render(): void },
  *   start?: { sync(): void },
  *   notify?: (n: { kind: 'alert', message: string }) => void
  * }} views
@@ -131,6 +132,8 @@ export function createRenderer(store, views, options = {}) {
     //   그래서 편집기 개폐도 이 패널을 다시 그려야 한다 — 안 그리면 숨겨진 채 소리만 계속 난다.
     // ⚠ 재생 헤드는 이 경로를 타지 **않는다**. 초당 60회 재렌더가 된다(ui/playhead.js 채널 B).
     if (d.video || d.routineEditor) { views.video?.render(); views.pose?.render(); }
+    // 프로젝트 칸은 영상 목록(이름·날짜·지금 보는 것)을 비춘다 — 영상이 바뀌면 함께 다시 그린다.
+    if (d.video) views.project?.render();
     if (d.savedLists) {
       for (const kind of d.savedLists) views.savedLists?.render(kind, store.recents[kind]);
     }

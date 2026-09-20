@@ -96,8 +96,14 @@ export const MEDIA_FIELDS = Object.freeze(['activeId', 'clips']);
  * ⚠ 옛 모양(`{tempo, source, markers}`)은 normalizeMedia 가 클립 하나로 감싸서 받는다.
  *   마이그레이션 단계를 새로 만들지 않는 이유는, media 자체가 그렇게 들어왔기 때문이다
  *   (migrations.js 설계 원칙 1 — 모양 복구는 normalize 의 몫).
+ * ⚠ 2026-09-20 에 `takenAt`·`note` 가 붙었다. 한 프로젝트는 **한 안무**이고 그 안에 영상이
+ *   날짜를 달고 쌓인다 — 첫 연습, 2주차, 공연본. 날짜가 그 줄의 축이라 목록이 저절로 진행 순서가
+ *   된다. 둘 다 **비어 있으면 파일에 쓰지 않는다**(serializeClip) — 안 쓰는 사람의 저장 바이트는
+ *   이 기능이 들어오기 전과 같다.
+ * ⚠ 자리가 `name` 바로 뒤다. 키 순서가 곧 저장 바이트라, 뒤에 붙이면 옛 파일과 키 순서가 달라져
+ *   같은 내용인데 diff 가 생긴다.
  */
-export const CLIP_FIELDS = Object.freeze(['id', 'name', 'source', 'tempo', 'markers']);
+export const CLIP_FIELDS = Object.freeze(['id', 'name', 'takenAt', 'note', 'source', 'tempo', 'markers']);
 
 /**
  * v1 프로젝트 파일이 최상위에 평평하게 들고 있는 링크 4필드.

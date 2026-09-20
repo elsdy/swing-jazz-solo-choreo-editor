@@ -678,7 +678,59 @@
     .start-choice-icon { font-size: 15px; line-height: 1; flex: 0 0 auto; }
     .start-choice b { display: block; font-size: 11.5px; font-weight: 800; }
     .start-choice small { display: block; margin-top: 1px; font-size: 10px; color: var(--muted); line-height: 1.35; }
-    .saved-list {
+
+    /* -- 프로젝트 칸 (2026-09-20) --
+       사이드바 맨 위. 지금 어떤 안무를 보고 있고, 그 안무에 영상이 몇 벌 쌓였고, 그중 어느 것을
+       보고 있는지를 답한다. 목록은 **날짜 순**이라 그대로 진행 순서가 된다. */
+    .project-panel { display: grid; gap: 6px; }
+    .project-head { display: flex; align-items: center; gap: 6px; }
+    .project-name {
+      flex: 1 1 auto; min-width: 0; text-align: left;
+      background: transparent; border: 1px solid transparent;
+      font-size: 13px; font-weight: 800; color: var(--text);
+      padding: 3px 6px; border-radius: 8px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .project-name:hover { border-color: rgba(148,163,184,0.28); background: rgba(255,255,255,0.04); }
+    .project-name.is-untitled { color: var(--muted); font-weight: 700; }
+    .project-summary { font-size: 10.5px; color: var(--muted); }
+    .project-clips { display: grid; gap: 4px; max-height: 40vh; overflow: auto; }
+    .project-empty { font-size: 10.5px; color: var(--muted); line-height: 1.45; padding: 4px 2px; }
+
+    .project-clip {
+      display: grid; gap: 3px;
+      padding: 5px 7px; border-radius: 9px;
+      background: rgba(255,255,255,0.025);
+      border: 1px solid rgba(148,163,184,0.14);
+    }
+    .project-clip.is-active { border-color: rgba(74,222,128,0.45); background: rgba(34,197,94,0.08); }
+    .project-clip-head {
+      display: flex; align-items: baseline; gap: 6px;
+      width: 100%; text-align: left;
+      background: transparent; border: 0; padding: 0;
+      color: var(--text); font: inherit; cursor: pointer;
+    }
+    .project-clip-head:hover { transform: none; }
+    .project-clip-when { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .project-clip-when.is-unknown { opacity: 0.6; }
+    .project-clip-name { flex: 1 1 auto; min-width: 0; font-size: 11.5px; font-weight: 700;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .project-clip-now { font-size: 10px; font-weight: 800; color: var(--accent); white-space: nowrap; }
+    .project-clip-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .project-chip {
+      font-size: 9.5px; color: var(--muted); white-space: nowrap;
+      background: rgba(15,23,42,0.6); border: 1px solid rgba(148,163,184,0.18);
+      border-radius: 999px; padding: 0 6px;
+    }
+    .project-clip-note { font-size: 10px; color: var(--muted); flex: 1 1 6em; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .project-clip-edit { margin-left: auto; padding: 1px 7px; font-size: 10px; min-height: 22px; }
+    .project-clip-editor { display: grid; gap: 4px; margin-top: 3px; padding-top: 5px;
+      border-top: 1px solid rgba(148,163,184,0.14); }
+    .project-field { display: flex; align-items: center; gap: 5px; }
+    .project-field-label { font-size: 10px; color: var(--muted); width: 3.6em; flex: 0 0 auto; }
+    .project-field input { flex: 1 1 auto; min-width: 0; font-size: 11px; padding: 3px 6px; }
+    .project-clip-del { width: 100%; font-size: 10.5px; }    .saved-list {
       display: grid;
       gap: 4px;
       max-height: 140px;
@@ -1877,6 +1929,18 @@
       </div>
 
       <div class="sidebar-scroll">
+
+      <!-- 프로젝트 칸 (2026-09-20) — **한 프로젝트는 한 안무다.**
+           그전에는 「프로젝트」가 앱바의 이름칸 하나여서, 지금 무엇을 보고 있는지도 이 안무에
+           영상이 몇 벌 달렸는지도 화면 어디에도 없었다. 영상은 날짜를 달고 쌓이고, 그 목록이
+           곧 "어떻게 좋아져 왔는가" 가 된다(ui/projectPanel.js). -->
+      <section class="section project-panel" id="projectPanel">
+        <div class="project-head">
+          <button class="project-name" id="projectName" type="button" title="이름을 바꾸려면 누르세요">제목 없는 안무</button>
+        </div>
+        <div class="project-summary" id="projectSummary"></div>
+        <div class="project-clips" id="projectClips"></div>
+      </section>
 
       <!-- 시작하는 세 길 (2026-09-20). 세 버튼은 각각 ui/composeView.open ·
            usecases/videoCommands.openPanel · 아래 `동작 검색` 으로 간다 - 여기서만 되는 일은 없다.

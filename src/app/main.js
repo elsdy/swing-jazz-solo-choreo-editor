@@ -68,6 +68,8 @@ import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
 import { createStartCard } from '../ui/startCard.js';
 import { createFileMenu } from '../ui/fileMenu.js';
+import { createProjectPanel } from '../ui/projectPanel.js';
+import { clipsByProgress, clipsSummary, formatTakenAt } from '../domain/project/media.js';
 import * as PlanCmd from '../usecases/planCommands.js';
 import * as PhrasingCmd from '../usecases/phrasingCommands.js';
 import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
@@ -1690,4 +1692,32 @@ views.start = createStartCard({
   onCompose: () => composeView.open(),
   onVideo: () => render(VideoCmd.openPanel(store)),
   hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 22. 프로젝트 칸 — 사이드바 맨 위 (2026-09-20)
+//
+// **한 프로젝트는 한 안무다.** 그 안에 영상이 날짜를 달고 쌓이고, 그 목록이 곧 진행 기록이다.
+// ⚠ 새 커맨드는 `setClipMeta` 하나뿐이고 나머지(고르기·이름·빼기)는 영상 패널과 같은 것을 부른다.
+// ⚠ 올해를 여기서 넘긴다 — 도메인은 시계를 모른다(check-arch 가 `Date` 를 막는다).
+// ─────────────────────────────────────────────────────────────────────────────
+
+views.project = createProjectPanel({
+  getProjectName: projectNameForClips,
+  setProjectName: setProjectFileName,
+  getClips: () => {
+    const media = VideoCmd.clipList(store);
+    return { activeId: media.activeId, clips: media.clips };
+  },
+  byProgress: clipsByProgress,
+  summarize: (clips) => clipsSummary(clips, new Date().getFullYear()),
+  formatDate: (takenAt) => formatTakenAt(takenAt, new Date().getFullYear()),
+  commands: {
+    select: (id) => render(VideoCmd.selectClip(store, { id })),
+    rename: (id, name) => { render(VideoCmd.renameClip(store, { id, name })); commitHistoryAndRender(); },
+    setMeta: (id, patch) => { render(VideoCmd.setClipMeta(store, { id, ...patch })); commitHistoryAndRender(); },
+    remove: (id) => { render(VideoCmd.removeClip(store, { id })); commitHistoryAndRender(); }
+  },
+  openVideoPanel: () => render(VideoCmd.openPanel(store)),
+  confirmOnce
 });

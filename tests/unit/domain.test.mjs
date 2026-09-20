@@ -38,6 +38,7 @@ import {
 import { DEFAULT_CATEGORIES } from '../../src/domain/defaults.js';
 import { ROUTINE_COLORS } from '../../src/domain/routines.js';
 import { createNullMediaPlayer } from '../../src/adapters/nullMediaPlayer.js';
+import { clipsByProgress, clipsSummary, formatTakenAt, normalizeTakenAt } from '../../src/domain/project/media.js';
 import {
   DEFAULT_HOTKEYS, EDITABLE_ACTIONS, HOTKEY_ACTIONS, MAX_KEYS_PER_ACTION,
   checkKey, eventKey, keysLabel, normalizeHotkeys, normalizeKey, ownerOf, setKeys, toSaved
@@ -2182,11 +2183,15 @@ test('media: 우리가 쓴 media 블록은 v1→v2 왕복에서 살아남는다'
   // 메모리 안의 Tempo 는 언제나 points 를, MediaBlock 은 언제나 markers 를 가진다(비어 있으면 []).
   // 파일에는 빈 points·markers 가 쓰이지 않는다(아래 테스트).
   // ⚠ 2026-09-12: 옛 평평한 모양은 **클립 하나**로 감싸여 들어온다(이름은 기본값 `테이크 1`).
+  // ⚠ 2026-09-20: 메모리 안의 클립은 `takenAt`·`note` 를 언제나 가진다(모르면 빈 문자열).
+  //   파일에는 비어 있으면 안 쓰인다 — 그 대조는 아래 `저장 바이트` 테스트가 한다.
   assert.deepEqual(normalizeProject(flat, { ids: counterEnv() }).media, {
     activeId: 'yt:https://youtu.be/abc',
     clips: [{
       id: 'yt:https://youtu.be/abc',
       name: '테이크 1',
+      takenAt: '',
+      note: '',
       source: withMedia.media.source,
       tempo: { ...withMedia.media.tempo, points: [] },
       markers: []
@@ -4395,4 +4400,112 @@ test('단축키 표: 바꿀 수 있는 것과 기본 글쇠', () => {
   assert.equal(keysLabel([]), '없음');
   assert.equal(checkKey('Escape').ok, false);
   assert.equal(checkKey('Space').ok, true);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 프로젝트 = 한 안무, 그 안에 영상이 날짜를 달고 쌓인다 (2026-09-20)
+//
+// 숙련도를 따로 매기지 않는다 — 날짜가 축이면 목록이 그대로 진행 순서가 되고, 사람이 올릴 때마다
+// 정해 줘야 하는 칸이 하나 줄어든다. 여기서 지키는 것은 셋 —
+//   ① 날짜는 `YYYY-MM-DD` 하나만 받는다(느슨하면 정렬이 조용히 어긋난다)
+//   ② 안 쓴 사람의 **저장 바이트가 늘지 않는다**
+//   ③ 목록은 최근이 위, 날짜 없는 것은 아래, 같은 날은 올린 차례
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('클립 메타: 날짜는 모양이 맞는 것만 받는다', () => {
+  assert.equal(normalizeTakenAt('2026-09-12'), '2026-09-12');
+  assert.equal(normalizeTakenAt('  2026-09-12 '), '2026-09-12', '앞뒤 공백은 지운다');
+  assert.equal(normalizeTakenAt('2026-13-01'), '', '13월은 없다');
+  assert.equal(normalizeTakenAt('2026-09-32'), '', '32일도 없다');
+  assert.equal(normalizeTakenAt('26-9-1'), '', '두 자리 해·한 자리 달은 받지 않는다');
+  assert.equal(normalizeTakenAt('2026/09/12'), '', '구분자가 다르면 받지 않는다');
+  assert.equal(normalizeTakenAt(null), '');
+  assert.equal(normalizeTakenAt(''), '');
+});
+
+test('클립 메타: 안 쓴 사람의 저장 바이트가 늘지 않는다', () => {
+  // 이 규칙이 깨지면 기능을 안 쓴 사용자의 파일에 `"takenAt":""` 이 생겨 diff 가 난다.
+  const base = {
+    rows: 8, cols: 8, categories: {}, moveLibrary: [], placements: [], routines: [],
+    youtubeUrl: '', youtubeTitle: '', clickupUrl: '', customLinks: [],
+    media: { activeId: 'c1', clips: [{ id: 'c1', name: '테이크 1', source: { kind: 'youtube', url: 'https://youtu.be/x' } }] }
+  };
+  const plain = buildProjectFile(base, { fileName: 'a', savedAt: 'S' });
+  const clip = plain.media.clips[0];
+  assert.equal('takenAt' in clip, false, '날짜를 안 적었으면 키가 없어야 한다');
+  assert.equal('note' in clip, false, '메모를 안 적었으면 키가 없어야 한다');
+
+  // 적으면 그대로 실린다. 키 순서는 CLIP_FIELDS 고정이라 `name` 바로 뒤다.
+  const withMeta = buildProjectFile({
+    ...base,
+    media: { activeId: 'c1', clips: [{ ...base.media.clips[0], takenAt: '2026-09-12', note: '무대 어두움' }] }
+  }, { fileName: 'a', savedAt: 'S' });
+  const saved = withMeta.media.clips[0];
+  assert.equal(saved.takenAt, '2026-09-12');
+  assert.equal(saved.note, '무대 어두움');
+  assert.deepEqual(Object.keys(saved).slice(0, 4), ['id', 'name', 'takenAt', 'note'], '키 순서가 곧 저장 바이트다');
+});
+
+test('clipsByProgress: 최근이 위, 모르는 것은 아래, 같은 날은 올린 차례', () => {
+  const clips = [
+    { id: 'a', name: '첫 연습', takenAt: '2026-08-02' },
+    { id: 'b', name: '공연본', takenAt: '2026-09-12' },
+    { id: 'c', name: '날짜 없음', takenAt: '' },
+    { id: 'd', name: '2주차', takenAt: '2026-08-20' },
+    { id: 'e', name: '공연본 2', takenAt: '2026-09-12' }
+  ];
+  assert.deepEqual(clipsByProgress(clips).map(c => c.id), ['b', 'e', 'd', 'a', 'c']);
+  // 원본을 바꾸지 않는다.
+  assert.deepEqual(clips.map(c => c.id), ['a', 'b', 'c', 'd', 'e']);
+  assert.deepEqual(clipsByProgress(null), []);
+  // 날짜가 하나도 없으면 올린 차례 그대로다.
+  const noDates = [{ id: 'x', takenAt: '' }, { id: 'y', takenAt: '' }];
+  assert.deepEqual(clipsByProgress(noDates).map(c => c.id), ['x', 'y']);
+});
+
+test('clipsSummary·formatTakenAt: 화면에 나가는 한 줄', () => {
+  const clips = [
+    { id: 'a', takenAt: '2026-08-02' },
+    { id: 'b', takenAt: '2026-09-12' },
+    { id: 'c', takenAt: '' }
+  ];
+  assert.equal(clipsSummary(clips, 2026), '영상 3벌 · 8월 2일 ~ 9월 12일');
+  assert.equal(clipsSummary([{ id: 'a', takenAt: '2026-09-12' }], 2026), '영상 1벌 · 9월 12일');
+  assert.equal(clipsSummary([{ id: 'a', takenAt: '' }], 2026), '영상 1벌', '날짜가 없으면 개수만');
+  assert.equal(clipsSummary([], 2026), '영상 없음');
+
+  // 해는 올해와 다를 때만 붙인다 — 매 줄에 2026 을 적으면 정작 다른 해가 안 읽힌다.
+  assert.equal(formatTakenAt('2026-09-12', 2026), '9월 12일');
+  assert.equal(formatTakenAt('2025-09-12', 2026), '2025년 9월 12일');
+  assert.equal(formatTakenAt('', 2026), '');
+});
+
+test('setClipMeta: 준 것만 바꾸고 빈 문자열은 지운다는 뜻이다', () => {
+  const store = createStore({ ids: counterEnv() });
+  VideoCmd.setFileSource(store, { name: '연습.mp4' });
+  const id = VideoCmd.clipList(store).clips[0].id;
+
+  VideoCmd.setClipMeta(store, { id, takenAt: '2026-09-12', note: '무대 어두움' });
+  let clip = VideoCmd.clipList(store).clips[0];
+  assert.equal(clip.takenAt, '2026-09-12');
+  assert.equal(clip.note, '무대 어두움');
+
+  // 날짜만 고치면 메모는 그대로다.
+  VideoCmd.setClipMeta(store, { id, takenAt: '2026-09-13' });
+  clip = VideoCmd.clipList(store).clips[0];
+  assert.equal(clip.takenAt, '2026-09-13');
+  assert.equal(clip.note, '무대 어두움', '안 준 칸을 지우면 안 된다');
+
+  // 빈 문자열은 「지운다」는 뜻이다(undefined 와 다르다).
+  VideoCmd.setClipMeta(store, { id, takenAt: '' });
+  assert.equal(VideoCmd.clipList(store).clips[0].takenAt, '');
+
+  // 모양이 아닌 날짜는 도메인이 비운다 — 커맨드가 튕기지 않는다(치는 중간 상태가 있다).
+  VideoCmd.setClipMeta(store, { id, takenAt: '2026-0' });
+  assert.equal(VideoCmd.clipList(store).clips[0].takenAt, '');
+
+  // 없는 클립이나 안 바뀌는 값은 아무 일도 하지 않는다.
+  assert.equal(VideoCmd.setClipMeta(store, { id: '없는id', takenAt: '2026-01-01' }).video, undefined);
+  VideoCmd.setClipMeta(store, { id, note: '같은 메모' });
+  assert.equal(VideoCmd.setClipMeta(store, { id, note: '같은 메모' }).video, undefined);
 });
