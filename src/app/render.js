@@ -44,9 +44,11 @@ import { phraseMark } from '../domain/phrasing.js';
  *   routineEditor?: { sync(): void, syncHistory(): void },
  *   savedLists?: { render(kind: string, list?: unknown[]): void },
  *   linksBar?: { render(links?: object, titleFetch?: object): void },
- *   video?: { render(): void, renderStatus(): void, renderCut(): void },
+ *   video?: { render(): void, renderStatus(): void, renderCut(): void, syncCapture(): void },
  *   pose?: { render(): void },
  *   start?: { sync(): void },
+ *   thumb?: { render(): void },
+ *   project?: { render(): void },
  *   notify?: (n: { kind: 'alert', message: string }) => void
  * }} views
  * @param {{ dev?: boolean, paranoid?: boolean }} [options]
@@ -87,6 +89,10 @@ export function createRenderer(store, views, options = {}) {
     // 메인 보드가 다시 그려졌으면 재생 헤드의 캐시(칸 폭·켜 둔 블록)를 버린다. 헤드 자체는 여기서
     // 그리지 않는다(채널 B) — 다음 rAF 프레임이 스스로 다시 잰다.
     if (d.layout || d.boards?.[BOARD_MAIN]) views.playhead?.invalidate();
+    // 같은 사건이 `③ 받아 적기` 의 `표 전체 옮기기` 도 켜고 끈다(2026-09-20).
+    // ⚠ 패널 전체를 다시 그리지 않는다 — 그건 d.video 의 몫이고, 여기서 부르면 배치를 옮길 때마다
+    //   재생기 준비(onSync)까지 매번 돈다.
+    if (d.boards?.[BOARD_MAIN]) views.video?.syncCapture();
 
     // 메인 보드의 배치가 바뀌었으면 '비었는가'가 달라졌을 수 있다 — 빈 안내와 시작 카드를 맞춘다.
     // ⚠ layout 은 여기 넣지 않는다. 칸 폭이 바뀌어도 비었는지는 그대로다.
@@ -127,6 +133,11 @@ export function createRenderer(store, views, options = {}) {
     //   그래서 편집기 개폐도 이 패널을 다시 그려야 한다 — 안 그리면 숨겨진 채 소리만 계속 난다.
     // ⚠ 재생 헤드는 이 경로를 타지 **않는다**. 초당 60회 재렌더가 된다(ui/playhead.js 채널 B).
     if (d.video || d.routineEditor) { views.video?.render(); views.pose?.render(); }
+    // 엄지 바는 「지금 할 일」을 보이므로 영상 패널의 상태(열림·받는 중)를 따라간다(2026-09-20).
+    // ⚠ 보드가 바뀌어도 부른다 — `+ 빠른 배치` 의 켜짐이 그쪽을 본다.
+    if (d.video || d.boards?.[BOARD_MAIN] || d.toolbar) views.thumb?.render();
+    // 프로젝트 칸은 영상 목록(이름·날짜·지금 보는 것)을 비춘다 — 영상이 바뀌면 함께 다시 그린다.
+    if (d.video) views.project?.render();
     if (d.savedLists) {
       for (const kind of d.savedLists) views.savedLists?.render(kind, store.recents[kind]);
     }

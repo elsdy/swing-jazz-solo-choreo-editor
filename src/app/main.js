@@ -40,8 +40,9 @@ import { STORAGE_KEYS } from '../ports/storage.js';
 import { projectTime } from '../ports/media.js';
 import { browserEnv, browserDialogs, browserFileIO, debounce, longPress } from '../adapters/browser.js';
 import {
-  createRecentList, createFavoritesRepo, loadLocalMeta, loadLinksRaw, saveLinksRaw
+  createRecentList, createFavoritesRepo, loadLocalMeta, loadLinksRaw, saveLinksRaw, localKv
 } from '../adapters/localStore.js';
+import { normalizeHotkeys, toSaved as savedHotkeys } from '../domain/hotkeys.js';
 import { fetchTitle } from '../adapters/youtubeOembed.js';
 import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/media/pickPlayer.js';
 
@@ -67,6 +68,10 @@ import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
 import { createStartCard } from '../ui/startCard.js';
 import { createFileMenu } from '../ui/fileMenu.js';
+import { createDraftStore, debounceSave, DRAFT_NAME } from '../adapters/draftStore.js';
+import { createThumbBar } from '../ui/thumbBar.js';
+import { createProjectPanel } from '../ui/projectPanel.js';
+import { clipsByProgress, clipsSummary, formatTakenAt } from '../domain/project/media.js';
 import * as PlanCmd from '../usecases/planCommands.js';
 import * as PhrasingCmd from '../usecases/phrasingCommands.js';
 import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
@@ -154,10 +159,27 @@ const hist = History.createHistory(store, { storage });
 
 const flags = new URLSearchParams(window.location.search);
 const views = { board: {} };
-const render = createRenderer(store, views, {
+const renderCore = createRenderer(store, views, {
   dev: flags.get('dev') === '1',
   paranoid: flags.get('render') === 'full'   // 이행 기간 안전장치. 기본 off = Dirty 그대로
 });
+
+/**
+ * 그리고 나서 **작업 중인 문서를 담는다**(2026-09-20). 22절이 실제 담는 자리를 붙이고,
+ * 그전까지 `saveDraftSoon` 은 아무 일도 하지 않는다(부팅 도중의 렌더까지 담지 않게).
+ *
+ * ⚠ 커맨드는 전부 render 를 거치므로 여기 한 곳이면 빠짐이 없다. 재생 헤드는 이 길을 타지
+ *   않으므로(채널 B) 초당 60번 담는 일은 생기지 않는다.
+ * ⚠ 담기는 **묶어서** 한다(debounceSave). 받아 적는 동안은 초당 여러 번 그려진다.
+ * @type {(() => void)}
+ */
+let saveDraftSoon = () => {};
+
+/** @type {(d: import('../usecases/store.js').Dirty, opts?: object) => void} */
+const render = (dirty, opts) => {
+  renderCore(dirty, opts);
+  saveDraftSoon();
+};
 
 /** alert 는 언제나 렌더 뒤다(app/render 의 마지막 단계). */
 views.notify = (n) => browserDialogs.alert(n.message);
@@ -416,17 +438,28 @@ views.toolbar = createToolbarView({ store, canUndo, canRedo });
  * 끝낸다(버그 기록: 최근 10개의 payload 전체를 localStorage 에 넣으면서 예외 처리가 없다).
  * ⚠ 서버가 없으면 **아무것도 하지 않는다** — 지금까지의 localStorage 목록이 그대로 보인다.
  * ⚠ 항목에 `data` 를 넣지 않는다. 열 때 이름으로 읽어 온다(openFromFolder).
+ * ⚠ **자동으로 담아 둔 작업 문서(`_작업중`)는 목록에서 뺀다**(2026-09-20). 그것은 저장본이
+ *   아니라 초안이다 — 목록에 올리면 저장한 적 없는 것이 저장본인 척 서고, 사용자가 저장해 둔
+ *   것을 밀어낸다(실제로 그랬다: 목록에 `_작업중` 하나만 남고 09-13 저장본이 사라져 보였다).
+ * ⚠ **덮어쓰지 않고 합친다**(2026-09-20). 폴더가 주인인 것은 맞지만, 서버가 생기기 전에
+ *   브라우저에만 저장해 둔 것이 있으면 덮어쓰기가 그것을 화면에서 지운다 — 파일은 살아 있는데
+ *   사라진 것처럼 보이는 것이 이 기능에서 가장 나쁜 실패다. 같은 이름은 **폴더 쪽이 이긴다.**
  */
 function refreshProjectFolder() {
   return projectServer.list().then((items) => {
-    if (!items.length) return;
-    store.patch('recents', {
-      projects: items.map(it => ({
+    const fromFolder = items
+      .filter(it => it.name.replace(/\.json$/i, '') !== DRAFT_NAME)
+      .map(it => ({
         fileName: it.name.replace(/\.json$/i, ''),
         savedAt: new Date(it.mtime * 1000).toISOString(),
         data: null
-      }))
-    });
+      }));
+    const taken = new Set(fromFolder.map(p => p.fileName));
+    const fromBrowser = (store.get().recents.projects || [])
+      .filter(p => p.fileName !== DRAFT_NAME && !taken.has(p.fileName));
+    const merged = [...fromFolder, ...fromBrowser];
+    if (merged.length === 0) return;                    // 양쪽 다 비었으면 건드릴 것이 없다
+    store.patch('recents', { projects: merged });
     render({ savedLists: ['projects'] });
   });
 }
@@ -623,6 +656,22 @@ const CONTROL_IDS = [
 const els = Object.fromEntries(CONTROL_IDS.map(id => [id, byId(id)]));
 els.mainBoardEl = boardEl;   // 빈 영역 클릭 선택 해제(1527-1529)
 
+// ── 단축키 (2026-09-20) ──────────────────────────────────────────────────────
+//
+// 무엇을 들을 수 있는지는 domain/hotkeys 가 정하고, 어디에 담을지는 여기가 정한다.
+// ⚠ 안무표가 아니라 **이 브라우저의 취향**이다 — 프로젝트 파일에도 초안에도 들어가지 않는다.
+// ⚠ 기본값과 같은 것은 담지 않는다(toSaved) — 손대지 않은 사람에게는 키 자체가 안 생긴다.
+let hotkeyMap = normalizeHotkeys(localKv.get(STORAGE_KEYS.hotkeys, null));
+
+/** 바꾼 표를 받아 담는다. 설정 화면이 부르고, 다음 입력부터 바로 듣는다(controls 가 게터로 읽는다). */
+function applyHotkeys(next) {
+  hotkeyMap = normalizeHotkeys(next);
+  const saved = savedHotkeys(hotkeyMap);
+  // 전부 기본값으로 돌아왔으면 키를 지운다 — 빈 객체를 남겨 두면 "손댔다"는 흔적만 남는다.
+  if (Object.keys(saved).length === 0) localKv.remove(STORAGE_KEYS.hotkeys);
+  else localKv.set(STORAGE_KEYS.hotkeys, saved);
+}
+
 bindControls({
   els,
   store,
@@ -630,6 +679,8 @@ bindControls({
   confirmOnce,
   fileIO: browserFileIO,
   dialogs: browserDialogs,
+  // ⚠ 게터다 — 설정에서 바꾸면 다음 입력부터 바로 들어야 한다(값으로 주면 묶은 시점에 갇힌다).
+  hotkeys: () => hotkeyMap,
   commands: {
     setSearchQuery: (value) => PaletteCmd.setSearchQuery(paletteCtx, value),
     setSortMode: (mode) => PaletteCmd.setSortMode(paletteCtx, mode),
@@ -823,11 +874,15 @@ function ensurePlayer() {
     player.destroy();
     // ⚠ YT.Player 는 넘겨받은 <div> 를 <iframe> 으로 **갈아치운다** — 새로 만들 때마다 빈 자리를
     //   다시 마련해야 한다(먼젓번 컨테이너는 이미 사라졌다). 파일 재생기는 그 안에 <video> 를 넣는다.
-    // ⚠ innerHTML 로 비우면 **자세 오버레이 캔버스까지 지워진다**(index.html 이 프레임 안에 두었다).
-    //   재생기가 남긴 것만 걷어내고 캔버스는 남긴다 — YT 는 host <div> 를 <iframe> 으로 갈아치우므로
-    //   "우리가 만든 host" 를 기억해 두는 것으로는 부족하고, 캔버스가 아닌 것을 전부 걷는 편이 확실하다.
+    // ⚠ innerHTML 로 비우면 **프레임 안에 놓아 둔 우리 것까지 지워진다**(index.html 이 자세 오버레이
+    //   캔버스·띄우기 손잡이·영상 자리 옮기기를 프레임 안에 두었다 — 프레임과 같이 움직여야 해서다).
+    //   그래서 **`data-keep` 이 붙은 것만 남기고** 나머지를 걷는다. YT 는 host <div> 를 <iframe> 으로
+    //   갈아치우므로 "우리가 만든 host" 를 기억해 두는 것으로는 부족하다.
+    // ⚠ 2026-09-20 에 표식 방식으로 바꿨다. 그전에는 캔버스 하나만 이름으로 비교해서, 재생기를 처음
+    //   만드는 순간 `⤡ 제자리로` 손잡이(#videoFloatBar)가 조용히 사라졌다 — 띄워 놓고 되돌릴 길이
+    //   없어지는 버그였고, 화면에는 "버튼이 원래 없는 것"처럼 보여 드러나지 않았다.
     for (const child of [...videoFrameEl.children]) {
-      if (child !== videoPoseCanvasEl) child.remove();
+      if (!child.dataset.keep) child.remove();
     }
     const host = document.createElement('div');
     videoFrameEl.appendChild(host);
@@ -1048,7 +1103,9 @@ function seekVideoTo(sec, opts = {}) {
 }
 
 // 서버가 있는지 한 번 본다. 있으면 설정과 패널이 서버 모드로 다시 그려진다(패널이 열려 있으면 경로도 확인한다).
-clipServer.probe().then((cfg) => {
+// ⚠ 이 약속을 남겨 둔다 — 22절의 「담아 둔 것 되살리기」가 **서버인지 아닌지 정해진 뒤에**
+//   읽어야 한다. 정해지기 전에 읽으면 서버에 담아 둔 것을 못 보고 브라우저 것만 본다.
+const clipServerReady = clipServer.probe().then((cfg) => {
   clipServerConfig = cfg;
   if (!cfg) return;
   libraryAutoTriedFor = '';
@@ -1409,6 +1466,16 @@ views.video = createVideoPanel({
   getPlayerState: () => player.getState(),
   getPlayerKind: () => player.kind,
   getCurrentSec: currentVideoSec,
+  // 받아 적기를 열 때 안무표를 영상 길이만큼 늘리는 데 쓴다(2026-09-20). 상태가 바뀔 때만
+  // 다시 읽어 둔 값이라(getDuration 폴링은 iframe 경계를 넘는다) 공짜다. 모르면 null 이다.
+  getDurationSec: () => videoDurationSec,
+  // `P` 와 패널이 함께 쓴다(2026-09-20). ⚠ play() 는 사용자 제스처 콜스택 안이어야 하는데
+  //   keydown 도 제스처라 그대로 통한다 — await 로 한 박자 늦추지 않는다.
+  onTogglePlay: () => {
+    const st = player.getState();
+    if (st.play === 'playing') player.pause();
+    else player.play();
+  },
   onSeek: seekVideoTo,
   // 화면 속 화면(2026-09-13). 포트의 **선택 멤버**라 없는 재생기(YouTube iframe)는 조용히 'unavailable' 이다.
   // 줄에 「서버에 보관됨」을 적으려면 지금 어느 보관 방식인지 알아야 한다.
@@ -1486,7 +1553,11 @@ views.video = createVideoPanel({
     captureSkip: (args) => CaptureCmd.captureSkip(store, args),
     stopCapture: () => CaptureCmd.stopCapture(store),
     markersToBlocks: () => CaptureCmd.markersToBlocks(store, {}, { ids: browserEnv }),
-    nameSelected: () => CaptureCmd.nameSelected(store, {}, { dialogs: browserDialogs })
+    nameSelected: () => CaptureCmd.nameSelected(store, {}, { dialogs: browserDialogs }),
+    // 표 전체 옮기기(2026-09-20). 받아 적기와 같은 자리에 두지만 박자와는 무관하다 —
+    // 놓인 블록을 카운트 축에서 통째로 민다.
+    canShiftAll: () => store.board(BOARD_MAIN).placements.length > 0,
+    shiftAll: (args) => BoardCmd.shiftAllCounts(store, { boardId: BOARD_MAIN, ...args }, { ids: browserEnv })
   }
 });
 
@@ -1587,6 +1658,8 @@ views.settings = createSettingsView({
   },
   getProjectName: projectNameForClips,
   previewDirParts: clipDirParts,
+  getHotkeys: () => hotkeyMap,
+  saveHotkeys: applyHotkeys,
   // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
   onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); }
 });
@@ -1663,3 +1736,105 @@ views.start = createStartCard({
   onVideo: () => render(VideoCmd.openPanel(store)),
   hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 22. 프로젝트 칸 — 사이드바 맨 위 (2026-09-20)
+//
+// **한 프로젝트는 한 안무다.** 그 안에 영상이 날짜를 달고 쌓이고, 그 목록이 곧 진행 기록이다.
+// ⚠ 새 커맨드는 `setClipMeta` 하나뿐이고 나머지(고르기·이름·빼기)는 영상 패널과 같은 것을 부른다.
+// ⚠ 올해를 여기서 넘긴다 — 도메인은 시계를 모른다(check-arch 가 `Date` 를 막는다).
+// ─────────────────────────────────────────────────────────────────────────────
+
+views.project = createProjectPanel({
+  getProjectName: projectNameForClips,
+  setProjectName: setProjectFileName,
+  getClips: () => {
+    const media = VideoCmd.clipList(store);
+    return { activeId: media.activeId, clips: media.clips };
+  },
+  byProgress: clipsByProgress,
+  summarize: (clips) => clipsSummary(clips, new Date().getFullYear()),
+  formatDate: (takenAt) => formatTakenAt(takenAt, new Date().getFullYear()),
+  commands: {
+    select: (id) => render(VideoCmd.selectClip(store, { id })),
+    rename: (id, name) => { render(VideoCmd.renameClip(store, { id, name })); commitHistoryAndRender(); },
+    setMeta: (id, patch) => { render(VideoCmd.setClipMeta(store, { id, ...patch })); commitHistoryAndRender(); },
+    remove: (id) => { render(VideoCmd.removeClip(store, { id })); commitHistoryAndRender(); }
+  },
+  openVideoPanel: () => render(VideoCmd.openPanel(store)),
+  confirmOnce
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 23. 엄지 바 — 폰에서 지금 할 일을 화면 맨 아래에 (2026-09-20)
+//
+// ⚠ 새 커맨드를 만들지 않는다. 전부 이미 있는 진입점과 같은 것을 부른다 — 폰에는 키보드가 없어
+//   `B`·`K`·`N`·`P`·`Esc` 로 하던 일이 손가락으로 와야 하는데, 그 버튼들이 영상 패널 안쪽에
+//   있어 스크롤해야 닿았다. 자리만 옮긴 것이다.
+// ⚠ 영상 패널·레이아웃이 다 만들어진 뒤에 붙인다(그 둘의 메서드를 쓴다).
+// ─────────────────────────────────────────────────────────────────────────────
+
+views.thumb = createThumbBar({
+  getState: () => ({
+    panelOpen: VideoCmd.panelState(store).open,
+    capturing: CaptureCmd.captureStartSec(store) !== null,
+    canCapture: CaptureCmd.canCapture(store),
+    sheetOpen: document.body.dataset.sheet === 'on'
+  }),
+  actions: {
+    openPanel: () => render(VideoCmd.openPanel(store)),
+    // ⚠ 뷰의 메서드를 거친다 — 지금 몇 초인지는 영상 패널만 알고(재생기는 뷰가 쥔다),
+    //   그리기와 히스토리 커밋까지 그쪽에서 끝난다. 여기서 커맨드를 직접 부르면 그 둘이 빠진다.
+    togglePlay: () => { views.video?.togglePlay(); },
+    capture: () => { views.video?.captureToggle(); views.thumb?.render(); },
+    skip: () => { views.video?.captureSkip(); views.thumb?.render(); },
+    stop: () => { views.video?.stopCapture(); views.thumb?.render(); },
+    toggleSheet: () => { byId('sidebarSheetBtn')?.click(); },
+    quickPlace: () => { byId('quickPlaceBtn')?.click(); }
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 24. 작업 중인 문서 — 새로고침해도 이어진다 (2026-09-20)
+//
+// 지금까지 앱은 **끄면 잊었다.** `프로젝트 저장` 을 누르지 않고 새로고침하면 안무표도, 고른
+// 영상도, 찍어 둔 박자와 마커도 사라졌다. 영상을 보며 받아 적는 일은 길게 이어지므로 그 사이의
+// 새로고침 한 번이 그날의 일을 지웠다.
+//
+// ⚠ 맨 마지막에 붙인다. 그 전의 렌더(부팅 도중의 첫 그림)까지 담으면 **되살리기 전의 빈 상태**가
+//   담긴 것을 덮어쓴다 — 되살릴 것을 스스로 지우는 순서가 된다.
+// ⚠ 영상 파일은 담지 않는다(담을 수도 없다). 담기는 것은 `media.source` 의 **이름과 경로**이고,
+//   실물은 되살린 뒤 tryLibraryQuietly 가 보관 폴더에서 다시 읽어 온다 — 이미 있던 길이다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 서버가 있으면 서버에 담는다. 폰과 PC 가 같은 서버를 보면 이어서 편집한다.
+// ⚠ **게터로 준다.** clipServerConfig 는 probe 가 끝나야 채워지는데 이 줄은 그 전에 돈다 —
+//   값으로 주면 서버가 있어도 영영 브라우저에 담는다(실측으로 그랬다).
+const draftStore = createDraftStore({ getServer: () => (clipServerConfig ? projectServer : null) });
+const draftSaver = debounceSave((payload) => draftStore.save(payload));
+
+(async () => {
+  await clipServerReady;              // 서버인지 아닌지 정해진 뒤에 읽는다
+  const saved = await draftStore.load();
+  // ⚠ **비어 있을 때만** 되살린다. 부팅 중에 사용자가 이미 파일을 열었거나 동작을 놓았으면
+  //   그쪽이 이긴다 — 담아 둔 것이 방금 한 일을 덮으면 그게 데이터 손실이다.
+  const untouched = store.board(BOARD_MAIN).placements.length === 0;
+  if (saved && untouched) {
+    render(ProjectCmd.restoreDraft(projectDeps, saved));
+    // 담긴 이름을 앱바·이름칸에 되돌린다. 영상 실물은 아래 한 줄이 보관 폴더에서 다시 읽는다.
+    if (typeof saved.fileName === 'string' && saved.fileName) setProjectFileName(saved.fileName);
+    tryLibraryQuietly();
+  }
+  // 되살린 **뒤에** 담기를 켠다(위 ⚠ 두 번째 줄).
+  saveDraftSoon = () => draftSaver.schedule(
+    () => ProjectCmd.draftSnapshot(projectDeps, { fileName: projectNameForClips() })
+  );
+})();
+
+// 창을 닫거나 탭을 숨길 때는 기다리지 않고 담는다 — 묶는 시간(1.2초) 안에 닫으면 그만큼이 샌다.
+// ⚠ `beforeunload` 가 아니라 `visibilitychange` 다. 모바일 브라우저는 탭을 접을 때
+//   beforeunload 를 부르지 않고 그대로 죽이는 일이 있다.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') draftSaver.flush();
+});
+window.addEventListener('pagehide', () => { draftSaver.flush(); });

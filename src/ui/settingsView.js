@@ -6,9 +6,32 @@
 //
 // docsHub 와 같은 규약이다 — 자기 DOM 과 자기 <style> 을 만들어 붙이고 index.html 은 건드리지 않는다.
 // 어댑터(clipLibrary)는 import 하지 않고 함수로 주입받는다(ui 는 브라우저 저장소를 모른다).
+//
+// 단축키 절(2026-09-20)은 domain/hotkeys 의 표를 그대로 읽어 그린다 — 무엇을 바꿀 수 있는지의
+// 주인은 거기 하나이고, 이 화면은 그것을 보여 주고 누른 글쇠를 받아 넘기기만 한다.
+
+import {
+  EDITABLE_ACTIONS, HOTKEY_ACTIONS, MAX_KEYS_PER_ACTION,
+  checkKey, eventKey, keysLabel, normalizeHotkeys, ownerOf, setKeys
+} from '../domain/hotkeys.js';
 
 const STYLE_ID = 'settings-view-style';
 const CSS = `
+/* 단축키 목록(2026-09-20). 한 줄이 동작 하나다 — 이름·하는 일·지금 글쇠·바꾸기. */
+.settings-keys { display: grid; gap: 6px; margin-top: 6px; }
+.settings-key-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 7px 9px; border-radius: 10px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(148,163,184,0.14); }
+.settings-key-row[hidden] { display: none; }
+.settings-key-main { flex: 1 1 14em; min-width: 0; }
+.settings-key-main b { display: block; font-size: 12px; }
+.settings-key-main small { display: block; margin-top: 1px; font-size: 10.5px; color: var(--muted, #94a3b8); line-height: 1.35; }
+.settings-key-caps { display: flex; gap: 4px; flex-wrap: wrap; }
+.settings-key-cap { font-size: 11px; font-weight: 800; padding: 2px 9px; border-radius: 6px;
+  background: rgba(15,23,42,0.85); border: 1px solid rgba(148,163,184,0.35); color: #e6edf6; white-space: nowrap; }
+.settings-key-row.is-listening .settings-key-cap { border-color: rgba(74,222,128,0.6); color: #bbf7d0; }
+.settings-key-fixed .settings-key-cap { opacity: 0.55; }
+
 .settings-overlay { position: fixed; inset: 0; z-index: 6000; display: none;
   background: rgba(6,10,20,0.72); backdrop-filter: blur(3px); }
 .settings-overlay[data-open="1"] { display: block; }
@@ -115,6 +138,11 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  * @param {SettingsViewDeps} deps
  * @returns {{ open(): void, close(): void, render(): Promise<void> }}
  */
+/**
+ * 단축키 줄을 그리고 글쇠를 받는다. createSettingsView 안에서만 쓴다.
+ * 바깥으로 빼지 않은 이유: 이 절의 DOM 과 상태(지금 무엇을 받는 중인가)가 여기 갇혀 있어야
+ * 다른 절이 실수로 건드릴 수 없다.
+ */
 export function createSettingsView(deps) {
   const {
     container,
@@ -127,6 +155,10 @@ export function createSettingsView(deps) {
     getProjectName = () => '',
     previewDirParts = (subdir, name) => [subdir || 'video-clip', name || '_미지정'],
     onChange = () => {},
+    // 단축키(2026-09-20). ui 는 저장소를 모르므로 읽고 쓰는 것은 주입받는다.
+    // ⚠ getHotkeys 는 **게터다** — 설정 화면이 열려 있는 동안에도 바깥이 바꿀 수 있다.
+    getHotkeys = null,
+    saveHotkeys = () => {},
     doc = document,
     // 관리 화면을 열 수 있는 기기인지 판정하고 새 탭을 여는 데 쓴다. 테스트가 가짜를 준다.
     win = typeof window === 'undefined' ? { location: { hostname: '' }, open() {} } : window
@@ -259,6 +291,16 @@ export function createSettingsView(deps) {
           </div>
           <div class="helper" data-role="llm-note"></div>
         </section>
+        <section class="settings-section" data-role="keys-section" data-cat="keys" data-available="1"
+          data-keywords="단축키 글쇠 키보드 hotkey shortcut key 스페이스 space 받아 적기 건너뛰기 재생 일시정지">
+          <h3>단축키</h3>
+          <div class="helper">영상을 보면서 손을 자판에 두고 쓰는 글쇠입니다. 바꾸려면 <code>바꾸기</code> 를 누르고 원하는 글쇠를 누르세요. <b>글자를 치는 중에는 듣지 않습니다</b> — 동작 이름을 입력하는 동안 안무표가 바뀌는 일은 없습니다. 이 설정은 이 브라우저에만 남고 안무표 파일에는 들어가지 않습니다.</div>
+          <div class="settings-keys" data-role="keys-list"></div>
+          <div class="settings-row">
+            <button class="ghost" data-act="keys-reset" type="button">기본값으로</button>
+            <span class="settings-label" data-role="keys-note"></span>
+          </div>
+        </section>
         <div class="settings-empty" data-role="empty" hidden></div>
       </div>
       </div>
@@ -276,7 +318,8 @@ export function createSettingsView(deps) {
   //   을 직접 대입하는 자리를 남기지 않고 전부 applyFilter 를 거친다.
   const CATEGORIES = Object.freeze([
     Object.freeze({ id: 'storage', label: '보관 자리', hint: '파일이 어디에 쌓이는가' }),
-    Object.freeze({ id: 'models', label: '모델', hint: '자세 분석과 말로 채우기가 쓰는 모델' })
+    Object.freeze({ id: 'models', label: '모델', hint: '자세 분석과 말로 채우기가 쓰는 모델' }),
+    Object.freeze({ id: 'keys', label: '단축키', hint: '손을 자판에 두고 쓰는 글쇠' })
   ]);
   const ALL_CAT = 'all';
 
@@ -580,6 +623,9 @@ export function createSettingsView(deps) {
 
   /** store 가 아니라 설정·어댑터에서 재도출한다(팝업이 열릴 때와 바뀔 때만). */
   async function render() {
+    // ⚠ 단축키는 **먼저** 그린다. 아래 셋은 서버를 기다리므로(await), 뒤에 두면 서버가 없는
+    //   환경에서 목록이 몇 초 뒤에야 나타난다 — 이 절은 서버와 무관하다.
+    renderKeys();
     await renderModels();
     await renderLlm();
     await renderProjects();
@@ -815,8 +861,127 @@ export function createSettingsView(deps) {
       onChange();
     };
   }
+  // ── 단축키 (2026-09-20) ─────────────────────────────────────────────────
+  //
+  // 그전에는 글쇠가 input/controls.js 에 문자열로 박혀 있어서, 무엇을 듣는지 알려면 코드를 읽어야
+  // 했고 바꾸려면 코드를 고쳐야 했다. 여기서는 domain/hotkeys 의 표를 그대로 그리고, 누른 글쇠를
+  // 받아 넘기기만 한다 — **무엇을 바꿀 수 있는지의 주인은 도메인 하나다.**
+  const keysSection = overlay.querySelector('[data-role="keys-section"]');
+  const keysListEl = overlay.querySelector('[data-role="keys-list"]');
+  const keysNoteEl = overlay.querySelector('[data-role="keys-note"]');
+
+  /** 지금 글쇠를 받는 중인 동작 id. 빈 문자열이면 받는 중이 아니다. */
+  let listeningFor = '';
+
+  /** 지금 표. 게터가 없으면 기본값이다(설정이 없는 테스트도 화면은 그려진다). */
+  const hotkeyMap = () => normalizeHotkeys(typeof getHotkeys === 'function' ? getHotkeys() : null);
+
+  function renderKeys() {
+    if (!keysListEl) return;
+    const map = hotkeyMap();
+    keysListEl.textContent = '';
+    for (const action of HOTKEY_ACTIONS) {
+      const row = doc.createElement('div');
+      row.className = 'settings-key-row' + (action.fixed ? ' settings-key-fixed' : '');
+      if (listeningFor === action.id) row.classList.add('is-listening');
+      row.dataset.id = action.id;
+
+      const main = doc.createElement('div');
+      main.className = 'settings-key-main';
+      const name = doc.createElement('b');
+      name.textContent = action.label;
+      const hint = doc.createElement('small');
+      hint.textContent = action.hint;
+      main.append(name, hint);
+
+      const caps = doc.createElement('div');
+      caps.className = 'settings-key-caps';
+      const cap = doc.createElement('span');
+      cap.className = 'settings-key-cap';
+      cap.textContent = listeningFor === action.id ? '글쇠를 누르세요…' : keysLabel(map[action.id]);
+      caps.appendChild(cap);
+
+      row.append(main, caps);
+
+      if (!action.fixed) {
+        const btn = doc.createElement('button');
+        btn.className = 'ghost';
+        btn.type = 'button';
+        btn.dataset.act = 'keys-listen';
+        btn.textContent = listeningFor === action.id ? '취소' : '바꾸기';
+        row.appendChild(btn);
+      }
+      keysListEl.appendChild(row);
+    }
+    if (keysNoteEl && !listeningFor) keysNoteEl.textContent = '';
+  }
+
+  if (keysListEl) {
+    keysListEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-act="keys-listen"]');
+      if (!btn) return;
+      const id = btn.closest('.settings-key-row').dataset.id;
+      listeningFor = listeningFor === id ? '' : id;
+      if (keysNoteEl) {
+        keysNoteEl.textContent = listeningFor
+          ? '누른 글쇠가 그 자리에 들어갑니다. `Esc` 로 그만둡니다.'
+          : '';
+      }
+      renderKeys();
+    });
+  }
+
+  if (keysSection) {
+    // ⚠ **캡처 단계**에서 듣는다(세 번째 인자 true). 아래의 `Escape → close` 와 설정 화면 안의
+    //   입력칸들이 같은 이벤트를 먼저 가져가면 글쇠를 못 받는다.
+    doc.addEventListener('keydown', (e) => {
+      if (!listeningFor || !isOpen()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        listeningFor = '';
+        renderKeys();
+        return;
+      }
+      // 조합만 누른 상태(Shift 를 잡고 있는 중 등)는 아직 글쇠가 아니다 — 계속 기다린다.
+      if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+
+      const id = listeningFor;
+      const key = eventKey(e);
+      const ok = checkKey(key);
+      if (!ok.ok) {
+        if (keysNoteEl) keysNoteEl.textContent = ok.reason;
+        return;
+      }
+      const map = hotkeyMap();
+      const taken = ownerOf(map, key, id);
+      // ⚠ 한 동작의 글쇠를 **갈아 끼운다**(더하지 않는다). 여럿을 붙이고 싶으면 그 화면을 따로
+      //   만들어야 하는데, 그보다 "지금 무엇을 누르면 되나"가 한 줄로 읽히는 편이 낫다.
+      const next = setKeys(map, id, [key]);
+      saveHotkeys(next);
+      listeningFor = '';
+      renderKeys();
+      if (keysNoteEl) {
+        const owner = taken ? (HOTKEY_ACTIONS.find(a => a.id === taken) || {}).label : '';
+        keysNoteEl.textContent = owner
+          ? `\`${key}\` 를 옮겼습니다 — \`${owner}\` 에서는 빠졌습니다.`
+          : `\`${key}\` 로 바꿨습니다.`;
+      }
+    }, true);
+  }
+
+  const keysResetBtn = overlay.querySelector('[data-act="keys-reset"]');
+  if (keysResetBtn) {
+    keysResetBtn.onclick = () => {
+      saveHotkeys(normalizeHotkeys(null));
+      listeningFor = '';
+      renderKeys();
+      if (keysNoteEl) keysNoteEl.textContent = '기본값으로 되돌렸습니다.';
+    };
+  }
+
   doc.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isOpen()) close();
+    if (e.key === 'Escape' && isOpen() && !listeningFor) close();
   });
 
   return { open, close, render };

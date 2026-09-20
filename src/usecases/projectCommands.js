@@ -80,6 +80,52 @@ function mainView(state) {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 작업 중인 문서 — 새로고침해도 이어진다 (2026-09-20)
+//
+// 지금까지 앱은 **끄면 잊었다.** `프로젝트 저장` 을 누르지 않고 새로고침하면 안무표도, 방금
+// 고른 영상도, 찍어 둔 박자와 마커도 사라졌다. 영상을 보며 받아 적는 일은 길게 이어지는 작업이라
+// 그 사이의 새로고침 한 번이 그날의 일을 지웠다.
+//
+// 그래서 **파일과 같은 모양**(buildProjectFile)으로 한 벌을 늘 담아 둔다. 새 포맷을 만들지 않는
+// 것이 요점이다 — 담는 것과 저장하는 것이 다른 모양이면 한쪽만 고치는 날이 오고, 그날 복원은
+// 조용히 어긋난다. 담는 자리는 호출부가 정한다(서버가 있으면 서버, 없으면 브라우저).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 지금 상태를 **프로젝트 파일과 같은 모양**으로 뜬다. 저장하지 않는다 — 바이트만 만든다.
+ *
+ * ⚠ `saveProject` 와 같은 buildProjectFile 을 쓴다. 담아 둔 것을 되살리는 길이 곧 파일을 여는
+ *   길이므로(loadProjectFromRecent), 두 모양이 어긋나면 복원이 실패한다.
+ * ⚠ 최근 목록을 건드리지 않는다. 자동으로 담는 것은 「저장했다」가 아니다.
+ *
+ * @param {ProjectDeps} deps
+ * @param {{ fileName?: string }} [options] 지금 이름칸의 값. 비어 있으면 파일에도 빈 이름이 간다
+ * @returns {object} buildProjectFile 의 결과
+ */
+export function draftSnapshot(deps, options = {}) {
+  const { store, env } = deps;
+  const state = store.get();
+  const raw = typeof options.fileName === 'string' ? options.fileName : '';
+  return buildProjectFile(mainView(state), {
+    fileName: raw.trim(),
+    savedAt: nowIso(env),
+    favoriteRoutineIds: state.favorites.routineIds
+  });
+}
+
+/**
+ * 담아 둔 것을 되살린다. **파일을 여는 것과 같은 길**을 탄다(loadProjectFromRecent).
+ * ⚠ 되살릴 것이 없거나 모양이 아니면 아무 일도 하지 않는다 — 깨진 것을 반쯤 열면 더 나쁘다.
+ * @param {ProjectDeps} deps
+ * @param {any} data
+ * @returns {import('./store.js').Dirty}
+ */
+export function restoreDraft(deps, data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.placements)) return NONE;
+  return applyProjectData(deps, readProjectData(data, deps.env));
+}
+
 /** 저장소가 `{ ok:false }` 로 실패를 알리면 오늘 throw 가 잡히던 자리와 같게 예외로 바꾼다. */
 function persist(result, what) {
   if (result && typeof result === 'object' && result.ok === false) {

@@ -9,7 +9,7 @@
 
 import * as boardOps from '../domain/boardOps.js';
 import { clamp, clampToGrid, totalCellsFrom } from '../domain/grid.js';
-import { getGroup, groupCount } from '../domain/placements.js';
+import { getGroup, groupCount, shiftAllPlacements } from '../domain/placements.js';
 import { BOARD_MAIN, BOARD_ROUTINE, NONE, boardOf, mergeDirty } from './store.js';
 import { clearLinks } from './linkCommands.js';
 import { clearMedia } from './videoCommands.js';
@@ -406,4 +406,36 @@ export function setDefaultCount(store, args) {
   const { value } = args;
   if (value >= 1) store.patch('session', { defaultCount: value });  // 2373
   return { toolbar: true };                                         // 2374 의 되돌리기 포함
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 전체 밀기·당기기 (2026-09-20)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 보드의 배치 전부를 카운트 축에서 `delta` 만큼 옮긴다. 음수면 앞으로 당긴다.
+ *
+ * 받아 적은 뒤 "통째로 한 칸 밀렸다"를 고치는 자리다. 받아 적기의 초→칸 변환은 반응 지연을
+ * 한 칸까지만 흡수하므로(domain/tempo.boundarySpanToCountRange), 그 이상 밀린 날은 여기서 고친다.
+ *
+ * ⚠ **하나라도 격자 밖으로 나가면 아무것도 옮기지 않는다.** 반만 옮기면 표 끝의 동작이나
+ *   인트로 앞의 동작이 소리 없이 사라진다. 그때는 `blocked` 로 알리고 화면이 까닭을 적는다.
+ * ⚠ 히스토리 커밋은 호출부가 한다(이 파일의 공통 규약). 한 번 누름이 Undo 한 단계다.
+ *
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', delta:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {import('./store.js').Dirty & {moved?:boolean, blocked?:boolean}}
+ */
+export function shiftAllCounts(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, delta } = args;
+  const step = Math.trunc(Number(delta));
+  if (!Number.isFinite(step) || step === 0) return NONE;
+  const board = boardOf(store.get(), boardId);
+  if (!board.placements.length) return NONE;
+  const next = shiftAllPlacements(board.placements, board, step, deps.ids);
+  if (next === null) return { ...NONE, blocked: true };
+  store.setBoard(boardId, { placements: next });
+  // 전부 옮겼으니 전 행을 다시 그린다 — 어느 행이 바뀌었는지 세는 것보다 싸고 틀릴 여지가 없다.
+  return { boards: { [boardId]: { rows: 'all' } }, moved: true };
 }

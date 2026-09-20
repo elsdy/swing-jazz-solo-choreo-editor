@@ -20,8 +20,8 @@
 //   다만 무엇이 커밋할 만한 일이었는지는 반환값의 `placed` 로 알려준다.
 
 import { BOARD_MAIN, NONE, boardOf, mergeDirty } from './store.js';
-import { placeBlockAt } from './boardCommands.js';
-import { isTempoUsable, normalizeTempo, spanToCountRange } from '../domain/tempo.js';
+import { placeBlockAt, setBoardRows } from './boardCommands.js';
+import { boundarySpanToCountRange, isTempoUsable, normalizeTempo, rowsForDuration } from '../domain/tempo.js';
 import { cellOf, linearOf } from '../domain/grid.js';
 import { normalizeMarkers } from '../domain/markers.js';
 import { activeClipOf } from '../domain/project/media.js';
@@ -35,6 +35,17 @@ const VIDEO = Object.freeze({ video: true });
  * 에서도 반 카운트가 안 되므로, 일부러 찍은 구간을 잘라먹지 않는다.
  */
 export const MIN_SPAN_SEC = 0.125;
+
+/**
+ * 자동으로 늘릴 수 있는 마디의 상한 (2026-09-20).
+ *
+ * 박자를 잘못 잡으면(두 점을 거꾸로 찍었거나 bpm 이 열 배로 들어갔거나) 한 시간짜리 영상이
+ * 수만 마디를 요구한다. 그만큼 골격을 세우면 화면이 굳는다 — 늘리다 만 것이 굳은 것보다 낫다.
+ * 10분짜리 곡을 bpm 400 · 1박 카운트 · 8카운트 마디로 받아도 500마디이므로, 실제로 쓰는
+ * 범위는 여기 한참 못 미친다.
+ * ⚠ 사용자가 손으로 정하는 마디 수에는 걸리지 않는다. **자동으로 늘릴 때만** 보는 값이다.
+ */
+export const MAX_AUTO_ROWS = 2048;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 읽기
@@ -72,11 +83,76 @@ function patchVideo(store, values) {
   return VIDEO;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 자동 확장 — 영상보다 짧은 안무표에는 뒷부분을 놓을 자리가 없다 (2026-09-20)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 마디가 `rows` 보다 적으면 거기까지 늘린다. 이미 그만큼이면 아무 일도 하지 않는다.
+ *
+ * ⚠ **줄이지 않는다.** 사용자가 일부러 넓혀 둔 표를 영상 길이에 맞춰 잘라내면 그 자리에 있던
+ *   블록이 잘려 나간다(setBoardRows 는 clampToGrid 를 거친다). 늘리는 쪽만 자동이다.
+ * ⚠ 상한(MAX_AUTO_ROWS)을 넘으면 **상한까지만** 늘리고 `capped` 로 알린다 — 박자를 잘못
+ *   잡았을 때 수만 마디를 세우다 화면이 굳는 것을 막는다.
+ *
+ * `말로 채우기`(planCommands.applyPlan)도 같은 규칙으로 늘린다 — "모자라면 늘리고 줄이지는
+ * 않는다". 거기는 LLM 이 준 rowsNeeded 가 이미 유한해서 상한이 필요 없었다.
+ *
+ * @param {object} store
+ * @param {{ rows:number, boardId?:'main'|'routine' }} args
+ * @returns {import('./store.js').Dirty & {grew?:number, capped?:boolean}}
+ *   grew: 늘린 뒤의 마디 수(늘리지 않았으면 없다)
+ */
+export function growRowsTo(store, args) {
+  const { boardId = BOARD_MAIN } = args;
+  const want = Math.ceil(Number(args.rows));
+  if (!Number.isFinite(want)) return NONE;
+  const board = boardOf(store.get(), boardId);
+  const capped = want > MAX_AUTO_ROWS;
+  const next = Math.min(want, MAX_AUTO_ROWS);
+  if (next <= board.rows) return capped ? { ...NONE, capped: true } : NONE;
+  const dirty = setBoardRows(store, { boardId, rows: next });
+  return capped ? { ...dirty, grew: next, capped: true } : { ...dirty, grew: next };
+}
+
+/**
+ * 이 영상을 끝까지 받아 적을 수 있게 마디를 한 번에 늘린다 (2026-09-20).
+ *
+ * 받아 적기를 여는 순간 한 번 부른다. 영상 길이와 지금 박자로 필요한 마디 수가 나오므로,
+ * 받는 동안 자리가 모자라는 일이 없다 — 재생 위치가 표 끝에 닿아도 그 뒤가 이미 있다.
+ * 그 뒤에 보정점으로 어긋나 모자라지면 captureSpan 이 받을 때마다 모자라는 만큼 더 늘린다.
+ *
+ * ⚠ **영상 길이를 여기서 알아내지 않는다.** 재생기는 어댑터이고 usecases 는 그것을 모른다 —
+ *   뷰가 `player.getDuration()` 을 읽어 넘긴다. 모르면(라이브·아직 안 실림) null 이고, 그때는
+ *   아무 일도 하지 않는다. 그래도 받아 적기 자체는 된다(모자라면 그때 늘어난다).
+ * ⚠ 박자가 없으면 셀 수 없으므로 아무 일도 하지 않는다. 이 시점에는 이미 canCapture 가 참이다.
+ *
+ * @param {object} store
+ * @param {{ durationSec:number|null, boardId?:'main'|'routine' }} args
+ * @returns {import('./store.js').Dirty & {grew?:number, capped?:boolean}}
+ */
+export function growRowsForDuration(store, args = {}) {
+  const { boardId = BOARD_MAIN } = args;
+  const state = store.get();
+  const board = boardOf(state, boardId);
+  const tempo = normalizeTempo(activeClipOf(state.media).tempo);
+  const rows = rowsForDuration(Number(args.durationSec), board.cols, tempo);
+  if (rows === null) return NONE;
+  return growRowsTo(store, { rows, boardId });
+}
+
 /**
  * 초 구간 하나를 안무표에 이름 없는 블록으로 놓는다.
  *
- * 초 → 카운트 변환은 domain/tempo.spanToCountRange 가 한다 — 보정점이 있으면 그것까지 반영된 값이라
- * 템포가 흔들리는 영상에서도 자리가 맞는다. 끝 카운트는 **포함**이다(구간 중간에서 끝나도 그 칸을 덮는다).
+ * 초 → 카운트 변환은 domain/tempo.boundarySpanToCountRange 가 한다 — 보정점이 있으면 그것까지
+ * 반영된 값이라 템포가 흔들리는 영상에서도 자리가 맞는다.
+ *
+ * ⚠ **spanToCountRange 가 아니다**(2026-09-20 버그 수정). 그쪽은 끝 칸을 `ceil-1` 로 덮으므로,
+ *   경계 하나가 앞 구간의 끝이면서 뒤 구간의 시작인 이 모델에서는 그 칸을 둘이 함께 갖는다.
+ *   그러면 한 마디가 두 줄로 쌓이고(subRow), 밀려난 그룹은 제 행 전부에서 2층을 차지해
+ *   "블록이 하나뿐인데 2층이 선점된 행"까지 만든다. 순서대로 받아 적은 안무에 겹칠 것은 없다.
+ * ⚠ 두 경계가 같은 칸으로 반올림되면(`empty`) **아무것도 놓지 않는다.** 억지로 한 칸을 만들면
+ *   그 칸을 다음 구간이 또 문다 — 고치려던 겹침이 그대로 돌아온다.
  *
  * @param {object} store
  * @param {{ inSec:number, outSec:number, boardId?:'main'|'routine', name?:string, category?:string }} args
@@ -92,16 +168,25 @@ export function captureSpan(store, args, deps = {}) {
   const tempo = normalizeTempo(activeClipOf(state.media).tempo);
   if (!isTempoUsable(tempo)) return { ...NONE, needsTempo: true };
   const board = boardOf(state, boardId);
-  const { from, to } = spanToCountRange(inSec, outSec, board.cols, tempo);
+  const { from, to, empty } = boundarySpanToCountRange(inSec, outSec, board.cols, tempo);
+  if (empty) return NONE;                                // 두 경계가 같은 칸이다 — 놓을 자리가 없다
   const totalCount = linearOf(to.row, to.index, board.cols) - linearOf(from.row, from.index, board.cols) + 1;
   if (totalCount <= 0) return NONE;
+  // 자리가 모자라면 먼저 늘린다(2026-09-20). 받아 적기를 열 때 영상 길이만큼 이미 늘려 두었지만,
+  // 그 뒤에 찍은 보정점이 뒷부분을 늦추면 계산이 한두 마디 어긋난다 — 그때 여기가 받는다.
+  // ⚠ 늘리는 것이 **먼저**다. placeBlockAt 은 보드 밖이면 조용히 아무것도 안 놓는다.
+  // ⚠ grew·capped 는 **Dirty 의 키가 아니다**(assertDirty 가 낯선 키에 던진다). 알림용 플래그라
+  //   여기서 갈라내고, needsTempo·placed 와 같은 결로 호출부까지 얹어 보낸다.
+  const { grew, capped, ...grownDirty } = growRowsTo(store, { rows: to.row, boardId });
+  const notes = { ...(grew ? { grew } : {}), ...(capped ? { capped: true } : {}) };
   const dirty = placeBlockAt(
     store,
     { boardId, name: args.name, category: args.category, startRow: from.row, startIndex: from.index, totalCount },
     deps
   );
-  if (dirty === NONE) return NONE;                       // 보드 밖이라 아무것도 안 놓였다
-  return { ...dirty, placed: true };
+  // 늘렸는데도 못 놓았다 — 되감아 인트로 앞(음수 카운트)으로 간 경우다. 늘린 것은 살린다.
+  if (dirty === NONE) return grew ? { ...grownDirty, ...notes } : NONE;
+  return { ...mergeDirty(grownDirty, dirty), placed: true, ...notes };
 }
 
 /**
@@ -134,14 +219,26 @@ export function captureToggle(store, args, deps = {}) {
   const start = captureStartSec(store);
   if (start === null) {
     if (!canCapture(store)) return { ...NONE, needsTempo: true };
-    return { ...patchVideo(store, { captureSec: sec }), started: true };
+    // 여는 순간 **영상 길이만큼 한 번에** 늘린다(2026-09-20). 받는 동안 자리가 모자라지 않게
+    // 하는 것이 목적이고, 길이를 모르면(args.durationSec 이 null) 아무 일도 하지 않는다 —
+    // 그때는 받을 때마다 captureSpan 이 모자라는 만큼 늘린다.
+    const { grew, capped, ...grownDirty } = growRowsForDuration(store, { ...args, boardId: args.boardId });
+    const opened = patchVideo(store, { captureSec: sec });
+    return {
+      ...mergeDirty(grownDirty, opened),
+      started: true,
+      ...(grew ? { grew } : {}),
+      ...(capped ? { capped: true } : {})
+    };
   }
   const moved = patchVideo(store, { captureSec: sec });     // 경계는 언제나 옮긴다
   if (sec - start < MIN_SPAN_SEC) return moved;             // 되감았거나 두 번 눌렸다
   const span = captureSpan(store, { ...args, inSec: start, outSec: sec }, deps);
+  // ⚠ mergeDirty 는 **아는 키만** 골라 새 객체를 만든다 — grew·capped·placed 는 여기서 다시 얹는다.
   const dirty = mergeDirty(moved, span);
+  const notes = { ...(span.grew ? { grew: span.grew } : {}), ...(span.capped ? { capped: true } : {}) };
   if (span.needsTempo) return { ...dirty, needsTempo: true };
-  return span.placed ? { ...dirty, placed: true } : dirty;
+  return span.placed ? { ...dirty, placed: true, ...notes } : { ...dirty, ...notes };
 }
 
 /**

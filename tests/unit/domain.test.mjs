@@ -24,7 +24,8 @@ import {
 import {
   DEFAULT_TEMPO, cellToTime, countToTime, isTempoUsable, normalizeTempo,
   placementToSpan, secondsPerCount, tempoFromTwoPoints, timeToCell, timeToCount,
-  tempoPoints, addTempoPoint, removeTempoPoint, clearTempoPointsOf, reanchor, normalizeTempoPoints
+  tempoPoints, addTempoPoint, removeTempoPoint, clearTempoPointsOf, reanchor, normalizeTempoPoints,
+  rowsForDuration, boundarySpanToCountRange, spanToCountRange
 } from '../../src/domain/tempo.js';
 import {
   MEDIA_PLAYER_MEMBERS, assertMediaPlayer, isMediaPlayer, normalizeClipSegments
@@ -37,6 +38,13 @@ import {
 import { DEFAULT_CATEGORIES } from '../../src/domain/defaults.js';
 import { ROUTINE_COLORS } from '../../src/domain/routines.js';
 import { createNullMediaPlayer } from '../../src/adapters/nullMediaPlayer.js';
+import { createDraftStore, debounceSave, DRAFT_KEY, DRAFT_NAME } from '../../src/adapters/draftStore.js';
+import * as ProjectCmd from '../../src/usecases/projectCommands.js';
+import { clipsByProgress, clipsSummary, formatTakenAt, normalizeTakenAt } from '../../src/domain/project/media.js';
+import {
+  DEFAULT_HOTKEYS, EDITABLE_ACTIONS, HOTKEY_ACTIONS, MAX_KEYS_PER_ACTION,
+  checkKey, eventKey, keysLabel, normalizeHotkeys, normalizeKey, ownerOf, setKeys, toSaved
+} from '../../src/domain/hotkeys.js';
 import {
   BOARD_MAIN, BOARD_ROUTINE, NONE, assertDirty, createStore, mergeDirty
 } from '../../src/usecases/store.js';
@@ -45,7 +53,7 @@ import {
 } from '../../src/domain/project/schema.js';
 import { applySnapshot, pickUndoFields, toLinkBundle } from '../../src/domain/project/snapshot.js';
 import * as History from '../../src/usecases/historyCommands.js';
-import { clearBoard } from '../../src/usecases/boardCommands.js';
+import { clearBoard, setBoardRows, shiftAllCounts } from '../../src/usecases/boardCommands.js';
 import { serializeLinks } from '../../src/domain/links.js';
 import { CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
@@ -72,7 +80,7 @@ import {
 import * as PhrasingCmd from '../../src/usecases/phrasingCommands.js';
 const { clipList } = VideoCmd;
 import * as CaptureCmd from '../../src/usecases/captureCommands.js';
-import { isPending, pendingGroupIds, nameGroup } from '../../src/domain/placements.js';
+import { isPending, pendingGroupIds, nameGroup, shiftAllPlacements } from '../../src/domain/placements.js';
 import * as Kin from '../../src/domain/kinematics.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
@@ -2177,11 +2185,15 @@ test('media: 우리가 쓴 media 블록은 v1→v2 왕복에서 살아남는다'
   // 메모리 안의 Tempo 는 언제나 points 를, MediaBlock 은 언제나 markers 를 가진다(비어 있으면 []).
   // 파일에는 빈 points·markers 가 쓰이지 않는다(아래 테스트).
   // ⚠ 2026-09-12: 옛 평평한 모양은 **클립 하나**로 감싸여 들어온다(이름은 기본값 `테이크 1`).
+  // ⚠ 2026-09-20: 메모리 안의 클립은 `takenAt`·`note` 를 언제나 가진다(모르면 빈 문자열).
+  //   파일에는 비어 있으면 안 쓰인다 — 그 대조는 아래 `저장 바이트` 테스트가 한다.
   assert.deepEqual(normalizeProject(flat, { ids: counterEnv() }).media, {
     activeId: 'yt:https://youtu.be/abc',
     clips: [{
       id: 'yt:https://youtu.be/abc',
       name: '테이크 1',
+      takenAt: '',
+      note: '',
       source: withMedia.media.source,
       tempo: { ...withMedia.media.tempo, points: [] },
       markers: []
@@ -4034,4 +4046,626 @@ test('phrasing: 저장 파일을 왕복해도 구조가 남고, 안 쓴 파일�
   assert.deepEqual(normalizeProject(withIt, { ids: counterEnv() }).phrasing, withIt.phrasing);
   // 옛 파일(키 없음)은 기본값으로 열린다 — 거부하지 않는다.
   assert.deepEqual(normalizeProject(plain, { ids: counterEnv() }).phrasing, DEFAULT_PHRASING);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 영상 길이에 맞춰 안무표가 저절로 늘어난다 (2026-09-20)
+//
+// 받아 적는 중에 영상은 아직인데 표가 끝나면 뒷부분을 놓을 자리가 없다 — placeBlockAt 이
+// 보드 밖이라고 조용히 버린다. 여는 순간 영상 길이만큼 한 번에 늘리고, 보정점으로 어긋나면
+// 받을 때마다 모자라는 만큼 더 늘린다.
+//
+// 표본은 captureStore 와 같다: bpm 120 · 1카운트 0.5초 · 8카운트 마디 = 한 마디 4초.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const T120 = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 });
+
+test('rowsForDuration: 영상 길이를 마디 수로 바꾼다', () => {
+  assert.equal(rowsForDuration(60, 8, T120), 15, '60초 ÷ 4초/마디 = 15마디');
+  assert.equal(rowsForDuration(4, 8, T120), 1, '딱 한 마디짜리는 1이다');
+  assert.equal(rowsForDuration(4.5, 8, T120), 2, '마디 한가운데서 끝나도 그 마디까지 센다');
+  // 앵커가 0초가 아니면 0초는 음수 카운트다. 세는 것은 끝뿐이라 영향이 없다.
+  const late = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 10, anchorCount: 0 });
+  assert.equal(rowsForDuration(70, 8, late), 15, '앵커 10초 + 60초 = 여전히 15마디');
+
+  assert.equal(rowsForDuration(0, 8, T120), null, '길이 0은 셀 수 없다');
+  assert.equal(rowsForDuration(-5, 8, T120), null, '음수도 셀 수 없다');
+  assert.equal(rowsForDuration(NaN, 8, T120), null);
+  assert.equal(rowsForDuration(60, 8, DEFAULT_TEMPO), null, 'bpm 이 없으면 셀 수 없다');
+});
+
+test('받아 적기: 여는 순간 영상 길이만큼 마디를 늘린다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  assert.equal(store.board(BOARD_MAIN).rows, 8, '기본은 8마디다');
+
+  const opened = CaptureCmd.captureToggle(store, { sec: 0, durationSec: 60 }, { ids });
+  assert.equal(opened.started, true);
+  assert.equal(opened.grew, 15, '늘린 마디 수를 알려야 화면이 한 줄 적을 수 있다');
+  assert.equal(store.board(BOARD_MAIN).rows, 15);
+  assert.deepEqual(store.board(BOARD_MAIN).placements, [], '여는 것만으로 블록이 생기지는 않는다');
+
+  // 14마디째(52~56초)도 이제 자리가 있다 — 전에는 8마디 밖이라 버려졌다.
+  // ⚠ 경계 모델이라 52초의 누름은 **0~52초 구간**을 놓는다(1~13마디). 56초의 누름이 14마디다.
+  CaptureCmd.captureToggle(store, { sec: 52, durationSec: 60 }, { ids });
+  const placed = CaptureCmd.captureToggle(store, { sec: 56, durationSec: 60 }, { ids });
+  assert.equal(placed.placed, true);
+  const last = store.board(BOARD_MAIN).placements[store.board(BOARD_MAIN).placements.length - 1];
+  assert.equal(last.row, 14, '마지막 구간이 14마디에 놓여야 한다');
+  const maxRow = Math.max(...store.board(BOARD_MAIN).placements.map(p => p.row));
+  assert.equal(maxRow, 14, '늘어난 표 안에 전부 들어가야 한다 — 잘려 나간 것이 없다');
+});
+
+test('받아 적기: 늘리기만 하고 줄이지는 않는다', () => {
+  // 일부러 넓혀 둔 표를 영상 길이에 맞춰 잘라내면 그 자리의 블록이 함께 잘린다.
+  const store = captureStore();
+  setBoardRows(store, { boardId: BOARD_MAIN, rows: 32 });
+  const opened = CaptureCmd.captureToggle(store, { sec: 0, durationSec: 60 }, { ids: counterEnv() });
+  assert.equal(opened.grew, undefined, '줄일 일이면 아무것도 늘리지 않는다');
+  assert.equal(store.board(BOARD_MAIN).rows, 32);
+});
+
+test('받아 적기: 영상 길이를 모르면 그대로 두고, 받을 때 모자라는 만큼 늘린다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  // 라이브·아직 안 실린 영상은 getDuration() 이 null 이다.
+  const opened = CaptureCmd.captureToggle(store, { sec: 40, durationSec: null }, { ids });
+  assert.equal(opened.started, true);
+  assert.equal(opened.grew, undefined);
+  assert.equal(store.board(BOARD_MAIN).rows, 8, '길이를 모르면 늘리지 않는다');
+
+  // 40~44초 = 80~88카운트 = 11마디. 8마디짜리 표에는 자리가 없었다.
+  const placed = CaptureCmd.captureToggle(store, { sec: 44 }, { ids });
+  assert.equal(placed.placed, true, '자리가 없어도 버리지 않는다');
+  assert.equal(placed.grew, 11, '모자라는 만큼만 늘린다');
+  assert.equal(store.board(BOARD_MAIN).rows, 11);
+  assert.equal(store.board(BOARD_MAIN).placements[0].row, 11);
+});
+
+test('받아 적기: 박자를 잘못 잡아도 상한 위로는 늘리지 않는다', () => {
+  // 두 점을 잘못 찍어 bpm 이 열 배가 되면 한 시간짜리 영상이 수만 마디를 요구한다.
+  const store = captureStore();
+  const opened = CaptureCmd.captureToggle(store, { sec: 0, durationSec: 60 * 60 * 24 }, { ids: counterEnv() });
+  assert.equal(opened.grew, CaptureCmd.MAX_AUTO_ROWS, '상한까지만 늘린다');
+  assert.equal(opened.capped, true, '더 안 늘린다는 것을 화면이 말할 수 있어야 한다');
+  assert.equal(store.board(BOARD_MAIN).rows, CaptureCmd.MAX_AUTO_ROWS);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 받아 적은 구간은 서로 겹치지 않는다 (2026-09-20 버그 수정)
+//
+// 증상: 받아쓰기로 순서대로 적었는데 한 마디가 두 줄로 쌓이고, 블록이 하나뿐인 행인데도
+//       2층이 선점돼 있었다. 순서대로 받아 적은 안무에 겹칠 것이 있을 리 없으므로 언제나 버그다.
+// 원인: spanToCountRange 의 끝 규칙(`ceil-1` = "칸 중간에서 끝나도 그 칸을 덮는다")은 마커처럼
+//       혼자 떨어진 구간에는 맞지만, 경계 하나가 앞 구간의 끝이면서 뒤 구간의 시작인 받아쓰기
+//       에서는 그 칸을 둘이 함께 갖는다. 밀려난 그룹은 제 행 전부에서 2층을 쓰므로, 꼬리만
+//       남은 행이 "하나뿐인데 2층" 이 된다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('boundarySpanToCountRange: 경계가 칸 한가운데여도 앞뒤가 한 칸도 겹치지 않는다', () => {
+  const lin = (c) => linearOf(c.row, c.index, 8);
+  // 8.5카운트에서 끊었다. 옛 규칙(spanToCountRange)은 칸 8 을 앞뒤가 둘 다 가졌다.
+  const old1 = spanToCountRange(0, 4.25, 8, T120);
+  const old2 = spanToCountRange(4.25, 8.1, 8, T120);
+  assert.equal(lin(old1.to), 8);
+  assert.equal(lin(old2.from), 8, '옛 규칙은 칸 8 을 둘이 갖는다 — 이것이 버그였다');
+
+  const a = boundarySpanToCountRange(0, 4.25, 8, T120);
+  const b = boundarySpanToCountRange(4.25, 8.1, 8, T120);
+  assert.equal(lin(a.to) + 1, lin(b.from), '앞 구간의 다음 칸에서 뒤 구간이 시작해야 한다');
+  assert.equal(a.empty, false);
+  assert.equal(b.empty, false);
+
+  // 빈틈도 없다 — 경계가 어디에 떨어지든 칸이 버려지지 않는다.
+  const bounds = [0, 1.1, 2.7, 3.3, 9.9, 13.05];
+  for (let i = 2; i < bounds.length; i++) {
+    const prev = boundarySpanToCountRange(bounds[i - 2], bounds[i - 1], 8, T120);
+    const next = boundarySpanToCountRange(bounds[i - 1], bounds[i], 8, T120);
+    if (prev.empty || next.empty) continue;
+    assert.equal(lin(prev.to) + 1, lin(next.from), `${bounds[i - 1]}초 경계에서 어긋났다`);
+  }
+
+  // 경계가 서로 다른 칸에 들면 한 칸짜리가 나온다(8.4 는 칸 8, 9.2 는 칸 9).
+  assert.equal(boundarySpanToCountRange(4.2, 4.6, 8, T120).empty, false);
+
+  // 두 경계가 **같은 칸**에 들면 놓을 것이 없다 — 억지로 한 칸을 만들면 그 칸을 또 겹쳐 문다.
+  // ⚠ bpm 120 에서는 0.2초 안쪽이라 MIN_SPAN_SEC 이 먼저 거르지만, 느린 곡에서는 실제로 닿는다:
+  //   bpm 60 · 1박 카운트면 1카운트가 1초라 0.3초 차이도 같은 칸이다.
+  assert.equal(boundarySpanToCountRange(4.1, 4.3, 8, T120).empty, true);
+  const slow = normalizeTempo({ bpm: 60, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 });
+  assert.equal(boundarySpanToCountRange(3.1, 3.4, 8, slow).empty, true, '느린 곡에서는 MIN_SPAN_SEC 를 넘겨도 같은 칸이다');
+
+  // 늦게 눌러도 한 칸 어치까지는 흡수한다 — 이것이 내림을 쓰는 까닭이다(사용자 보고, 2026-09-20).
+  // 카운트 8 에서 바뀌는 동작을 0.45초(0.9칸) 늦게 눌러도 칸 8 에서 시작한다.
+  assert.equal(lin(boundarySpanToCountRange(4.45, 8, 8, T120).from), 8, '반응 지연 한 칸까지는 흡수해야 한다');
+});
+
+test('받아 적기: 경계를 아무 데서나 찍어도 한 마디가 두 줄이 되지 않는다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  // 사람이 누르는 시각은 칸 경계에 맞지 않는다 — 전부 칸 한가운데에 떨어지는 값으로 고른다.
+  for (const sec of [0, 4.25, 8.1, 12.9, 15.4]) {
+    CaptureCmd.captureToggle(store, { sec, durationSec: 60 }, { ids });
+  }
+  const ps = store.board(BOARD_MAIN).placements;
+  assert.ok(ps.length > 0, '블록이 놓여야 한다');
+
+  // ① 어느 행도 두 층을 쓰지 않는다.
+  const layersByRow = new Map();
+  for (const p of ps) {
+    if (!layersByRow.has(p.row)) layersByRow.set(p.row, new Set());
+    layersByRow.get(p.row).add(p.subRow);
+  }
+  for (const [row, layers] of layersByRow) {
+    assert.equal(layers.size, 1, `${row}행이 ${layers.size}층으로 쌓였다 — 받아 적은 구간은 겹치지 않는다`);
+  }
+
+  // ② 2층을 쓰는 블록이 하나도 없다("하나뿐인데 선점" 의 원인).
+  assert.equal(ps.every(p => p.subRow === 0), true, '밀려난 블록이 있으면 안 된다');
+
+  // ③ 칸을 두 번 쓰는 곳이 없다 — 층으로 숨지 않았는지 칸 단위로 다시 센다.
+  const seen = new Set();
+  for (const p of ps) {
+    for (let i = 0; i < p.length; i++) {
+      const key = `${p.row}:${p.startIndex + i}`;
+      assert.equal(seen.has(key), false, `${key} 칸을 두 블록이 갖는다`);
+      seen.add(key);
+    }
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 표 전체 옮기기 (2026-09-20)
+//
+// 받아 적기는 반응 지연을 한 칸까지만 흡수한다. 그 이상 밀린 날 블록을 하나씩 고치는 대신
+// 표 전체를 같은 만큼 움직인다. 지켜야 하는 것은 둘 — 그룹이 조각으로 다시 잘리는 것,
+// 그리고 **하나라도 밖으로 나가면 아무것도 옮기지 않는 것**이다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('shiftAllPlacements: 마디에 걸친 그룹은 조각을 다시 잘라 옮긴다', () => {
+  let n = 0;
+  const ids = () => `s${++n}`;
+  const board = { rows: 4, cols: 8, hasIntroRow: true };
+  // 8x1 의 4카운트에서 시작하는 10칸 그룹 = 5 + 5 두 조각.
+  const ps = [
+    { id: 'a', groupId: 'g1', name: 'A', category: 'step', row: 1, startIndex: 3, length: 5, subRow: 0 },
+    { id: 'b', groupId: 'g1', name: 'A', category: 'step', row: 2, startIndex: 0, length: 5, subRow: 0 }
+  ];
+  const shape = (arr) => arr.map(p => `${p.row}:${p.startIndex}+${p.length}`).join(' ');
+
+  // 한 칸 당기면 첫 조각이 6칸이 된다 — 조각 나누는 자리가 달라진다.
+  assert.equal(shape(shiftAllPlacements(ps, board, -1, ids)), '1:2+6 2:0+4');
+  assert.equal(shape(shiftAllPlacements(ps, board, 1, ids)), '1:4+4 2:0+6');
+  // 카운트 총합은 언제나 보존된다.
+  for (const d of [-1, 1, -3, 2]) {
+    const moved = shiftAllPlacements(ps, board, d, ids);
+    assert.equal(moved.reduce((t, p) => t + p.length, 0), 10, `${d} 칸 옮겼더니 길이가 달라졌다`);
+    assert.equal(new Set(moved.map(p => p.groupId)).size, 1, '그룹이 갈라지면 안 된다');
+  }
+
+  // 인트로 행(row 0)은 격자 안이다 — 거기까지는 당겨진다.
+  assert.equal(shape(shiftAllPlacements(ps, board, -4, ids)), '0:7+1 1:0+8 2:0+1');
+
+  // 이름·카테고리·pending·subRow 는 살아남는다.
+  const pending = [{ id: 'c', groupId: 'g2', name: '', category: 'step', row: 2, startIndex: 0, length: 4, subRow: 1, pending: true }];
+  const [one] = shiftAllPlacements(pending, board, 1, ids);
+  assert.equal(isPending(one), true);
+  assert.equal(one.subRow, 1);
+  assert.equal(one.groupId, 'g2');
+});
+
+test('shiftAllPlacements: 하나라도 밖으로 나가면 아무것도 옮기지 않는다', () => {
+  let n = 0;
+  const ids = () => `s${++n}`;
+  const board = { rows: 4, cols: 8, hasIntroRow: true };
+  const ps = [
+    { id: 'a', groupId: 'g1', name: 'A', category: 'step', row: 1, startIndex: 0, length: 4, subRow: 0 },
+    { id: 'b', groupId: 'g2', name: 'B', category: 'step', row: 4, startIndex: 4, length: 4, subRow: 0 }
+  ];
+  // g2 가 표 끝(4마디 8카운트)에 붙어 있다 — 한 칸도 못 민다. g1 만 옮기면 안무가 잘린다.
+  assert.equal(shiftAllPlacements(ps, board, 1, ids), null);
+  // 앞으로는 인트로가 있어 당겨진다.
+  assert.notEqual(shiftAllPlacements(ps, board, -1, ids), null);
+  // 인트로 앞으로는 못 간다(8칸짜리 인트로 + g1 이 0칸에서 시작).
+  assert.equal(shiftAllPlacements(ps, board, -9, ids), null);
+});
+
+test('shiftAllCounts: 막히면 blocked 를 주고 보드를 건드리지 않는다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  // 8마디 표 맨 끝에 블록을 하나 놓는다(60~64초 = 120~127카운트 = 16마디… 이므로 먼저 늘린다).
+  setBoardRows(store, { boardId: BOARD_MAIN, rows: 2 });
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 8 }, { ids });   // 0~16카운트 = 2마디 전부
+  const before = JSON.stringify(store.board(BOARD_MAIN).placements);
+
+  const blocked = shiftAllCounts(store, { boardId: BOARD_MAIN, delta: 1 }, { ids });
+  assert.equal(blocked.blocked, true, '표 끝을 넘으므로 막혀야 한다');
+  assert.equal(JSON.stringify(store.board(BOARD_MAIN).placements), before, '막혔으면 한 글자도 안 바뀐다');
+
+  const moved = shiftAllCounts(store, { boardId: BOARD_MAIN, delta: -1 }, { ids });
+  assert.equal(moved.moved, true);
+  assert.deepEqual(moved.boards[BOARD_MAIN], { rows: 'all' }, '전부 옮겼으니 전 행을 다시 그린다');
+  assert.equal(store.board(BOARD_MAIN).placements[0].startIndex, 7, '인트로 마지막 칸으로 당겨진다');
+  assert.equal(store.board(BOARD_MAIN).placements[0].row, 0);
+
+  // 놓인 것이 없으면 아무 일도 하지 않는다.
+  store.setBoard(BOARD_MAIN, { placements: [] });
+  const none = shiftAllCounts(store, { boardId: BOARD_MAIN, delta: 1 }, { ids });
+  assert.equal(none.moved, undefined);
+  assert.equal(none.blocked, undefined);
+  assert.equal(none.boards, undefined, '그릴 것이 없으면 Dirty 도 비어야 한다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 단축키 (2026-09-20)
+//
+// 그전에는 글쇠가 input/controls.js 에 문자열로 박혀 있었다. 여기서 지키는 것은 셋 —
+//   ① 글쇠 이름이 **한 가지로만** 나온다(같은 조합이 두 이름을 가지면 저장값과 대조가 어긋난다)
+//   ② 한 글쇠는 한 동작만 갖는다
+//   ③ 고정 동작(Undo·Redo·Esc)은 저장값이 무엇이든 기본값이다 — 되돌리기를 빼앗기면 복구할 길이 없다
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('normalizeKey: 같은 조합은 언제나 같은 이름이 된다', () => {
+  assert.equal(normalizeKey({ key: ' ' }), 'Space', '스페이스는 보이는 이름으로');
+  assert.equal(normalizeKey({ key: 'Spacebar' }), 'Space', '옛 브라우저 이름도 같은 곳으로');
+  assert.equal(normalizeKey({ key: 'b' }), 'B');
+  assert.equal(normalizeKey({ key: 'B' }), 'B');
+  assert.equal(normalizeKey({ key: 'Escape' }), 'Escape', '여러 글자 이름은 그대로');
+
+  // 조합은 Ctrl → Cmd → Alt → Shift 차례로만 붙는다.
+  assert.equal(normalizeKey({ key: 'z', ctrl: true }), 'Ctrl+Z');
+  assert.equal(normalizeKey({ key: 'z', meta: true, shift: true }), 'Cmd+Shift+Z');
+  assert.equal(normalizeKey({ key: 'z', shift: true, meta: true }), 'Cmd+Shift+Z', '인자 순서가 이름을 바꾸면 안 된다');
+
+  // Shift 는 **조합으로만** 센다 — 대문자로 친 사람이 아무것도 못 누르면 안 된다.
+  assert.equal(normalizeKey({ key: 'B', shift: true }), 'B');
+  assert.equal(normalizeKey({ key: '' }), '');
+
+  // eventKey 는 KeyboardEvent 모양을 그대로 받는 껍질이다.
+  assert.equal(eventKey({ key: ' ' }), 'Space');
+  assert.equal(eventKey({ key: 'z', ctrlKey: true }), 'Ctrl+Z');
+  assert.equal(eventKey(null), '');
+});
+
+test('normalizeHotkeys: 손상된 값을 고치고 고정 동작은 지킨다', () => {
+  assert.deepEqual(normalizeHotkeys(null), { ...DEFAULT_HOTKEYS }, '없으면 기본값 전부');
+  assert.deepEqual(normalizeHotkeys('배열도 객체도 아니다'), { ...DEFAULT_HOTKEYS });
+
+  // 모르는 id 는 버리고 빠진 id 는 채운다.
+  const partial = normalizeHotkeys({ play: ['P'], 없는동작: ['Q'] });
+  assert.deepEqual(partial.play, ['P']);
+  assert.deepEqual(partial.capture, ['B', 'K'], '안 건드린 것은 기본값');
+  assert.equal('없는동작' in partial, false);
+
+  // 고정 동작은 저장값이 무엇이든 기본값이다 — 되돌리기를 빼앗기면 복구할 길이 없다.
+  const stolen = normalizeHotkeys({ undo: ['Q'], stop: ['Q'] });
+  assert.deepEqual(stolen.undo, DEFAULT_HOTKEYS.undo);
+  assert.deepEqual(stolen.stop, DEFAULT_HOTKEYS.stop);
+
+  // 쓸 수 없는 글쇠(브라우저·앱이 먼저 가져가는 것)는 걸러진다. 다 걸러지면 **비운 채로** 둔다.
+  assert.deepEqual(normalizeHotkeys({ play: ['Escape'] }).play, [], '못 쓰는 글쇠는 빠진다');
+  assert.deepEqual(normalizeHotkeys({ play: [] }).play, [], '일부러 비운 것은 비운 채로');
+  // ⚠ 값이 **아예 없는 것**과 일부러 비운 것은 다른 뜻이다.
+  assert.deepEqual(normalizeHotkeys({}).play, DEFAULT_HOTKEYS.play, '빠진 id 는 기본값으로 채운다');
+
+  // 한 동작 안의 중복은 합치고 상한까지만 남긴다.
+  const many = normalizeHotkeys({ capture: ['Q', 'Q', 'W', 'E', 'R'] });
+  assert.deepEqual(many.capture, ['Q', 'W', 'E']);
+  assert.equal(many.capture.length, MAX_KEYS_PER_ACTION);
+
+  // 정규화를 거친 표에는 **겹치는 글쇠가 없다**.
+  const clashed = normalizeHotkeys({ capture: ['Q'], skip: ['Q'], play: ['Q'] });
+  const all = HOTKEY_ACTIONS.flatMap(a => clashed[a.id]);
+  assert.equal(new Set(all).size, all.length, '같은 글쇠가 두 동작에 남았다');
+});
+
+test('setKeys: 방금 고른 쪽이 이기고 다른 동작에서 빠진다', () => {
+  const base = normalizeHotkeys(null);
+  assert.deepEqual(base.capture, ['B', 'K']);
+
+  // `B` 를 건너뛰기에 준다 — 받아 적기에서는 빠져야 한다.
+  const moved = setKeys(base, 'skip', ['B']);
+  assert.deepEqual(moved.skip, ['B']);
+  assert.deepEqual(moved.capture, ['K'], '사용자가 방금 누른 쪽이 이긴다');
+  assert.equal(ownerOf(moved, 'B'), 'skip');
+  assert.equal(ownerOf(moved, 'B', 'skip'), '', '자기 자신은 세지 않는다');
+
+  // 고정 동작은 바뀌지 않는다.
+  assert.deepEqual(setKeys(base, 'undo', ['Q']).undo, DEFAULT_HOTKEYS.undo);
+
+  // 마지막 글쇠를 다른 동작에 빼앗기면 **빈 채로 남는다.**
+  // ⚠ 여기서 기본값으로 되돌리면 연쇄가 난다(2026-09-20 에 실제로 그랬다): 받아 적기가 비면서
+  //   기본값 `B`·`K` 를 도로 집어 가고, 그 바람에 방금 재생에 준 `K` 와 건너뛰기의 `B` 까지
+  //   빼앗겨 **표 전체가 초기화**됐다. 한 자리를 옮겼을 뿐인데.
+  const takenAll = setKeys(setKeys(base, 'skip', ['B']), 'play', ['K']);
+  assert.deepEqual(takenAll.capture, [], '빈 채로 남아야 한다');
+  assert.deepEqual(takenAll.skip, ['B'], '남의 자리를 건드리면 안 된다');
+  assert.deepEqual(takenAll.play, ['K'], '방금 고른 것이 그대로 있어야 한다');
+});
+
+test('toSaved: 손대지 않은 것은 담지 않는다', () => {
+  assert.deepEqual(toSaved(normalizeHotkeys(null)), {}, '기본값이면 저장 바이트가 0 이다');
+  const changed = setKeys(normalizeHotkeys(null), 'play', ['P']);
+  assert.deepEqual(toSaved(changed), { play: ['P'] });
+  // 고정 동작은 담기지 않는다(저장값이 그것을 되살릴 일이 없어야 한다).
+  assert.equal('undo' in toSaved(changed), false);
+  assert.equal('stop' in toSaved(changed), false);
+});
+
+test('단축키 표: 바꿀 수 있는 것과 기본 글쇠', () => {
+  // 기본 재생 글쇠는 스페이스다(2026-09-20 에 P 에서 바꿨다 — 사용자 요청).
+  assert.deepEqual(DEFAULT_HOTKEYS.play, ['Space']);
+  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play']);
+  assert.equal(HOTKEY_ACTIONS.every(a => a.keys.length > 0), true, '글쇠 없는 동작을 두지 않는다');
+  assert.equal(keysLabel(['B', 'K']), 'B · K');
+  assert.equal(keysLabel([]), '없음');
+  assert.equal(checkKey('Escape').ok, false);
+  assert.equal(checkKey('Space').ok, true);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 프로젝트 = 한 안무, 그 안에 영상이 날짜를 달고 쌓인다 (2026-09-20)
+//
+// 숙련도를 따로 매기지 않는다 — 날짜가 축이면 목록이 그대로 진행 순서가 되고, 사람이 올릴 때마다
+// 정해 줘야 하는 칸이 하나 줄어든다. 여기서 지키는 것은 셋 —
+//   ① 날짜는 `YYYY-MM-DD` 하나만 받는다(느슨하면 정렬이 조용히 어긋난다)
+//   ② 안 쓴 사람의 **저장 바이트가 늘지 않는다**
+//   ③ 목록은 최근이 위, 날짜 없는 것은 아래, 같은 날은 올린 차례
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('클립 메타: 날짜는 모양이 맞는 것만 받는다', () => {
+  assert.equal(normalizeTakenAt('2026-09-12'), '2026-09-12');
+  assert.equal(normalizeTakenAt('  2026-09-12 '), '2026-09-12', '앞뒤 공백은 지운다');
+  assert.equal(normalizeTakenAt('2026-13-01'), '', '13월은 없다');
+  assert.equal(normalizeTakenAt('2026-09-32'), '', '32일도 없다');
+  assert.equal(normalizeTakenAt('26-9-1'), '', '두 자리 해·한 자리 달은 받지 않는다');
+  assert.equal(normalizeTakenAt('2026/09/12'), '', '구분자가 다르면 받지 않는다');
+  assert.equal(normalizeTakenAt(null), '');
+  assert.equal(normalizeTakenAt(''), '');
+});
+
+test('클립 메타: 안 쓴 사람의 저장 바이트가 늘지 않는다', () => {
+  // 이 규칙이 깨지면 기능을 안 쓴 사용자의 파일에 `"takenAt":""` 이 생겨 diff 가 난다.
+  const base = {
+    rows: 8, cols: 8, categories: {}, moveLibrary: [], placements: [], routines: [],
+    youtubeUrl: '', youtubeTitle: '', clickupUrl: '', customLinks: [],
+    media: { activeId: 'c1', clips: [{ id: 'c1', name: '테이크 1', source: { kind: 'youtube', url: 'https://youtu.be/x' } }] }
+  };
+  const plain = buildProjectFile(base, { fileName: 'a', savedAt: 'S' });
+  const clip = plain.media.clips[0];
+  assert.equal('takenAt' in clip, false, '날짜를 안 적었으면 키가 없어야 한다');
+  assert.equal('note' in clip, false, '메모를 안 적었으면 키가 없어야 한다');
+
+  // 적으면 그대로 실린다. 키 순서는 CLIP_FIELDS 고정이라 `name` 바로 뒤다.
+  const withMeta = buildProjectFile({
+    ...base,
+    media: { activeId: 'c1', clips: [{ ...base.media.clips[0], takenAt: '2026-09-12', note: '무대 어두움' }] }
+  }, { fileName: 'a', savedAt: 'S' });
+  const saved = withMeta.media.clips[0];
+  assert.equal(saved.takenAt, '2026-09-12');
+  assert.equal(saved.note, '무대 어두움');
+  assert.deepEqual(Object.keys(saved).slice(0, 4), ['id', 'name', 'takenAt', 'note'], '키 순서가 곧 저장 바이트다');
+});
+
+test('clipsByProgress: 최근이 위, 모르는 것은 아래, 같은 날은 올린 차례', () => {
+  const clips = [
+    { id: 'a', name: '첫 연습', takenAt: '2026-08-02' },
+    { id: 'b', name: '공연본', takenAt: '2026-09-12' },
+    { id: 'c', name: '날짜 없음', takenAt: '' },
+    { id: 'd', name: '2주차', takenAt: '2026-08-20' },
+    { id: 'e', name: '공연본 2', takenAt: '2026-09-12' }
+  ];
+  assert.deepEqual(clipsByProgress(clips).map(c => c.id), ['b', 'e', 'd', 'a', 'c']);
+  // 원본을 바꾸지 않는다.
+  assert.deepEqual(clips.map(c => c.id), ['a', 'b', 'c', 'd', 'e']);
+  assert.deepEqual(clipsByProgress(null), []);
+  // 날짜가 하나도 없으면 올린 차례 그대로다.
+  const noDates = [{ id: 'x', takenAt: '' }, { id: 'y', takenAt: '' }];
+  assert.deepEqual(clipsByProgress(noDates).map(c => c.id), ['x', 'y']);
+});
+
+test('clipsSummary·formatTakenAt: 화면에 나가는 한 줄', () => {
+  const clips = [
+    { id: 'a', takenAt: '2026-08-02' },
+    { id: 'b', takenAt: '2026-09-12' },
+    { id: 'c', takenAt: '' }
+  ];
+  assert.equal(clipsSummary(clips, 2026), '영상 3벌 · 8월 2일 ~ 9월 12일');
+  assert.equal(clipsSummary([{ id: 'a', takenAt: '2026-09-12' }], 2026), '영상 1벌 · 9월 12일');
+  assert.equal(clipsSummary([{ id: 'a', takenAt: '' }], 2026), '영상 1벌', '날짜가 없으면 개수만');
+  assert.equal(clipsSummary([], 2026), '영상 없음');
+
+  // 해는 올해와 다를 때만 붙인다 — 매 줄에 2026 을 적으면 정작 다른 해가 안 읽힌다.
+  assert.equal(formatTakenAt('2026-09-12', 2026), '9월 12일');
+  assert.equal(formatTakenAt('2025-09-12', 2026), '2025년 9월 12일');
+  assert.equal(formatTakenAt('', 2026), '');
+});
+
+test('setClipMeta: 준 것만 바꾸고 빈 문자열은 지운다는 뜻이다', () => {
+  const store = createStore({ ids: counterEnv() });
+  VideoCmd.setFileSource(store, { name: '연습.mp4' });
+  const id = VideoCmd.clipList(store).clips[0].id;
+
+  VideoCmd.setClipMeta(store, { id, takenAt: '2026-09-12', note: '무대 어두움' });
+  let clip = VideoCmd.clipList(store).clips[0];
+  assert.equal(clip.takenAt, '2026-09-12');
+  assert.equal(clip.note, '무대 어두움');
+
+  // 날짜만 고치면 메모는 그대로다.
+  VideoCmd.setClipMeta(store, { id, takenAt: '2026-09-13' });
+  clip = VideoCmd.clipList(store).clips[0];
+  assert.equal(clip.takenAt, '2026-09-13');
+  assert.equal(clip.note, '무대 어두움', '안 준 칸을 지우면 안 된다');
+
+  // 빈 문자열은 「지운다」는 뜻이다(undefined 와 다르다).
+  VideoCmd.setClipMeta(store, { id, takenAt: '' });
+  assert.equal(VideoCmd.clipList(store).clips[0].takenAt, '');
+
+  // 모양이 아닌 날짜는 도메인이 비운다 — 커맨드가 튕기지 않는다(치는 중간 상태가 있다).
+  VideoCmd.setClipMeta(store, { id, takenAt: '2026-0' });
+  assert.equal(VideoCmd.clipList(store).clips[0].takenAt, '');
+
+  // 없는 클립이나 안 바뀌는 값은 아무 일도 하지 않는다.
+  assert.equal(VideoCmd.setClipMeta(store, { id: '없는id', takenAt: '2026-01-01' }).video, undefined);
+  VideoCmd.setClipMeta(store, { id, note: '같은 메모' });
+  assert.equal(VideoCmd.setClipMeta(store, { id, note: '같은 메모' }).video, undefined);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 작업 중인 문서를 담아 두는 자리 (2026-09-20)
+//
+// 앱은 지금까지 끄면 잊었다. 여기서 지키는 것은 셋 —
+//   ① 서버가 있으면 서버, 없으면 브라우저 (그리고 그 판정이 **매번** 다시 된다)
+//   ② 어떤 실패도 던지지 않는다 (담기가 편집을 멈추면 안 된다)
+//   ③ 잦은 호출은 한 번으로 묶이고, 마지막 것이 이긴다
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** localStorage 흉내. 쿼터 초과를 흉내 낼 수 있게 `fail` 을 둔다. */
+function fakeStorage() {
+  const map = new Map();
+  return {
+    fail: false,
+    getItem(k) { return map.has(k) ? map.get(k) : null; },
+    setItem(k, v) { if (this.fail) throw new Error('QuotaExceededError'); map.set(k, v); },
+    removeItem(k) { map.delete(k); },
+    size: () => map.size
+  };
+}
+
+/** projectServer 흉내. */
+function fakeServer() {
+  const box = { data: null, calls: [] };
+  return {
+    box,
+    async save(name, payload) { box.calls.push(['save', name]); box.data = payload; return { name }; },
+    async read(name) { box.calls.push(['read', name]); return box.data; },
+    async remove(name) { box.calls.push(['remove', name]); box.data = null; return true; }
+  };
+}
+
+test('draftStore: 서버가 있으면 서버, 없으면 브라우저 — 판정은 매번 다시 한다', async () => {
+  const storage = fakeStorage();
+  const srv = fakeServer();
+  let serverOn = false;   // probe 가 끝나기 전에는 null 이다
+  const store = createDraftStore({ getServer: () => (serverOn ? srv : null), storage });
+
+  assert.equal(store.kind, 'browser');
+  assert.equal(await store.save({ a: 1 }), true);
+  assert.equal(storage.getItem(DRAFT_KEY), '{"a":1}', '서버가 없으면 브라우저에 담는다');
+  assert.equal(srv.box.data, null);
+
+  // probe 가 끝났다. **값으로 받았다면 여기서도 브라우저였을 것** — 그것이 실제로 났던 버그다.
+  serverOn = true;
+  assert.equal(store.kind, 'server');
+  assert.equal(await store.save({ a: 2 }), true);
+  assert.deepEqual(srv.box.data, { a: 2 });
+  assert.deepEqual(srv.box.calls.at(-1), ['save', DRAFT_NAME]);
+
+  // 읽기는 서버가 이긴다.
+  assert.deepEqual(await store.load(), { a: 2 });
+});
+
+test('draftStore: 서버에 없으면 브라우저를 폴백으로 본다', async () => {
+  // 서버 없이 쓰다가 서버를 켠 첫날 — 담아 둔 것이 브라우저에만 있다.
+  const storage = fakeStorage();
+  storage.setItem(DRAFT_KEY, JSON.stringify({ 옛것: true }));
+  const srv = fakeServer();                      // 서버는 비어 있다
+  const store = createDraftStore({ getServer: () => srv, storage });
+  assert.deepEqual(await store.load(), { 옛것: true }, '서버가 비었으면 브라우저 것을 되살려야 한다');
+});
+
+test('draftStore: 어떤 실패도 던지지 않는다', async () => {
+  // ① 브라우저 쿼터 초과
+  const storage = fakeStorage();
+  storage.fail = true;
+  const browserOnly = createDraftStore({ getServer: () => null, storage });
+  assert.equal(await browserOnly.save({ a: 1 }), false, '던지지 않고 false 여야 한다');
+
+  // ② 서버가 도중에 꺼졌다 — 브라우저로 떨어진다
+  const ok = fakeStorage();
+  const dead = { async save() { throw new Error('ECONNREFUSED'); }, async read() { throw new Error('x'); }, async remove() { throw new Error('x'); } };
+  const store = createDraftStore({ getServer: () => dead, storage: ok });
+  assert.equal(await store.save({ b: 2 }), true, '서버가 죽어도 그날의 일은 남아야 한다');
+  assert.equal(ok.getItem(DRAFT_KEY), '{"b":2}');
+  // 읽기가 죽어도 던지지 않고 **브라우저로 떨어진다** — 방금 거기에 떨어뜨려 둔 것이 있다.
+  assert.deepEqual(await store.load(), { b: 2 }, '읽기가 죽으면 브라우저 것을 본다');
+
+  // ③ 깨진 JSON
+  const broken = fakeStorage();
+  broken.setItem(DRAFT_KEY, '{이건 JSON 이 아니다');
+  const s3 = createDraftStore({ getServer: () => null, storage: broken });
+  assert.equal(await s3.load(), null);
+});
+
+test('debounceSave: 잦은 호출을 한 번으로 묶고 마지막 것이 이긴다', async () => {
+  const saved = [];
+  let now = 0;
+  const timers = new Map();
+  let nextId = 1;
+  const setTimer = (fn, ms) => { const id = nextId++; timers.set(id, { fn, at: now + ms }); return id; };
+  const clearTimer = (id) => { timers.delete(id); };
+  const tick = (ms) => {
+    now += ms;
+    for (const [id, t] of [...timers]) if (t.at <= now) { timers.delete(id); t.fn(); }
+  };
+
+  const saver = debounceSave(async (p) => { saved.push(p); return true; }, { waitMs: 1000, setTimer, clearTimer });
+  saver.schedule(() => 1);
+  saver.schedule(() => 2);
+  saver.schedule(() => 3);
+  assert.deepEqual(saved, [], '묶는 동안에는 한 번도 담지 않는다');
+  tick(1000);
+  assert.deepEqual(saved, [3], '마지막 것 하나만 담는다');
+
+  // flush 는 기다리지 않는다(창을 닫기 직전).
+  saver.schedule(() => 4);
+  await saver.flush();
+  assert.deepEqual(saved, [3, 4]);
+  // 예약된 것이 없으면 flush 는 아무것도 담지 않는다.
+  await saver.flush();
+  assert.deepEqual(saved, [3, 4]);
+
+  // cancel 뒤에는 시간이 지나도 담지 않는다.
+  saver.schedule(() => 5);
+  saver.cancel();
+  tick(5000);
+  assert.deepEqual(saved, [3, 4]);
+});
+
+test('draftSnapshot·restoreDraft: 담고 되살리면 안무표가 그대로다', () => {
+  const store = createStore({ ids: counterEnv() });
+  const deps = {
+    store,
+    env: { nowIso: () => '2026-09-20T00:00:00.000Z', uid: counterEnv().uid },
+    dialogs: { alert() {}, confirm: () => true },
+    files: { downloadJson() {} },
+    // applyProjectData 가 실제로 부르는 것만 채운다 — 없으면 거기서 TypeError 가 난다.
+    storage: { save() {}, load: () => null, saveRoutineFavorites() {}, saveLinks() {} },
+    commitHistory() {}
+  };
+  setBoardRows(store, { boardId: BOARD_MAIN, rows: 12 });
+  VideoCmd.setTempo(store, { tempo: { bpm: 132, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 } });
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+
+  const before = JSON.stringify(store.board(BOARD_MAIN).placements.map(p => [p.row, p.startIndex, p.length]));
+  const snap = ProjectCmd.draftSnapshot(deps, { fileName: '받아적는중' });
+  assert.equal(snap.fileName, '받아적는중');
+  assert.ok(Array.isArray(snap.placements) && snap.placements.length > 0, '배치가 담겨야 한다');
+
+  // 딴 상태로 만든 뒤 되살린다.
+  store.setBoard(BOARD_MAIN, { placements: [] });
+  setBoardRows(store, { boardId: BOARD_MAIN, rows: 8 });
+  ProjectCmd.restoreDraft(deps, snap);
+  assert.equal(JSON.stringify(store.board(BOARD_MAIN).placements.map(p => [p.row, p.startIndex, p.length])), before);
+  assert.equal(store.board(BOARD_MAIN).rows, 12, '마디 수도 돌아와야 한다');
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 132, '박자도 돌아와야 한다');
+
+  // 모양이 아니면 아무 일도 하지 않는다.
+  const kept = JSON.stringify(store.board(BOARD_MAIN).placements);
+  ProjectCmd.restoreDraft(deps, null);
+  ProjectCmd.restoreDraft(deps, { placements: '배열이 아니다' });
+  assert.equal(JSON.stringify(store.board(BOARD_MAIN).placements), kept);
 });

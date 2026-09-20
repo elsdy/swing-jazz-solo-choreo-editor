@@ -287,6 +287,73 @@ export function spanToCountRange(startSec, endSec, cols, tempo) {
   return { from: cellOf(fromN, cols), to: cellOf(toN, cols) };
 }
 
+/**
+ * **경계로 끊은** 구간 → 격자 범위. 잇달아 놓아도 서로 겹치지 않는다 (2026-09-20).
+ *
+ * spanToCountRange 와 무엇이 다른가 — 끝을 `ceil-1` 이 아니라 **내림 −1** 로 잡는다.
+ * 그쪽 규칙("칸 중간에서 끝나도 그 칸을 덮는다")은 마커처럼 **혼자 떨어진 구간**에는 맞지만,
+ * 받아 적기처럼 경계 하나가 앞 구간의 끝이면서 뒤 구간의 시작인 사슬에서는 그 칸을 둘이
+ * 동시에 갖는다. 그러면 배치가 겹쳐 한 마디가 두 줄로 쌓인다 — 순서대로 받아 적은 안무에
+ * 겹칠 것이 있을 리 없으므로 그건 언제나 버그다.
+ *
+ * ```
+ *   경계 8.6카운트에서 끊었을 때
+ *     spanToCountRange   앞 …8  뒤 8…   ← 칸 8 을 둘이 갖는다 (겹침)
+ *     반올림             앞 …8  뒤 9…   ← 겹치진 않지만 한 칸 늦다
+ *     이 함수(내림)      앞 …7  뒤 8…   ← 누른 순간이 **든 칸** 이 그 동작의 첫 칸이다
+ * ```
+ *
+ * **왜 반올림이 아니라 내림인가** (2026-09-20, 사용자 보고로 바꿨다).
+ * 사람은 동작이 바뀌는 것을 **보고 나서** 누른다 — 반응 지연이 150~250ms 이고, bpm 180 에
+ * 1박 카운트면 한 칸이 333ms 라 지연만으로 반 칸에서 한 칸이 밀린다. 반올림은 그 지연을
+ * 그대로 한 칸 뒤로 옮겨 적는다("생각했던 것보다 한 카운트 뒤"). 내림은 누른 순간이 **아직
+ * 그 칸 안에 있으면 그 칸**으로 붙이므로 한 칸 어치의 지연까지 흡수한다.
+ * ⚠ 한 칸을 넘는 지연은 여전히 밀린다. 그건 `③ 받아 적기` 의 `전체 ← 1카운트` 로 뒤에 고친다 —
+ *   변환에 상수 보정을 박아 넣으면 제때 누른 사람이 반대로 한 칸 당겨진다.
+ *
+ * ⚠ 두 경계가 **같은 칸에 들면** `to` 가 `from` 보다 작다. 놓을 칸이 없다는 뜻이고,
+ *   호출부가 그것을 보고 아무것도 놓지 않는다(억지로 한 칸을 만들면 그 칸을 또 겹쳐 문다).
+ *   그래서 여기서는 spanToCountRange 처럼 `Math.max(fromN, …)` 로 접지 **않는다.**
+ * ⚠ `floorCount` 를 쓴다(단순 Math.floor 가 아니다) — countToTime 을 거쳐 돌아온 값은
+ *   7.999999999999998 처럼 오차를 달고 오므로, 그냥 내리면 칸 하나가 통째로 어긋난다.
+ *
+ * @param {number} startSec 이 구간을 연 경계
+ * @param {number} endSec   이 구간을 닫은(=다음 구간을 연) 경계
+ * @param {number} cols
+ * @param {Tempo} tempo
+ * @returns {{ from:{row:number,index:number}, to:{row:number,index:number}, empty:boolean }}
+ *   empty: 두 경계가 같은 칸이라 놓을 것이 없다
+ */
+export function boundarySpanToCountRange(startSec, endSec, cols, tempo) {
+  const fromN = floorCount(timeToCount(startSec, tempo));
+  const toN = floorCount(timeToCount(endSec, tempo)) - 1;
+  return { from: cellOf(fromN, cols), to: cellOf(toN, cols), empty: toN < fromN };
+}
+
+/**
+ * 이 길이의 영상을 끝까지 담으려면 마디가 몇이어야 하는가 (2026-09-20).
+ *
+ * 영상에서 받아 적을 때 안무표가 영상보다 짧으면 뒷부분을 놓을 자리가 없다. 받아 적기를
+ * 여는 순간 이 값으로 마디를 한 번에 늘려 두면, 받는 동안 자리가 모자라는 일이 없다.
+ *
+ * ⚠ **마지막 카운트가 든 마디**를 돌려준다(spanToCountRange 의 `to.row` 와 같은 값이다).
+ *   끝이 마디 한가운데면 그 마디까지 세므로, 끝 카운트가 8x3의 3카운트면 3을 돌려준다.
+ * ⚠ 앵커가 0초가 아니면 **0초는 음수 카운트**다. 그래도 세는 것은 끝뿐이므로 영향이 없다 —
+ *   앵커보다 앞선 대목은 안무 이전(인트로·설명)이고 그 자리는 인트로 행의 몫이다.
+ * ⚠ 박자를 못 쓰면(bpm 이 없거나 0) `null` 이다. 초를 카운트로 바꿀 수 없으니 셀 수가 없다.
+ *
+ * @param {number} durationSec 영상 전체 길이(초). 모르면 호출부가 null 을 주고 여기 오지 않는다
+ * @param {number} cols 한 마디의 카운트 수
+ * @param {Tempo} tempo
+ * @returns {number|null} 필요한 마디 수(1 이상). 셀 수 없으면 null
+ */
+export function rowsForDuration(durationSec, cols, tempo) {
+  if (!Number.isFinite(durationSec) || durationSec <= 0) return null;
+  if (!isTempoUsable(tempo)) return null;
+  const { to } = spanToCountRange(0, durationSec, cols, tempo);
+  return Math.max(1, to.row);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 템포 보정 — 사용자가 BPM 을 몰라도 두 점만 찍으면 된다
 // ─────────────────────────────────────────────────────────────────────────────

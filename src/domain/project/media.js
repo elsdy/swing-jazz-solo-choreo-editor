@@ -127,7 +127,34 @@ export function normalizeClip(raw, index = 0) {
   const name = src.name == null || String(src.name).trim() === ''
     ? defaultClipName(index)
     : String(src.name).trim();
-  return { id, name, source, tempo, markers };
+  return { id, name, takenAt: normalizeTakenAt(src.takenAt), note: normalizeNote(src.note), source, tempo, markers };
+}
+
+/**
+ * 찍은 날. **`YYYY-MM-DD` 하나만** 받는다(빈 문자열 = 모름).
+ *
+ * 한 프로젝트는 한 안무이고 그 안에 영상이 날짜를 달고 쌓인다 — 첫 연습, 2주차, 공연본.
+ * 날짜가 그 줄의 축이라 목록이 저절로 진행 순서가 된다.
+ *
+ * ⚠ **문자열로 둔다.** Date 로 바꾸면 시간대가 끼어들어 "9월 12일에 찍은 것"이 브라우저에 따라
+ *   11일로도 보인다. 날짜는 사람이 적는 이름표이지 시각이 아니다.
+ * ⚠ 모양이 아니면 버린다(빈 문자열). 느슨하게 받아 두면 목록 정렬이 조용히 어긋난다.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function normalizeTakenAt(raw) {
+  const text = raw == null ? '' : String(raw).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '';
+  const [y, m, d] = text.split('-').map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return '';
+  if (y < 1900 || y > 2999) return '';
+  return text;
+}
+
+/** 한 줄 메모. 줄바꿈은 공백으로 접는다 — 목록의 한 줄에 들어가야 한다. */
+export function normalizeNote(raw) {
+  const text = raw == null ? '' : String(raw);
+  return text.replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 /**
@@ -229,6 +256,9 @@ function serializeClip(clip) {
   }
   // ⚠ 빈 마커도 키째로 뺀다 — 같은 이유다(2026-09-10).
   if (Array.isArray(out.markers) && out.markers.length === 0) delete out.markers;
+  // ⚠ 날짜·메모도 같다(2026-09-20). 안 쓴 사람의 파일은 이 필드가 생기기 전과 바이트가 같아야 한다.
+  if (!out.takenAt) delete out.takenAt;
+  if (!out.note) delete out.note;
   return out;
 }
 
@@ -244,4 +274,74 @@ export function serializeMedia(media) {
   const out = {};
   for (const key of MEDIA_FIELDS) out[key] = key === 'clips' ? m.clips.map(serializeClip) : m[key];
   return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 진행 순서 — 한 안무가 좋아져 온 줄 (2026-09-20)
+//
+// 한 프로젝트는 한 안무이고, 그 안에 영상이 날짜를 달고 쌓인다. 목록을 날짜 순으로 세우면
+// 그것이 곧 "어떻게 좋아져 왔는가" 가 된다 — 따로 숙련도를 매기지 않아도 된다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 클립을 **최근 것이 위로** 세운다. 날짜가 없는 것은 맨 아래로 보내되 원래 순서를 지킨다.
+ *
+ * ⚠ 원본을 바꾸지 않는다(새 배열).
+ * ⚠ 날짜가 같으면 **원래 순서**다. 같은 날 두 번 찍은 것의 앞뒤는 올린 차례가 정답이고,
+ *   이름으로 다시 세우면 `2차` 가 `1차` 앞에 오는 일이 생긴다.
+ * ⚠ 날짜 없는 것을 위로 올리지 않는다 — "모른다"가 "가장 최근"보다 위에 설 까닭이 없다.
+ *
+ * @param {import('./schema.js').MediaClip[]} clips
+ * @returns {import('./schema.js').MediaClip[]}
+ */
+export function clipsByProgress(clips) {
+  if (!Array.isArray(clips)) return [];
+  return clips
+    .map((clip, index) => ({ clip, index }))
+    .sort((a, b) => {
+      const da = a.clip.takenAt || '';
+      const db = b.clip.takenAt || '';
+      if (da && db && da !== db) return db.localeCompare(da);   // 최근이 위
+      if (da && !db) return -1;
+      if (!da && db) return 1;
+      return a.index - b.index;                                  // 같으면 올린 차례
+    })
+    .map(entry => entry.clip);
+}
+
+/**
+ * 프로젝트의 영상 줄을 한 줄로 요약한다 — `영상 4벌 · 8월 2일 ~ 9월 12일`.
+ * 날짜가 하나도 없으면 개수만, 하나면 그 날짜만 적는다.
+ *
+ * ⚠ 화면에 그대로 나가는 글자다. 달·일만 쓰고 해는 **올해와 다를 때만** 붙인다 —
+ *   대부분 같은 해라 매 줄에 `2026` 을 적으면 정작 다른 해인 것이 안 읽힌다.
+ * ⚠ `thisYear` 를 인자로 받는다. 도메인은 시계를 모른다(check-arch 가 `Date` 를 막는다).
+ *
+ * @param {import('./schema.js').MediaClip[]} clips
+ * @param {number} [thisYear] 올해. 안 주면 해를 언제나 붙인다
+ * @returns {string}
+ */
+export function clipsSummary(clips, thisYear = 0) {
+  const list = Array.isArray(clips) ? clips : [];
+  if (list.length === 0) return '영상 없음';
+  const dates = list.map(c => c.takenAt).filter(Boolean).sort();
+  const count = `영상 ${list.length}벌`;
+  if (dates.length === 0) return count;
+  const first = formatTakenAt(dates[0], thisYear);
+  const last = formatTakenAt(dates[dates.length - 1], thisYear);
+  return first === last ? `${count} · ${first}` : `${count} · ${first} ~ ${last}`;
+}
+
+/**
+ * `2026-09-12` → `9월 12일`(올해면) 또는 `2025년 9월 12일`.
+ * @param {string} takenAt
+ * @param {number} [thisYear]
+ * @returns {string} 날짜가 없으면 빈 문자열
+ */
+export function formatTakenAt(takenAt, thisYear = 0) {
+  const date = normalizeTakenAt(takenAt);
+  if (!date) return '';
+  const [y, m, d] = date.split('-').map(Number);
+  const md = `${m}월 ${d}일`;
+  return thisYear && y === thisYear ? md : `${y}년 ${md}`;
 }
