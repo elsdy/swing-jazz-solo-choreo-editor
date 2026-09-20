@@ -65,6 +65,7 @@ import { createProjectServer } from '../adapters/projectServer.js';
 import { createModelServer } from '../adapters/modelServer.js';
 import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
+import { createStartCard } from '../ui/startCard.js';
 import * as PlanCmd from '../usecases/planCommands.js';
 import * as PhrasingCmd from '../usecases/phrasingCommands.js';
 import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
@@ -1568,7 +1569,7 @@ views.settings = createSettingsView({
 // 19. 말로 채우기 — 음성/텍스트 → LLM 다듬기 → 스키마 → 배치. LLM 은 서버가 부른다(키는 서버에만).
 // ─────────────────────────────────────────────────────────────────────────────
 
-createComposeView({
+const composeView = createComposeView({
   container: document.querySelector('.top-actions'),
   llm: llmServer,
   getContext: () => {
@@ -1612,3 +1613,18 @@ views.phrasing = createPhrasingView({
 
 // 파일을 열거나 Undo 로 돌아온 구조도 그려야 한다 — 첫 화면에 한 번 맞춘다.
 render({ phrasing: true });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 21. 시작하는 세 길 — 사이드바 맨 위 카드와 빈 안무표 안내 (2026-09-20)
+//
+// ⚠ 새 커맨드를 만들지 않는다. 세 버튼은 이미 있는 진입점과 같은 것을 부른다 —
+//   `✨ 말로 채우기`(19절의 창) · `▶ 영상 패널`(16절) · 아래 `동작 검색`.
+//   입구가 흩어져 있어서 처음 켠 화면에 시작하는 길이 하나도 안 보이던 것을 모은 것뿐이다.
+// ⚠ 마지막에 둔다. composeView 의 open 을 쓰고, 첫 sync 가 보드 상태를 읽는다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+views.start = createStartCard({
+  onCompose: () => composeView.open(),
+  onVideo: () => render(VideoCmd.openPanel(store)),
+  hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
+});
