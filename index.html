@@ -178,6 +178,11 @@
     .drawer > summary::before { content: '▸ '; color: var(--muted); }
     .drawer[open] > summary::before { content: '▾ '; }
     .drawer > .stack, .drawer > .compact-grid { padding-bottom: 8px; }
+    /* 서랍이 사이드바 안에 들어가면 좌우 여백이 `.section` 의 것과 맞아야 한다(2026-09-20). */
+    .sidebar-scroll > .drawer { padding: 0 10px; }
+    /* 새 동작 만들기 서랍만 `▸` 대신 `+` 를 쓴다 — 여는 것이 아니라 더하는 일이다. */
+    .drawer-plus > summary::before { content: '+ '; }
+    .drawer-plus[open] > summary::before { content: '− '; }
 
     .panel-header, .section, .toolbar {
       padding: 8px 10px;
@@ -1894,15 +1899,10 @@
         </div>
       </section>
 
-      <section class="section stack" style="min-height:0;">
-        <div class="soft-card stack">
-          <div style="font-size:11px; font-weight:800; color:#dbe4ef;">솔로 동작 추가</div>
-          <div class="compact-grid" style="grid-template-columns: 1.4fr 1fr auto;">
-            <input id="newMoveName" type="text" placeholder="예: Shorty George" />
-            <select id="newMoveCategory"></select>
-            <button id="addMoveBtn" class="warn">추가</button>
-          </div>
-        </div>
+      <!-- 2026-09-20 — 빈도 순으로 다시 놓았다. 전에는 첫 카드가 `솔로 동작 추가`(가장 드문 일)라
+           매번 하는 `동작 목록` 이 스크롤 아래로 밀려 있었다. 지금은 목록이 맨 위이고, 동작을
+           만드는 일·루틴·카테고리는 서랍으로 내려갔다. ⚠ 안의 id 는 하나도 바뀌지 않았다. -->
+      <section class="section stack" style="min-height:0; flex:1;">
         <div class="row wrap" style="justify-content:space-between;">
           <h3 style="margin:0; font-size:12px;">동작 목록</h3>
           <div class="legend" id="legend"></div>
@@ -1915,23 +1915,35 @@
           <button id="sortDirBtn" class="sort-dir-btn" title="정렬 방향">↑</button>
         </div>
         <div class="palette-list" id="paletteList"></div>
-      </section>
-      <section class="section stack" style="min-height:0; flex:1;">
-        <div class="row wrap" style="justify-content:space-between; align-items:center;">
-          <h3 style="margin:0; font-size:12px;">루틴 목록</h3>
-          <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;">+ 새 루틴</button>
-        </div>
-        <div class="helper">루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.</div>
-        <div class="palette-list" id="routineList"></div>
+
+        <details class="drawer drawer-plus">
+          <summary>목록에 없는 동작 만들기</summary>
+          <div class="compact-grid" style="grid-template-columns: 1.4fr 1fr auto;">
+            <input id="newMoveName" type="text" placeholder="예: Shorty George" />
+            <select id="newMoveCategory"></select>
+            <button id="addMoveBtn" class="warn">추가</button>
+          </div>
+        </details>
       </section>
 
-      <section class="section stack">
-        <div class="soft-card stack">
-          <div style="font-size:11px; font-weight:800; color:#dbe4ef;">카테고리 관리</div>
-          <div id="categoryManager" class="stack"></div>
+      <details class="drawer">
+        <summary>루틴 목록 — 동작 여러 개를 한 덩이로</summary>
+        <div class="stack">
+          <div class="row wrap" style="justify-content:flex-end;">
+            <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;">+ 새 루틴</button>
+          </div>
+          <div class="helper">루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.</div>
+          <div class="palette-list" id="routineList"></div>
         </div>
-        <div class="helper">동작 카테고리는 팔레트에서 바로 수정되고, 카테고리 이름을 바꾸면 전체 UI에 반영됩니다.</div>
-      </section>
+      </details>
+
+      <details class="drawer">
+        <summary>카테고리 관리 — 색과 이름</summary>
+        <div class="stack">
+          <div id="categoryManager" class="stack"></div>
+          <div class="helper">동작 카테고리는 팔레트에서 바로 수정되고, 카테고리 이름을 바꾸면 전체 UI에 반영됩니다.</div>
+        </div>
+      </details>
 
       <details class="drawer">
         <summary>파일 — 최근 프로젝트 · 동작 · 카테고리</summary>
