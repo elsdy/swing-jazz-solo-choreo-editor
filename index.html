@@ -730,7 +730,9 @@
     .project-field { display: flex; align-items: center; gap: 5px; }
     .project-field-label { font-size: 10px; color: var(--muted); width: 3.6em; flex: 0 0 auto; }
     .project-field input { flex: 1 1 auto; min-width: 0; font-size: 11px; padding: 3px 6px; }
-    .project-clip-del { width: 100%; font-size: 10.5px; }    .saved-list {
+    .project-clip-del { width: 100%; font-size: 10.5px; }
+
+    .saved-list {
       display: grid;
       gap: 4px;
       max-height: 140px;
@@ -2276,7 +2278,7 @@
                    **이 안무표의 표시 방식**이라 `안무표 크기`·`기본 카운트` 옆이 제 자리다(2026-09-20). -->
               <span class="canvas-slot" id="phrasingSlot"></span>
               <button id="quickPlaceBtn" class="ghost">+ 빠른 배치</button>
-              <button id="videoPanelBtn" class="ghost" type="button" title="영상을 띄우고 재생 위치를 안무표에 표시합니다">▶ 영상 패널</button>
+              <button id="videoPanelBtn" class="ghost" type="button" title="영상을 보며 동작이 바뀌는 자리를 찍어 안무표를 채웁니다">▶ 영상으로 채우기</button>
               <button id="createRoutineFromSelectionBtn" class="primary special" style="font-size:10px;padding:4px 8px;display:none;">루틴으로 편성</button>
               <button id="linksToggleBtn" class="ghost" type="button" title="링크 줄(YouTube · ClickUp)을 보이거나 숨깁니다">🔗 링크</button>
               <button id="notesToggleBtn" class="ghost only-stacked" type="button" title="비고 칸을 보이거나 숨깁니다">비고</button>
@@ -2328,7 +2330,7 @@
           <div class="board-wrap" id="reBoardWrap"><div class="board" id="reBoard"></div></div>
         </div>
 
-        <!-- 영상 패널 (기본 숨김 — 툴바의 `▶ 영상 패널` 로 켠다)
+        <!-- 영상 패널 (기본 숨김 — 캔버스 바의 `▶ 영상으로 채우기` 로 켠다)
              ⚠ 이 자리를 옮기지 마라. iframe 은 DOM 에서 부모가 바뀌면 리로드되어 재생이 끊긴다.
                "데스크톱은 안무표 오른쪽, 좁은 화면은 위"는 CSS(flex-direction + order)로만 만든다.
              ⚠ URL 입력창을 여기 만들지 않는다. 위 링크바의 `YouTube URL 입력...` 칸이 그대로 소스다. -->

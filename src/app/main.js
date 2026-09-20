@@ -1469,6 +1469,13 @@ views.video = createVideoPanel({
   // 받아 적기를 열 때 안무표를 영상 길이만큼 늘리는 데 쓴다(2026-09-20). 상태가 바뀔 때만
   // 다시 읽어 둔 값이라(getDuration 폴링은 iframe 경계를 넘는다) 공짜다. 모르면 null 이다.
   getDurationSec: () => videoDurationSec,
+  // `P` 와 패널이 함께 쓴다(2026-09-20). ⚠ play() 는 사용자 제스처 콜스택 안이어야 하는데
+  //   keydown 도 제스처라 그대로 통한다 — await 로 한 박자 늦추지 않는다.
+  onTogglePlay: () => {
+    const st = player.getState();
+    if (st.play === 'playing') player.pause();
+    else player.play();
+  },
   onSeek: seekVideoTo,
   // 화면 속 화면(2026-09-13). 포트의 **선택 멤버**라 없는 재생기(YouTube iframe)는 조용히 'unavailable' 이다.
   // 줄에 「서버에 보관됨」을 적으려면 지금 어느 보관 방식인지 알아야 한다.

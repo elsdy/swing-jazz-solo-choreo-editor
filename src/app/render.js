@@ -46,9 +46,9 @@ import { phraseMark } from '../domain/phrasing.js';
  *   linksBar?: { render(links?: object, titleFetch?: object): void },
  *   video?: { render(): void, renderStatus(): void, renderCut(): void, syncCapture(): void },
  *   pose?: { render(): void },
+ *   start?: { sync(): void },
  *   thumb?: { render(): void },
  *   project?: { render(): void },
- *   start?: { sync(): void },
  *   notify?: (n: { kind: 'alert', message: string }) => void
  * }} views
  * @param {{ dev?: boolean, paranoid?: boolean }} [options]

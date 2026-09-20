@@ -165,6 +165,8 @@ export function formatRange(from, to, cols) {
  * @property {() => number} getCurrentSec 보간된 현재 미디어 시각(초). 앵커·탭이 쓰는 **유일한 시계**다
  * @property {() => number|null} [getDurationSec] 영상 전체 길이(초). 모르면 null(라이브·아직 안 실림).
  *   받아 적기를 열 때 안무표를 영상 길이만큼 늘리는 데 쓴다 — 재생기는 어댑터라 여기서 만지지 않는다
+ * @property {() => void} [onTogglePlay] `P`. 재생과 일시정지를 번갈아 한다 — 재생기는 어댑터라
+ *   여기서 만지지 않는다. 키 입력은 사용자 제스처라 needsUserGesture 재생기에서도 통한다
  * @property {(shown: boolean) => void} [onSync] 렌더가 끝날 때마다 "패널이 실제로 화면에 있는가"로 불린다.
  *   호출부는 이것으로 재생기를 준비하거나 멈춘다 — **멱등이어야 한다**(매 렌더 불린다).
  *   ⚠ 값이 바뀔 때만 부르면 안 된다: 패널이 열린 채로 URL 만 바뀌는 경로(링크바 change)가
@@ -236,6 +238,7 @@ export function createVideoPanel(deps) {
     getPlayerKind = () => 'null',
     getCurrentSec,
     getDurationSec = () => null,
+    onTogglePlay = () => {},
     onSeek = () => {},
     getStorageMode = () => 'browser',
     getPipState = () => 'unavailable',
@@ -1310,6 +1313,16 @@ export function createVideoPanel(deps) {
      * @returns {boolean} 블록이 놓였는가
      */
     captureToggle: () => (panelState().open ? captureToggle() : false),
+    /**
+     * `P` — 재생과 일시정지를 번갈아 한다. 패널이 닫혀 있으면 아무것도 하지 않는다
+     * (닫힌 패널의 영상은 소리만 나는 유령이 된다).
+     * @returns {boolean} 실제로 눌렀는가
+     */
+    togglePlay: () => {
+      if (!panelState().open) return false;
+      onTogglePlay();
+      return true;
+    },
     /** `N` — 여기까지는 안무가 아니다. 패널이 닫혀 있으면 아무 일도 하지 않는다. */
     captureSkip: () => {
       if (!panelState().open || !commands.captureSkip) return false;
@@ -1328,7 +1341,6 @@ export function createVideoPanel(deps) {
       return true;
     },
     /** 선택이 바뀌었다 — `선택한 블록이 여기서 시작`·`선택한 블록에 맵핑` 의 활성 여부만 다시 잰다(패널이 닫혀 있으면 값만 바뀌고 안 보인다). */
-    syncSelection: () => { renderTempo(); renderCapture(); renderCut(); },
     syncSelection: () => { renderTempo(); renderCapture(); renderCut(); },
     /**
      * 메인 보드의 배치가 바뀌었다 — `③ 받아 적기` 의 버튼 활성만 다시 잰다(2026-09-20).
