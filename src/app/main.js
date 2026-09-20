@@ -845,11 +845,15 @@ function ensurePlayer() {
     player.destroy();
     // ⚠ YT.Player 는 넘겨받은 <div> 를 <iframe> 으로 **갈아치운다** — 새로 만들 때마다 빈 자리를
     //   다시 마련해야 한다(먼젓번 컨테이너는 이미 사라졌다). 파일 재생기는 그 안에 <video> 를 넣는다.
-    // ⚠ innerHTML 로 비우면 **자세 오버레이 캔버스까지 지워진다**(index.html 이 프레임 안에 두었다).
-    //   재생기가 남긴 것만 걷어내고 캔버스는 남긴다 — YT 는 host <div> 를 <iframe> 으로 갈아치우므로
-    //   "우리가 만든 host" 를 기억해 두는 것으로는 부족하고, 캔버스가 아닌 것을 전부 걷는 편이 확실하다.
+    // ⚠ innerHTML 로 비우면 **프레임 안에 놓아 둔 우리 것까지 지워진다**(index.html 이 자세 오버레이
+    //   캔버스·띄우기 손잡이·영상 자리 옮기기를 프레임 안에 두었다 — 프레임과 같이 움직여야 해서다).
+    //   그래서 **`data-keep` 이 붙은 것만 남기고** 나머지를 걷는다. YT 는 host <div> 를 <iframe> 으로
+    //   갈아치우므로 "우리가 만든 host" 를 기억해 두는 것으로는 부족하다.
+    // ⚠ 2026-09-20 에 표식 방식으로 바꿨다. 그전에는 캔버스 하나만 이름으로 비교해서, 재생기를 처음
+    //   만드는 순간 `⤡ 제자리로` 손잡이(#videoFloatBar)가 조용히 사라졌다 — 띄워 놓고 되돌릴 길이
+    //   없어지는 버그였고, 화면에는 "버튼이 원래 없는 것"처럼 보여 드러나지 않았다.
     for (const child of [...videoFrameEl.children]) {
-      if (child !== videoPoseCanvasEl) child.remove();
+      if (!child.dataset.keep) child.remove();
     }
     const host = document.createElement('div');
     videoFrameEl.appendChild(host);

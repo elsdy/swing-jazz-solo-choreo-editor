@@ -301,6 +301,7 @@ export function createVideoPanel(deps) {
   const shiftBackBtn = byId('videoShiftBackBtn');
   const shiftFwdBtn = byId('videoShiftFwdBtn');
   const shiftHelp = byId('videoShiftHelp');
+  const pipSideBtn = byId('videoPipSideBtn');
   const markerBlocksBtn = byId('videoMarkerBlocksBtn');
   const nameSelBtn = byId('videoNameSelBtn');
   const captureHelp = byId('videoCaptureHelp');
@@ -1265,6 +1266,16 @@ export function createVideoPanel(deps) {
         : (moved ? `표 전체를 ${delta < 0 ? '한 카운트 앞으로 당겼습니다' : '한 카운트 뒤로 밀었습니다'}.` : '');
     }
     if (moved) commitHistory();
+  }
+
+  // 받아 적는 동안 뜬 작은 영상 창을 반대쪽 구석으로 보낸다(2026-09-20).
+  // ⚠ 화면 상태라 store 에 넣지 않는다 — 스크롤 락·시트와 같은 결이고 저장하거나 Undo 할 값이 아니다.
+  //   자리는 <body data-pipside> 하나이고 CSS 가 그것만 읽는다.
+  if (pipSideBtn) {
+    pipSideBtn.onclick = () => {
+      const body = pipSideBtn.ownerDocument.body;
+      body.dataset.pipside = body.dataset.pipside === 'left' ? 'right' : 'left';
+    };
   }
 
   if (shiftBackBtn) shiftBackBtn.onclick = () => shiftAll(-1);

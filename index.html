@@ -1948,6 +1948,99 @@
       }
     }
 
+
+    /* ─────────────────────────────────────────────────────────────────────
+       받아 적는 동안 영상은 화면 오른쪽 위에 작게 뜬다 (2026-09-20)
+
+       받아 적기는 **영상을 보면서 안무표를 보는** 일이다. 그런데 영상 칸은 폭을 꽉 채우는
+       16:9 라 390px 폰에서 219px, 세로의 3할을 먹는다 — 정작 블록이 놓이는 자리를 볼 여유가
+       그만큼 준다. 받는 동안만 영상을 작은 창으로 띄워 안무표에 화면을 내준다.
+
+       ⚠⚠ **DOM 을 옮기지 않는다.** 위의 `크게 띄우기`(data-videofloat)와 같은 방식으로,
+          `.video-frame` 을 제자리에 둔 채 `position: fixed` 로만 띄운다 — 엘리먼트를 다른
+          부모로 옮기면 iframe 이 리로드되어 재생이 처음으로 돌아간다(docs/PORTS.md).
+       ⚠ `크게 띄우기` 가 켜져 있으면 이 규칙은 **비켜난다**(`:not([data-videofloat="on"])`).
+         같은 엘리먼트에 fixed 규칙 둘이 걸리면 나중 것이 이겨서 큰 창이 갑자기 작아진다.
+       ⚠ z-index 2350 — 동작 시트의 배경막(2400)보다 **아래**다. 시트를 열면 영상이 그 위로
+         튀어나오지 않고 함께 가려진다.
+       ⚠ `::after` 로 `받는 중` 을 붙인다. `.video-frame > *` 의 `inset: 0` 은 **요소**만
+         잡으므로(`*` 는 가상 요소를 고르지 않는다) 이 배지는 거기 걸리지 않는다.
+       ───────────────────────────────────────────────────────────────────── */
+    /* **모든 폭에서 띄운다.** 2026-09-20 에 처음에는 넓은 화면만 `sticky`(패널 맨 위에 붙이기)로
+       갈라 두었는데, 그건 부탁받은 것이 아니었다 — PC 에서는 뜨는 창이 아예 안 보였다.
+       뜨는 것과 붙는 것은 "안 사라진다"는 같지만, 뜨면 **패널의 자리를 내주고** 단계 목록이
+       그만큼 위로 올라온다. 받는 동안 보는 것은 영상과 안무표뿐이므로 그편이 맞다.
+
+       ⚠ 이 `fixed` 의 기준은 **뷰포트가 아니라 `.panel.workspace`** 다 — 조상에 backdrop-filter 가
+         있으면 그것이 고정 자손의 컨테이닝 블록이 된다. 덕분에 앱바를 덮지 않고 작업 영역의
+         오른쪽 위에 붙는다(원하는 자리다). 앱바 위로 올리려면 그 filter 를 먼저 손봐야 한다.
+       ⚠ 폰에서 폭의 55% 다. 더 줄이면 동작이 안 보이고, 더 키우면 안무표를 내주려던 까닭이
+         없어진다. 세로는 aspect-ratio(16:9)가 정한다. */
+    body[data-capturing="on"]:not([data-videofloat="on"]) .video-frame {
+      position: fixed;
+      top: calc(10px + env(safe-area-inset-top, 0px));
+      right: 12px;
+      left: auto;
+      bottom: auto;
+      width: min(55vw, 280px);
+      z-index: 2350;
+      box-shadow: 0 18px 44px rgba(0,0,0,0.62);
+      border-color: rgba(34,197,94,0.55);
+    }
+
+    /* 넓은 화면에서는 뜬 창이 패널의 단계 목록 위에 앉는다 — 그만큼 자리를 비워 준다.
+       ⚠ 좁은 화면에서는 필요 없다. 거기서는 받는 동안 단계가 통째로 접히기 때문이다. */
+    @media (min-width: 1041px) {
+      body[data-capturing="on"]:not([data-videofloat="on"]) .video-body { padding-top: 172px; }
+    }
+
+    /* 반대쪽으로 보내기. 받는 동안 **작은 창일 때만** 보인다 — 넓은 화면의 sticky 는 아무것도
+       가리지 않으므로 옮길 까닭이 없다.
+       ⚠ `.video-frame > *` 가 `inset: 0; width: 100%` 로 자식을 꽉 채운다. 클래스 선택자를 붙여
+         특정도를 이기고 그 넷을 전부 되돌린다 — 안 그러면 이 버튼이 영상을 통째로 덮는다. */
+    .video-pip-side { display: none; }
+    body[data-capturing="on"]:not([data-videofloat="on"]) .video-frame > .video-pip-side-anchor { display: none; }
+    @media (min-width: 0px) {
+      body[data-capturing="on"]:not([data-videofloat="on"]) .video-frame > .video-pip-side {
+        display: inline-flex;
+        align-items: center; justify-content: center;
+        position: absolute;
+        /* 오른쪽 **위** — 아래는 재생기의 기본 컨트롤(재생·음량·전체화면)이 깔리는 자리다.
+           배지(`● 받는 중`)는 왼쪽 위라 서로 비키지 않는다. */
+        inset: 5px 5px auto auto;
+        width: 30px; height: 30px;
+        z-index: 2;
+        padding: 0;
+        font-size: 14px;
+        background: rgba(2,6,23,0.7);
+        border: 1px solid rgba(148,163,184,0.35);
+        color: #e6edf6;
+      }
+      /* 왼쪽으로 보냈을 때. 기본은 오른쪽이라 표식이 없으면 위의 `right: 12px` 가 그대로 산다. */
+      body[data-capturing="on"][data-pipside="left"]:not([data-videofloat="on"]) .video-frame {
+        right: auto;
+        left: 12px;
+      }
+    }
+
+    body[data-capturing="on"]:not([data-videofloat="on"]) .video-frame::after {
+      content: '● 받는 중';
+      position: absolute;
+      top: 5px; left: 5px;
+      z-index: 2;
+      pointer-events: none;
+      font-size: 10px; font-weight: 800; letter-spacing: .2px;
+      color: #bbf7d0;
+      background: rgba(2,6,23,0.66);
+      border: 1px solid rgba(74,222,128,0.4);
+      border-radius: 999px;
+      padding: 1px 7px;
+    }
+    /* 좁은 화면에서는 프레임이 흐름에서 빠져 패널에 머리줄만 남는다 — 그 줄까지 얇게 만든다. */
+    @media (max-width: 1040px) {
+      body[data-capturing="on"]:not([data-videofloat="on"]) .video-head { padding: 4px 10px; }
+      body[data-capturing="on"]:not([data-videofloat="on"]) .video-frame-slot { display: none; }
+    }
     /* ─────────────────────────────────────────────────────────────────────
        받아 적는 동안에는 화면이 단순해진다 (2026-09-20)
 
@@ -2256,8 +2349,11 @@
           <div class="video-body" id="videoBody">
             <div class="video-frame" id="videoFrame">
               <!-- 띄웠을 때만 보인다. 여기를 잡아 끈다. ⚠ 프레임 **안**에 둔다 — 밖에 두면 같이 안 움직인다. -->
-              <div class="video-float-bar" id="videoFloatBar"><span>영상</span><span style="flex:1"></span><button id="videoFloatDockBtn" class="ghost" type="button">⤡ 제자리로</button></div>
-              <canvas class="video-pose" id="videoPoseCanvas" hidden></canvas>
+              <div class="video-float-bar" id="videoFloatBar" data-keep="1"><span>영상</span><span style="flex:1"></span><button id="videoFloatDockBtn" class="ghost" type="button">⤡ 제자리로</button></div>
+              <canvas class="video-pose" id="videoPoseCanvas" data-keep="1" hidden></canvas>
+              <!-- 받아 적는 동안 영상이 작은 창으로 뜨면 안무표의 그 귀퉁이를 가린다(2026-09-20).
+                   가린 자리를 보려고 영상을 끄는 대신 반대쪽으로 보낸다. 받는 동안에만 보인다. -->
+              <button id="videoPipSideBtn" class="video-pip-side" type="button" data-keep="1" title="영상을 반대쪽 구석으로 보냅니다">⇄</button>
             </div>
             <!-- 띄운 동안 패널에 남는 빈 자리. 영상이 어디로 갔는지 말해 준다. -->
             <div class="video-frame-slot" id="videoFrameSlot">영상은 큰 창으로 띄워 두었습니다 — 창의 <b>⤡ 제자리로</b> 로 되돌립니다</div>
