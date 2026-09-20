@@ -4133,7 +4133,7 @@ test('받아 적기: 박자를 잘못 잡아도 상한 위로는 늘리지 않�
 
 test('boundarySpanToCountRange: 경계가 칸 한가운데여도 앞뒤가 한 칸도 겹치지 않는다', () => {
   const lin = (c) => linearOf(c.row, c.index, 8);
-  // 8.5카운트에서 끊었다. 옛 규칙은 칸 8 을 둘 다 가졌다.
+  // 8.5카운트에서 끊었다. 옛 규칙(spanToCountRange)은 칸 8 을 앞뒤가 둘 다 가졌다.
   const old1 = spanToCountRange(0, 4.25, 8, T120);
   const old2 = spanToCountRange(4.25, 8.1, 8, T120);
   assert.equal(lin(old1.to), 8);
@@ -4154,15 +4154,19 @@ test('boundarySpanToCountRange: 경계가 칸 한가운데여도 앞뒤가 한 �
     assert.equal(lin(prev.to) + 1, lin(next.from), `${bounds[i - 1]}초 경계에서 어긋났다`);
   }
 
-  // 경계가 서로 다른 칸으로 반올림되면 한 칸짜리가 나온다(8.4 → 8, 8.6 → 9).
-  assert.equal(boundarySpanToCountRange(4.2, 4.3, 8, T120).empty, false);
+  // 경계가 서로 다른 칸에 들면 한 칸짜리가 나온다(8.4 는 칸 8, 9.2 는 칸 9).
+  assert.equal(boundarySpanToCountRange(4.2, 4.6, 8, T120).empty, false);
 
-  // 두 경계가 **같은 칸**으로 반올림되면 놓을 것이 없다 — 억지로 한 칸을 만들면 그 칸을 또 겹쳐 문다.
-  // ⚠ bpm 120 에서는 0.1초 안쪽이라 MIN_SPAN_SEC 이 먼저 거르지만, 느린 곡에서는 실제로 닿는다:
+  // 두 경계가 **같은 칸**에 들면 놓을 것이 없다 — 억지로 한 칸을 만들면 그 칸을 또 겹쳐 문다.
+  // ⚠ bpm 120 에서는 0.2초 안쪽이라 MIN_SPAN_SEC 이 먼저 거르지만, 느린 곡에서는 실제로 닿는다:
   //   bpm 60 · 1박 카운트면 1카운트가 1초라 0.3초 차이도 같은 칸이다.
-  assert.equal(boundarySpanToCountRange(4.15, 4.24, 8, T120).empty, true);
+  assert.equal(boundarySpanToCountRange(4.1, 4.3, 8, T120).empty, true);
   const slow = normalizeTempo({ bpm: 60, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 });
   assert.equal(boundarySpanToCountRange(3.1, 3.4, 8, slow).empty, true, '느린 곡에서는 MIN_SPAN_SEC 를 넘겨도 같은 칸이다');
+
+  // 늦게 눌러도 한 칸 어치까지는 흡수한다 — 이것이 내림을 쓰는 까닭이다(사용자 보고, 2026-09-20).
+  // 카운트 8 에서 바뀌는 동작을 0.45초(0.9칸) 늦게 눌러도 칸 8 에서 시작한다.
+  assert.equal(lin(boundarySpanToCountRange(4.45, 8, 8, T120).from), 8, '반응 지연 한 칸까지는 흡수해야 한다');
 });
 
 test('받아 적기: 경계를 아무 데서나 찍어도 한 마디가 두 줄이 되지 않는다', () => {
