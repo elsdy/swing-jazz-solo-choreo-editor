@@ -163,6 +163,8 @@ export function formatRange(from, to, cols) {
  * @property {() => {load:string, play:string, error:{code:string,message:string}|null}} getPlayerState
  *   MediaPlayer.getState() 를 감싼 게터
  * @property {() => number} getCurrentSec 보간된 현재 미디어 시각(초). 앵커·탭이 쓰는 **유일한 시계**다
+ * @property {() => number|null} [getDurationSec] 영상 전체 길이(초). 모르면 null(라이브·아직 안 실림).
+ *   받아 적기를 열 때 안무표를 영상 길이만큼 늘리는 데 쓴다 — 재생기는 어댑터라 여기서 만지지 않는다
  * @property {(shown: boolean) => void} [onSync] 렌더가 끝날 때마다 "패널이 실제로 화면에 있는가"로 불린다.
  *   호출부는 이것으로 재생기를 준비하거나 멈춘다 — **멱등이어야 한다**(매 렌더 불린다).
  *   ⚠ 값이 바뀔 때만 부르면 안 된다: 패널이 열린 채로 URL 만 바뀌는 경로(링크바 change)가
@@ -233,6 +235,7 @@ export function createVideoPanel(deps) {
     getPlayerState,
     getPlayerKind = () => 'null',
     getCurrentSec,
+    getDurationSec = () => null,
     onSeek = () => {},
     getStorageMode = () => 'browser',
     getPipState = () => 'unavailable',
@@ -1204,12 +1207,31 @@ export function createVideoPanel(deps) {
    */
   function captureToggle() {
     if (!commands.captureToggle) return false;
-    const { started, placed, needsTempo, ...dirty } = commands.captureToggle({ sec: getCurrentSec() }) || {};
+    // ⚠ 영상 길이를 **함께** 넘긴다(2026-09-20). 받아 적기를 여는 순간 커맨드가 이 길이로
+    //   안무표를 늘려 두므로, 받는 동안 재생 위치가 표 끝에 닿아도 그 뒤가 이미 있다.
+    const { started, placed, needsTempo, grew, capped, ...dirty } =
+      commands.captureToggle({ sec: getCurrentSec(), durationSec: getDurationSec() }) || {};
     render(dirty);
     renderCapture();
+    if (grew) noteGrew(grew, capped);
     if (needsTempo) return false;
-    if (placed) commitHistory();
+    // ⚠ 늘린 것도 되돌릴 거리다 — 블록을 못 놓았어도 마디가 늘었으면 커밋한다.
+    if (placed || grew) commitHistory();
     return !!placed;
+  }
+
+  /**
+   * 안무표가 저절로 늘어났다는 것을 한 줄로 알린다(2026-09-20).
+   * ⚠ `alert` 를 쓰지 않는다 — 받아 적는 중에 창이 뜨면 영상에서 눈이 떠나고 박자를 놓친다.
+   *   `③ 받아 적기` 의 안내 줄에 적고, 다음 렌더가 원래 문구로 되돌린다.
+   * @param {number} rows 늘린 뒤의 마디 수
+   * @param {boolean} [capped] 상한에 걸려 거기까지만 늘렸는가
+   */
+  function noteGrew(rows, capped) {
+    if (!captureHelp) return;
+    captureHelp.textContent = capped
+      ? `안무표를 ${rows}마디까지 늘렸습니다 — 더 늘리지 않습니다. 박자가 실제와 맞는지 \`② 박자 맞추기\` 에서 확인하세요.`
+      : `영상 길이에 맞춰 안무표를 ${rows}마디로 늘렸습니다. ` + captureHelp.textContent;
   }
 
   if (captureBtn) captureBtn.onclick = () => captureToggle();

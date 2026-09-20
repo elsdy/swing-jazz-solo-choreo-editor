@@ -24,7 +24,8 @@ import {
 import {
   DEFAULT_TEMPO, cellToTime, countToTime, isTempoUsable, normalizeTempo,
   placementToSpan, secondsPerCount, tempoFromTwoPoints, timeToCell, timeToCount,
-  tempoPoints, addTempoPoint, removeTempoPoint, clearTempoPointsOf, reanchor, normalizeTempoPoints
+  tempoPoints, addTempoPoint, removeTempoPoint, clearTempoPointsOf, reanchor, normalizeTempoPoints,
+  rowsForDuration
 } from '../../src/domain/tempo.js';
 import {
   MEDIA_PLAYER_MEMBERS, assertMediaPlayer, isMediaPlayer, normalizeClipSegments
@@ -45,7 +46,7 @@ import {
 } from '../../src/domain/project/schema.js';
 import { applySnapshot, pickUndoFields, toLinkBundle } from '../../src/domain/project/snapshot.js';
 import * as History from '../../src/usecases/historyCommands.js';
-import { clearBoard } from '../../src/usecases/boardCommands.js';
+import { clearBoard, setBoardRows } from '../../src/usecases/boardCommands.js';
 import { serializeLinks } from '../../src/domain/links.js';
 import { CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
@@ -4034,4 +4035,87 @@ test('phrasing: 저장 파일을 왕복해도 구조가 남고, 안 쓴 파일�
   assert.deepEqual(normalizeProject(withIt, { ids: counterEnv() }).phrasing, withIt.phrasing);
   // 옛 파일(키 없음)은 기본값으로 열린다 — 거부하지 않는다.
   assert.deepEqual(normalizeProject(plain, { ids: counterEnv() }).phrasing, DEFAULT_PHRASING);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 영상 길이에 맞춰 안무표가 저절로 늘어난다 (2026-09-20)
+//
+// 받아 적는 중에 영상은 아직인데 표가 끝나면 뒷부분을 놓을 자리가 없다 — placeBlockAt 이
+// 보드 밖이라고 조용히 버린다. 여는 순간 영상 길이만큼 한 번에 늘리고, 보정점으로 어긋나면
+// 받을 때마다 모자라는 만큼 더 늘린다.
+//
+// 표본은 captureStore 와 같다: bpm 120 · 1카운트 0.5초 · 8카운트 마디 = 한 마디 4초.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const T120 = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 });
+
+test('rowsForDuration: 영상 길이를 마디 수로 바꾼다', () => {
+  assert.equal(rowsForDuration(60, 8, T120), 15, '60초 ÷ 4초/마디 = 15마디');
+  assert.equal(rowsForDuration(4, 8, T120), 1, '딱 한 마디짜리는 1이다');
+  assert.equal(rowsForDuration(4.5, 8, T120), 2, '마디 한가운데서 끝나도 그 마디까지 센다');
+  // 앵커가 0초가 아니면 0초는 음수 카운트다. 세는 것은 끝뿐이라 영향이 없다.
+  const late = normalizeTempo({ bpm: 120, beatsPerCount: 1, anchorSec: 10, anchorCount: 0 });
+  assert.equal(rowsForDuration(70, 8, late), 15, '앵커 10초 + 60초 = 여전히 15마디');
+
+  assert.equal(rowsForDuration(0, 8, T120), null, '길이 0은 셀 수 없다');
+  assert.equal(rowsForDuration(-5, 8, T120), null, '음수도 셀 수 없다');
+  assert.equal(rowsForDuration(NaN, 8, T120), null);
+  assert.equal(rowsForDuration(60, 8, DEFAULT_TEMPO), null, 'bpm 이 없으면 셀 수 없다');
+});
+
+test('받아 적기: 여는 순간 영상 길이만큼 마디를 늘린다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  assert.equal(store.board(BOARD_MAIN).rows, 8, '기본은 8마디다');
+
+  const opened = CaptureCmd.captureToggle(store, { sec: 0, durationSec: 60 }, { ids });
+  assert.equal(opened.started, true);
+  assert.equal(opened.grew, 15, '늘린 마디 수를 알려야 화면이 한 줄 적을 수 있다');
+  assert.equal(store.board(BOARD_MAIN).rows, 15);
+  assert.deepEqual(store.board(BOARD_MAIN).placements, [], '여는 것만으로 블록이 생기지는 않는다');
+
+  // 14마디째(52~56초)도 이제 자리가 있다 — 전에는 8마디 밖이라 버려졌다.
+  // ⚠ 경계 모델이라 52초의 누름은 **0~52초 구간**을 놓는다(1~13마디). 56초의 누름이 14마디다.
+  CaptureCmd.captureToggle(store, { sec: 52, durationSec: 60 }, { ids });
+  const placed = CaptureCmd.captureToggle(store, { sec: 56, durationSec: 60 }, { ids });
+  assert.equal(placed.placed, true);
+  const last = store.board(BOARD_MAIN).placements[store.board(BOARD_MAIN).placements.length - 1];
+  assert.equal(last.row, 14, '마지막 구간이 14마디에 놓여야 한다');
+  const maxRow = Math.max(...store.board(BOARD_MAIN).placements.map(p => p.row));
+  assert.equal(maxRow, 14, '늘어난 표 안에 전부 들어가야 한다 — 잘려 나간 것이 없다');
+});
+
+test('받아 적기: 늘리기만 하고 줄이지는 않는다', () => {
+  // 일부러 넓혀 둔 표를 영상 길이에 맞춰 잘라내면 그 자리의 블록이 함께 잘린다.
+  const store = captureStore();
+  setBoardRows(store, { boardId: BOARD_MAIN, rows: 32 });
+  const opened = CaptureCmd.captureToggle(store, { sec: 0, durationSec: 60 }, { ids: counterEnv() });
+  assert.equal(opened.grew, undefined, '줄일 일이면 아무것도 늘리지 않는다');
+  assert.equal(store.board(BOARD_MAIN).rows, 32);
+});
+
+test('받아 적기: 영상 길이를 모르면 그대로 두고, 받을 때 모자라는 만큼 늘린다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  // 라이브·아직 안 실린 영상은 getDuration() 이 null 이다.
+  const opened = CaptureCmd.captureToggle(store, { sec: 40, durationSec: null }, { ids });
+  assert.equal(opened.started, true);
+  assert.equal(opened.grew, undefined);
+  assert.equal(store.board(BOARD_MAIN).rows, 8, '길이를 모르면 늘리지 않는다');
+
+  // 40~44초 = 80~88카운트 = 11마디. 8마디짜리 표에는 자리가 없었다.
+  const placed = CaptureCmd.captureToggle(store, { sec: 44 }, { ids });
+  assert.equal(placed.placed, true, '자리가 없어도 버리지 않는다');
+  assert.equal(placed.grew, 11, '모자라는 만큼만 늘린다');
+  assert.equal(store.board(BOARD_MAIN).rows, 11);
+  assert.equal(store.board(BOARD_MAIN).placements[0].row, 11);
+});
+
+test('받아 적기: 박자를 잘못 잡아도 상한 위로는 늘리지 않는다', () => {
+  // 두 점을 잘못 찍어 bpm 이 열 배가 되면 한 시간짜리 영상이 수만 마디를 요구한다.
+  const store = captureStore();
+  const opened = CaptureCmd.captureToggle(store, { sec: 0, durationSec: 60 * 60 * 24 }, { ids: counterEnv() });
+  assert.equal(opened.grew, CaptureCmd.MAX_AUTO_ROWS, '상한까지만 늘린다');
+  assert.equal(opened.capped, true, '더 안 늘린다는 것을 화면이 말할 수 있어야 한다');
+  assert.equal(store.board(BOARD_MAIN).rows, CaptureCmd.MAX_AUTO_ROWS);
 });
