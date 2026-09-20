@@ -40,8 +40,9 @@ import { STORAGE_KEYS } from '../ports/storage.js';
 import { projectTime } from '../ports/media.js';
 import { browserEnv, browserDialogs, browserFileIO, debounce, longPress } from '../adapters/browser.js';
 import {
-  createRecentList, createFavoritesRepo, loadLocalMeta, loadLinksRaw, saveLinksRaw
+  createRecentList, createFavoritesRepo, loadLocalMeta, loadLinksRaw, saveLinksRaw, localKv
 } from '../adapters/localStore.js';
+import { normalizeHotkeys, toSaved as savedHotkeys } from '../domain/hotkeys.js';
 import { fetchTitle } from '../adapters/youtubeOembed.js';
 import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/media/pickPlayer.js';
 
@@ -623,6 +624,22 @@ const CONTROL_IDS = [
 const els = Object.fromEntries(CONTROL_IDS.map(id => [id, byId(id)]));
 els.mainBoardEl = boardEl;   // 빈 영역 클릭 선택 해제(1527-1529)
 
+// ── 단축키 (2026-09-20) ──────────────────────────────────────────────────────
+//
+// 무엇을 들을 수 있는지는 domain/hotkeys 가 정하고, 어디에 담을지는 여기가 정한다.
+// ⚠ 안무표가 아니라 **이 브라우저의 취향**이다 — 프로젝트 파일에도 초안에도 들어가지 않는다.
+// ⚠ 기본값과 같은 것은 담지 않는다(toSaved) — 손대지 않은 사람에게는 키 자체가 안 생긴다.
+let hotkeyMap = normalizeHotkeys(localKv.get(STORAGE_KEYS.hotkeys, null));
+
+/** 바꾼 표를 받아 담는다. 설정 화면이 부르고, 다음 입력부터 바로 듣는다(controls 가 게터로 읽는다). */
+function applyHotkeys(next) {
+  hotkeyMap = normalizeHotkeys(next);
+  const saved = savedHotkeys(hotkeyMap);
+  // 전부 기본값으로 돌아왔으면 키를 지운다 — 빈 객체를 남겨 두면 "손댔다"는 흔적만 남는다.
+  if (Object.keys(saved).length === 0) localKv.remove(STORAGE_KEYS.hotkeys);
+  else localKv.set(STORAGE_KEYS.hotkeys, saved);
+}
+
 bindControls({
   els,
   store,
@@ -630,6 +647,8 @@ bindControls({
   confirmOnce,
   fileIO: browserFileIO,
   dialogs: browserDialogs,
+  // ⚠ 게터다 — 설정에서 바꾸면 다음 입력부터 바로 들어야 한다(값으로 주면 묶은 시점에 갇힌다).
+  hotkeys: () => hotkeyMap,
   commands: {
     setSearchQuery: (value) => PaletteCmd.setSearchQuery(paletteCtx, value),
     setSortMode: (mode) => PaletteCmd.setSortMode(paletteCtx, mode),
@@ -1594,6 +1613,8 @@ views.settings = createSettingsView({
   },
   getProjectName: projectNameForClips,
   previewDirParts: clipDirParts,
+  getHotkeys: () => hotkeyMap,
+  saveHotkeys: applyHotkeys,
   // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
   onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); }
 });

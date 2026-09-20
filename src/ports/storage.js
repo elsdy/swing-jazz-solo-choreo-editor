@@ -32,7 +32,13 @@ export const STORAGE_KEYS = Object.freeze({
   favRoutines: 'choreo_fav_routines',
   links: 'choreo_links',
   /** 2026-09-09 신설. 영상 보관 폴더 설정(표시 이름·하위 폴더). 폴더 핸들 자체는 IndexedDB 에 있다(adapters/clipLibrary). */
-  clipFolder: 'choreo_clip_folder'
+  clipFolder: 'choreo_clip_folder',
+  /**
+   * 2026-09-20 신설. 사용자가 바꾼 단축키만 담는다(`{id: keys[]}`).
+   * ⚠ 기본값과 같은 것은 안 담는다(domain/hotkeys.toSaved) — 손대지 않은 사람에게는 키 자체가 안 생긴다.
+   * ⚠ 안무표가 아니라 **이 브라우저의 취향**이라 프로젝트 파일에 들어가지 않는다.
+   */
+  hotkeys: 'choreo_hotkeys'
 });
 
 /**

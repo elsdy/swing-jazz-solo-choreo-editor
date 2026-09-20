@@ -604,11 +604,11 @@ export function createVideoPanel(deps) {
       if (!ready) {
         captureHelp.textContent = '먼저 `② 박자 맞추기` 에서 BPM 을 정하세요 — 영상의 초를 안무표의 카운트로 바꾸는 데 박자가 필요합니다.';
       } else if (running) {
-        captureHelp.textContent = `${formatClock(start)} 부터 받는 중 — 동작이 바뀌는 자리마다 \`B\`. `
-          + '안무가 아닌 대목은 `N` 으로 건너뛰고, 다 되면 `Esc` 나 `■ 그만` 으로 끝냅니다.';
+        captureHelp.textContent = `${formatClock(start)} 부터 받는 중 — 동작이 바뀌는 자리마다 \`B\` 나 \`K\`. `
+          + '안무가 아닌 대목은 `N` 으로 건너뛰고, 스페이스로 재생을 멈췄다 이어 갑니다. 다 되면 `Esc` 나 `■ 그만`.';
       } else {
-        captureHelp.textContent = '영상을 보면서 동작이 바뀌는 자리마다 한 번씩 누르면 그 사이가 이름 없는 블록(`?`)으로 놓입니다. '
-          + '한 동작의 끝이 곧 다음 동작의 시작이라 두 번 누를 필요가 없습니다. 이름은 나중에 붙입니다.';
+        captureHelp.textContent = '영상을 보면서 동작이 바뀌는 자리마다 한 번씩(`B` 나 `K`) 누르면 그 사이가 이름 없는 블록(`?`)으로 놓입니다. '
+          + '한 동작의 끝이 곧 다음 동작의 시작이라 두 번 누를 필요가 없습니다. 이름은 나중에 붙입니다. 스페이스로 재생을 멈췄다 이어 갑니다. 글쇠는 `⚙ 설정` 의 `단축키` 에서 바꿉니다.';
       }
       captureHelp.classList.toggle(CLS.isError, false);
     }

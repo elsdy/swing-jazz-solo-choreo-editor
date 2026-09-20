@@ -39,6 +39,10 @@ import { DEFAULT_CATEGORIES } from '../../src/domain/defaults.js';
 import { ROUTINE_COLORS } from '../../src/domain/routines.js';
 import { createNullMediaPlayer } from '../../src/adapters/nullMediaPlayer.js';
 import {
+  DEFAULT_HOTKEYS, EDITABLE_ACTIONS, HOTKEY_ACTIONS, MAX_KEYS_PER_ACTION,
+  checkKey, eventKey, keysLabel, normalizeHotkeys, normalizeKey, ownerOf, setKeys, toSaved
+} from '../../src/domain/hotkeys.js';
+import {
   BOARD_MAIN, BOARD_ROUTINE, NONE, assertDirty, createStore, mergeDirty
 } from '../../src/usecases/store.js';
 import {
@@ -4284,4 +4288,111 @@ test('shiftAllCounts: 막히면 blocked 를 주고 보드를 건드리지 않는
   assert.equal(none.moved, undefined);
   assert.equal(none.blocked, undefined);
   assert.equal(none.boards, undefined, '그릴 것이 없으면 Dirty 도 비어야 한다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 단축키 (2026-09-20)
+//
+// 그전에는 글쇠가 input/controls.js 에 문자열로 박혀 있었다. 여기서 지키는 것은 셋 —
+//   ① 글쇠 이름이 **한 가지로만** 나온다(같은 조합이 두 이름을 가지면 저장값과 대조가 어긋난다)
+//   ② 한 글쇠는 한 동작만 갖는다
+//   ③ 고정 동작(Undo·Redo·Esc)은 저장값이 무엇이든 기본값이다 — 되돌리기를 빼앗기면 복구할 길이 없다
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('normalizeKey: 같은 조합은 언제나 같은 이름이 된다', () => {
+  assert.equal(normalizeKey({ key: ' ' }), 'Space', '스페이스는 보이는 이름으로');
+  assert.equal(normalizeKey({ key: 'Spacebar' }), 'Space', '옛 브라우저 이름도 같은 곳으로');
+  assert.equal(normalizeKey({ key: 'b' }), 'B');
+  assert.equal(normalizeKey({ key: 'B' }), 'B');
+  assert.equal(normalizeKey({ key: 'Escape' }), 'Escape', '여러 글자 이름은 그대로');
+
+  // 조합은 Ctrl → Cmd → Alt → Shift 차례로만 붙는다.
+  assert.equal(normalizeKey({ key: 'z', ctrl: true }), 'Ctrl+Z');
+  assert.equal(normalizeKey({ key: 'z', meta: true, shift: true }), 'Cmd+Shift+Z');
+  assert.equal(normalizeKey({ key: 'z', shift: true, meta: true }), 'Cmd+Shift+Z', '인자 순서가 이름을 바꾸면 안 된다');
+
+  // Shift 는 **조합으로만** 센다 — 대문자로 친 사람이 아무것도 못 누르면 안 된다.
+  assert.equal(normalizeKey({ key: 'B', shift: true }), 'B');
+  assert.equal(normalizeKey({ key: '' }), '');
+
+  // eventKey 는 KeyboardEvent 모양을 그대로 받는 껍질이다.
+  assert.equal(eventKey({ key: ' ' }), 'Space');
+  assert.equal(eventKey({ key: 'z', ctrlKey: true }), 'Ctrl+Z');
+  assert.equal(eventKey(null), '');
+});
+
+test('normalizeHotkeys: 손상된 값을 고치고 고정 동작은 지킨다', () => {
+  assert.deepEqual(normalizeHotkeys(null), { ...DEFAULT_HOTKEYS }, '없으면 기본값 전부');
+  assert.deepEqual(normalizeHotkeys('배열도 객체도 아니다'), { ...DEFAULT_HOTKEYS });
+
+  // 모르는 id 는 버리고 빠진 id 는 채운다.
+  const partial = normalizeHotkeys({ play: ['P'], 없는동작: ['Q'] });
+  assert.deepEqual(partial.play, ['P']);
+  assert.deepEqual(partial.capture, ['B', 'K'], '안 건드린 것은 기본값');
+  assert.equal('없는동작' in partial, false);
+
+  // 고정 동작은 저장값이 무엇이든 기본값이다 — 되돌리기를 빼앗기면 복구할 길이 없다.
+  const stolen = normalizeHotkeys({ undo: ['Q'], stop: ['Q'] });
+  assert.deepEqual(stolen.undo, DEFAULT_HOTKEYS.undo);
+  assert.deepEqual(stolen.stop, DEFAULT_HOTKEYS.stop);
+
+  // 쓸 수 없는 글쇠(브라우저·앱이 먼저 가져가는 것)는 걸러진다. 다 걸러지면 **비운 채로** 둔다.
+  assert.deepEqual(normalizeHotkeys({ play: ['Escape'] }).play, [], '못 쓰는 글쇠는 빠진다');
+  assert.deepEqual(normalizeHotkeys({ play: [] }).play, [], '일부러 비운 것은 비운 채로');
+  // ⚠ 값이 **아예 없는 것**과 일부러 비운 것은 다른 뜻이다.
+  assert.deepEqual(normalizeHotkeys({}).play, DEFAULT_HOTKEYS.play, '빠진 id 는 기본값으로 채운다');
+
+  // 한 동작 안의 중복은 합치고 상한까지만 남긴다.
+  const many = normalizeHotkeys({ capture: ['Q', 'Q', 'W', 'E', 'R'] });
+  assert.deepEqual(many.capture, ['Q', 'W', 'E']);
+  assert.equal(many.capture.length, MAX_KEYS_PER_ACTION);
+
+  // 정규화를 거친 표에는 **겹치는 글쇠가 없다**.
+  const clashed = normalizeHotkeys({ capture: ['Q'], skip: ['Q'], play: ['Q'] });
+  const all = HOTKEY_ACTIONS.flatMap(a => clashed[a.id]);
+  assert.equal(new Set(all).size, all.length, '같은 글쇠가 두 동작에 남았다');
+});
+
+test('setKeys: 방금 고른 쪽이 이기고 다른 동작에서 빠진다', () => {
+  const base = normalizeHotkeys(null);
+  assert.deepEqual(base.capture, ['B', 'K']);
+
+  // `B` 를 건너뛰기에 준다 — 받아 적기에서는 빠져야 한다.
+  const moved = setKeys(base, 'skip', ['B']);
+  assert.deepEqual(moved.skip, ['B']);
+  assert.deepEqual(moved.capture, ['K'], '사용자가 방금 누른 쪽이 이긴다');
+  assert.equal(ownerOf(moved, 'B'), 'skip');
+  assert.equal(ownerOf(moved, 'B', 'skip'), '', '자기 자신은 세지 않는다');
+
+  // 고정 동작은 바뀌지 않는다.
+  assert.deepEqual(setKeys(base, 'undo', ['Q']).undo, DEFAULT_HOTKEYS.undo);
+
+  // 마지막 글쇠를 다른 동작에 빼앗기면 **빈 채로 남는다.**
+  // ⚠ 여기서 기본값으로 되돌리면 연쇄가 난다(2026-09-20 에 실제로 그랬다): 받아 적기가 비면서
+  //   기본값 `B`·`K` 를 도로 집어 가고, 그 바람에 방금 재생에 준 `K` 와 건너뛰기의 `B` 까지
+  //   빼앗겨 **표 전체가 초기화**됐다. 한 자리를 옮겼을 뿐인데.
+  const takenAll = setKeys(setKeys(base, 'skip', ['B']), 'play', ['K']);
+  assert.deepEqual(takenAll.capture, [], '빈 채로 남아야 한다');
+  assert.deepEqual(takenAll.skip, ['B'], '남의 자리를 건드리면 안 된다');
+  assert.deepEqual(takenAll.play, ['K'], '방금 고른 것이 그대로 있어야 한다');
+});
+
+test('toSaved: 손대지 않은 것은 담지 않는다', () => {
+  assert.deepEqual(toSaved(normalizeHotkeys(null)), {}, '기본값이면 저장 바이트가 0 이다');
+  const changed = setKeys(normalizeHotkeys(null), 'play', ['P']);
+  assert.deepEqual(toSaved(changed), { play: ['P'] });
+  // 고정 동작은 담기지 않는다(저장값이 그것을 되살릴 일이 없어야 한다).
+  assert.equal('undo' in toSaved(changed), false);
+  assert.equal('stop' in toSaved(changed), false);
+});
+
+test('단축키 표: 바꿀 수 있는 것과 기본 글쇠', () => {
+  // 기본 재생 글쇠는 스페이스다(2026-09-20 에 P 에서 바꿨다 — 사용자 요청).
+  assert.deepEqual(DEFAULT_HOTKEYS.play, ['Space']);
+  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play']);
+  assert.equal(HOTKEY_ACTIONS.every(a => a.keys.length > 0), true, '글쇠 없는 동작을 두지 않는다');
+  assert.equal(keysLabel(['B', 'K']), 'B · K');
+  assert.equal(keysLabel([]), '없음');
+  assert.equal(checkKey('Escape').ok, false);
+  assert.equal(checkKey('Space').ok, true);
 });

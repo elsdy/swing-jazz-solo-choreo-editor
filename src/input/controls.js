@@ -17,6 +17,18 @@
 //    전부 app/main 이 주입한다(유일한 예외는 rank 3 공유 리프인 ui/domContract).
 
 import { SEL } from '../ui/domContract.js';
+import { DEFAULT_HOTKEYS, EDITABLE_ACTIONS, eventKey } from '../domain/hotkeys.js';
+
+/**
+ * 동작 id → 이 파일이 부를 커맨드 이름. domain/hotkeys 는 **무엇을 할 수 있는지**만 알고
+ * 그것이 어떤 커맨드인지는 모른다(도메인은 커맨드를 모른다) — 그 다리를 여기 한 줄로 둔다.
+ * @type {Readonly<Record<string, string>>}
+ */
+const HOTKEY_COMMANDS = Object.freeze({
+  capture: 'captureToggle',
+  skip: 'captureSkip',
+  play: 'togglePlay'
+});
 
 /** 커맨드가 실제로 무언가를 바꿨는가. store.NONE 은 얼어붙은 빈 객체다. */
 const changed = (dirty) => !!dirty && Object.keys(dirty).length > 0;
@@ -230,7 +242,8 @@ export function bindControls(deps) {
  *      (HOTKEY_ACTIVE_BOARD 플래그를 켜는 날 이 함수만 바꾸면 된다).
  * ⚠ Escape 의 cancelActivePaletteMove 는 dragstart 경로와 달리 **Dirty 를 그린다**(2802 renderPalette).
  *
- * ⚠ `B`(경계 찍기)·`N`(건너뛰기)은 위 결함 1)의 예외다 — **입력 필드 안에서는 듣지 않는다.**
+ * ⚠ `B`·`K`(경계 찍기)·`N`(건너뛰기)·`P`(재생/일시정지)는 위 결함 1)의 예외다 —
+ *   **입력 필드 안에서는 듣지 않는다.**
  *   조합 없는 홑글쇠라 가드가 없으면 동작 이름을 타이핑하는 동안 블록이 쌓인다. 오래된 Ctrl 조합
  *   단축키의 가드 없음은 보존 대상이라 그대로 두고, 새 글쇠에만 가드를 둔다.
  * ⚠ `Escape` 는 **받아 적는 중이면 그것을 먼저 닫는다**(2026-09-13). 받는 쪽이 참을 돌려주면 거기서
@@ -246,7 +259,12 @@ export function bindControls(deps) {
  * @returns {void}
  */
 export function bindHotkeys(deps) {
-  const { commands, render, activeBoardId = () => 'main', doc = document } = deps;
+  const {
+    commands, render, activeBoardId = () => 'main', doc = document,
+    // ⚠ **게터다.** 설정에서 글쇠를 바꾸면 다음 입력부터 바로 들어야 한다 — 값으로 받으면 묶은
+    //   시점의 표에 갇혀서, 바꾼 것이 새로고침 전까지 안 먹는다.
+    hotkeys = () => DEFAULT_HOTKEYS
+  } = deps;
   const apply = (dirty) => { if (dirty) render(dirty); };
 
   /** 지금 글자를 치고 있는가. 홑글쇠 단축키는 여기서 막힌다. */
@@ -266,14 +284,24 @@ export function bindHotkeys(deps) {
       apply(commands.cancelActivePaletteMove());
       return;
     }
-    if (key === 'b' && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) {
-      if (typeof commands.captureToggle === 'function' && commands.captureToggle()) e.preventDefault();
-      return;
-    }
-    // `N` — 여기까지는 안무가 아니다(설명·쉬는 시간). 앞 구간을 놓지 않고 경계만 옮긴다.
-    if (key === 'n' && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) {
-      if (typeof commands.captureSkip === 'function' && commands.captureSkip()) e.preventDefault();
-      return;
+
+    // ── 사용자가 정한 글쇠 (2026-09-20) ─────────────────────────────────
+    // 그전에는 `key === 'b'` 처럼 이 파일에 박혀 있었다. 이제 표를 주입받아 읽는다 — 무엇을
+    // 듣는지의 주인은 domain/hotkeys.js 이고, 고르는 화면은 `⚙ 설정` 의 `단축키` 갈래다.
+    // ⚠ 글자를 치는 중에는 듣지 않는다(홑글쇠라 가드가 없으면 이름 치는 동안 블록이 쌓인다).
+    if (!typing(e.target)) {
+      const pressed = eventKey(e);
+      const map = hotkeys();
+      for (const action of EDITABLE_ACTIONS) {
+        if (!(map[action.id] || []).includes(pressed)) continue;
+        // ⚠ **결과와 무관하게 먼저 막는다.** `Space` 는 포커스가 버튼에 있으면 그 버튼을 다시
+        //   누르고(`▮ 여기서 끊기` 를 손으로 누른 직후가 그렇다) 페이지를 한 화면 내린다.
+        //   커맨드가 아무 일도 안 했더라도 그 둘은 일어나면 안 된다.
+        if (pressed === 'Space') e.preventDefault();
+        const name = HOTKEY_COMMANDS[action.id];
+        if (typeof commands[name] === 'function' && commands[name]()) e.preventDefault();
+        return;
+      }
     }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'z') {
       e.preventDefault();
