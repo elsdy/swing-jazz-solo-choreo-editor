@@ -38,6 +38,8 @@ import {
 import { DEFAULT_CATEGORIES } from '../../src/domain/defaults.js';
 import { ROUTINE_COLORS } from '../../src/domain/routines.js';
 import { createNullMediaPlayer } from '../../src/adapters/nullMediaPlayer.js';
+import { createDraftStore, debounceSave, DRAFT_KEY, DRAFT_NAME } from '../../src/adapters/draftStore.js';
+import * as ProjectCmd from '../../src/usecases/projectCommands.js';
 import { clipsByProgress, clipsSummary, formatTakenAt, normalizeTakenAt } from '../../src/domain/project/media.js';
 import {
   DEFAULT_HOTKEYS, EDITABLE_ACTIONS, HOTKEY_ACTIONS, MAX_KEYS_PER_ACTION,
@@ -4508,4 +4510,162 @@ test('setClipMeta: 준 것만 바꾸고 빈 문자열은 지운다는 뜻이다'
   assert.equal(VideoCmd.setClipMeta(store, { id: '없는id', takenAt: '2026-01-01' }).video, undefined);
   VideoCmd.setClipMeta(store, { id, note: '같은 메모' });
   assert.equal(VideoCmd.setClipMeta(store, { id, note: '같은 메모' }).video, undefined);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 작업 중인 문서를 담아 두는 자리 (2026-09-20)
+//
+// 앱은 지금까지 끄면 잊었다. 여기서 지키는 것은 셋 —
+//   ① 서버가 있으면 서버, 없으면 브라우저 (그리고 그 판정이 **매번** 다시 된다)
+//   ② 어떤 실패도 던지지 않는다 (담기가 편집을 멈추면 안 된다)
+//   ③ 잦은 호출은 한 번으로 묶이고, 마지막 것이 이긴다
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** localStorage 흉내. 쿼터 초과를 흉내 낼 수 있게 `fail` 을 둔다. */
+function fakeStorage() {
+  const map = new Map();
+  return {
+    fail: false,
+    getItem(k) { return map.has(k) ? map.get(k) : null; },
+    setItem(k, v) { if (this.fail) throw new Error('QuotaExceededError'); map.set(k, v); },
+    removeItem(k) { map.delete(k); },
+    size: () => map.size
+  };
+}
+
+/** projectServer 흉내. */
+function fakeServer() {
+  const box = { data: null, calls: [] };
+  return {
+    box,
+    async save(name, payload) { box.calls.push(['save', name]); box.data = payload; return { name }; },
+    async read(name) { box.calls.push(['read', name]); return box.data; },
+    async remove(name) { box.calls.push(['remove', name]); box.data = null; return true; }
+  };
+}
+
+test('draftStore: 서버가 있으면 서버, 없으면 브라우저 — 판정은 매번 다시 한다', async () => {
+  const storage = fakeStorage();
+  const srv = fakeServer();
+  let serverOn = false;   // probe 가 끝나기 전에는 null 이다
+  const store = createDraftStore({ getServer: () => (serverOn ? srv : null), storage });
+
+  assert.equal(store.kind, 'browser');
+  assert.equal(await store.save({ a: 1 }), true);
+  assert.equal(storage.getItem(DRAFT_KEY), '{"a":1}', '서버가 없으면 브라우저에 담는다');
+  assert.equal(srv.box.data, null);
+
+  // probe 가 끝났다. **값으로 받았다면 여기서도 브라우저였을 것** — 그것이 실제로 났던 버그다.
+  serverOn = true;
+  assert.equal(store.kind, 'server');
+  assert.equal(await store.save({ a: 2 }), true);
+  assert.deepEqual(srv.box.data, { a: 2 });
+  assert.deepEqual(srv.box.calls.at(-1), ['save', DRAFT_NAME]);
+
+  // 읽기는 서버가 이긴다.
+  assert.deepEqual(await store.load(), { a: 2 });
+});
+
+test('draftStore: 서버에 없으면 브라우저를 폴백으로 본다', async () => {
+  // 서버 없이 쓰다가 서버를 켠 첫날 — 담아 둔 것이 브라우저에만 있다.
+  const storage = fakeStorage();
+  storage.setItem(DRAFT_KEY, JSON.stringify({ 옛것: true }));
+  const srv = fakeServer();                      // 서버는 비어 있다
+  const store = createDraftStore({ getServer: () => srv, storage });
+  assert.deepEqual(await store.load(), { 옛것: true }, '서버가 비었으면 브라우저 것을 되살려야 한다');
+});
+
+test('draftStore: 어떤 실패도 던지지 않는다', async () => {
+  // ① 브라우저 쿼터 초과
+  const storage = fakeStorage();
+  storage.fail = true;
+  const browserOnly = createDraftStore({ getServer: () => null, storage });
+  assert.equal(await browserOnly.save({ a: 1 }), false, '던지지 않고 false 여야 한다');
+
+  // ② 서버가 도중에 꺼졌다 — 브라우저로 떨어진다
+  const ok = fakeStorage();
+  const dead = { async save() { throw new Error('ECONNREFUSED'); }, async read() { throw new Error('x'); }, async remove() { throw new Error('x'); } };
+  const store = createDraftStore({ getServer: () => dead, storage: ok });
+  assert.equal(await store.save({ b: 2 }), true, '서버가 죽어도 그날의 일은 남아야 한다');
+  assert.equal(ok.getItem(DRAFT_KEY), '{"b":2}');
+  // 읽기가 죽어도 던지지 않고 **브라우저로 떨어진다** — 방금 거기에 떨어뜨려 둔 것이 있다.
+  assert.deepEqual(await store.load(), { b: 2 }, '읽기가 죽으면 브라우저 것을 본다');
+
+  // ③ 깨진 JSON
+  const broken = fakeStorage();
+  broken.setItem(DRAFT_KEY, '{이건 JSON 이 아니다');
+  const s3 = createDraftStore({ getServer: () => null, storage: broken });
+  assert.equal(await s3.load(), null);
+});
+
+test('debounceSave: 잦은 호출을 한 번으로 묶고 마지막 것이 이긴다', async () => {
+  const saved = [];
+  let now = 0;
+  const timers = new Map();
+  let nextId = 1;
+  const setTimer = (fn, ms) => { const id = nextId++; timers.set(id, { fn, at: now + ms }); return id; };
+  const clearTimer = (id) => { timers.delete(id); };
+  const tick = (ms) => {
+    now += ms;
+    for (const [id, t] of [...timers]) if (t.at <= now) { timers.delete(id); t.fn(); }
+  };
+
+  const saver = debounceSave(async (p) => { saved.push(p); return true; }, { waitMs: 1000, setTimer, clearTimer });
+  saver.schedule(() => 1);
+  saver.schedule(() => 2);
+  saver.schedule(() => 3);
+  assert.deepEqual(saved, [], '묶는 동안에는 한 번도 담지 않는다');
+  tick(1000);
+  assert.deepEqual(saved, [3], '마지막 것 하나만 담는다');
+
+  // flush 는 기다리지 않는다(창을 닫기 직전).
+  saver.schedule(() => 4);
+  await saver.flush();
+  assert.deepEqual(saved, [3, 4]);
+  // 예약된 것이 없으면 flush 는 아무것도 담지 않는다.
+  await saver.flush();
+  assert.deepEqual(saved, [3, 4]);
+
+  // cancel 뒤에는 시간이 지나도 담지 않는다.
+  saver.schedule(() => 5);
+  saver.cancel();
+  tick(5000);
+  assert.deepEqual(saved, [3, 4]);
+});
+
+test('draftSnapshot·restoreDraft: 담고 되살리면 안무표가 그대로다', () => {
+  const store = createStore({ ids: counterEnv() });
+  const deps = {
+    store,
+    env: { nowIso: () => '2026-09-20T00:00:00.000Z', uid: counterEnv().uid },
+    dialogs: { alert() {}, confirm: () => true },
+    files: { downloadJson() {} },
+    // applyProjectData 가 실제로 부르는 것만 채운다 — 없으면 거기서 TypeError 가 난다.
+    storage: { save() {}, load: () => null, saveRoutineFavorites() {}, saveLinks() {} },
+    commitHistory() {}
+  };
+  setBoardRows(store, { boardId: BOARD_MAIN, rows: 12 });
+  VideoCmd.setTempo(store, { tempo: { bpm: 132, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 } });
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+
+  const before = JSON.stringify(store.board(BOARD_MAIN).placements.map(p => [p.row, p.startIndex, p.length]));
+  const snap = ProjectCmd.draftSnapshot(deps, { fileName: '받아적는중' });
+  assert.equal(snap.fileName, '받아적는중');
+  assert.ok(Array.isArray(snap.placements) && snap.placements.length > 0, '배치가 담겨야 한다');
+
+  // 딴 상태로 만든 뒤 되살린다.
+  store.setBoard(BOARD_MAIN, { placements: [] });
+  setBoardRows(store, { boardId: BOARD_MAIN, rows: 8 });
+  ProjectCmd.restoreDraft(deps, snap);
+  assert.equal(JSON.stringify(store.board(BOARD_MAIN).placements.map(p => [p.row, p.startIndex, p.length])), before);
+  assert.equal(store.board(BOARD_MAIN).rows, 12, '마디 수도 돌아와야 한다');
+  assert.equal(VideoCmd.mediaState(store).tempo.bpm, 132, '박자도 돌아와야 한다');
+
+  // 모양이 아니면 아무 일도 하지 않는다.
+  const kept = JSON.stringify(store.board(BOARD_MAIN).placements);
+  ProjectCmd.restoreDraft(deps, null);
+  ProjectCmd.restoreDraft(deps, { placements: '배열이 아니다' });
+  assert.equal(JSON.stringify(store.board(BOARD_MAIN).placements), kept);
 });

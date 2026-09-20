@@ -68,6 +68,7 @@ import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
 import { createStartCard } from '../ui/startCard.js';
 import { createFileMenu } from '../ui/fileMenu.js';
+import { createDraftStore, debounceSave, DRAFT_NAME } from '../adapters/draftStore.js';
 import { createThumbBar } from '../ui/thumbBar.js';
 import { createProjectPanel } from '../ui/projectPanel.js';
 import { clipsByProgress, clipsSummary, formatTakenAt } from '../domain/project/media.js';
@@ -158,10 +159,27 @@ const hist = History.createHistory(store, { storage });
 
 const flags = new URLSearchParams(window.location.search);
 const views = { board: {} };
-const render = createRenderer(store, views, {
+const renderCore = createRenderer(store, views, {
   dev: flags.get('dev') === '1',
   paranoid: flags.get('render') === 'full'   // 이행 기간 안전장치. 기본 off = Dirty 그대로
 });
+
+/**
+ * 그리고 나서 **작업 중인 문서를 담는다**(2026-09-20). 22절이 실제 담는 자리를 붙이고,
+ * 그전까지 `saveDraftSoon` 은 아무 일도 하지 않는다(부팅 도중의 렌더까지 담지 않게).
+ *
+ * ⚠ 커맨드는 전부 render 를 거치므로 여기 한 곳이면 빠짐이 없다. 재생 헤드는 이 길을 타지
+ *   않으므로(채널 B) 초당 60번 담는 일은 생기지 않는다.
+ * ⚠ 담기는 **묶어서** 한다(debounceSave). 받아 적는 동안은 초당 여러 번 그려진다.
+ * @type {(() => void)}
+ */
+let saveDraftSoon = () => {};
+
+/** @type {(d: import('../usecases/store.js').Dirty, opts?: object) => void} */
+const render = (dirty, opts) => {
+  renderCore(dirty, opts);
+  saveDraftSoon();
+};
 
 /** alert 는 언제나 렌더 뒤다(app/render 의 마지막 단계). */
 views.notify = (n) => browserDialogs.alert(n.message);
@@ -420,17 +438,28 @@ views.toolbar = createToolbarView({ store, canUndo, canRedo });
  * 끝낸다(버그 기록: 최근 10개의 payload 전체를 localStorage 에 넣으면서 예외 처리가 없다).
  * ⚠ 서버가 없으면 **아무것도 하지 않는다** — 지금까지의 localStorage 목록이 그대로 보인다.
  * ⚠ 항목에 `data` 를 넣지 않는다. 열 때 이름으로 읽어 온다(openFromFolder).
+ * ⚠ **자동으로 담아 둔 작업 문서(`_작업중`)는 목록에서 뺀다**(2026-09-20). 그것은 저장본이
+ *   아니라 초안이다 — 목록에 올리면 저장한 적 없는 것이 저장본인 척 서고, 사용자가 저장해 둔
+ *   것을 밀어낸다(실제로 그랬다: 목록에 `_작업중` 하나만 남고 09-13 저장본이 사라져 보였다).
+ * ⚠ **덮어쓰지 않고 합친다**(2026-09-20). 폴더가 주인인 것은 맞지만, 서버가 생기기 전에
+ *   브라우저에만 저장해 둔 것이 있으면 덮어쓰기가 그것을 화면에서 지운다 — 파일은 살아 있는데
+ *   사라진 것처럼 보이는 것이 이 기능에서 가장 나쁜 실패다. 같은 이름은 **폴더 쪽이 이긴다.**
  */
 function refreshProjectFolder() {
   return projectServer.list().then((items) => {
-    if (!items.length) return;
-    store.patch('recents', {
-      projects: items.map(it => ({
+    const fromFolder = items
+      .filter(it => it.name.replace(/\.json$/i, '') !== DRAFT_NAME)
+      .map(it => ({
         fileName: it.name.replace(/\.json$/i, ''),
         savedAt: new Date(it.mtime * 1000).toISOString(),
         data: null
-      }))
-    });
+      }));
+    const taken = new Set(fromFolder.map(p => p.fileName));
+    const fromBrowser = (store.get().recents.projects || [])
+      .filter(p => p.fileName !== DRAFT_NAME && !taken.has(p.fileName));
+    const merged = [...fromFolder, ...fromBrowser];
+    if (merged.length === 0) return;                    // 양쪽 다 비었으면 건드릴 것이 없다
+    store.patch('recents', { projects: merged });
     render({ savedLists: ['projects'] });
   });
 }
@@ -1074,7 +1103,9 @@ function seekVideoTo(sec, opts = {}) {
 }
 
 // 서버가 있는지 한 번 본다. 있으면 설정과 패널이 서버 모드로 다시 그려진다(패널이 열려 있으면 경로도 확인한다).
-clipServer.probe().then((cfg) => {
+// ⚠ 이 약속을 남겨 둔다 — 22절의 「담아 둔 것 되살리기」가 **서버인지 아닌지 정해진 뒤에**
+//   읽어야 한다. 정해지기 전에 읽으면 서버에 담아 둔 것을 못 보고 브라우저 것만 본다.
+const clipServerReady = clipServer.probe().then((cfg) => {
   clipServerConfig = cfg;
   if (!cfg) return;
   libraryAutoTriedFor = '';
@@ -1755,3 +1786,48 @@ views.thumb = createThumbBar({
     quickPlace: () => { byId('quickPlaceBtn')?.click(); }
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 24. 작업 중인 문서 — 새로고침해도 이어진다 (2026-09-20)
+//
+// 지금까지 앱은 **끄면 잊었다.** `프로젝트 저장` 을 누르지 않고 새로고침하면 안무표도, 고른
+// 영상도, 찍어 둔 박자와 마커도 사라졌다. 영상을 보며 받아 적는 일은 길게 이어지므로 그 사이의
+// 새로고침 한 번이 그날의 일을 지웠다.
+//
+// ⚠ 맨 마지막에 붙인다. 그 전의 렌더(부팅 도중의 첫 그림)까지 담으면 **되살리기 전의 빈 상태**가
+//   담긴 것을 덮어쓴다 — 되살릴 것을 스스로 지우는 순서가 된다.
+// ⚠ 영상 파일은 담지 않는다(담을 수도 없다). 담기는 것은 `media.source` 의 **이름과 경로**이고,
+//   실물은 되살린 뒤 tryLibraryQuietly 가 보관 폴더에서 다시 읽어 온다 — 이미 있던 길이다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 서버가 있으면 서버에 담는다. 폰과 PC 가 같은 서버를 보면 이어서 편집한다.
+// ⚠ **게터로 준다.** clipServerConfig 는 probe 가 끝나야 채워지는데 이 줄은 그 전에 돈다 —
+//   값으로 주면 서버가 있어도 영영 브라우저에 담는다(실측으로 그랬다).
+const draftStore = createDraftStore({ getServer: () => (clipServerConfig ? projectServer : null) });
+const draftSaver = debounceSave((payload) => draftStore.save(payload));
+
+(async () => {
+  await clipServerReady;              // 서버인지 아닌지 정해진 뒤에 읽는다
+  const saved = await draftStore.load();
+  // ⚠ **비어 있을 때만** 되살린다. 부팅 중에 사용자가 이미 파일을 열었거나 동작을 놓았으면
+  //   그쪽이 이긴다 — 담아 둔 것이 방금 한 일을 덮으면 그게 데이터 손실이다.
+  const untouched = store.board(BOARD_MAIN).placements.length === 0;
+  if (saved && untouched) {
+    render(ProjectCmd.restoreDraft(projectDeps, saved));
+    // 담긴 이름을 앱바·이름칸에 되돌린다. 영상 실물은 아래 한 줄이 보관 폴더에서 다시 읽는다.
+    if (typeof saved.fileName === 'string' && saved.fileName) setProjectFileName(saved.fileName);
+    tryLibraryQuietly();
+  }
+  // 되살린 **뒤에** 담기를 켠다(위 ⚠ 두 번째 줄).
+  saveDraftSoon = () => draftSaver.schedule(
+    () => ProjectCmd.draftSnapshot(projectDeps, { fileName: projectNameForClips() })
+  );
+})();
+
+// 창을 닫거나 탭을 숨길 때는 기다리지 않고 담는다 — 묶는 시간(1.2초) 안에 닫으면 그만큼이 샌다.
+// ⚠ `beforeunload` 가 아니라 `visibilitychange` 다. 모바일 브라우저는 탭을 접을 때
+//   beforeunload 를 부르지 않고 그대로 죽이는 일이 있다.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') draftSaver.flush();
+});
+window.addEventListener('pagehide', () => { draftSaver.flush(); });
