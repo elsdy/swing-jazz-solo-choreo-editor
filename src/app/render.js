@@ -46,6 +46,7 @@ import { phraseMark } from '../domain/phrasing.js';
  *   linksBar?: { render(links?: object, titleFetch?: object): void },
  *   video?: { render(): void, renderStatus(): void, renderCut(): void },
  *   pose?: { render(): void },
+ *   start?: { sync(): void },
  *   notify?: (n: { kind: 'alert', message: string }) => void
  * }} views
  * @param {{ dev?: boolean, paranoid?: boolean }} [options]
@@ -86,6 +87,10 @@ export function createRenderer(store, views, options = {}) {
     // 메인 보드가 다시 그려졌으면 재생 헤드의 캐시(칸 폭·켜 둔 블록)를 버린다. 헤드 자체는 여기서
     // 그리지 않는다(채널 B) — 다음 rAF 프레임이 스스로 다시 잰다.
     if (d.layout || d.boards?.[BOARD_MAIN]) views.playhead?.invalidate();
+
+    // 메인 보드의 배치가 바뀌었으면 '비었는가'가 달라졌을 수 있다 — 빈 안내와 시작 카드를 맞춘다.
+    // ⚠ layout 은 여기 넣지 않는다. 칸 폭이 바뀌어도 비었는지는 그대로다.
+    if (d.boards?.[BOARD_MAIN]) views.start?.sync();
 
     // ── ②' 프레이즈·코러스 — 행을 다시 그리지 않고 dataset·CSS 변수만 입힌다 ────────────
     // ⚠ 보드가 조금이라도 다시 그려졌으면 함께 부른다. 골격 재생성(innerHTML='')이 dataset 을

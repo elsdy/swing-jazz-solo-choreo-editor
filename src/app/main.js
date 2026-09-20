@@ -65,6 +65,8 @@ import { createProjectServer } from '../adapters/projectServer.js';
 import { createModelServer } from '../adapters/modelServer.js';
 import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
+import { createStartCard } from '../ui/startCard.js';
+import { createFileMenu } from '../ui/fileMenu.js';
 import * as PlanCmd from '../usecases/planCommands.js';
 import * as PhrasingCmd from '../usecases/phrasingCommands.js';
 import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
@@ -205,8 +207,15 @@ const routineDeps = {
   resetHistory: (boardId) => History.reset(hist, boardId)   // 4804-4805·4817
 };
 
-/** 원본 4273 `fileNameInput.value = …`. saveProject 와 '이름 복사' 버튼이 같은 함수를 쓴다. */
-const setProjectFileName = (fileName) => { byId('fileNameInput').value = fileName; };
+/**
+ * 원본 4273 `fileNameInput.value = …`. saveProject 와 '이름 복사' 버튼이 같은 함수를 쓴다.
+ * ⚠ 2026-09-20 부터 앱바 제목이 이 값의 사본이다. 여기서 함께 맞추지 않으면 저장·불러오기
+ *   뒤에 제목만 옛 이름으로 남는다 — 입력칸의 `input` 이벤트는 손으로 칠 때만 온다.
+ */
+const setProjectFileName = (fileName) => {
+  byId('fileNameInput').value = fileName;
+  views.fileMenu?.syncName();
+};
 
 const projectDeps = {
   store,
@@ -430,14 +439,32 @@ function refreshProjectFolder() {
  * @returns {any} 동기로 열었으면 Dirty, 읽어 와야 하면 undefined(렌더는 여기서 한다)
  */
 function openFromFolder(data, item, run) {
-  if (data) return run(projectDeps, data);
+  // ⚠ 링크 줄 펴기를 **여기 안에서** 한다. 바깥에서 감싸면 폴더 경로는 읽기가 끝나기 전에
+  //   재어 버려서, 링크가 든 파일인데도 접힌 채 열린다(둘 중 한 경로만 도는 것이 더 나쁘다).
+  if (data) return openLinksIfAny(run(projectDeps, data));
   const name = item && item.fileName;
   if (!name) return undefined;
   projectServer.read(name).then((payload) => {
-    if (payload) render(run(projectDeps, payload));
+    if (payload) { render(run(projectDeps, payload)); openLinksIfAny(undefined); }
     else browserDialogs.alert(`보관 폴더에서 '${name}' 을 읽지 못했습니다.`);
   });
   return undefined;
+}
+
+/**
+ * 링크가 든 안무표를 열었으면 링크 줄을 펴 준다(2026-09-20).
+ *
+ * 링크 줄은 모든 폭에서 접고 시작한다 — 비어 있는 두 줄이 도구와 격자를 갈라놓기 때문이다.
+ * 그런데 저장해 둔 주소가 든 파일을 그대로 접힌 채 열면 "주소가 사라졌다" 가 된다.
+ * ⚠ **펴기만 한다.** 접는 쪽까지 하면 손으로 편 것을 다음 불러오기가 도로 접는다.
+ * @template T
+ * @param {T} dirty 그대로 돌려준다 — 호출부가 커맨드 결과를 잃지 않게
+ * @returns {T}
+ */
+function openLinksIfAny(dirty) {
+  const l = store.links;
+  if (l.youtubeUrl || l.clickupUrl || l.customLinks.length) views.layout?.setLinksOpen(true);
+  return dirty;
 }
 
 views.savedLists = createSavedListsView({
@@ -630,8 +657,8 @@ bindControls({
     },
     saveMoveList: (options) => ProjectCmd.saveMoveList(projectDeps, options),
     saveCategories: (options) => ProjectCmd.saveCategories(projectDeps, options),
-    loadProjectFromFile: (input) => ProjectCmd.loadProjectFromFile(projectDeps, input),
-    mergeProjectFromFile: (input) => ProjectCmd.mergeProjectFromFile(projectDeps, input),
+    loadProjectFromFile: (input) => openLinksIfAny(ProjectCmd.loadProjectFromFile(projectDeps, input)),
+    mergeProjectFromFile: (input) => openLinksIfAny(ProjectCmd.mergeProjectFromFile(projectDeps, input)),
     loadMoveListFromFile: (input) => ProjectCmd.loadMoveListFromFile(projectDeps, input),
     loadCategoriesFromFile: (input) => ProjectCmd.loadCategoriesFromFile(projectDeps, input),
     // ⚠ 링크 초기화까지 포함(4484-4490). saveLinks 는 storage 파사드의 것과 같은 함수다.
@@ -1568,7 +1595,7 @@ views.settings = createSettingsView({
 // 19. 말로 채우기 — 음성/텍스트 → LLM 다듬기 → 스키마 → 배치. LLM 은 서버가 부른다(키는 서버에만).
 // ─────────────────────────────────────────────────────────────────────────────
 
-createComposeView({
+const composeView = createComposeView({
   container: document.querySelector('.top-actions'),
   llm: llmServer,
   getContext: () => {
@@ -1594,7 +1621,9 @@ createComposeView({
 // ─────────────────────────────────────────────────────────────────────────────
 
 views.phrasing = createPhrasingView({
-  container: document.querySelector('.top-actions'),
+  // ⚠ 앱바가 아니라 **캔버스 바**다(2026-09-20). 곡 구조는 앱 설정이 아니라 이 안무표의 표시
+  //   방식이라 `안무표 크기`·`기본 카운트` 와 같은 줄에 있어야 한다.
+  container: byId('phrasingSlot'),
   getPhrasing: () => PhrasingCmd.phrasingState(store),
   getRows: () => store.board(BOARD_MAIN).rows,
   getPresetId: () => PhrasingCmd.matchedPresetId(store),
@@ -1612,3 +1641,25 @@ views.phrasing = createPhrasingView({
 
 // 파일을 열거나 Undo 로 돌아온 구조도 그려야 한다 — 첫 화면에 한 번 맞춘다.
 render({ phrasing: true });
+
+// 링크 줄은 모든 폭에서 접고 시작한다(2026-09-20) — 비어 있는 두 줄이 도구와 격자를 갈라놓았다.
+// ⚠ **든 것이 있으면 펴고 시작한다.** 저장해 둔 주소가 화면에서 사라지면 잃은 것으로 보인다.
+// ⚠ 여기 한 번뿐이다. 렌더마다 부르면 손으로 접은 것이 도로 펴진다.
+openLinksIfAny(undefined);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 21. 시작하는 세 길 — 사이드바 맨 위 카드와 빈 안무표 안내 (2026-09-20)
+//
+// ⚠ 새 커맨드를 만들지 않는다. 세 버튼은 이미 있는 진입점과 같은 것을 부른다 —
+//   `✨ 말로 채우기`(19절의 창) · `▶ 영상 패널`(16절) · 아래 `동작 검색`.
+//   입구가 흩어져 있어서 처음 켠 화면에 시작하는 길이 하나도 안 보이던 것을 모은 것뿐이다.
+// ⚠ 마지막에 둔다. composeView 의 open 을 쓰고, 첫 sync 가 보드 상태를 읽는다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+views.fileMenu = createFileMenu();
+
+views.start = createStartCard({
+  onCompose: () => composeView.open(),
+  onVideo: () => render(VideoCmd.openPanel(store)),
+  hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
+});

@@ -225,7 +225,6 @@ export function initLayout(deps = {}) {
     appEl = doc.querySelector(SEL.app),
     sidebarEl = doc.querySelector(SEL.sidebar),
     // 좁은 화면 전용 토글 4개(2026-09-12). 넓은 화면에서는 CSS 가 숨기므로 눌릴 일이 없다.
-    appbarMoreBtn = doc.getElementById('appbarMoreBtn'),
     sidebarSheetBtn = doc.getElementById('sidebarSheetBtn'),
     sheetCloseBtn = doc.getElementById('sheetCloseBtn'),
     sheetBackdrop = doc.getElementById('sheetBackdrop'),
@@ -320,14 +319,17 @@ export function initLayout(deps = {}) {
     if (!isMobileLayout()) appEl.style.removeProperty('--sidebar-h');
   });
 
-  // ── 좁은 화면의 네 토글 (2026-09-12, 원본에 대응물 없음) ─────────────────
+  // ── 화면 토글 셋 (2026-09-12, 원본에 대응물 없음) ───────────────────────
+  //
+  // 2026-09-20 에 넷에서 셋이 됐다. 앱바의 `☰`(data-more)가 파일 메뉴로 바뀌면서 없어졌고,
+  // `🔗` 링크 줄은 좁은 화면 전용이 아니라 **모든 폭**에서 쓰는 토글이 됐다.
   //
   // 폰에서 안무표가 세로의 10% 밖에 못 쓰던 것을 고치면서 생겼다. 넷 다 **화면 상태**라
   // store 에 넣지 않는다 — 스크롤 락과 같은 성격이고, 저장하거나 Undo 할 값이 아니다.
   // 값은 <body> 의 data-* 하나로 두고 CSS 가 읽는다(마크업의 기본값이 전부 'off').
   //
-  // ⚠ 넓은 화면에서는 이 버튼들이 `display:none` 이라 눌리지 않는다. 그래도 dataset 은
-  //   남으므로, 폭을 넓혔다 줄여도 마지막 상태가 그대로 돌아온다.
+  // ⚠ 넓은 화면에서는 `≡ 동작`·`비고` 가 `display:none` 이라 눌리지 않는다(`🔗` 은 보인다).
+  //   그래도 dataset 은 남으므로, 폭을 넓혔다 줄여도 마지막 상태가 그대로 돌아온다.
 
   /** <body data-*> 한 칸을 뒤집고 버튼의 aria-expanded 를 맞춘다. */
   function toggleFlag(name, btn) {
@@ -344,7 +346,6 @@ export function initLayout(deps = {}) {
     if (sidebarSheetBtn) sidebarSheetBtn.setAttribute('aria-expanded', 'false');
   }
 
-  if (appbarMoreBtn) on(appbarMoreBtn, 'click', () => toggleFlag('more', appbarMoreBtn));
   if (linksToggleBtn) on(linksToggleBtn, 'click', () => toggleFlag('links', linksToggleBtn));
   if (notesToggleBtn) {
     on(notesToggleBtn, 'click', () => {
@@ -394,6 +395,13 @@ export function initLayout(deps = {}) {
     isRoutineOverlayMode: () => isRoutineOverlayMode(win),
     /** 좁은 화면의 동작 시트를 닫는다(넓은 화면에서는 아무 일도 없다). */
     closeSheet,
+    /**
+     * 링크 줄을 편다/접는다. 2026-09-20 부터 링크바는 **모든 폭에서** 기본으로 접혀 있어서,
+     * 링크가 든 파일을 열었을 때 앱이 한 번 펴 준다 — 안 그러면 저장해 둔 주소가 화면에서 사라진다.
+     * ⚠ 부팅 때 한 번만 부른다. 렌더마다 부르면 사용자가 손으로 접은 것이 도로 펴진다.
+     * @param {boolean} open
+     */
+    setLinksOpen(open) { doc.body.dataset.links = open ? 'on' : 'off'; },
     // 원본에는 없는 추가분. 테스트가 리스너를 걷어낼 수 있게만 두었고 앱은 부르지 않는다.
     destroy() { teardown.splice(0).forEach(off => off()); },
   };
