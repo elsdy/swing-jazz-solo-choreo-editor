@@ -21,7 +21,7 @@
 
 import { BOARD_MAIN, NONE, boardOf, mergeDirty } from './store.js';
 import { placeBlockAt, setBoardRows } from './boardCommands.js';
-import { isTempoUsable, normalizeTempo, rowsForDuration, spanToCountRange } from '../domain/tempo.js';
+import { boundarySpanToCountRange, isTempoUsable, normalizeTempo, rowsForDuration } from '../domain/tempo.js';
 import { cellOf, linearOf } from '../domain/grid.js';
 import { normalizeMarkers } from '../domain/markers.js';
 import { activeClipOf } from '../domain/project/media.js';
@@ -144,8 +144,15 @@ export function growRowsForDuration(store, args = {}) {
 /**
  * 초 구간 하나를 안무표에 이름 없는 블록으로 놓는다.
  *
- * 초 → 카운트 변환은 domain/tempo.spanToCountRange 가 한다 — 보정점이 있으면 그것까지 반영된 값이라
- * 템포가 흔들리는 영상에서도 자리가 맞는다. 끝 카운트는 **포함**이다(구간 중간에서 끝나도 그 칸을 덮는다).
+ * 초 → 카운트 변환은 domain/tempo.boundarySpanToCountRange 가 한다 — 보정점이 있으면 그것까지
+ * 반영된 값이라 템포가 흔들리는 영상에서도 자리가 맞는다.
+ *
+ * ⚠ **spanToCountRange 가 아니다**(2026-09-20 버그 수정). 그쪽은 끝 칸을 `ceil-1` 로 덮으므로,
+ *   경계 하나가 앞 구간의 끝이면서 뒤 구간의 시작인 이 모델에서는 그 칸을 둘이 함께 갖는다.
+ *   그러면 한 마디가 두 줄로 쌓이고(subRow), 밀려난 그룹은 제 행 전부에서 2층을 차지해
+ *   "블록이 하나뿐인데 2층이 선점된 행"까지 만든다. 순서대로 받아 적은 안무에 겹칠 것은 없다.
+ * ⚠ 두 경계가 같은 칸으로 반올림되면(`empty`) **아무것도 놓지 않는다.** 억지로 한 칸을 만들면
+ *   그 칸을 다음 구간이 또 문다 — 고치려던 겹침이 그대로 돌아온다.
  *
  * @param {object} store
  * @param {{ inSec:number, outSec:number, boardId?:'main'|'routine', name?:string, category?:string }} args
@@ -161,7 +168,8 @@ export function captureSpan(store, args, deps = {}) {
   const tempo = normalizeTempo(activeClipOf(state.media).tempo);
   if (!isTempoUsable(tempo)) return { ...NONE, needsTempo: true };
   const board = boardOf(state, boardId);
-  const { from, to } = spanToCountRange(inSec, outSec, board.cols, tempo);
+  const { from, to, empty } = boundarySpanToCountRange(inSec, outSec, board.cols, tempo);
+  if (empty) return NONE;                                // 두 경계가 같은 칸이다 — 놓을 자리가 없다
   const totalCount = linearOf(to.row, to.index, board.cols) - linearOf(from.row, from.index, board.cols) + 1;
   if (totalCount <= 0) return NONE;
   // 자리가 모자라면 먼저 늘린다(2026-09-20). 받아 적기를 열 때 영상 길이만큼 이미 늘려 두었지만,

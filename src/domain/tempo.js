@@ -288,6 +288,41 @@ export function spanToCountRange(startSec, endSec, cols, tempo) {
 }
 
 /**
+ * **경계로 끊은** 구간 → 격자 범위. 잇달아 놓아도 서로 겹치지 않는다 (2026-09-20).
+ *
+ * spanToCountRange 와 무엇이 다른가 — 끝을 `ceil-1` 이 아니라 **반올림 −1** 로 잡는다.
+ * 그쪽 규칙("칸 중간에서 끝나도 그 칸을 덮는다")은 마커처럼 **혼자 떨어진 구간**에는 맞지만,
+ * 받아 적기처럼 경계 하나가 앞 구간의 끝이면서 뒤 구간의 시작인 사슬에서는 그 칸을 둘이
+ * 동시에 갖는다. 그러면 배치가 겹쳐 한 마디가 두 줄로 쌓인다 — 순서대로 받아 적은 안무에
+ * 겹칠 것이 있을 리 없으므로 그건 언제나 버그다.
+ *
+ * ```
+ *   경계 8.5카운트에서 끊었을 때
+ *     spanToCountRange   앞 …8  뒤 8…   ← 칸 8 을 둘이 갖는다 (겹침)
+ *     이 함수            앞 …7  뒤 8…   ← 8.5 는 8 에 더 가깝다
+ * ```
+ *
+ * 반올림은 "동작이 바뀐다고 누른 순간에 **가장 가까운 칸**" 이라는 뜻이다. 사람이 누르는 시각은
+ * 칸 경계에 맞지 않으므로, 앞으로 늘 끌어당기는 것보다 가까운 쪽에 붙이는 편이 실제에 가깝다.
+ *
+ * ⚠ 두 경계가 **같은 칸으로 반올림되면** `to` 가 `from` 보다 작다. 놓을 칸이 없다는 뜻이고,
+ *   호출부가 그것을 보고 아무것도 놓지 않는다(억지로 한 칸을 만들면 그 칸을 또 겹쳐 문다).
+ *   그래서 여기서는 spanToCountRange 처럼 `Math.max(fromN, …)` 로 접지 **않는다.**
+ *
+ * @param {number} startSec 이 구간을 연 경계
+ * @param {number} endSec   이 구간을 닫은(=다음 구간을 연) 경계
+ * @param {number} cols
+ * @param {Tempo} tempo
+ * @returns {{ from:{row:number,index:number}, to:{row:number,index:number}, empty:boolean }}
+ *   empty: 두 경계가 같은 칸이라 놓을 것이 없다
+ */
+export function boundarySpanToCountRange(startSec, endSec, cols, tempo) {
+  const fromN = Math.round(timeToCount(startSec, tempo));
+  const toN = Math.round(timeToCount(endSec, tempo)) - 1;
+  return { from: cellOf(fromN, cols), to: cellOf(toN, cols), empty: toN < fromN };
+}
+
+/**
  * 이 길이의 영상을 끝까지 담으려면 마디가 몇이어야 하는가 (2026-09-20).
  *
  * 영상에서 받아 적을 때 안무표가 영상보다 짧으면 뒷부분을 놓을 자리가 없다. 받아 적기를
