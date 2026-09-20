@@ -68,6 +68,7 @@ import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
 import { createStartCard } from '../ui/startCard.js';
 import { createFileMenu } from '../ui/fileMenu.js';
+import { createThumbBar } from '../ui/thumbBar.js';
 import { createProjectPanel } from '../ui/projectPanel.js';
 import { clipsByProgress, clipsSummary, formatTakenAt } from '../domain/project/media.js';
 import * as PlanCmd from '../usecases/planCommands.js';
@@ -1720,4 +1721,33 @@ views.project = createProjectPanel({
   },
   openVideoPanel: () => render(VideoCmd.openPanel(store)),
   confirmOnce
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 23. 엄지 바 — 폰에서 지금 할 일을 화면 맨 아래에 (2026-09-20)
+//
+// ⚠ 새 커맨드를 만들지 않는다. 전부 이미 있는 진입점과 같은 것을 부른다 — 폰에는 키보드가 없어
+//   `B`·`K`·`N`·`P`·`Esc` 로 하던 일이 손가락으로 와야 하는데, 그 버튼들이 영상 패널 안쪽에
+//   있어 스크롤해야 닿았다. 자리만 옮긴 것이다.
+// ⚠ 영상 패널·레이아웃이 다 만들어진 뒤에 붙인다(그 둘의 메서드를 쓴다).
+// ─────────────────────────────────────────────────────────────────────────────
+
+views.thumb = createThumbBar({
+  getState: () => ({
+    panelOpen: VideoCmd.panelState(store).open,
+    capturing: CaptureCmd.captureStartSec(store) !== null,
+    canCapture: CaptureCmd.canCapture(store),
+    sheetOpen: document.body.dataset.sheet === 'on'
+  }),
+  actions: {
+    openPanel: () => render(VideoCmd.openPanel(store)),
+    // ⚠ 뷰의 메서드를 거친다 — 지금 몇 초인지는 영상 패널만 알고(재생기는 뷰가 쥔다),
+    //   그리기와 히스토리 커밋까지 그쪽에서 끝난다. 여기서 커맨드를 직접 부르면 그 둘이 빠진다.
+    togglePlay: () => { views.video?.togglePlay(); },
+    capture: () => { views.video?.captureToggle(); views.thumb?.render(); },
+    skip: () => { views.video?.captureSkip(); views.thumb?.render(); },
+    stop: () => { views.video?.stopCapture(); views.thumb?.render(); },
+    toggleSheet: () => { byId('sidebarSheetBtn')?.click(); },
+    quickPlace: () => { byId('quickPlaceBtn')?.click(); }
+  }
 });
