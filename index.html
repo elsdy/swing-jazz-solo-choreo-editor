@@ -125,14 +125,44 @@
       box-shadow: var(--shadow, none);
     }
     .appbar h1 { margin: 0; font-size: 14px; white-space: nowrap; }
-    .appbar-sub { font-size: 10.5px; color: var(--muted); white-space: nowrap; margin-left: -4px; }
+
+    /* -- 파일 메뉴 (2026-09-20) --
+       앱바 왼쪽 끝은 "지금 무슨 파일인가" 하나만 말하고, 그 파일에 대한 일(이름·저장·불러오기·
+       초기화)은 눌러야 나온다. 전에는 다섯 칸이 늘 펼쳐져 있어 시선의 첫 자리를 통째로 먹었다. */
+    .file-menu { position: relative; }
+    .file-menu-btn {
+      display: flex; align-items: center; gap: 5px;
+      max-width: 15em;
+      background: transparent; border: 1px solid transparent;
+      font-size: 13px; font-weight: 800; color: var(--text);
+      padding: 4px 8px;
+    }
+    .file-menu-btn:hover { border-color: rgba(148,163,184,0.28); background: rgba(255,255,255,0.04); }
+    .file-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-menu-caret { color: var(--muted); font-size: 10px; flex: 0 0 auto; }
+    .file-menu-panel {
+      position: absolute; left: 0; top: calc(100% + 6px); z-index: 2600;
+      display: grid; gap: 6px;
+      min-width: 300px;
+      padding: 10px;
+      background: var(--panel);
+      border: 1px solid rgba(148,163,184,0.18);
+      border-radius: 12px;
+      box-shadow: 0 18px 44px rgba(2,6,23,0.55);
+    }
+    /* 주의: display 를 주는 클래스에는 [hidden] 규칙을 짝으로 붙인다(개발 원칙 U-12). */
+    .file-menu-panel[hidden] { display: none; }
+    .file-menu-label { font-size: 10.5px; color: var(--muted); }
+    .file-menu-panel .appbar-file { display: flex; align-items: center; gap: 5px; }
+    .file-menu-panel .appbar-file input { flex: 1; min-width: 0; width: auto; }
+    .file-menu-row { display: flex; gap: 5px; }
+    .file-menu-row button { flex: 1; }
+    .file-menu-danger { margin-top: 2px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.14); }
+    .file-menu-danger button { width: 100%; }
     /* 묶음 사이를 세로선으로 가른다 — 같은 줄에 있어도 다른 종류의 일이라는 표시다(게슈탈트 공통 영역). */
     .appbar-group { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
     .appbar-group + .appbar-group { padding-left: 8px; border-left: 1px solid rgba(148, 163, 184, 0.16); }
     .appbar-spacer { flex: 1 1 auto; min-width: 0; }
-    .appbar input[type="text"] { width: 11em; }
-    /* 되돌릴 수 없는 것은 맨 오른쪽 끝에 혼자 둔다 — 자주 쓰는 버튼 옆에 두면 잘못 누른다(Fitts). */
-    .appbar .danger { margin-left: 2px; }
 
     /* 캔버스 바 — 안무표 자체를 만지는 것만. `.top-actions` 와 같은 모양이되 이름을 갈라
        `document.querySelector('.top-actions')` 가 앱바를 집게 한다(문서·설정이 거기 붙는다). */
@@ -697,7 +727,6 @@
     /* ── 좁은 화면 전용 조작 (2026-09-12) ──
        넓은 화면에서는 **없는 것과 같다**. 자리를 차지하지 않고 탭 순서에도 들어가지 않는다. */
     .only-stacked { display: none !important; }   /* 사이드바가 위로 접히는 폭(≤1040)에서만 보인다 */
-    .only-compact { display: none !important; }   /* 폰 폭(≤720)에서만 보인다 */
     .sheet-backdrop { display: none; }
 
     /* ── 스크롤 락 버튼 ── */
@@ -1298,12 +1327,17 @@
     .routine-action-popup button:hover { background: rgba(99,102,241,0.25); }
     .routine-action-popup button.danger:hover { background: rgba(239,68,68,0.25); color: #f87171; }
 
-    /* 링크바 */
+    /* 링크바 — 2026-09-20 부터 **모든 폭에서** 기본으로 접혀 있다(전에는 좁은 화면에서만).
+       비어 있는 안무표에서 YouTube·ClickUp 두 줄이 도구와 격자 사이를 갈라놓고 있었고, 처음
+       켰을 때 채울 일이 없는 칸이다. 링크가 하나라도 든 파일을 열면 스스로 펴진다(app/main.js).
+       펴고 접는 것은 캔버스 바의 `🔗` 하나다. */
     .links-bar {
       padding: 5px 10px;
       border-bottom: 1px solid rgba(148,163,184,0.10);
-      display: flex; flex-direction: column; gap: 4px;
+      display: none; flex-direction: column; gap: 4px;
     }
+    body[data-links="on"] .links-bar { display: flex; }
+    body[data-links="on"] #linksToggleBtn { background: rgba(34,197,94,0.16); color: var(--accent); }
     .link-row {
       display: flex; align-items: center; gap: 6px; min-height: 26px;
     }
@@ -1680,10 +1714,7 @@
       }
       body[data-sheet="on"] .sheet-backdrop { opacity: 1; pointer-events: auto; }
 
-      /* ── 링크바·비고는 부를 때만 ── */
-      .links-bar { display: none; }
-      body[data-links="on"] .links-bar { display: flex; }
-      body[data-links="on"] #linksToggleBtn,
+      /* ── 비고는 부를 때만(링크바는 전역 규칙으로 옮겼다 — 2026-09-20) ── */
       body[data-notes="on"] #notesToggleBtn,
       body[data-sheet="on"] #sidebarSheetBtn { background: rgba(34,197,94,0.16); color: var(--accent); }
       /* ⚠ `--noteW` 는 ui/cssVars 가 렌더마다 인라인으로 쓴다 — !important 라야 이긴다. */
@@ -1733,7 +1764,6 @@
     }
 
     @media (max-width: 720px) {
-      .only-compact { display: inline-flex !important; }
 
       .app { padding: 6px; gap: 6px; }
 
@@ -1744,13 +1774,12 @@
         row-gap: 4px;
         align-items: center;
       }
-      .appbar h1, .appbar-sub, .appbar-spacer { display: none; }
-      .appbar .appbar-file, .appbar #clearBtn { display: none; }
-      body[data-more="on"] .appbar .appbar-file { display: flex; flex: 1 1 100%; }
-      body[data-more="on"] .appbar #clearBtn { display: inline-flex; }
-      body[data-more="on"] #appbarMoreBtn { background: rgba(34,197,94,0.16); color: var(--accent); }
+      .appbar-spacer { display: none; }
       .appbar button { padding: 5px 8px; font-size: 11px; min-height: 32px; }
-      .appbar .appbar-file input { min-width: 0; flex: 1; }
+      /* 파일 메뉴는 폰에서도 그대로 쓴다(2026-09-20) — 전에는 `☰` 로 펼치는 딴 길이었다.
+         다만 이름이 길어도 앱바 한 줄을 다 먹지 않게 폭을 줄이고, 메뉴는 화면 폭에 맞춘다. */
+      .file-menu-btn { max-width: 8em; font-size: 12px; }
+      .file-menu-panel { min-width: min(300px, calc(100vw - 24px)); }
 
       /* ── 캔버스 바 압축 ── */
       .canvas-bar { padding: 5px 8px; gap: 4px; }
@@ -1785,22 +1814,39 @@
 
   </style>
 </head>
-<body data-sheet="off" data-more="off" data-links="off" data-notes="off">
+<body data-sheet="off" data-links="off" data-notes="off">
   <div class="app">
     <!-- 앱바 — 문서 수준(이 파일)과 앱 수준(도구) 조작만. 안무표 자체를 만지는 것은 캔버스 바에 있다. -->
     <header class="appbar">
-      <!-- 좁은 화면에서만 보인다. 파일 조작과 `전체 초기화` 를 펼치고 접는다(only-compact). -->
-      <button id="appbarMoreBtn" class="ghost only-compact" type="button" aria-expanded="false" title="파일 조작 펼치기">☰</button>
-      <h1>안무 편집기</h1>
-      <span class="appbar-sub">스윙·재즈 솔로 안무표</span>
-
-      <div class="appbar-group appbar-file">
-        <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
-        <button id="saveBtn" class="primary">프로젝트 저장</button>
-        <button id="loadFileBtn" class="ghost">전체 불러오기</button>
-        <button id="mergeFileBtn" class="ghost accent">부분 불러오기</button>
-        <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
-        <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
+      <!-- 파일 메뉴 (2026-09-20) — 시선이 가장 먼저 닿는 자리는 "지금 무슨 파일인가" 가 갖는다.
+           전에는 앱 이름(`안무 편집기 · 스윙·재즈 솔로 안무표`)과 빈 입력칸이 이 자리를 먹었는데,
+           앱 이름은 한 번 알면 그만이고 입력칸은 처음 온 사람을 "여기부터 채우나?" 로 멈춰 세웠다.
+           ⚠ 안의 버튼 id 는 하나도 바뀌지 않았다 — input/controls.js 가 그 id 로 건다. -->
+      <div class="file-menu" id="fileMenuWrap">
+        <h1>
+          <button id="fileMenuBtn" class="file-menu-btn" type="button" aria-expanded="false" aria-haspopup="true" title="이름 바꾸기 · 저장 · 불러오기 · 초기화">
+            <span class="file-menu-name" id="fileMenuName">제목 없는 안무</span>
+            <span class="file-menu-caret">▾</span>
+          </button>
+        </h1>
+        <div class="file-menu-panel" id="fileMenuPanel" hidden>
+          <label class="file-menu-label" for="fileNameInput">안무표 이름</label>
+          <div class="appbar-file">
+            <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
+            <button id="saveBtn" class="primary">프로젝트 저장</button>
+          </div>
+          <div class="file-menu-row">
+            <button id="loadFileBtn" class="ghost">전체 불러오기</button>
+            <button id="mergeFileBtn" class="ghost accent">부분 불러오기</button>
+          </div>
+          <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
+          <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
+          <!-- 되돌릴 수 없는 것은 자주 쓰는 것과 같은 줄에 두지 않는다(Fitts). 전에는 앱바 맨
+               오른쪽에 늘 떠 있었다 — `✨ 말로 채우기` 바로 옆이었다. -->
+          <div class="file-menu-danger">
+            <button id="clearBtn" class="danger">전체 초기화(링크 포함)</button>
+          </div>
+        </div>
       </div>
 
       <div class="appbar-spacer"></div>
@@ -1813,8 +1859,6 @@
       <!-- main.js 가 여기에 `문서`·`⚙ 설정`·`✨ 말로 채우기` 를 붙인다.
            ⚠ `.top-actions` 는 문서에서 **여기 하나**여야 한다 — querySelector 가 첫 번째를 집는다. -->
       <div class="top-actions"></div>
-
-      <button id="clearBtn" class="danger">전체 초기화(링크 포함)</button>
     </header>
 
     <aside class="panel sidebar">
@@ -1943,10 +1987,13 @@
               <button id="sidebarSheetBtn" class="ghost accent only-stacked" type="button" title="동작 목록을 아래에서 엽니다">≡ 동작</button>
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+              <!-- app/main.js 가 여기에 `🎵 프레이즈` 를 붙인다. 곡 구조는 앱 설정이 아니라
+                   **이 안무표의 표시 방식**이라 `안무표 크기`·`기본 카운트` 옆이 제 자리다(2026-09-20). -->
+              <span class="canvas-slot" id="phrasingSlot"></span>
               <button id="quickPlaceBtn" class="ghost">+ 빠른 배치</button>
               <button id="videoPanelBtn" class="ghost" type="button" title="영상을 띄우고 재생 위치를 안무표에 표시합니다">▶ 영상 패널</button>
               <button id="createRoutineFromSelectionBtn" class="primary special" style="font-size:10px;padding:4px 8px;display:none;">루틴으로 편성</button>
-              <button id="linksToggleBtn" class="ghost only-stacked" type="button" title="링크 줄을 보이거나 숨깁니다">🔗</button>
+              <button id="linksToggleBtn" class="ghost" type="button" title="링크 줄(YouTube · ClickUp)을 보이거나 숨깁니다">🔗 링크</button>
               <button id="notesToggleBtn" class="ghost only-stacked" type="button" title="비고 칸을 보이거나 숨깁니다">비고</button>
             </div>
           </div>
