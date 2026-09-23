@@ -4,7 +4,7 @@
 
 ## 2026-09-23 — 받아 적기를 손에 맞추고, 안무표를 잃지 않게 했다
 
-PR 병합 전 — `capture-flow-and-safety`
+PR #29 (`capture-flow-and-safety`)
 
 **받아 적기**
 
