@@ -27,6 +27,13 @@
     "date": "2026-09-07",
     "why": "RESIZE_POLICY 의 keepLane·overwriteSameLane 을 false 로 뒤집어, 리사이즈도 배치·이동·복사와 같은 충돌 규칙(빈 레인을 찾아 아래층으로 쌓기)을 쓰게 했다. 기대값은 손으로 적지 않고 tests/replay.mjs 로 재생한 실제 결과를 기록한 것이다. 이전 기대값: 확대한 스텝이 레인 0 을 지키며 겹친 턴을 삭제했다. 지금은 턴·점프·폴이 모두 살아남고 스텝이 비어 있는 레인 2 로 내려가며, repack 이 폴을 레인 2 에서 레인 0 으로 당긴다.",
     "pr": "claude/resize-stacks-instead-of-deleting (#18→#19→#20 위에 쌓은 브랜치)"
+   },
+   {
+    "scenario": "remove-05-repack-scope-renders",
+    "previousId": "remove-05-repack-scope-leak",
+    "date": "2026-09-20",
+    "why": "repackLanes 가 **씨앗 행에 걸친 그룹의 모든 행**을 함께 재배정하게 하고(그전에는 인자로 받은 행만 봐서, 여러 행에 걸친 그룹은 Phase 2 의 maxSub 통일 때문에 방금 내린 레인이 도로 올라갔다), boardOps.finish 가 레인이 바뀐 행을 renderRows 에 합치게 했다. 그전에는 데이터만 바뀌고 화면은 옛 층에 남아, 겹친 둘 중 하나를 지워도 행이 두 줄인 채로 보였다 — 더블클릭 과녁이 흔들리던 까닭이다. 기대값은 손으로 적지 않고 tests/replay.mjs 로 재생한 실제 결과를 기록했다. 이전 기대값: render 가 `main:rows:[2]` 뿐이었다(3행의 subRow 는 바뀌었는데 그리지 않았다). 지금은 `main:rows:[2,3]` 이다. 배치 결과 자체는 그대로다.",
+    "pr": "병합 전 — capture-band-and-naming"
    }
   ]
  },
@@ -8852,8 +8859,8 @@
    }
   },
   {
-   "id": "remove-05-repack-scope-leak",
-   "desc": "삭제 후 repack Phase2 가 인자 밖 행(3행)의 subRow 까지 바꾸는데 렌더는 2행만 한다",
+   "id": "remove-05-repack-scope-renders",
+   "desc": "삭제 후 repack 이 인자 밖 행(3행)의 subRow 까지 바꾸고, 그 행도 함께 다시 그린다",
    "setup": {
     "rows": 8,
     "cols": 8,
@@ -8997,7 +9004,7 @@
     "re": [],
     "values": [],
     "render": [
-     "main:rows:[2]"
+     "main:rows:[2,3]"
     ],
     "alerts": [],
     "aliases": {}

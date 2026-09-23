@@ -38,7 +38,18 @@ export const STORAGE_KEYS = Object.freeze({
    * ⚠ 기본값과 같은 것은 안 담는다(domain/hotkeys.toSaved) — 손대지 않은 사람에게는 키 자체가 안 생긴다.
    * ⚠ 안무표가 아니라 **이 브라우저의 취향**이라 프로젝트 파일에 들어가지 않는다.
    */
-  hotkeys: 'choreo_hotkeys'
+  hotkeys: 'choreo_hotkeys',
+  /**
+   * 2026-09-21 신설. "어떤 버튼 다음에 어떤 버튼"의 횟수표(`{from: {to: n}}`).
+   * ⚠ 안무표가 아니라 **이 브라우저의 버릇**이라 프로젝트 파일에 들어가지 않는다.
+   * ⚠ 이 표로 화면을 움직이지 않는다 — `다음` 표식 하나를 어디에 붙일지만 정한다(domain/flowStats).
+   */
+  flowStats: 'choreo_flow_stats',
+  /**
+   * 2026-09-21 신설. 고른 화면 테마 id(domain/themes).
+   * ⚠ 이 브라우저의 취향이라 안무표 파일에 들어가지 않는다(단축키와 같은 규약).
+   */
+  theme: 'choreo_theme'
 });
 
 /**

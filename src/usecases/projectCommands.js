@@ -76,7 +76,9 @@ function mainView(state) {
     ...state.links,
     // media 는 링크와 달리 **평평하게 풀지 않는다** — 원래 블록 하나이고, 비어 있으면
     // buildProjectFile 이 키째로 뺀다(저장 바이트가 예전과 같아야 한다).
-    media: state.media
+    media: state.media,
+    // 단계별 할 일도 같다(2026-09-21) — 블록 하나이고, 비어 있으면 buildProjectFile 이 키째로 뺀다.
+    stepTodos: state.stepTodos
   };
 }
 
@@ -117,13 +119,18 @@ export function draftSnapshot(deps, options = {}) {
 /**
  * 담아 둔 것을 되살린다. **파일을 여는 것과 같은 길**을 탄다(loadProjectFromRecent).
  * ⚠ 되살릴 것이 없거나 모양이 아니면 아무 일도 하지 않는다 — 깨진 것을 반쯤 열면 더 나쁘다.
+ * ⚠ **더 새 판이 담은 것이면 `blocked` 로 알린다**(2026-09-22). 호출부는 그때 담기를 켜지 **않는다** —
+ *   못 읽는 것을 읽은 척하고 1.2초 뒤에 덮어쓰면 그것이 곧 데이터 손실이다. 이 한 가지가
+ *   미래 스키마 거절이 실제로 막는 손실 경로다.
  * @param {ProjectDeps} deps
  * @param {any} data
- * @returns {import('./store.js').Dirty}
+ * @returns {import('./store.js').Dirty & {blocked?:boolean}}
  */
 export function restoreDraft(deps, data) {
   if (!data || typeof data !== 'object' || !Array.isArray(data.placements)) return NONE;
-  return applyProjectData(deps, readProjectData(data, deps.env));
+  const read = readProjectData(data, deps.env);
+  if (!read.ok) return { ...NONE, blocked: true, notify: { kind: 'alert', message: read.message } };
+  return applyProjectData(deps, read.data);
 }
 
 /** 저장소가 `{ ok:false }` 로 실패를 알리면 오늘 throw 가 잡히던 자리와 같게 예외로 바꾼다. */
@@ -149,6 +156,14 @@ function pushRecent(deps, kind, entry) {
   return { savedLists: [kind] };
 }
 
+/**
+ * 더 새 판의 앱이 쓴 파일을 만났을 때의 문구(2026-09-22).
+ * 「무엇이 왜 안 되고 무엇을 하면 되는지」 셋을 한 문장에 담는다 — 새로고침이 실제 해결책이다.
+ */
+export const FUTURE_FILE_MESSAGE =
+  '이 파일은 더 새 판의 앱에서 저장됐습니다. 지금 앱으로 열면 새 필드가 사라지므로 열지 않았습니다 — '
+  + '페이지를 새로고침해 최신 앱으로 여세요.';
+
 /** 임포트한 파일 이름에서 확장자를 뗀다(4396·4415·4440·4468). 파일의 **원래 이름**을 넘겨라. */
 function baseName(fileName) {
   return String(fileName == null ? '' : fileName).replace(/\.[^.]+$/, '');
@@ -160,16 +175,22 @@ function baseName(fileName) {
  * 배선 지점 3곳: 전체 임포트(4394) · 부분 임포트(4413) · 최근목록 항목 로드(4274-4275).
  * ⚠ 세 번째를 빠뜨리면 임포트가 최근목록에 v2 를 넣는데 로드는 v1 로 읽어
  *   choreo_saved_files 안에서 두 포맷이 섞인다.
- * ⚠ 실패(NOT_AN_OBJECT / FUTURE_SCHEMA / NO_MIGRATION_PATH)는 **날값을 그대로 통과**시킨다.
- *   오늘 index.html 에는 version 을 읽는 코드가 한 줄도 없어서 어떤 JSON 이든 열리려 시도하며,
- *   여기서 새 안내 문구를 띄우면 동작 변경이다(설계 판단: 이번 PR 에서는 배선하지 않는다).
+ * ⚠ **미래 스키마는 거절한다**(2026-09-22 배선). `domain/project/migrations.js` 의 설계 원칙 3 —
+ *   "열고 다시 저장하는 순간 다운그레이드로 필드가 소멸한다" — 이 도메인에만 있고 여기서는 날값을
+ *   통과시켜 문이 열려 있었다. 폰의 캐시된 옛 앱이 PC 가 쓴 새 파일을 열어 담는 순간 새 필드가
+ *   조용히 사라지는 순서가 실제로 가능하다(같은 서버를 둘이 보는 설계다).
+ * ⚠ NOT_AN_OBJECT · NO_MIGRATION_PATH 는 **여전히 날값을 통과**시킨다. 옛 index.html 에는 version 을
+ *   읽는 코드가 한 줄도 없어서 어떤 JSON 이든 열리려 시도했고, 그 관용은 남긴다 — 거절해야 하는 것은
+ *   「우리가 못 읽는 것」이 아니라 「우리가 읽으면 망가뜨리는 것」이다.
  * ⚠ 되펼치는 한 줄 `{ ...res.value, ...res.value.doc }` 은 v2 문서를 v1 진입 규약(평평한 최상위)으로
  *   되돌린다. v2 는 링크 4필드 미러를 최상위에 유지하므로 applyLinksData 도 그대로 먹는다.
+ * @returns {{ok:true, data:any}|{ok:false, message:string}}
  */
 function readProjectData(raw, env) {
   const res = migrateProjectFile(raw, { now: () => nowIso(env) });
-  if (!res.ok) return raw;
-  return { ...res.value, ...res.value.doc };
+  if (res.ok) return { ok: true, data: { ...res.value, ...res.value.doc } };
+  if (res.code === 'FUTURE_SCHEMA') return { ok: false, message: FUTURE_FILE_MESSAGE };
+  return { ok: true, data: raw };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -276,6 +297,7 @@ function applyProjectData(deps, data) {
   // media(템포·소스)는 신설이라 원본 대응 줄이 없다. **`media` 가 없는 옛 파일은 여기서
   // DEFAULT_MEDIA 로 떨어지므로** 열리는 모습이 지금과 똑같다(normalize.js 참조).
   store.update({ media: normalized.media });
+  store.update({ stepTodos: normalized.stepTodos });
   store.patch('favorites', { routineIds: normalized.favoriteRoutineIds }); // 4372·4376
   storage.saveRoutineFavorites([...normalized.favoriteRoutineIds]);  // 4373·4377 (두 갈래 모두)
 
@@ -317,7 +339,9 @@ function applyProjectData(deps, data) {
 export function loadProjectFromFile(deps, input) {
   let dirty = NONE;
   try {
-    const data = readProjectData(input.data, deps.env);              // 4394 (+ 마이그레이션)
+    const read = readProjectData(input.data, deps.env);              // 4394 (+ 마이그레이션)
+    if (!read.ok) return { ...NONE, notify: { kind: 'alert', message: read.message } };
+    const data = read.data;
     dirty = mergeDirty(dirty, applyProjectData(deps, data));         // 4395
     const fileName = baseName(input.fileName);                       // 4396
     const savedAt = data && data.savedAt ? data.savedAt : nowIso(deps.env); // 4397
@@ -337,7 +361,9 @@ export function loadProjectFromFile(deps, input) {
  * @returns {import('./store.js').Dirty}
  */
 export function loadProjectFromRecent(deps, data) {
-  return applyProjectData(deps, readProjectData(data, deps.env));
+  const read = readProjectData(data, deps.env);
+  if (!read.ok) return { ...NONE, notify: { kind: 'alert', message: read.message } };
+  return applyProjectData(deps, read.data);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -405,7 +431,9 @@ function mergeProjectData(deps, data) {
 export function mergeProjectFromFile(deps, input) {
   let dirty = NONE;
   try {
-    const data = readProjectData(input.data, deps.env);              // 4413 (+ 마이그레이션)
+    const read = readProjectData(input.data, deps.env);              // 4413 (+ 마이그레이션)
+    if (!read.ok) return { ...NONE, notify: { kind: 'alert', message: read.message } };
+    const data = read.data;
     dirty = mergeDirty(dirty, mergeProjectData(deps, data));         // 4414
     const fileName = baseName(input.fileName);                       // 4415
     const savedAt = data && data.savedAt ? data.savedAt : nowIso(deps.env); // 4416
@@ -425,7 +453,9 @@ export function mergeProjectFromFile(deps, input) {
  * @returns {import('./store.js').Dirty}
  */
 export function mergeProjectFromRecent(deps, data) {
-  return mergeProjectData(deps, readProjectData(data, deps.env));
+  const read = readProjectData(data, deps.env);
+  if (!read.ok) return { ...NONE, notify: { kind: 'alert', message: read.message } };
+  return mergeProjectData(deps, read.data);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

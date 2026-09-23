@@ -201,6 +201,8 @@ linearOf(row, index, cols) = (row - 1) * cols + index
 | `placementToSpan(placement, cols, tempo)` | 배치 세그먼트 → `{startSec, endSec}` | `endSec` 은 배타적이라 `endSec - startSec === length * spc` 가 항상 성립한다 |
 | `groupToSpan(segments, cols, tempo)` | 같은 그룹의 세그먼트 배열 → 초 구간 | 세그먼트 사이의 빈틈은 메우지 않고 포함한다. 빈 배열이면 `null` |
 | `spanToCountRange(startSec, endSec, cols, tempo)` | 엔진의 초 구간 → `{from, to}` 격자 범위 | 양끝 포함. 뒤집힌/영길이 구간은 한 칸으로 접는다 |
+| `boundarySpanToCountRange(startSec, endSec, cols, tempo, gridCounts?)` | **경계로 끊은** 구간 → `{from, to, empty}` | 잇달아 놓아도 겹치지 않는다. 양 끝을 같은 규칙으로 붙인다 |
+| `boundaryCount(sec, tempo, gridCounts?)` | 경계 하나 → `{raw, snapped, offset}` | 붙이고 **남은 거리**를 돌려준다. 못 읽는 초면 `null` |
 | `tempoFromTwoPoints(a, b, beatsPerCount?)` | 두 점 → `Tempo` | 순서가 뒤집혔거나 간격이 0 이면 `null` |
 | `reanchor(tempo, point)` | bpm 유지, 앵커만 이동 | 보정점이 있으면 지우지 않고 지도 전체를 같은 만큼 민다(옛 앵커는 보정점으로 남는다) |
 | `tempoPoints(tempo)` | 변환에 실제로 쓰는 점열(앵커 + 보정점, 카운트순) | 길이 ≥ 1. 앵커와 같은 카운트의 보정점이 앵커를 덮고, 앵커와 되감기는 보정점은 버린다 |
@@ -217,6 +219,8 @@ timeToCount(sec, t)   = t.anchorCount + (sec - t.anchorSec) / secondsPerCount(t)
 ```
 
 보정점(`t.points`, 2026-09-09)이 있으면 `tempoPoints(t)` 가 앵커와 보정점을 합친 점열을 만들고, 두 함수는 **점열 사이를 구간별 선형으로 잇고 양 끝 밖은 위 식의 기울기로 뻗는다.** 점열이 카운트·초 모두 오름차순이라 두 함수는 서로의 정확한 역함수다. 앵커는 여전히 점 하나일 뿐이라 이 절의 다른 함수(`timeToCell` · `placementToSpan` · `spanToCountRange`)는 한 글자도 바뀌지 않았다.
+
+**받아 적기의 경계는 두 카운트 격자에 붙는다**(`CAPTURE_GRID_COUNTS = 2`, 2026-09-22). 스윙·재즈 솔로의 동작은 두 카운트 단위로만 시작하므로, 반올림한 값이 홀수 카운트를 가리키면 그것은 안무가 아니라 손의 오차다. 격자의 위상은 **카운트 0**(안무표의 1카운트)이다. `boundarySpanToCountRange` 는 양 끝에 같은 격자를 먹여 앞 구간의 끝과 뒤 구간의 시작이 어긋나지 않게 하고, `boundaryCount` 가 붙이면서 버려진 거리를 따로 돌려준다 — 그 거리를 모아 「손이 늦은 것인가, 영상 속도가 다른 것인가」를 가리는 것이 `domain/captureDrift.js` 다. ⚠ 격자를 키우면 **두 경계가 같은 칸에 붙어 놓을 수 없는 구간**(`empty`)이 늘어난다. 두 카운트보다 짧은 동작이 없다는 전제가 이 값의 근거다.
 
 경계에서는 `1e-9` 카운트의 허용 오차를 흡수해서 내림한다. 이게 없으면 `countToTime` 을 거쳐 돌아온 정확히 8인 카운트가 `7.999999999999998` 로 나오고, 재생 헤드가 한 칸 뒤 칸을 `fraction 0.99999` 로 가리킨다. 400bpm·`beatsPerCount 0.125` 에서도 `1e-9` 카운트는 2e-11 초라 무해하다.
 

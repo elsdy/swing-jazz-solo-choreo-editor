@@ -270,3 +270,28 @@ export function saveClipSetting(next) {
   const cur = loadClipSetting();
   localKv.set(STORAGE_KEYS.clipFolder, { ...cur, ...(next || {}) });
 }
+
+/**
+ * 작업 차례 기록(`{from: {to: n}}`). 손상된 값은 도메인이 흡수하므로 여기서는 날것을 준다.
+ * @returns {object} 없으면 빈 객체
+ */
+export function loadFlowStats() {
+  const raw = localKv.get(STORAGE_KEYS.flowStats, null);
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+}
+
+/** @param {object} stats domain/flowStats 가 만든 표 그대로 */
+export function saveFlowStats(stats) {
+  localKv.set(STORAGE_KEYS.flowStats, stats || {});
+}
+
+/** 고른 화면 테마 id. 손상된 값은 도메인(normalizeTheme)이 흡수하므로 날것을 준다. */
+export function loadTheme() {
+  const raw = localKv.get(STORAGE_KEYS.theme, null);
+  return typeof raw === 'string' ? raw : '';
+}
+
+/** @param {string} id domain/themes 의 id */
+export function saveTheme(id) {
+  localKv.set(STORAGE_KEYS.theme, String(id || ''));
+}

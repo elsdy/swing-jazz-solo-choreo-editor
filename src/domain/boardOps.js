@@ -143,6 +143,11 @@ function unionRows(...lists) {
 
 /**
  * repack 여부에 따라 결과를 조립한다.
+ *
+ * ⚠ **레인이 바뀐 행은 반드시 다시 그린다**(2026-09-20). 그전에는 호출부가 넘긴 renderRows 만
+ *   그려서, repack 이 그 밖의 행을 내려도 화면은 옛 층에 그대로 뒀다 — 겹친 둘 중 하나를 지워도
+ *   남은 블록이 아래층에 붙어 있고 행이 두 줄인 채로 보였다(더블클릭 과녁이 흔들리는 까닭).
+ *   `renderAllRows` 면 이미 전부라 더할 것이 없다.
  * @param {object[]} placements  repack 전 배치 목록
  * @param {number[]} rows        원본이 repackSubRows 에 넘기던 행 목록
  * @param {number[]} renderRows  원본이 renderRows 에 넘기던 행 목록
@@ -152,7 +157,7 @@ function finish(placements, rows, renderRows, policy) {
   const packed = policy.repack ? repackLanes(placements, rows) : null;
   return {
     placements: packed ? packed.placements : placements,
-    renderRows: policy.renderAllRows ? 'all' : renderRows,
+    renderRows: policy.renderAllRows ? 'all' : unionRows(renderRows, packed ? packed.changedRows : []),
     changedRows: unionRows(rows, packed ? packed.changedRows : [])
   };
 }

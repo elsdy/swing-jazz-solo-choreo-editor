@@ -23,10 +23,25 @@
     PUT  /api/clips?project=P&name=N      본문 = 파일 바이트. <root>/<subdir>/<P>/<N> 으로 저장(겹치면 " (2)").
                                           → {path:'<subdir>/<P>/<N>', url:'/clips/<path>', size}
     GET  /api/clips?project=P             그 프로젝트의 클립 목록 [{path, name, size, mtime}]
-    PUT  /api/projects?name=N             본문 = 안무표 JSON. <root>/<projectsSubdir>/<N>.json 으로 저장(**덮어쓴다**)
+    PUT  /api/projects?name=N[&auto=1][&ifMtimeNs=T]
+                                          본문 = 안무표 JSON. <root>/<projectsSubdir>/<N>.json 으로 저장(**덮어쓴다**).
+                                          임시 파일에 쓰고 os.replace 로 바꾸므로 반쪽 파일이 남지 않고, 덮어쓰기 전
+                                          직전 판을 .history/<N>.<시각>.json 으로 남긴다 — 2026-09-22.
+                                          auto=1 은 **앱이 스스로 담은 것**(1.2초마다)이라 이력을 10분에 한 번만
+                                          12개까지 남긴다. 사람이 누른 저장은 매번 20개까지 남긴다.
+                                          ifMtimeNs 는 **내가 아는 그 파일의 시각**이다(2026-09-22, 나노초 **문자열** —
+                                          JS 의 안전 정수를 넘어 숫자로 주고받으면 끝자리가 깎인다). 지금 파일이 그와
+                                          다르면 다른 곳에서 바뀐 것이므로 409 로 거절하고 {mtimeNs} 를 돌려준다 —
+                                          두 탭·두 기기가 서로의 작업을 말없이 지우던 것을 막는다.
+                                          파일이 아예 없으면 그냥 쓴다(누가 지웠다고 내 작업까지 버릴 까닭은 없다)
+    GET  /api/projects/<이름>             응답 헤더 X-Choreo-Mtime-Ns 에 그 파일의 시각이 실린다(위 ifMtimeNs 의 재료)
     GET  /api/projects                    보관된 안무표 목록 [{name, size, mtime}] — 최근 목록의 주인
     GET  /api/projects/<이름>             그 파일을 그대로 내준다
-    DELETE /api/projects?name=N           그 파일을 지운다(되돌릴 수 없다 — 휴지통이 없다)
+    GET  /api/projects/.history?name=N    그 안무표의 직전 판 목록 [{file, name, stamp, size, mtime}] (최근이 앞)
+    GET  /api/projects/.trash             휴지통 목록 [{file, name, stamp, size, mtime}] (최근이 앞)
+    DELETE /api/projects?name=N           그 파일을 **휴지통(.trash/)으로 옮긴다** — 되돌릴 수 있다(2026-09-22)
+    POST /api/projects/restore {file, from}   from='trash'|'history' 의 file 을 <이름>.json 으로 되살린다.
+                                          그 이름의 파일이 이미 있으면 그것을 먼저 .history 에 남긴다 — 복구가 무엇도 지우지 않는다
     HEAD /api/clips/<path>                있는지(200/404)
     GET  /clips/<path>                    파일. Range 를 지원한다(<video> 탐색에 필수)
     POST /api/clips/trim {path, inSec, outSec}   보관된 클립을 [inSec, outSec) 로 잘라 **다시 인코딩**해 같은 폴더에
@@ -45,6 +60,8 @@
     PUT  /api/llm/config  {provider?, model?, baseUrl?, apiKey?}   설정 변경. apiKey 는 .clipserver.json 에만 남는다
     POST /api/llm/refine  {text, context}  말하거나 대충 적은 텍스트 → 다듬은 안무 설명(평문)
     POST /api/llm/compose {prompt, context} 다듬은 설명 → 안무표 스키마(JSON). 서버가 스키마로 검증한다
+    POST /api/llm/name    {texts, context}  마이크로 들은 거친 말 여럿 → 동작 목록의 정식 이름(JSON).
+                                            한 번에 여러 개를 묻는다 — 받아 적는 중에는 한 마디씩 왕복할 겨를이 없다
 
     LLM 제공자: anthropic(Claude, 기본 claude-opus-5) · openai(OpenAI, 기본 gpt-5) · ollama(로컬 — Ollama 든 LM Studio·llama.cpp 같은
     OpenAI 호환이든, 주소만 맞으면 서버가 API 종류를 스스로 알아낸다. 설정의 모델 이름이 그 서버에 없으면 로드된 모델을 쓴다.
@@ -491,6 +508,130 @@ def model_is_needed(entry, pose_model):
 # 설정 — .clipserver.json
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── 안무표 파일의 안전망 (2026-09-22) ──────────────────────────────────────────
+#
+# 상용화 로드맵(docs/ROADMAP.md 「기둥 D」)의 첫 항목이다. 그전까지는 같은 이름을 제자리에서
+# 덮어쓰고(write_bytes) 삭제는 unlink 였다 — 쓰다 죽으면 반쪽 파일, 삭제 두 번 누름이 영구 삭제.
+# 실측으로 이름 붙은 안무가 저장본 없이 작업 문서 한 칸에만 살아 있던 날 정했다.
+#
+#   · 쓰기는 임시 파일 → os.replace. 같은 폴더 안이라 원자적이다.
+#   · 덮어쓰기 전 직전 판을 .history/<이름>.<시각>.json 으로 **복사**해 둔다(옮기지 않는다 —
+#     새 쓰기가 실패해도 원본이 그 자리에 있어야 한다).
+#   · **자동으로 담은 것(auto=1)** 은 1.2초마다 덮어쓰므로 저장마다 남기면 초당 한 장이다.
+#     10분에 한 번만 남기고 두 시간치(12개)를 든다 — "10분 전으로" 가 목적이다. 사람이 누른
+#     저장은 매번 남긴다(20개) — 그것이 사용자가 「여기」라고 표시한 자리다.
+#     ⚠ 이름의 `_` 접두는 **옛 클라이언트용 폴백**이다(auto 를 안 보내는 판). 작업 문서 이름이
+#       `_작업중` 이던 시절의 규칙이고, 지금은 이름 붙은 파일에도 자동 담기가 들어온다.
+#   · 삭제는 .trash/ 로 **이동**. 복구는 그 반대이고, 복구가 기존 파일을 덮을 때는 그것도 .history 에 남긴다.
+#   · 목록(_list_projects)은 점으로 시작하는 것을 건너뛰므로 두 폴더는 목록에 안 보인다.
+HISTORY_DIR = '.history'
+TRASH_DIR = '.trash'
+HISTORY_KEEP = 20
+DRAFT_PREFIX = '_'
+DRAFT_HISTORY_KEEP = 12
+DRAFT_HISTORY_GAP_SEC = 600
+TRASH_KEEP = 100
+
+
+def stamp_of(ts):
+    """파일 이름에 넣는 시각. 정렬이 곧 시간순이 되게 자리수를 고정한다."""
+    return time.strftime('%Y%m%d-%H%M%S', time.localtime(ts))
+
+
+def split_stamped(file_name):
+    """'<이름>.<시각>.json' → (이름, 시각). 이름에 점이 있어도 되게 오른쪽에서 가른다. 꼴이 아니면 (이름, '')."""
+    base = file_name[:-5] if file_name.endswith('.json') else file_name
+    if '.' in base:
+        name, stamp = base.rsplit('.', 1)
+        if re.fullmatch(r'\d{8}-\d{6}(-\d+)?', stamp):
+            return name, stamp
+    return base, ''
+
+
+def list_stamped(folder):
+    """보관함 폴더의 항목들, 최근이 앞."""
+    items = []
+    if folder.is_dir():
+        for entry in folder.iterdir():
+            if not entry.is_file() or entry.suffix != '.json':
+                continue
+            name, stamp = split_stamped(entry.name)
+            st = entry.stat()
+            items.append({'file': entry.name, 'name': name, 'stamp': stamp,
+                          'size': st.st_size, 'mtime': int(st.st_mtime), '_ns': st.st_mtime_ns})
+    # ⚠ 정렬은 나노초 mtime 이다. 이력은 copyfile 로 만들어 **남긴 시각**이 mtime 이므로 이 순서가
+    #   곧 판의 순서다. 초 단위 stamp 로 정렬하면 같은 초에 두 번 남긴 것의 앞뒤를 못 가린다.
+    items.sort(key=lambda it: (it['_ns'], it['file']), reverse=True)
+    for it in items:
+        del it['_ns']
+    return items
+
+
+def prune_stamped(folder, name, keep):
+    """같은 이름의 항목을 최근 keep 개만 남긴다. name 이 None 이면 폴더 전체를 센다."""
+    items = [it for it in list_stamped(folder) if name is None or it['name'] == name]
+    for it in items[keep:]:
+        try:
+            (folder / it['file']).unlink()
+        except OSError:
+            pass
+
+
+def unique_stamped(folder, name, stamp):
+    """같은 초에 두 번 남겨도 겹치지 않게 '-2' 를 붙인다."""
+    dest = folder / f'{name}.{stamp}.json'
+    n = 2
+    while dest.exists():
+        dest = folder / f'{name}.{stamp}-{n}.json'
+        n += 1
+    return dest
+
+
+def snapshot_before_overwrite(target, auto=False):
+    """덮어쓰기 직전의 파일을 .history 에 복사해 둔다. 실패해도 저장을 막지 않는다(최선 노력)."""
+    if not target.is_file():
+        return None
+    folder = target.parent / HISTORY_DIR
+    name = target.stem
+    is_draft = auto or name.startswith(DRAFT_PREFIX)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        if is_draft:
+            newest = next((it for it in list_stamped(folder) if it['name'] == name), None)
+            if newest and time.time() - newest['mtime'] < DRAFT_HISTORY_GAP_SEC:
+                return None
+        dest = unique_stamped(folder, name, stamp_of(target.stat().st_mtime))
+        # copy2 가 아니라 copyfile — 이력 파일의 mtime 은 「남긴 시각」이어야 목록이 판의 순서가 된다.
+        # 그 판을 마지막으로 고친 시각은 파일 이름의 stamp 가 든다.
+        shutil.copyfile(target, dest)
+        prune_stamped(folder, name, DRAFT_HISTORY_KEEP if is_draft else HISTORY_KEEP)
+        return dest
+    except OSError:
+        return None
+
+
+def mtime_ns_of(path):
+    """파일의 시각(나노초). 없으면 None. 이것이 「내가 아는 판」의 표식이다."""
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def write_atomic(target, raw):
+    """임시 파일에 쓰고 제자리로 바꾼다. 쓰다 죽어도 반쪽 파일이 target 자리에 서지 않는다."""
+    tmp = target.with_name(f'{target.name}.tmp-{os.getpid()}')
+    try:
+        tmp.write_bytes(raw)
+        os.replace(tmp, target)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
 LLM_DEFAULTS = {
     'anthropic': {'model': 'claude-opus-5', 'baseUrl': 'https://api.anthropic.com'},
     'openai': {'model': 'gpt-5', 'baseUrl': 'https://api.openai.com'},
@@ -690,6 +831,88 @@ REFINE_INSTRUCTION = (
 )
 
 COMPOSE_INSTRUCTION = '아래 안무 설명을 스키마에 맞는 JSON 으로 만들어라.\n\n설명:\n'
+
+# ── 들은 말 → 동작 이름 (2026-09-22) ────────────────────────────────────────────
+#
+# `말로 채우기`(refine/compose)와 **일부러 갈라 둔** 작은 길이다. 저쪽은 안무 전체를 받아 격자
+# 좌표까지 정하지만, 이쪽이 아는 것은 「이 한 마디가 어느 동작을 가리키나」 하나다. 자리는 이미
+# 받아 적기가 정해 놓았다. 그래서 프롬프트도 출력도 훨씬 작고, 그만큼 빨리 돌아온다.
+#
+# 이 길이 실제로 푸는 문제는 하나다 — **한글로 옮겨 적은 영어를 원어로 되돌리는 것.**
+# 「킥볼체인지」와 `Kick Ball Change` 는 글자가 한 자도 겹치지 않아 규칙으로는 못 맞춘다
+# (그 규칙은 src/domain/moveMatch.js 에 있고, 거기서 확신이 선 것은 여기까지 오지 않는다).
+
+NAME_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'names': {
+            'type': 'array',
+            'description': '들은 말 하나당 하나. 들어온 순서를 그대로 지킨다.',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'heard': {'type': 'string', 'description': '들은 말 그대로(짝을 맞추는 데 쓴다)'},
+                    'name': {'type': 'string', 'description': '붙일 동작 이름. 목록에 있으면 정확히 그 표기'},
+                    'category': {'type': 'string', 'description': '카테고리 키. 목록에 없는 새 동작일 때만 고른다'},
+                    'isNew': {'type': 'boolean', 'description': '동작 목록에 없는 이름인가'},
+                    'sure': {'type': 'boolean', 'description': '확신하는가. 아니면 화면이 사람에게 확인을 받는다'},
+                },
+                'required': ['heard', 'name', 'category', 'isNew', 'sure'],
+                'additionalProperties': False,
+            },
+        },
+    },
+    'required': ['names'],
+    'additionalProperties': False,
+}
+
+
+def name_system_prompt(context):
+    moves = [str(m) for m in (context.get('moves') or [])][:400]
+    cats = context.get('categories') or {}
+    cat_lines = ', '.join(f'{k}({v})' for k, v in list(cats.items())[:40]) or 'step'
+    return (
+        '너는 스윙/재즈 솔로 안무 편집기의 도우미다. 사용자가 영상을 보며 **마이크에 대고 말한** 동작 이름을 '
+        '받아 적은 글자가 들어온다. 음성 인식 오류·말버릇·줄임말이 섞여 있다.\n'
+        f'동작 목록: {", ".join(moves) if moves else "(비어 있음)"}\n'
+        f'카테고리 키(라벨): {cat_lines}\n'
+        '규칙:\n'
+        '1. 목록에 있는 동작을 가리키는 말이면 **목록의 표기를 글자 그대로** 낸다. 한국어 발음으로 적힌 영어 이름이 '
+        '가장 흔하다 — 「킥볼체인지」는 Kick Ball Change, 「수지큐」는 Suzie Q, 「쇼티조지」는 Shorty George 다.\n'
+        '2. 목록에 없으면 들은 말을 깔끔한 이름으로 다듬고 isNew 를 참으로, category 를 고른다.\n'
+        '3. **지어내지 마라.** 무슨 동작인지 모르겠으면 들은 말을 그대로 name 에 넣고 sure 를 거짓으로 둔다. '
+        '엉뚱한 동작을 확신해서 붙이면 사용자는 영상을 다시 보기 전까지 그것을 모른다.\n'
+        '4. 들어온 개수와 순서를 그대로 지킨다. heard 에는 들은 말을 손대지 말고 그대로 넣는다.'
+    )
+
+
+NAME_INSTRUCTION = '아래 말들을 동작 이름으로 바꿔라. 한 줄이 하나다.\n\n'
+
+
+def validate_names(raw, texts):
+    """NAME_SCHEMA 의 손 검증. 짝이 안 맞는 것은 버리지 않고 **들은 말 그대로**로 채운다 —
+    한 줄이 비면 그 블록만 이름이 사라져, 사용자는 무엇이 빠졌는지 알 수 없다."""
+    if not isinstance(raw, dict):
+        return None, 'names 응답이 객체가 아닙니다'
+    by_heard = {}
+    for item in raw.get('names') or []:
+        if not isinstance(item, dict):
+            continue
+        heard = str(item.get('heard') or '').strip()
+        name = str(item.get('name') or '').strip()
+        if not heard or not name:
+            continue
+        by_heard.setdefault(heard, {
+            'heard': heard, 'name': name,
+            'category': str(item.get('category') or ''),
+            'isNew': bool(item.get('isNew')),
+            'sure': bool(item.get('sure')),
+        })
+    out = []
+    for t in texts:
+        hit = by_heard.get(t)
+        out.append(hit or {'heard': t, 'name': t, 'category': '', 'isNew': True, 'sure': False})
+    return {'names': out}, None
 
 
 def http_json(url, payload, headers, timeout=180):
@@ -982,8 +1205,9 @@ class Handler(SimpleHTTPRequestHandler):
         if self.command != 'HEAD':
             self.wfile.write(body)
 
-    def _error(self, status, message):
-        self._json(status, {'ok': False, 'error': message})
+    def _error(self, status, message, extra=None):
+        """오류 한 벌. `extra` 는 호출부가 판단에 쓸 값을 함께 싣는 자리다(예: 충돌한 파일의 시각)."""
+        self._json(status, {'ok': False, 'error': message, **(extra or {})})
 
     def _read_json(self):
         length = int(self.headers.get('Content-Length') or 0)
@@ -1038,6 +1262,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(HTTPStatus.OK, {'ok': True, 'volumes': storage_volumes(self.config.root)})
         if url.path == '/api/projects':
             return self._list_projects()
+        # ⚠ 점으로 시작하는 두 이름은 <이름> 경로보다 먼저 잡는다. safe_segment 가 앞의 점을 떼므로
+        #   어떤 안무표도 이 이름을 가질 수 없다 — 충돌이 없다.
+        if url.path == '/api/projects/.trash':
+            return self._list_trash()
+        if url.path == '/api/projects/.history':
+            return self._list_history(parse_qs(url.query))
         if url.path.startswith('/api/projects/'):
             return self._read_project(unquote(url.path[len('/api/projects/'):]))
         if url.path.startswith('/api/clips/'):
@@ -1093,6 +1323,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self._llm_refine()
         if url.path == '/api/llm/compose':
             return self._llm_compose()
+        if url.path == '/api/llm/name':
+            return self._llm_name()
+        if url.path == '/api/projects/restore':
+            return self._restore_project()
         if url.path == '/api/clips/trim':
             return self._trim_clip()
         if url.path == '/api/models/fetch':
@@ -1132,6 +1366,26 @@ class Handler(SimpleHTTPRequestHandler):
         if err:
             return self._error(HTTPStatus.BAD_GATEWAY, err)
         return self._json(HTTPStatus.OK, {'ok': True, 'prompt': text})
+
+    def _llm_name(self):
+        data = self._read_json()
+        texts = data.get('texts') if isinstance(data, dict) else None
+        if not isinstance(texts, list):
+            return self._error(HTTPStatus.BAD_REQUEST, 'texts is required')
+        texts = [str(t).strip() for t in texts if str(t or '').strip()][:30]
+        if not texts:
+            return self._error(HTTPStatus.BAD_REQUEST, 'texts is required')
+        context = data.get('context') if isinstance(data.get('context'), dict) else {}
+        raw, err = call_llm(
+            self.config, name_system_prompt(context),
+            NAME_INSTRUCTION + '\n'.join(texts), NAME_SCHEMA
+        )
+        if err:
+            return self._error(HTTPStatus.BAD_GATEWAY, err)
+        names, verr = validate_names(raw, texts)
+        if verr:
+            return self._error(HTTPStatus.BAD_GATEWAY, verr)
+        return self._json(HTTPStatus.OK, {'ok': True, **names})
 
     def _llm_compose(self):
         data = self._read_json()
@@ -1411,6 +1665,21 @@ class Handler(SimpleHTTPRequestHandler):
         if length <= 0:
             return self._error(HTTPStatus.BAD_REQUEST, 'empty body')
         raw = self.rfile.read(length)
+        # 앱이 스스로 담은 것인가(1.2초마다). 이력을 얼마나 자주 남길지가 여기서 갈린다.
+        auto = (query.get('auto') or [''])[0] in ('1', 'true', 'yes')
+        # 「내가 아는 판」과 지금 파일이 같은가(2026-09-22). 다르면 다른 곳에서 바뀐 것이다.
+        # ⚠ **같지 않으면** 거절이지 «더 새 것이면» 이 아니다. 기기 시계가 뒤로 간 경우에도
+        #   덮어쓰기를 막아야 한다 — 비교의 뜻은 「내가 읽은 그 판인가」이지 시간의 앞뒤가 아니다.
+        # ⚠ 파일이 **없으면 그냥 쓴다.** 누가 지웠다고 지금 내 작업까지 버릴 까닭은 없다.
+        want = (query.get('ifMtimeNs') or [''])[0]
+        if want.isdigit():
+            now_ns = mtime_ns_of(target)
+            if now_ns is not None and now_ns != int(want):
+                # ⚠ **문자열로 보낸다.** 나노초는 1.79e18 이라 JS 의 안전 정수(9.0e15)를 넘는다 —
+                #   숫자로 보내면 브라우저가 JSON.parse 에서 끝자리를 잃고, 그 값을 되돌려받은
+                #   서버가 「다르다」고 답해 **혼자서도 충돌한다**(실측으로 그랬다).
+                return self._error(HTTPStatus.CONFLICT, 'changed elsewhere',
+                                   extra={'mtimeNs': str(now_ns), 'name': target.name})
         # ⚠ 내용이 JSON 인지 여기서 확인한다. 깨진 바이트를 받아 두면 다음에 여는 쪽에서 터진다.
         try:
             json.loads(raw.decode('utf-8'))
@@ -1418,33 +1687,94 @@ class Handler(SimpleHTTPRequestHandler):
             return self._error(HTTPStatus.BAD_REQUEST, 'body must be json')
         try:
             self.config.projects_dir.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(raw)
+            kept = snapshot_before_overwrite(target, auto)   # 직전 판을 먼저 남긴다(최선 노력)
+            write_atomic(target, raw)
         except OSError as exc:
             return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f'write failed: {exc}')
         st = target.stat()
         return self._json(HTTPStatus.CREATED, {
             'ok': True, 'name': target.name, 'size': st.st_size, 'mtime': int(st.st_mtime),
+            'mtimeNs': str(st.st_mtime_ns),      # 다음 쓰기의 ifMtimeNs 가 된다. ⚠ 문자열이다(위 주석)
             'dir': str(self.config.projects_dir),
+            'history': kept.name if kept else None,
         })
 
     def _delete_project(self, query):
-        """보관 폴더의 안무표 하나를 지운다. **되돌릴 수 없다** — 휴지통에 넣지 않는다.
+        """보관 폴더의 안무표 하나를 **휴지통(.trash/)으로 옮긴다**(2026-09-22, 그전에는 unlink 였다).
 
         목록의 주인이 이 폴더이므로, 목록에서만 지우면 새로고침에 도로 나타난다. 「지웠다」가
-        참이 되려면 파일이 없어져야 한다. 없는 파일을 지우라고 해도 성공으로 답한다(멱등) —
-        두 번 눌렀을 때 두 번째만 빨개지는 것을 막는다.
+        참이 되려면 파일이 이 폴더에서 없어져야 한다 — 휴지통은 점 폴더라 목록에 안 보인다.
+        없는 파일을 지우라고 해도 성공으로 답한다(멱등) — 두 번 눌렀을 때 두 번째만 빨개지는
+        것을 막는다. 되살리는 길은 POST /api/projects/restore 다.
         """
         name = (query.get('name') or [''])[0]
         target = self._project_file(name)
         if not target:
             return self._error(HTTPStatus.BAD_REQUEST, 'name required')
+        trashed = None
         try:
-            target.unlink()
-        except FileNotFoundError:
-            pass
+            if target.is_file():
+                folder = self.config.projects_dir / TRASH_DIR
+                folder.mkdir(parents=True, exist_ok=True)
+                dest = unique_stamped(folder, target.stem, stamp_of(time.time()))
+                os.replace(target, dest)
+                prune_stamped(folder, None, TRASH_KEEP)
+                trashed = dest.name
         except OSError as exc:
             return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f'delete failed: {exc}')
         return self._json(HTTPStatus.OK, {'ok': True, 'name': target.name,
+                                          'dir': str(self.config.projects_dir), 'trashed': trashed})
+
+    def _list_trash(self):
+        """휴지통 목록. 최근에 버린 것이 앞."""
+        folder = self.config.projects_dir / TRASH_DIR
+        return self._json(HTTPStatus.OK, {'ok': True, 'dir': str(folder), 'items': list_stamped(folder)})
+
+    def _list_history(self, query):
+        """한 안무표의 직전 판 목록. 최근이 앞."""
+        name = (query.get('name') or [''])[0]
+        target = self._project_file(name)
+        if not target:
+            return self._error(HTTPStatus.BAD_REQUEST, 'name required')
+        folder = self.config.projects_dir / HISTORY_DIR
+        items = [it for it in list_stamped(folder) if it['name'] == target.stem]
+        return self._json(HTTPStatus.OK, {'ok': True, 'dir': str(folder), 'name': target.name, 'items': items})
+
+    def _restore_project(self):
+        """휴지통·이력의 파일 하나를 <이름>.json 으로 되살린다.
+
+        ⚠ **복구는 무엇도 지우지 않는다.** 그 이름의 파일이 이미 있으면 먼저 .history 에 남긴다.
+        ⚠ 이력에서 되살릴 때는 이력 파일을 **복사**한다(이력은 그대로 남는다). 휴지통에서는 **옮긴다**.
+        """
+        data = self._read_json()
+        if not isinstance(data, dict):
+            return self._error(HTTPStatus.BAD_REQUEST, 'invalid json')
+        source = str(data.get('from') or '')
+        if source not in ('trash', 'history'):
+            return self._error(HTTPStatus.BAD_REQUEST, 'from must be trash or history')
+        file_name = safe_segment(str(data.get('file') or ''), '')
+        if not file_name or not file_name.endswith('.json'):
+            return self._error(HTTPStatus.BAD_REQUEST, 'file required')
+        folder = self.config.projects_dir / (TRASH_DIR if source == 'trash' else HISTORY_DIR)
+        src = folder / file_name
+        if not src.is_file():
+            return self._error(HTTPStatus.NOT_FOUND, 'no such file')
+        name, _stamp = split_stamped(file_name)
+        target = self._project_file(str(data.get('name') or name))
+        if not target:
+            return self._error(HTTPStatus.BAD_REQUEST, 'name required')
+        try:
+            self.config.projects_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_before_overwrite(target)
+            if source == 'trash':
+                os.replace(src, target)
+            else:
+                write_atomic(target, src.read_bytes())
+        except OSError as exc:
+            return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f'restore failed: {exc}')
+        st = target.stat()
+        return self._json(HTTPStatus.OK, {'ok': True, 'name': target.name, 'size': st.st_size,
+                                          'mtime': int(st.st_mtime), 'mtimeNs': str(st.st_mtime_ns),
                                           'dir': str(self.config.projects_dir)})
 
     def _list_projects(self):
@@ -1473,6 +1803,10 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(raw)))
         self.send_header('Cache-Control', 'no-store')
+        # 읽은 판의 표식. 앱이 이것을 들고 있다가 쓸 때 ifMtimeNs 로 되돌려준다(2026-09-22).
+        ns = mtime_ns_of(target)
+        if ns is not None:
+            self.send_header('X-Choreo-Mtime-Ns', str(ns))
         self.end_headers()
         self.wfile.write(raw)
 

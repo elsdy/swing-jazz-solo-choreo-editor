@@ -19,14 +19,23 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
-  DESKTOP_CELL_W, MIN_FIT_CELL_W, boardSignature, buildSegments, cellOf, fitCellWidth, linearOf, totalCellsFrom
+  DESKTOP_CELL_W, MAX_FIT_CELL_W, MIN_FIT_CELL_W, boardSignature, buildSegments, cellOf, fitCellWidth, linearOf, totalCellsFrom
 } from '../../src/domain/grid.js';
 import {
-  DEFAULT_TEMPO, cellToTime, countToTime, isTempoUsable, normalizeTempo,
+  DEFAULT_TEMPO, driftCounts, tapSpread, cellToTime, countToTime, isTempoUsable, normalizeTempo,
   placementToSpan, secondsPerCount, tempoFromTwoPoints, timeToCell, timeToCount,
   tempoPoints, addTempoPoint, removeTempoPoint, clearTempoPointsOf, reanchor, normalizeTempoPoints,
-  rowsForDuration, boundarySpanToCountRange, spanToCountRange
+  rowsForDuration, boundarySpanToCountRange, spanToCountRange, boundaryCount, CAPTURE_GRID_COUNTS
 } from '../../src/domain/tempo.js';
+import {
+  cleanSpoken, normalizeSpoken, choseongOf, similarity,
+  matchSpoken, spokenCandidates, resolveSpokenName, SURE_SCORE, FLOOR_SCORE
+} from '../../src/domain/moveMatch.js';
+import * as VoiceCmd from '../../src/usecases/voiceNameCommands.js';
+import {
+  noteDriftSample, clearDriftSamples, driftReport,
+  MAX_DRIFT_SAMPLES, MIN_DRIFT_SAMPLES, LAG_COUNTS, SLOPE_MIN
+} from '../../src/domain/captureDrift.js';
 import {
   MEDIA_PLAYER_MEMBERS, assertMediaPlayer, isMediaPlayer, normalizeClipSegments
 } from '../../src/ports/media.js';
@@ -38,7 +47,7 @@ import {
 import { DEFAULT_CATEGORIES } from '../../src/domain/defaults.js';
 import { ROUTINE_COLORS } from '../../src/domain/routines.js';
 import { createNullMediaPlayer } from '../../src/adapters/nullMediaPlayer.js';
-import { createDraftStore, debounceSave, DRAFT_KEY, DRAFT_NAME } from '../../src/adapters/draftStore.js';
+import { createDraftStore, debounceSave, DRAFT_KEY, DRAFT_NAME, BOUND_KEY } from '../../src/adapters/draftStore.js';
 import * as ProjectCmd from '../../src/usecases/projectCommands.js';
 import { clipsByProgress, clipsSummary, formatTakenAt, normalizeTakenAt } from '../../src/domain/project/media.js';
 import {
@@ -55,7 +64,7 @@ import { applySnapshot, pickUndoFields, toLinkBundle } from '../../src/domain/pr
 import * as History from '../../src/usecases/historyCommands.js';
 import { clearBoard, setBoardRows, shiftAllCounts } from '../../src/usecases/boardCommands.js';
 import { serializeLinks } from '../../src/domain/links.js';
-import { CLEAR_BTN_LABEL } from '../../src/input/controls.js';
+import { CLEAR_BOARD_BTN_LABEL, CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
 import {
   DEFAULT_MEDIA, SOURCELESS_CLIP_ID, activeClipOf, clipCoverage, clipIdOf, defaultClipName,
@@ -84,9 +93,13 @@ import { isPending, pendingGroupIds, nameGroup, shiftAllPlacements } from '../..
 import * as Kin from '../../src/domain/kinematics.js';
 import { normalizeProject } from '../../src/domain/project/normalize.js';
 import { counterEnv } from '../../src/ports/env.js';
+import * as Flow from '../../src/domain/flowStats.js';
+import * as Themes from '../../src/domain/themes.js';
+import * as Todos from '../../src/domain/stepTodos.js';
+import * as Track from '../../src/domain/flowTrack.js';
 import {
   COPY_POLICY, MOVE_POLICY, PLACE_POLICY, RESIZE_POLICY,
-  copyGroup, moveGroup, place, resizeGroup
+  copyGroup, moveGroup, place, removeGroup, resizeGroup
 } from '../../src/domain/boardOps.js';
 
 const COLS_CASES = [1, 8, 128];
@@ -526,18 +539,20 @@ test('resolvePlacementColor 는 루틴 색을 실제로 칠하고 글자색을 �
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 링크·템포가 undo 로 되돌아오려면 스냅샷 필드여야 한다. 루틴 보드에는 링크바도 영상도 없다. */
-test('schema: UNDO_FIELDS 에 links·media·phrasing 이 있고 ROUTINE_UNDO_FIELDS 에는 없다', () => {
+test('schema: UNDO_FIELDS 에 links·media·phrasing·stepTodos 가 있고 ROUTINE_UNDO_FIELDS 에는 없다', () => {
   assert.ok(UNDO_FIELDS.includes('links'), 'links 가 빠지면 전체 초기화한 링크가 Undo 로 안 돌아온다');
   assert.ok(UNDO_FIELDS.includes('media'), 'media 가 빠지면 애써 찍은 템포·앵커가 Undo 로 안 돌아온다');
   assert.ok(UNDO_FIELDS.includes('phrasing'), 'phrasing 이 빠지면 맞춰 둔 곡 구조가 Undo 로 안 돌아온다');
+  assert.ok(UNDO_FIELDS.includes('stepTodos'), 'stepTodos 가 빠지면 적어 둔 할 일이 Undo 로 안 돌아온다');
   assert.ok(!ROUTINE_UNDO_FIELDS.includes('links'), '루틴 편집기에는 링크바가 없다');
   assert.ok(!ROUTINE_UNDO_FIELDS.includes('media'), '루틴 보드에는 시간 매핑이 없다');
   assert.ok(!ROUTINE_UNDO_FIELDS.includes('phrasing'), '루틴 보드는 곡이 아니라 동작 묶음이다');
+  assert.ok(!ROUTINE_UNDO_FIELDS.includes('stepTodos'), '할 일은 영상 작업 차례의 것이라 루틴 보드에 없다');
   // 두 목록의 집합이 같아야 한다 — 한쪽에만 있으면 "파일엔 있는데 Undo 는 못 하는" 결함이 다시 생긴다.
   assert.deepEqual([...UNDO_FIELDS].sort(), [...DOC_FIELDS].sort());
   // 키 순서 = 스냅샷 JSON 바이트 순서. 앞 6개는 원본 리터럴 순서 그대로이고 신설은 꼬리에 붙는다.
   assert.deepEqual([...UNDO_FIELDS],
-    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing']);
+    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing', 'stepTodos']);
   assert.deepEqual([...ROUTINE_UNDO_FIELDS], ['rows', 'cols', 'placements']);
 });
 
@@ -816,6 +831,17 @@ test('controls: #clearBtn 의 마크업 글자와 CLEAR_BTN_LABEL 이 같다', (
   assert.ok(CLEAR_BTN_LABEL.includes('링크'), '전체 초기화가 링크바까지 비운다는 안내가 사라졌다');
 });
 
+/** 안무표만 비우는 버튼도 같은 규약이다 — 라벨이 어긋나면 confirmOnce 가 엉뚱한 글자로 되돌린다. */
+test('controls: #clearBoardBtn 의 마크업 글자와 CLEAR_BOARD_BTN_LABEL 이 같다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const m = /<button id="clearBoardBtn"[^>]*>([^<]*)<\/button>/.exec(html);
+  assert.ok(m, 'index.html 에서 #clearBoardBtn 을 찾지 못했다');
+  assert.equal(m[1], CLEAR_BOARD_BTN_LABEL);
+  // 두 버튼이 **다른 일**을 한다는 것이 라벨만으로 갈려야 한다.
+  assert.notEqual(CLEAR_BOARD_BTN_LABEL, CLEAR_BTN_LABEL);
+  assert.ok(!CLEAR_BOARD_BTN_LABEL.includes('링크'), '안무표만 비우기는 링크를 건드리지 않는다');
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 배치 충돌 규칙 — place · moveGroup · copyGroup · resizeGroup 이 하나의 규칙을 쓴다
 //
@@ -863,6 +889,30 @@ function laneOfGroup(placements, groupId) {
  * 그래서 셋은 키가 없는 것으로(!== true), 리사이즈는 **명시적 false** 로 검사한다.
  * 리사이즈에서 키가 사라지면 "누가 실수로 지웠나 / 일부러 되돌렸나"를 구분할 수 없으므로 존재도 함께 단언한다.
  */
+/**
+ * 겹쳐서 아래층으로 내려간 그룹이 **여러 행에 걸쳐 있을 때**, 위층을 지우면 그 그룹의 모든 행이
+ * 함께 맨 위로 올라와야 한다. 2026-09-20 까지는 그러지 않았다 — repackLanes 가 인자로 받은 행만
+ * 재배정하는데 Phase 2 가 그룹의 subRow 를 **maxSub 으로** 통일하는 바람에, 방금 내린 레인이
+ * 다른 행의 낡은 값에 밀려 도로 올라갔다. 화면에서는 "하나밖에 없는데 행이 두 줄"로 보였고,
+ * 더블클릭으로 지우려는 과녁이 그만큼 흔들렸다.
+ */
+test('boardOps: 겹침이 사라지면 여러 행에 걸친 그룹도 한 번에 맨 위층으로 올라온다', () => {
+  const board = {
+    rows: 8, cols: 8, hasIntroRow: true,
+    placements: [
+      seg('A', 2, 0, 4, 0),          // 위층: 2행에만 있다
+      seg('B', 2, 2, 6, 1),          // 아래층: 2·3·4행에 걸친 한 그룹
+      seg('B', 3, 0, 8, 1),
+      seg('B', 4, 0, 8, 1)
+    ]
+  };
+  const out = removeGroup(board, { groupId: 'A' });
+  const lanes = out.placements.filter(p => p.groupId === 'B').map(p => p.subRow);
+  assert.deepEqual(lanes, [0, 0, 0], 'B 가 세 행 모두에서 맨 위층으로 올라오지 않았다 — 행이 두 줄로 남는다');
+  // 레인이 바뀐 행은 전부 다시 그려야 한다. 데이터만 고치면 화면은 옛 층에 남는다.
+  assert.deepEqual([...out.renderRows].sort((a, b) => a - b), [2, 3, 4]);
+});
+
 test('boardOps: 네 조작의 정책이 모두 겹친 그룹을 보존한다(D-2)', () => {
   const policies = [['PLACE', PLACE_POLICY], ['MOVE', MOVE_POLICY], ['COPY', COPY_POLICY], ['RESIZE', RESIZE_POLICY]];
   for (const [name, policy] of policies) {
@@ -2430,6 +2480,134 @@ test('clipServer: probe 는 ffmpeg 유무를 알리고 trim 은 성공·실패�
   assert.equal((await old.probe()).ffmpeg, false);
 });
 
+/**
+ * 탭의 품질을 **카운트 단위로** 옮기는 두 함수. 화면이 "BPM 175.2 대 174.8" 대신
+ * "표 끝에서 1.0카운트" 라고 말할 수 있는 근거다 — 사람이 고를 수 있는 단위가 그쪽이다.
+ */
+test('tempo: tapSpread 는 고른 탭에 0, 흔들린 탭에 양수를 준다', () => {
+  assert.equal(tapSpread([0, 0.5, 1.0, 1.5]), 0);
+  assert.ok(tapSpread([0, 0.4, 1.0, 1.5]) > 0.1);
+  // 간격이 둘은 있어야 흔들림을 말한다(탭 3번).
+  assert.equal(tapSpread([0, 0.5]), null);
+  assert.equal(tapSpread([0, 0.5, 0.5]), null, '뒤로 가거나 멈춘 탭은 읽지 않는다');
+  assert.equal(tapSpread('아니다'), null);
+});
+
+test('tempo: driftCounts 는 BPM 차이를 표 끝의 카운트로 옮긴다', () => {
+  // 0.2% 차이 × 416카운트 ≈ 0.95카운트 — 한 칸 가까이 밀린다.
+  const d = driftCounts(175.2, 174.8, 416);
+  assert.ok(d > 0.9 && d < 1.0, `기대 ~0.95, 실제 ${d}`);
+  assert.equal(driftCounts(175, 175, 416), 0);
+  // 같은 차이라도 짧은 표에서는 아무도 못 느낀다 — 그것이 이 함수가 존재하는 이유다.
+  assert.ok(driftCounts(175.2, 174.8, 8) < 0.02);
+  assert.equal(driftCounts(0, 175, 416), null);
+  assert.equal(driftCounts(175, 175, 0), null);
+});
+
+/**
+ * 작업 차례 기록. **표본이 모자라면 아무 말도 하지 않는다**가 이 표의 전부다 —
+ * 한 번 눌러 본 길을 "늘 하는 일"로 내세우면 처음 한 실수가 그대로 굳는다.
+ */
+/**
+ * 테마. **기본값은 표식을 쓰지 않는다** — 그래야 고른 적 없는 사람의 화면이 이 기능이 들어오기
+ * 전과 한 픽셀도 다르지 않다(CSS 가 `:root[data-theme="…"]` 로만 걸린다).
+ */
+/**
+ * 단계별 할 일. **빈 표는 파일에 실리지 않는다** — 한 번도 안 적은 사람의 저장 바이트가
+ * 이 기능이 들어오기 전과 같아야 한다(media·phrasing 과 같은 규약).
+ */
+test('stepTodos: 빈 글은 버리고, 마지막을 지우면 그 단계의 열쇠도 사라진다', () => {
+  let t = {};
+  let n = 0;
+  const uid = () => 't' + (++n);
+  t = Todos.addTodo(t, 'step4', '  ', uid);
+  assert.deepEqual(t, {}, '빈 할 일은 할 일이 아니다');
+  t = Todos.addTodo(t, 'step4', '인트로 잘라내기', uid);
+  t = Todos.addTodo(t, 'step4', '마커 다시', uid);
+  assert.equal(Todos.openCount(t, 'step4'), 2);
+  t = Todos.toggleTodo(t, 'step4', 't1');
+  assert.equal(Todos.openCount(t, 'step4'), 1, '끝낸 것은 남은 수에서 빠진다');
+  t = Todos.removeTodo(t, 'step4', 't1');
+  t = Todos.removeTodo(t, 'step4', 't2');
+  assert.deepEqual(t, {}, '마지막을 지우면 빈 배열이 아니라 열쇠째 사라진다');
+  assert.equal(Todos.serializeStepTodos(t), null, '빈 표는 파일에 키를 만들지 않는다');
+});
+
+test('stepTodos: 바뀐 것이 없으면 **받은 표를 그대로** 돌려준다', () => {
+  // 유스케이스가 이 참조 비교 하나로 헛 커밋을 거른다(헛 커밋은 Undo 를 더럽힌다).
+  const t = Todos.addTodo({}, 'step1', '하나', () => 'a');
+  assert.equal(Todos.toggleTodo(t, 'step1', '없는id'), t);
+  assert.equal(Todos.removeTodo(t, 'step9', 'a'), t);
+  assert.equal(Todos.clearDoneTodos(t, 'step1'), t, '끝낸 것이 없으면 정리할 것도 없다');
+});
+
+test('stepTodos: 손상된 값을 흡수하고 단계마다 상한을 지킨다', () => {
+  assert.deepEqual(Todos.normalizeStepTodos(null), {});
+  assert.deepEqual(Todos.normalizeStepTodos({ s: [{ text: '' }, { text: '살아남는다' }] }),
+    { s: [{ id: '', text: '살아남는다', done: false }] });
+  let big = {};
+  for (let i = 0; i < Todos.MAX_TODOS_PER_STEP + 5; i++) big = Todos.addTodo(big, 's', 'x' + i, () => 'id' + i);
+  assert.equal(big.s.length, Todos.MAX_TODOS_PER_STEP);
+});
+
+/** 길은 좌표만 만든다 — 색도 애니메이션도 CSS 의 몫이라, 값으로 검사할 수 있다. */
+test('flowTrack: 마디는 고르게 놓이고 길은 닫힌 리본을 함께 준다', () => {
+  const t = Track.flowTrack({ width: 1000, height: 96, count: 6 });
+  assert.equal(t.points.length, 6);
+  const gaps = t.points.slice(1).map((p, i) => Math.round(p.x - t.points[i].x));
+  assert.equal(new Set(gaps).size, 1, '가로 간격이 고르지 않으면 읽기가 어렵다');
+  assert.ok(t.points.every(p => p.y > 0 && p.y < 96), '마디가 그릴 칸을 벗어났다');
+  assert.ok(t.center.startsWith('M'));
+  assert.ok(t.ribbon.endsWith('Z'), '리본은 닫힌 도형이어야 칠해진다');
+  // 못 그릴 크기는 조용히 null — 화면이 아직 안 그려졌을 때 0 으로 나누지 않는다.
+  assert.equal(Track.flowTrack({ width: 0, height: 96, count: 6 }), null);
+  assert.equal(Track.flowTrack({ width: 400, height: 96, count: 1 }), null);
+  assert.equal(Track.flowTrack({ width: NaN, height: 96, count: 6 }), null);
+});
+
+test('themes: 모르는 값은 기본으로 떨어지고, 기본은 표식이 없다', () => {
+  assert.equal(Themes.normalizeTheme('neon'), 'neon');
+  assert.equal(Themes.normalizeTheme('없는테마'), Themes.DEFAULT_THEME);
+  assert.equal(Themes.normalizeTheme(null), Themes.DEFAULT_THEME);
+  assert.equal(Themes.normalizeTheme(42), Themes.DEFAULT_THEME);
+  assert.equal(Themes.themeAttr('neon'), 'neon');
+  assert.equal(Themes.themeAttr('basic'), '', '기본은 빈 문자열 — 호출부가 속성을 지운다');
+  assert.equal(Themes.themeAttr('쓰레기'), '');
+  // 목록에 id 가 겹치면 고르는 화면이 둘 중 하나를 못 보인다.
+  const ids = Themes.THEMES.map(t => t.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.ok(ids.includes(Themes.DEFAULT_THEME), '기본값이 목록에 없으면 되돌릴 길이 없다');
+});
+
+test('flowStats: 같은 길을 충분히 갔을 때만 다음을 짚어 준다', () => {
+  let s = {};
+  for (let i = 0; i < 4; i++) s = Flow.noteTransition(s, 'step2', 'step3');
+  assert.equal(Flow.nextAfter(s, 'step2'), null, '넷은 아직 우연과 구분되지 않는다');
+  s = Flow.noteTransition(s, 'step2', 'step3');
+  assert.equal(Flow.nextAfter(s, 'step2').id, 'step3', '다섯 번째에 말한다');
+  // 1등이 절반을 넘지 못하면 말하지 않는다 — 셋으로 갈린 길에 `다음` 을 붙이면 늘 틀린 안내가 된다.
+  let split = {};
+  for (let i = 0; i < 3; i++) split = Flow.noteTransition(split, 'step3', 'step4');
+  for (let i = 0; i < 3; i++) split = Flow.noteTransition(split, 'step3', 'step5');
+  assert.equal(Flow.nextAfter(split, 'step3'), null);
+});
+
+test('flowStats: 같은 버튼을 이어 누른 것은 차례가 아니다', () => {
+  const s = Flow.noteTransition({}, 'capture', 'capture');
+  assert.deepEqual(s, {}, '`끊기` 연타가 표를 더럽히면 안 된다');
+});
+
+test('flowStats: 손상된 값을 흡수하고 표가 무한히 자라지 않는다', () => {
+  assert.deepEqual(Flow.normalizeFlowStats(null), {});
+  assert.deepEqual(Flow.normalizeFlowStats({ a: { b: -2, c: 'x', d: 3 } }), { a: { d: 3 } });
+  let s = {};
+  for (let i = 0; i < Flow.MAX_NEXT_PER_ID + 5; i++) {
+    for (let k = 0; k <= i; k++) s = Flow.noteTransition(s, 'from', `to${i}`);
+  }
+  assert.ok(Object.keys(s.from).length <= Flow.MAX_NEXT_PER_ID);
+  assert.ok(Flow.topTransitions(s, 3).length <= 3);
+});
+
 test('videoPanel: formatRange 는 같은 행이면 짧게, 행을 넘으면 양 끝을 말한다', () => {
   assert.equal(formatRange(0, 8, 8), '8x1의 1~8카운트');
   assert.equal(formatRange(2, 3, 8), '8x1의 3카운트');
@@ -3415,13 +3593,16 @@ test('받아 적기: 고른 블록에 이름을 붙이면 이름 있는 블록�
 // 멈춘다, 자리가 다시 생기면 도로 커진다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('fitCellWidth: 들어가면 건드리지 않고, 모자라면 남는 자리에 맞춰 줄인다', () => {
+test('fitCellWidth: 모자라면 줄이고 **남으면 늘린다**', () => {
   // 고정분(행 라벨 88 + 비고 60 + 틈 24) = 172. 8칸 × 76 = 608 → 780 이 필요하다.
   const base = { cols: 8, currentCellW: DESKTOP_CELL_W, neededW: 780 };
-  assert.equal(fitCellWidth({ ...base, availableW: 900 }), null, '남으면 CSS 기본값 그대로 둔다');
-  assert.equal(fitCellWidth({ ...base, availableW: 780 }), null, '딱 맞아도 그대로다');
+  assert.equal(fitCellWidth({ ...base, availableW: 780 }), null, '딱 맞으면 CSS 기본값 그대로 둔다');
   // 618 = 1280px 창에서 영상 패널을 열었을 때 실제로 주어지던 폭.
   assert.equal(fitCellWidth({ ...base, availableW: 618 }), 55, '(618 − 172) / 8 = 55.75 → 55');
+  // 2026-09-21 — 영상이 안무표 위 띠로 올라가 폭이 통째로 남게 되자, 76px 에서 멈추던 옛 규칙은
+  // 오른쪽에 250px 를 빈 채로 두었다. 이제 남는 자리를 쓴다.
+  assert.equal(fitCellWidth({ ...base, availableW: 900 }), 91, '(900 − 172) / 8 = 91 — 남으면 늘린다');
+  assert.equal(fitCellWidth({ ...base, availableW: 5000 }), MAX_FIT_CELL_W, '상한에서 멈춘다');
 });
 
 test('fitCellWidth: 하한에서 멈춘다 — 그 아래는 줄이는 게 아니라 못 쓰게 만드는 것이다', () => {
@@ -3435,7 +3616,8 @@ test('fitCellWidth: 하한에서 멈춘다 — 그 아래는 줄이는 게 아�
 test('fitCellWidth: 한 번 줄인 뒤 자리가 생기면 도로 커진다(현재 폭에서 재도 된다)', () => {
   // 이미 55px 로 줄어 있는 상태에서 잰 값. 고정분은 셀 폭과 무관하므로 같은 식이 성립한다.
   const shrunk = { cols: 8, currentCellW: 55, neededW: 8 * 55 + 172 };
-  assert.equal(fitCellWidth({ ...shrunk, availableW: 900 }), null, '자리가 넉넉하면 기준값으로 돌아간다');
+  assert.equal(fitCellWidth({ ...shrunk, availableW: 780 }), null, '기준값(76)에 딱 맞으면 CSS 에 맡긴다');
+  assert.equal(fitCellWidth({ ...shrunk, availableW: 900 }), 91, '더 남으면 기준값을 넘어서까지 커진다');
   assert.equal(fitCellWidth({ ...shrunk, availableW: 700 }), 66, '조금 생기면 그만큼만 커진다');
   assert.equal(fitCellWidth({ ...shrunk, availableW: 618 }), 55, '그대로면 그대로다');
 });
@@ -3729,7 +3911,16 @@ function fakeFetch(res) {
   impl.calls = calls;
   return impl;
 }
-const okJson = (data) => ({ ok: true, status: 200, json: async () => data });
+/** ⚠ `headers` 도 흉내 낸다 — 어댑터가 X-Choreo-Mtime-Ns 를 읽는다(2026-09-22). */
+const okJson = (data, headers = {}) => ({
+  ok: true, status: 200, json: async () => data,
+  headers: { get: (k) => headers[k] ?? null }
+});
+/** 다른 곳에서 바뀌었다 — 서버가 409 로 거절하고 지금 판의 표식을 돌려준다. */
+const conflictJson = (mtimeNs) => ({
+  ok: false, status: 409, json: async () => ({ ok: false, error: 'changed elsewhere', mtimeNs }),
+  headers: { get: () => null }
+});
 
 test('projectServer: 서버가 없으면 던지지 않고 null·빈 배열이다', async () => {
   const none = createProjectServer({ fetchImpl: null });
@@ -3749,7 +3940,7 @@ test('projectServer: 한글·공백 이름을 URL 에 싣고 JSON 본문으로 �
   const f = fakeFetch(okJson({ ok: true, name: '9월 공연.json', size: 12, dir: '/p' }));
   const api = createProjectServer({ fetchImpl: f });
   const saved = await api.save('9월 공연', { version: 1 });
-  assert.deepEqual(saved, { name: '9월 공연.json', size: 12, dir: '/p' });
+  assert.deepEqual(saved, { name: '9월 공연.json', size: 12, dir: '/p', mtimeNs: '' });
   assert.equal(f.calls[0].method, 'PUT');
   assert.equal(f.calls[0].url, `/api/projects?name=${encodeURIComponent('9월 공연')}`);
   assert.ok(!f.calls[0].url.includes(' '), '공백이 날것으로 실렸다');
@@ -4165,19 +4356,25 @@ test('boundarySpanToCountRange: 경계가 칸 한가운데여도 앞뒤가 한 �
     assert.equal(lin(prev.to) + 1, lin(next.from), `${bounds[i - 1]}초 경계에서 어긋났다`);
   }
 
-  // 경계가 서로 다른 칸에 들면 한 칸짜리가 나온다(8.4 는 칸 8, 9.2 는 칸 9).
+  // 두 경계가 서로 다른 칸으로 반올림되면 한 칸짜리가 나온다(8.4 는 칸 8, 9.2 는 칸 9).
   assert.equal(boundarySpanToCountRange(4.2, 4.6, 8, T120).empty, false);
 
-  // 두 경계가 **같은 칸**에 들면 놓을 것이 없다 — 억지로 한 칸을 만들면 그 칸을 또 겹쳐 문다.
-  // ⚠ bpm 120 에서는 0.2초 안쪽이라 MIN_SPAN_SEC 이 먼저 거르지만, 느린 곡에서는 실제로 닿는다:
-  //   bpm 60 · 1박 카운트면 1카운트가 1초라 0.3초 차이도 같은 칸이다.
-  assert.equal(boundarySpanToCountRange(4.1, 4.3, 8, T120).empty, true);
+  // 두 경계가 **같은 칸**으로 반올림되면 놓을 것이 없다 — 억지로 한 칸을 만들면 그 칸을 또 겹쳐 문다.
+  // ⚠ bpm 120 에서는 0.1초 안쪽이라 MIN_SPAN_SEC 이 먼저 거르지만, 느린 곡에서는 실제로 닿는다:
+  //   bpm 60 · 1박 카운트면 1카운트가 1초라 0.3초 차이도 같은 칸으로 간다.
+  assert.equal(boundarySpanToCountRange(4.1, 4.2, 8, T120).empty, true, '8.2 와 8.4 는 둘 다 칸 8 이다');
   const slow = normalizeTempo({ bpm: 60, beatsPerCount: 1, anchorSec: 0, anchorCount: 0 });
   assert.equal(boundarySpanToCountRange(3.1, 3.4, 8, slow).empty, true, '느린 곡에서는 MIN_SPAN_SEC 를 넘겨도 같은 칸이다');
 
-  // 늦게 눌러도 한 칸 어치까지는 흡수한다 — 이것이 내림을 쓰는 까닭이다(사용자 보고, 2026-09-20).
-  // 카운트 8 에서 바뀌는 동작을 0.45초(0.9칸) 늦게 눌러도 칸 8 에서 시작한다.
-  assert.equal(lin(boundarySpanToCountRange(4.45, 8, 8, T120).from), 8, '반응 지연 한 칸까지는 흡수해야 한다');
+  // ── 반올림이라는 것 (2026-09-22, 사용자 요청으로 내림에서 되돌렸다) ────────────────
+  // "7박과 8박 사이에서 끊으면 8박에서 시작한다" — 반 칸을 넘겨 가까운 쪽 칸으로 붙는다.
+  // 미리 누른 쪽: 카운트 8(=4.0초)을 0.3칸 앞질러 3.85초에 눌러도 칸 8 에서 시작한다.
+  assert.equal(lin(boundarySpanToCountRange(3.85, 8, 8, T120).from), 8, '반 칸까지 일찍 눌러도 칸 8 이다');
+  // 늦게 누른 쪽: 0.4칸 늦은 4.2초도 칸 8 이다.
+  assert.equal(lin(boundarySpanToCountRange(4.2, 8, 8, T120).from), 8, '반 칸까지 늦게 눌러도 칸 8 이다');
+  // ⚠ 잃은 것: 반 칸을 넘겨 늦으면(4.45초 = 8.9칸) 이제 칸 9 로 간다. 내림일 때는 흡수하던 값이다.
+  //   치우침이 일정하면 변환이 아니라 `전체 ← 1카운트` 로 뒤에 통째로 민다.
+  assert.equal(lin(boundarySpanToCountRange(4.45, 8, 8, T120).from), 9, '반 칸을 넘기면 다음 칸이다');
 });
 
 test('받아 적기: 경계를 아무 데서나 찍어도 한 마디가 두 줄이 되지 않는다', () => {
@@ -4535,12 +4732,12 @@ function fakeStorage() {
 
 /** projectServer 흉내. */
 function fakeServer() {
-  const box = { data: null, calls: [] };
+  const box = { data: null, calls: [], files: new Map() };
   return {
     box,
-    async save(name, payload) { box.calls.push(['save', name]); box.data = payload; return { name }; },
-    async read(name) { box.calls.push(['read', name]); return box.data; },
-    async remove(name) { box.calls.push(['remove', name]); box.data = null; return true; }
+    async save(name, payload, opts) { box.calls.push(['save', name, opts && opts.auto ? 'auto' : '']); box.files.set(name, payload); box.data = payload; return { name }; },
+    async read(name) { box.calls.push(['read', name]); return box.files.has(name) ? box.files.get(name) : null; },
+    async remove(name) { box.calls.push(['remove', name]); box.files.delete(name); box.data = null; return true; }
   };
 }
 
@@ -4560,7 +4757,8 @@ test('draftStore: 서버가 있으면 서버, 없으면 브라우저 — 판정�
   assert.equal(store.kind, 'server');
   assert.equal(await store.save({ a: 2 }), true);
   assert.deepEqual(srv.box.data, { a: 2 });
-  assert.deepEqual(srv.box.calls.at(-1), ['save', DRAFT_NAME]);
+  // 세 번째 칸은 자동 담기인가다(2026-09-22) — 서버가 그것으로 이력을 얼마나 자주 남길지 정한다.
+  assert.deepEqual(srv.box.calls.at(-1), ['save', DRAFT_NAME, 'auto']);
 
   // 읽기는 서버가 이긴다.
   assert.deepEqual(await store.load(), { a: 2 });
@@ -4668,4 +4866,580 @@ test('draftSnapshot·restoreDraft: 담고 되살리면 안무표가 그대로다
   ProjectCmd.restoreDraft(deps, null);
   ProjectCmd.restoreDraft(deps, { placements: '배열이 아니다' });
   assert.equal(JSON.stringify(store.board(BOARD_MAIN).placements), kept);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 짝수 카운트 격자와 속도 어긋남 (2026-09-22)
+//
+// 사용자 보고: "반올림으로 바꿨더니 뒤로 밀려 첫 칸을 침범한다. 모든 동작은 두 카운트 단위로만
+// 시작하니, 홀수 카운트로 떨어지면 가장 가까운 짝수 카운트로 붙여 달라. 그리고 속도가 바뀐 것을
+// 알아챌 수 있게 표시해 달라."
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('CAPTURE_GRID_COUNTS: 경계가 홀수 카운트로 떨어지면 가장 가까운 짝수 카운트로 붙는다', () => {
+  const lin = (c) => linearOf(c.row, c.index, 8);
+  assert.equal(CAPTURE_GRID_COUNTS, 2, '두 카운트 격자다');
+
+  // 카운트 7.7(3.85초)은 격자 없이는 8, 격자로는 8 — 둘 다 맞는다.
+  assert.equal(lin(boundarySpanToCountRange(3.85, 8, 8, T120, 2).from), 8);
+  // 카운트 8.6(4.3초)은 격자 없이는 **9**(홀수)다. 격자가 8 로 되돌린다 — 이것이 요청의 핵심이다.
+  assert.equal(lin(boundarySpanToCountRange(4.3, 8, 8, T120).from), 9, '격자가 없으면 홀수 칸으로 간다');
+  assert.equal(lin(boundarySpanToCountRange(4.3, 8, 8, T120, 2).from), 8, '격자가 짝수 칸으로 되돌린다');
+  // 카운트 9.4(4.7초)는 10 에 가깝다 — 되돌리는 것이 아니라 **가까운 쪽**으로 간다.
+  assert.equal(lin(boundarySpanToCountRange(4.7, 8, 8, T120, 2).from), 10);
+
+  // ⚠ 두 번 반올림하면 안 된다: 카운트 2.6 은 3 을 거쳐 4 로 가지만, 2.6 은 4 보다 2 에 가깝다.
+  assert.equal(lin(boundarySpanToCountRange(1.3, 8, 8, T120, 2).from), 2, '원래 실수에서 한 번에 붙인다');
+});
+
+test('CAPTURE_GRID_COUNTS: 격자를 써도 앞뒤가 겹치지도 벌어지지도 않는다', () => {
+  const lin = (c) => linearOf(c.row, c.index, 8);
+  const bounds = [0, 1.1, 2.7, 3.3, 4.9, 9.9, 13.05];
+  for (let i = 2; i < bounds.length; i++) {
+    const prev = boundarySpanToCountRange(bounds[i - 2], bounds[i - 1], 8, T120, 2);
+    const next = boundarySpanToCountRange(bounds[i - 1], bounds[i], 8, T120, 2);
+    if (prev.empty || next.empty) continue;
+    assert.equal(lin(prev.to) + 1, lin(next.from), `${bounds[i - 1]}초 경계에서 어긋났다`);
+  }
+  // 두 경계가 **같은 짝수 칸**으로 붙으면 놓을 것이 없다 — 두 카운트보다 짧은 동작은 없다는 전제다.
+  assert.equal(boundarySpanToCountRange(0.55, 1.1, 8, T120, 2).empty, true);
+});
+
+test('boundaryCount: 격자에 붙이고 남은 거리를 버리지 않고 돌려준다', () => {
+  const a = boundaryCount(4.45, T120, 2);          // 카운트 8.9 → 격자 8
+  assert.equal(a.snapped, 8);
+  assert.ok(Math.abs(a.offset - 0.9) < 1e-9, '늦게 눌렀으면 offset 이 양수다');
+  const b = boundaryCount(3.85, T120, 2);          // 카운트 7.7 → 격자 8
+  assert.equal(b.snapped, 8);
+  assert.ok(b.offset < 0, '미리 눌렀으면 offset 이 음수다');
+  assert.equal(boundaryCount(Number.NaN, T120, 2), null, '읽을 수 없으면 null 이다');
+});
+
+test('noteDriftSample: 최근 것만 들고, 읽을 수 없는 값에는 같은 배열을 그대로 돌려준다', () => {
+  let list = [];
+  for (let k = 0; k < MAX_DRIFT_SAMPLES + 5; k++) list = noteDriftSample(list, { at: k * 2, off: 0.1 });
+  assert.equal(list.length, MAX_DRIFT_SAMPLES, '상한을 넘으면 오래된 것부터 버린다');
+  assert.equal(list[0].at, 5 * 2, '버려진 것은 앞쪽이다');
+
+  // ⚠ 참조가 같아야 호출부가 "바뀐 것이 없다"를 비교 한 번으로 안다(stepTodos 와 같은 규약).
+  const before = list;
+  assert.equal(noteDriftSample(list, { at: 'x', off: 1 }), before);
+  assert.equal(noteDriftSample(list, { at: 1, off: Number.NaN }), before);
+  assert.deepEqual(clearDriftSamples(), []);
+});
+
+test('driftReport: 표본이 모자라면 아무 말도 하지 않는다', () => {
+  let list = [];
+  for (let k = 0; k < MIN_DRIFT_SAMPLES - 1; k++) list = noteDriftSample(list, { at: k * 4, off: 0.9 });
+  const r = driftReport(list, 130);
+  assert.equal(r.state, 'idle', '두세 개로 추세를 말하면 손 떨림이 그대로 추세가 된다');
+  assert.equal(r.bpmEstimate, null);
+  assert.equal(driftReport(null, 130).state, 'idle', '배열이 아니어도 던지지 않는다');
+});
+
+test('driftReport: 고르게 치우친 것은 손이고, 갈수록 커지는 것은 속도다', () => {
+  // ① 늘 같은 만큼 늦다 → 손의 반응 지연. `표 전체 옮기기` 가 답이다.
+  let lag = [];
+  for (let k = 0; k < 8; k++) lag = noteDriftSample(lag, { at: k * 4, off: LAG_COUNTS + 0.1 });
+  const a = driftReport(lag, 130);
+  assert.equal(a.state, 'lag');
+  assert.equal(a.bpmEstimate, null, '손이 늦은 것을 BPM 탓으로 돌리지 않는다');
+
+  // ② 누를수록 뒤로 밀린다 → 영상이 우리 BPM 보다 **느리다**(잰 카운트가 격자보다 앞서 나간다).
+  let slow = [];
+  for (let k = 0; k < 8; k++) slow = noteDriftSample(slow, { at: k * 4, off: k * 4 * 0.03 });
+  const b = driftReport(slow, 130);
+  assert.equal(b.state, 'slow');
+  assert.ok(Math.abs(b.bpmEstimate - 130 / 1.03) < 0.5, `추정 BPM 이 130/1.03 이어야 한다 (${b.bpmEstimate})`);
+
+  // ③ 반대 방향이면 빠르다.
+  let fast = [];
+  for (let k = 0; k < 8; k++) fast = noteDriftSample(fast, { at: k * 4, off: -k * 4 * 0.03 });
+  const c = driftReport(fast, 130);
+  assert.equal(c.state, 'fast');
+  assert.ok(c.bpmEstimate > 130, '빠르면 추정 BPM 이 더 크다');
+
+  // ④ 작은 흔들림은 아무 말도 하지 않는다.
+  let ok = [];
+  for (let k = 0; k < 8; k++) ok = noteDriftSample(ok, { at: k * 4, off: k % 2 ? 0.05 : -0.05 });
+  assert.equal(driftReport(ok, 130).state, 'ok');
+  assert.ok(SLOPE_MIN > 0);
+});
+
+test('driftReport: 한 점이 엉뚱한 칸에 붙은 판에서는 기울기를 믿지 않는다', () => {
+  let list = [];
+  for (let k = 0; k < 8; k++) list = noteDriftSample(list, { at: k * 4, off: 0 });
+  list = noteDriftSample(list, { at: 32, off: 1.9 });     // 경계 하나가 두 칸 어긋나 붙었다
+  const r = driftReport(list, 130);
+  assert.notEqual(r.state, 'slow', '흩어짐이 크면 속도라고 단정하지 않는다');
+  assert.equal(r.bpmEstimate, null);
+});
+
+test('받아 적기: 홀수 박으로 떨어지는 누름도 짝수 박에서 시작하는 블록이 된다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  // 0초 · 4.3초(카운트 8.6) · 8.4초(카운트 16.8) — 가운데와 끝이 홀수 칸(9 · 17)으로 반올림된다.
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 4.3 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 8.4 }, { ids });
+  const ps = store.board(BOARD_MAIN).placements.slice().sort(
+    (a, b) => linearOf(a.row, a.startIndex, 8) - linearOf(b.row, b.startIndex, 8)
+  );
+  assert.equal(ps.length, 2, '경계 셋이면 구간 둘이다');
+  for (const p of ps) {
+    assert.equal(linearOf(p.row, p.startIndex, 8) % 2, 0, `${p.row}행 ${p.startIndex}칸 — 홀수 박에서 시작했다`);
+  }
+  assert.equal(linearOf(ps[0].row, ps[0].startIndex, 8), 0);
+  assert.equal(linearOf(ps[1].row, ps[1].startIndex, 8), 8, '카운트 8.6 은 9 가 아니라 8 이다');
+});
+
+test('받아 적기: 어긋난 거리를 모아 두었다가 끝내면 버린다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  assert.equal(CaptureCmd.captureDrift(store).state, 'idle', '시작 전에는 할 말이 없다');
+  for (const sec of [0, 4.3, 8.4, 12.5, 16.6]) CaptureCmd.captureToggle(store, { sec }, { ids });
+  const samples = CaptureCmd.captureDriftSamples(store);
+  assert.equal(samples.length, 5, '여는 누름부터 전부 담는다');
+  assert.ok(samples.every((s) => Number.isFinite(s.at) && Number.isFinite(s.off)));
+
+  CaptureCmd.stopCapture(store);
+  assert.deepEqual(CaptureCmd.captureDriftSamples(store), [], '끝내면 지난 판의 표본이 남지 않는다');
+  assert.equal(CaptureCmd.captureDrift(store).state, 'idle');
+});
+
+test('받아 적기: 되감거나 두 번 눌린 경계는 표본에 담지 않는다', () => {
+  const store = captureStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 0.01 }, { ids });     // 손이 떨려 두 번 눌렸다
+  assert.equal(CaptureCmd.captureDriftSamples(store).length, 1, '여는 누름 하나뿐이다');
+  CaptureCmd.captureToggle(store, { sec: 4.3 }, { ids });
+  assert.equal(CaptureCmd.captureDriftSamples(store).length, 2, '블록이 놓인 누름은 담는다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 말로 이름 붙이기 (2026-09-22)
+//
+// 사용자 요청: "마이크를 써서 동작 이름을 대략적으로 정할 수 없을까? LLM 을 써도 될 것 같은데."
+// 여기서 지키는 것은 둘이다 — ① 확신이 설 때만 목록의 표기로 바꾼다(엉뚱한 이름을 조용히 붙이지
+// 않는다) ② 못 맞춰도 **들은 대로라도** 적는다(`?` 로 남으면 영상을 다시 봐야 한다).
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('cleanSpoken: 말버릇만 떼고 읽을 꼴은 살린다', () => {
+  assert.equal(cleanSpoken('어 찰스턴'), '찰스턴');
+  assert.equal(cleanSpoken('음... 그 쇼티조지'), '쇼티조지');
+  assert.equal(cleanSpoken('  Kick Ball Change  '), 'Kick Ball Change', '대소문자·띄어쓰기를 살린다');
+  // ⚠ 말버릇을 **토큰 단위로만** 지운다. 부분 문자열로 지우면 이름이 잘린다.
+  assert.equal(cleanSpoken('그레이프바인'), '그레이프바인', '`그` 로 시작한다고 잘라 먹지 않는다');
+  // ⚠ 전부 말버릇이면 원문을 돌려준다 — 빈 이름을 만들면 블록이 `?` 로 남는다.
+  assert.equal(cleanSpoken('어 음 그'), '어 음 그');
+  assert.equal(cleanSpoken(''), '');
+  assert.equal(cleanSpoken(null), '');
+});
+
+test('normalizeSpoken·choseongOf: 비교용으로 씻는다', () => {
+  assert.equal(normalizeSpoken('Kick Ball Change'), 'kickballchange');
+  assert.equal(normalizeSpoken('kick-ball-change'), 'kickballchange');
+  assert.equal(normalizeSpoken('재즈 스퀘어'), '재즈스퀘어');
+  assert.equal(choseongOf('찰스턴'), 'ㅊㅅㅌ');
+  assert.equal(choseongOf('찰스톤'), 'ㅊㅅㅌ', '받침만 다르면 초성은 같다');
+  assert.equal(choseongOf('Suzie Q'), 'Suzie Q', '한글이 아닌 글자는 그대로 둔다');
+});
+
+test('similarity: 잘린 이름이 확신 구간에 올라오지 않는다', () => {
+  assert.equal(similarity('찰스턴', '찰스턴'), 1);
+  assert.ok(similarity('찰스톤', '찰스턴') >= SURE_SCORE, '받침만 틀린 인식은 확신이다');
+  // ⚠ 이것이 이 함수에서 제일 중요한 줄이다. 「쇼티조지」 안에 「조지」가 들어 있다고 `조지` 로
+  //   붙여 버리면 LLM 이 `Shorty George` 로 고칠 기회를 뺏는다.
+  assert.ok(similarity('쇼티조지', '조지') < SURE_SCORE, '품는다고 잘린 이름을 확신하지 않는다');
+  // ⚠ 두 글자는 초성이 너무 헐겁다 — 「재즈」와 「조지」는 둘 다 `ㅈㅈ` 다.
+  assert.ok(similarity('재즈', '조지') < SURE_SCORE, '두 글자는 초성만으로 맞추지 않는다');
+  assert.equal(similarity('', '찰스턴'), 0);
+});
+
+const MOVES = ['찰스턴', 'Kick Ball Change', 'Suzie Q', 'Shorty George', '재즈 스퀘어', '조지'];
+
+test('resolveSpokenName: 확신하면 목록의 표기로, 아니면 들은 대로 두고 LLM 에 맡긴다', () => {
+  const sure = resolveSpokenName('어 찰스턴', MOVES);
+  assert.equal(sure.name, '찰스턴');
+  assert.equal(sure.needsLlm, false, '목록에 있는 이름은 LLM 을 부르지 않는다 — 공짜로 끝난다');
+
+  const slip = resolveSpokenName('찰스톤', MOVES);
+  assert.equal(slip.name, '찰스턴', '받침만 틀린 인식은 그 자리에서 고친다');
+  assert.equal(slip.needsLlm, false);
+
+  // 한글로 옮겨 적은 영어 — 글자가 한 자도 안 겹쳐 규칙으로는 못 한다. 그래서 LLM 의 몫이다.
+  const eng = resolveSpokenName('킥볼체인지', MOVES);
+  assert.equal(eng.name, '킥볼체인지', '못 맞춰도 들은 대로는 적는다');
+  assert.equal(eng.needsLlm, true);
+  assert.equal(eng.matched, null);
+
+  const cut = resolveSpokenName('음 그 쇼티조지', MOVES);
+  assert.equal(cut.name, '쇼티조지', '`조지` 로 잘리지 않는다');
+  assert.equal(cut.needsLlm, true);
+
+  assert.equal(resolveSpokenName('', MOVES).needsLlm, false, '빈 말은 아무것도 부르지 않는다');
+});
+
+test('matchSpoken·spokenCandidates: 바닥 점수 아래는 남남이다', () => {
+  assert.equal(matchSpoken('전혀 상관없는 말', MOVES), null);
+  assert.equal(matchSpoken('', MOVES), null);
+  assert.equal(matchSpoken('찰스턴', []), null, '목록이 비면 맞출 것이 없다');
+  const cands = spokenCandidates('찰스', MOVES, 3);
+  assert.ok(cands.length <= 3);
+  assert.ok(cands.every((c) => c.score >= FLOOR_SCORE));
+  assert.ok(cands.every((c, i) => i === 0 || cands[i - 1].score >= c.score), '점수순이다');
+});
+
+// ── 유스케이스: 들은 말 → 열려 있는 구간 ─────────────────────────────────────────
+
+function voiceStore() {
+  const store = captureStore();
+  const cat = Object.keys(store.get().categories)[0];
+  store.update({ library: MOVES.map((name, i) => ({ id: `v${i}`, name, category: cat })) });
+  return store;
+}
+
+test('hearUtterance: 말한 이름은 지금 열려 있는 구간의 것이 된다', () => {
+  const store = voiceStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });        // 구간 1 을 연다
+  const heard = VoiceCmd.hearUtterance(store, { text: '어 찰스턴', atSec: 1.2 });
+  assert.equal(heard.name, '찰스턴');
+  assert.equal(VoiceCmd.heardName(store).name, '찰스턴', '화면이 «지금 무엇으로 붙을지» 를 읽을 수 있어야 한다');
+
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });        // 구간 1 을 놓고 구간 2 를 연다
+  const ps = store.board(BOARD_MAIN).placements;
+  assert.equal(ps.length, 1);
+  assert.equal(ps[0].name, '찰스턴', '들은 이름이 붙었다');
+  assert.ok(!ps[0].pending, '이름이 붙었으므로 `?` 블록이 아니다');
+  assert.equal(VoiceCmd.heardName(store), null, '붙였으면 비운다 — 다음 구간이 물려받으면 안 된다');
+});
+
+test('hearUtterance: 한 구간에 두 번 말하면 나중 것이 이긴다', () => {
+  const store = voiceStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  VoiceCmd.hearUtterance(store, { text: '찰스턴', atSec: 1 });
+  VoiceCmd.hearUtterance(store, { text: '재즈 스퀘어', atSec: 2 });   // 잘못 말하고 고쳐 말했다
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  assert.equal(store.board(BOARD_MAIN).placements[0].name, '재즈 스퀘어');
+});
+
+test('hearUtterance: 이미 놓인 구간의 말은 버린다 — 밀린 이름보다 없는 편이 낫다', () => {
+  const store = voiceStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });        // 여기서 구간 2 가 열린다(4초부터)
+  const late = VoiceCmd.hearUtterance(store, { text: '찰스턴', atSec: 3.2 });   // 말은 3.2초에 시작됐다
+  assert.equal(late.stale, true);
+  assert.equal(VoiceCmd.heardName(store), null, '앞 구간의 말이 다음 구간에 붙지 않는다');
+});
+
+test('LLM 줄: 못 맞춘 것만 세우고, 꺼내면서 비운다', () => {
+  const store = voiceStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  VoiceCmd.hearUtterance(store, { text: '찰스턴', atSec: 1 });           // 맞췄다 — 줄에 안 선다
+  const placed1 = CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  assert.ok(!placed1.needsLlm, '목록에 있는 이름은 LLM 을 부르지 않는다');
+
+  VoiceCmd.hearUtterance(store, { text: '킥볼체인지', atSec: 5 });        // 못 맞췄다
+  const placed2 = CaptureCmd.captureToggle(store, { sec: 8 }, { ids });
+  assert.equal(placed2.needsLlm, true);
+  assert.equal(placed2.heard, '킥볼체인지');
+  assert.ok(placed2.voiceGroupId, '고쳐 끼우려면 어느 블록인지 알아야 한다');
+
+  VoiceCmd.queueForLlm(store, { groupId: placed2.voiceGroupId, heard: placed2.heard });
+  assert.equal(VoiceCmd.llmQueue(store).length, 1);
+  const taken = VoiceCmd.takeLlmQueue(store);
+  assert.equal(taken.queue.length, 1);
+  assert.equal(VoiceCmd.llmQueue(store).length, 0, '꺼내면서 비운다 — 같은 것을 두 번 묻지 않는다');
+});
+
+test('applyLlmNames: 조용히 갈아 끼우되 사람이 고친 것은 건드리지 않는다', () => {
+  const store = voiceStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  VoiceCmd.hearUtterance(store, { text: '킥볼체인지', atSec: 1 });
+  const placed = CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  const asked = [{ groupId: placed.voiceGroupId, heard: '킥볼체인지' }];
+
+  // ① 사람이 손대지 않았으면 갈아 끼운다.
+  const ok = VoiceCmd.applyLlmNames(store, asked, [{ heard: '킥볼체인지', name: 'Kick Ball Change', sure: true }]);
+  assert.equal(ok.changed, 1);
+  assert.equal(store.board(BOARD_MAIN).placements[0].name, 'Kick Ball Change');
+
+  // ② 같은 답이 또 와도 이제 이름이 달라졌으므로 아무 일도 하지 않는다.
+  assert.equal(VoiceCmd.applyLlmNames(store, asked, [{ heard: '킥볼체인지', name: 'Kick Ball Change', sure: true }]), NONE);
+});
+
+test('applyLlmNames: 모르겠다는 답과 사람이 고친 블록은 그대로 둔다', () => {
+  const store = voiceStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  VoiceCmd.hearUtterance(store, { text: '뭔지모를말', atSec: 1 });
+  const placed = CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  const asked = [{ groupId: placed.voiceGroupId, heard: '뭔지모를말' }];
+
+  // ⚠ `sure: false` 는 버린다 — 모르겠다고 한 것을 억지로 붙이면 들은 대로가 더 낫다.
+  assert.equal(VoiceCmd.applyLlmNames(store, asked, [{ heard: '뭔지모를말', name: 'Charleston', sure: false }]), NONE);
+  assert.equal(store.board(BOARD_MAIN).placements[0].name, '뭔지모를말');
+
+  // ⚠ 사람이 먼저 고쳐 놓았으면 1초 뒤에 기계가 덮지 않는다. 덮으면 그건 고장이다.
+  const gid = placed.voiceGroupId;
+  store.setBoard(BOARD_MAIN, {
+    placements: store.board(BOARD_MAIN).placements.map(p => (p.groupId === gid ? { ...p, name: '내가 고친 이름' } : p))
+  });
+  assert.equal(VoiceCmd.applyLlmNames(store, asked, [{ heard: '뭔지모를말', name: 'Charleston', sure: true }]), NONE);
+  assert.equal(store.board(BOARD_MAIN).placements[0].name, '내가 고친 이름');
+});
+
+test('받아 적기를 끝내면 들어 둔 이름은 비우고 LLM 줄은 남긴다', () => {
+  const store = voiceStore();
+  const ids = counterEnv();
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  VoiceCmd.hearUtterance(store, { text: '킥볼체인지', atSec: 1 });
+  const placed = CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  VoiceCmd.queueForLlm(store, { groupId: placed.voiceGroupId, heard: '킥볼체인지' });
+  VoiceCmd.hearUtterance(store, { text: '수지큐', atSec: 5 });
+
+  CaptureCmd.stopCapture(store);
+  assert.equal(VoiceCmd.heardName(store), null, '열려 있던 구간은 버려지므로 그 이름도 갈 곳이 없다');
+  assert.equal(VoiceCmd.llmQueue(store).length, 1, '이미 놓인 블록의 것은 아직 고쳐 끼울 곳이 있다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 묶인 파일 — 자동 담기가 이름을 따라간다 (2026-09-22)
+//
+// 그전까지는 무슨 일을 하든 `_작업중` 한 칸이었다. 실측으로 이름 붙은 안무(배치 57개)가 저장본
+// 없이 그 한 칸에만 살아 있었고, 사용자는 자동 담기를 보고 「저장됐다」고 여겼다. 이제 한 번
+// 저장하거나 폴더에서 열면 그 파일에 **묶이고** 그 뒤의 담기는 그 파일로 간다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('draftStore: 묶이면 그 이름의 파일에 담고, 묶이기 전에는 임시 칸에 담는다', async () => {
+  const storage = fakeStorage();
+  const srv = fakeServer();
+  const store = createDraftStore({ getServer: () => srv, storage });
+
+  // ① 묶이기 전 — `_작업중`
+  assert.equal(store.bound(), '');
+  assert.equal(store.target(), DRAFT_NAME);
+  await store.save({ n: 1 });
+  assert.deepEqual(srv.box.calls.at(-1), ['save', DRAFT_NAME, 'auto'], '자동 담기는 auto 를 실어 보낸다');
+
+  // ② 저장했다 — 묶인다
+  store.bind('해피핏 공연 루틴');
+  assert.equal(store.bound(), '해피핏 공연 루틴');
+  assert.equal(store.target(), '해피핏 공연 루틴');
+  assert.equal(storage.getItem(BOUND_KEY), '해피핏 공연 루틴');
+  await store.save({ n: 2 });
+  assert.deepEqual(srv.box.calls.at(-1), ['save', '해피핏 공연 루틴', 'auto']);
+
+  // ③ 읽기도 묶인 파일에서. `_작업중` 에 남아 있는 옛것을 보지 않는다.
+  assert.deepEqual(await store.load(), { n: 2 });
+
+  // ④ 묶임을 풀면 임시 칸으로 돌아간다(전체 초기화가 이 길이다).
+  store.unbind();
+  assert.equal(store.target(), DRAFT_NAME);
+  assert.deepEqual(await store.load(), { n: 1 }, '임시 칸의 것이 그대로 있다');
+});
+
+test('draftStore: 묶인 파일이 없어져도 임시 칸으로 떨어지지 않는다 — 다른 문서가 열리면 안 된다', async () => {
+  const storage = fakeStorage();
+  const srv = fakeServer();
+  const store = createDraftStore({ getServer: () => srv, storage });
+  await store.save({ 임시: true });                       // `_작업중` 에 남는다
+  store.bind('지워진 안무');
+  // 묶인 파일은 서버에 없다(휴지통으로 갔거나 폴더를 바꿨다).
+  // ⚠ 여기서 `_작업중` 을 대신 되살리면 **다른 문서**가 열린다. 브라우저 칸은 같은 문서의 사본이라 폴백으로 맞다.
+  assert.equal(await store.load(), null, '서버의 임시 칸을 대신 읽으면 안 된다');
+  await store.save({ 이어서: true });                     // 브라우저에도 사본이 생긴다
+  assert.deepEqual(await store.load(), { 이어서: true }, '브라우저 사본은 폴백으로 맞다');
+});
+
+test('draftStore: 묶임은 이름이 비거나 임시 칸과 같으면 걸리지 않고, clear 는 파일을 지우지 않는다', async () => {
+  const storage = fakeStorage();
+  const srv = fakeServer();
+  const store = createDraftStore({ getServer: () => srv, storage });
+  store.bind('   ');
+  assert.equal(store.bound(), '', '빈 이름에 묶지 않는다');
+  store.bind(DRAFT_NAME);
+  assert.equal(store.bound(), '', '임시 칸 이름 자체에는 묶지 않는다');
+
+  store.bind('공연본');
+  await store.save({ a: 1 });
+  await store.clear();
+  assert.equal(store.bound(), '', 'clear 는 묶임을 푼다');
+  // ⚠ 묶여 있던 **파일은 지우지 않는다** — 그것은 사용자가 이름을 붙인 안무표다.
+  assert.ok(!srv.box.calls.some(c => c[0] === 'remove' && c[1] === '공연본'), '이름 붙은 파일을 지웠다');
+  assert.deepEqual(srv.box.calls.filter(c => c[0] === 'remove').at(-1), ['remove', DRAFT_NAME]);
+  assert.deepEqual(await new Promise(r => r(srv.read('공연본'))), { a: 1 }, '파일이 그대로 있어야 한다');
+});
+
+test('draftStore: 저장소를 못 쓰면 묶지 못하고 언제나 임시 칸이다', async () => {
+  const srv = fakeServer();
+  const store = createDraftStore({ getServer: () => srv, storage: null });
+  store.bind('아무 이름');
+  assert.equal(store.bound(), '');
+  assert.equal(store.target(), DRAFT_NAME, '사파리 프라이빗에서도 담기 자체는 돌아야 한다');
+  assert.equal(await store.save({ a: 1 }), true);
+});
+
+// ── 미래 스키마 거절 (2026-09-22) ───────────────────────────────────────────────
+//
+// 도메인은 처음부터 "미래 스키마는 거부한다"(migrations.js 원칙 3)고 적어 두었는데 유스케이스가
+// 날값을 통과시켜 문이 열려 있었다. 폰의 캐시된 옛 앱이 PC 가 쓴 새 파일을 열어 담는 순간 새
+// 필드가 조용히 사라지는 순서가 실제로 가능하다 — 같은 서버를 둘이 보는 설계이기 때문이다.
+
+/** projectCommands 가 실제로 부르는 것만 채운 deps(위 draftSnapshot 시험과 같은 모양). */
+function futureDeps(store) {
+  return {
+    store,
+    env: { nowIso: () => '2026-09-22T00:00:00.000Z', uid: counterEnv().uid },
+    dialogs: { alert() {}, confirm: () => true },
+    files: { downloadJson() {} },
+    storage: { save() {}, load: () => null, saveRecents() {}, saveRoutineFavorites() {}, saveLinks() {} },
+    commitHistory() {}
+  };
+}
+
+test('미래 스키마 파일은 열지 않고 왜인지 말한다', () => {
+  const store = createStore({ ids: counterEnv() });
+  const deps = futureDeps(store);
+  const future = { version: SCHEMA_VERSION + 1, fileName: '내일의 안무', doc: { placements: [] }, placements: [] };
+
+  for (const run of [ProjectCmd.loadProjectFromRecent, ProjectCmd.mergeProjectFromRecent]) {
+    const dirty = run(deps, future);
+    assert.equal(dirty.notify.kind, 'alert');
+    assert.match(dirty.notify.message, /더 새 판/, run.name);
+    assert.equal(dirty.boards, undefined, `${run.name}: 열지 않아야 한다`);
+  }
+  const fromFile = ProjectCmd.loadProjectFromFile(deps, { data: future, fileName: '내일의 안무.json' });
+  assert.match(fromFile.notify.message, /더 새 판/);
+  assert.equal(store.get().recents.projects.length, 0, '거절한 파일을 최근 목록에 넣지 않는다');
+  assert.match(ProjectCmd.mergeProjectFromFile(deps, { data: future, fileName: 'x.json' }).notify.message, /더 새 판/);
+});
+
+test('미래 스키마 작업 문서는 되살리지 않고 담기를 막으라고 알린다', () => {
+  const store = createStore({ ids: counterEnv() });
+  const deps = futureDeps(store);
+  const future = { version: SCHEMA_VERSION + 1, placements: [], doc: { placements: [] } };
+  const dirty = ProjectCmd.restoreDraft(deps, future);
+  // ⚠ 이 `blocked` 하나가 손실 경로를 막는다 — app/main 이 이것을 보고 담기를 켜지 않는다.
+  assert.equal(dirty.blocked, true);
+  assert.match(dirty.notify.message, /더 새 판/);
+  assert.equal(store.board(BOARD_MAIN).placements.length, 0);
+
+  // 읽을 수 있는 것은 그대로 되살린다(관용은 남긴다).
+  const ok = ProjectCmd.restoreDraft(deps, { placements: [], rows: 4, cols: 8, moveLibrary: [], categories: {} });
+  assert.ok(!ok.blocked);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 더 새 것을 덮지 않는다 (2026-09-22)
+//
+// 묶인 파일은 두 탭·두 기기가 동시에 볼 수 있다(그러라고 만든 설계다). 그때 담기가 1.2초마다
+// 서로를 덮으면 둘 다 조용히 일을 잃는다. 읽거나 쓸 때마다 그 판의 표식을 들고 있다가 다음
+// 쓰기에 같이 보내고, 지금 파일이 그것과 다르면 서버가 거절한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('projectServer: 아는 판을 함께 보내고, 409 는 「다른 곳에서 바뀜」으로 읽는다', async () => {
+  // 읽으면 그 판의 표식이 헤더로 온다.
+  const r = fakeFetch(okJson({ version: 1 }, { 'X-Choreo-Mtime-Ns': '111' }));
+  const api = createProjectServer({ fetchImpl: r });
+  assert.deepEqual(await api.readWithMeta('공연'), { data: { version: 1 }, mtimeNs: '111' });
+  assert.deepEqual(await api.read('공연'), { version: 1 }, 'read 는 예전처럼 내용만 돌려준다');
+
+  // 쓸 때 그 표식을 되돌려준다.
+  const w = fakeFetch(okJson({ ok: true, name: '공연.json', size: 9, dir: '/p', mtimeNs: 222 }));
+  const api2 = createProjectServer({ fetchImpl: w });
+  const saved = await api2.save('공연', { a: 1 }, { auto: true, ifMtimeNs: '111' });
+  assert.deepEqual(saved, { name: '공연.json', size: 9, dir: '/p', mtimeNs: '222' });
+  assert.match(w.calls[0].url, /&auto=1&ifMtimeNs=111$/, w.calls[0].url);
+
+  // 표식이 없으면 조건 없이 쓴다(사람이 누른 저장·처음 만드는 파일).
+  const w2 = fakeFetch(okJson({ ok: true, name: 'x.json', size: 1, dir: '/p' }));
+  await createProjectServer({ fetchImpl: w2 }).save('x', {});
+  assert.ok(!w2.calls[0].url.includes('ifMtimeNs'), '조건을 안 걸어야 할 자리에 걸었다');
+
+  // 409 는 null 이 아니라 **충돌**이다 — 「서버 없음」과 구별돼야 화면이 다른 말을 할 수 있다.
+  const c = fakeFetch(conflictJson(333));
+  const hit = await createProjectServer({ fetchImpl: c }).save('공연', {}, { ifMtimeNs: '111' });
+  assert.deepEqual(hit, { conflict: true, mtimeNs: '333' });
+  assert.equal(await createProjectServer({ fetchImpl: null }).save('공연', {}), null, '서버가 없으면 null 이다');
+});
+
+test('draftStore: 다른 곳에서 바뀌면 담기를 멈추고 알린다 — 내 판본은 브라우저에 남는다', async () => {
+  const storage = fakeStorage();
+  const hits = [];
+  let conflictNext = false;
+  const srv = {
+    files: new Map([['공연본', { n: 1 }]]),
+    ns: '111',
+    async readWithMeta(name) { return this.files.has(name) ? { data: this.files.get(name), mtimeNs: this.ns } : null; },
+    async read(name) { return this.files.get(name) ?? null; },
+    async save(name, payload, opts) {
+      hits.push(opts.ifMtimeNs);
+      if (conflictNext) return { conflict: true, mtimeNs: '999' };
+      this.files.set(name, payload);
+      this.ns = String(Number(this.ns) + 1);
+      return { name, mtimeNs: this.ns };
+    },
+    async remove() { return true; }
+  };
+  const told = [];
+  const store = createDraftStore({ getServer: () => srv, storage, onConflict: (i) => told.push(i.name) });
+  store.bind('공연본');
+
+  // 읽으면서 그 판의 표식을 받아 둔다.
+  assert.deepEqual(await store.load(), { n: 1 });
+  await store.save({ n: 2 });
+  assert.equal(hits.at(-1), '111', '읽은 판의 표식을 그대로 되돌려줘야 한다');
+  await store.save({ n: 3 });
+  assert.equal(hits.at(-1), '112', '쓴 뒤에는 새 표식으로 갱신돼야 한다');
+  assert.equal(store.stopped(), false);
+
+  // 다른 곳에서 바뀌었다.
+  conflictNext = true;
+  await store.save({ n: 4 });
+  assert.equal(store.stopped(), true, '덮어쓰지 않고 멈춰야 한다');
+  assert.deepEqual(told, ['공연본'], '화면이 말할 수 있게 알려야 한다');
+  // ⚠ 내 판본은 브라우저 칸에 떨어져 있다 — 멈춘다고 그날의 일을 버리지 않는다.
+  assert.deepEqual(JSON.parse(storage.getItem(DRAFT_KEY)), { n: 4 });
+
+  // 한 번 멈추면 **다시 서버를 건드리지 않는다** — 조용한 재시도는 결국 덮어쓰기가 된다.
+  const before = hits.length;
+  conflictNext = false;
+  await store.save({ n: 5 });
+  assert.equal(hits.length, before, '멈춘 뒤에도 서버에 썼다');
+  assert.deepEqual(srv.files.get('공연본'), { n: 3 }, '남의 판을 덮었다');
+});
+
+test('draftStore: 쓰기를 한 줄로 세운다 — 자기 자신과 충돌하지 않는다', async () => {
+  const storage = fakeStorage();
+  const seen = [];
+  let ns = 10;
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const srv = {
+    async readWithMeta() { return null; },
+    async read() { return null; },
+    async save(name, payload, opts) {
+      seen.push(opts.ifMtimeNs);
+      if (seen.length === 1) await gate;          // 첫 쓰기를 붙잡아 둔다
+      ns += 1;
+      return { name, mtimeNs: String(ns) };
+    },
+    async remove() { return true; }
+  };
+  const store = createDraftStore({ getServer: () => srv, storage, onConflict: () => { throw new Error('충돌하면 안 된다'); } });
+  const a = store.save({ n: 1 });
+  const b = store.save({ n: 2 });                  // 앞의 것이 아직 안 끝났다
+  // ⚠ 쓰기는 꼬리에 이어 붙으므로 한 틱 뒤에야 첫 것이 서버에 닿는다.
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(seen.length, 1, '두 번째가 앞의 것을 기다리지 않고 나갔다');
+  release();
+  await Promise.all([a, b]);
+  assert.deepEqual(seen, [null, '11'], '두 번째는 첫 응답의 표식을 들고 나가야 한다');
 });

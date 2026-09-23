@@ -19,7 +19,8 @@ function defaultFetch() {
  *   setConfig: (next: {provider?:string, model?:string, baseUrl?:string, apiKey?:string}) => Promise<LlmConfig|null>,
  *   listModels: () => Promise<{models:string[], details:{id:string,label:string,state:string}[], error:string}>,
  *   refine: (text: string, context: object) => Promise<{ok:true, prompt:string}|{ok:false, error:string}>,
- *   compose: (prompt: string, context: object) => Promise<{ok:true, plan:object}|{ok:false, error:string}>
+ *   compose: (prompt: string, context: object) => Promise<{ok:true, plan:object}|{ok:false, error:string}>,
+ *   name: (texts: string[], context: object) => Promise<{ok:true, names:{heard:string,name:string,category:string,isNew:boolean,sure:boolean}[]}|{ok:false, error:string}>
  * }}
  */
 export function createLlmServer(options = {}) {
@@ -70,6 +71,19 @@ export function createLlmServer(options = {}) {
     async compose(prompt, context) {
       const r = await call('POST', '/api/llm/compose', { prompt, context });
       return r.ok && r.data && r.data.plan ? { ok: true, plan: r.data.plan } : { ok: false, error: r.error || '안무표 만들기에 실패했습니다.' };
+    },
+    /**
+     * 마이크로 들은 거친 말들 → 동작 목록의 정식 이름 (2026-09-22).
+     * ⚠ **여럿을 한 번에** 묻는다. 받아 적는 중에는 한 마디마다 왕복할 겨를이 없고, 열 마디를
+     *   한 번에 물으면 왕복 한 번 값으로 끝난다.
+     */
+    async name(texts, context) {
+      const list = (Array.isArray(texts) ? texts : []).map((t) => String(t || '').trim()).filter(Boolean);
+      if (!list.length) return { ok: true, names: [] };
+      const r = await call('POST', '/api/llm/name', { texts: list, context });
+      return r.ok && r.data && Array.isArray(r.data.names)
+        ? { ok: true, names: r.data.names }
+        : { ok: false, error: r.error || '동작 이름을 맞추지 못했습니다.' };
     }
   };
 }

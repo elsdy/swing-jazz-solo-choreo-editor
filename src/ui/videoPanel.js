@@ -27,7 +27,11 @@
 import { CLS, DATA } from './domContract.js';
 import { confirmOnce } from './widgets.js';
 import { cellOf, clamp, linearOf, rowIndices } from '../domain/grid.js';
-import { isTempoUsable, normalizeTempo } from '../domain/tempo.js';
+import { bpmFromTaps, driftCounts, isTempoUsable, normalizeTempo, tapSpread } from '../domain/tempo.js';
+import { driftReport } from '../domain/captureDrift.js';
+import { isStacked } from './layout.js';
+import { flowTrack } from '../domain/flowTrack.js';
+import { openCount } from '../domain/stepTodos.js';
 import { markersAt, normalizeMarkers } from '../domain/markers.js';
 import { activeClipOf, clipCoverage, normalizeMedia } from '../domain/project/media.js';
 
@@ -213,6 +217,15 @@ export function formatRange(from, to, cols) {
  *   clearMarkers?: () => any,
  *   applyMarkerToTempo?: (args: {id:string}) => any
  * }} commands app/main 이 videoCommands 를 store 에 묶어 넘긴다
+ * @property {{
+ *   available: () => boolean,
+ *   wanted: () => boolean,
+ *   listening: () => boolean,
+ *   error: () => string,
+ *   toggle: () => boolean,
+ *   heard: () => {heard:string, name:string, needsLlm:boolean}|null
+ * }} [voice] 마이크로 이름 붙이기(2026-09-22). app/main 이 adapters/speechInput 을 묶어 넘긴다.
+ *   ⚠ 없거나 `available()` 이 거짓이면 이 줄을 **감춘다** — 눌러도 안 되는 버튼을 두지 않는다.
  * @property {Record<string, HTMLElement|null>} [elements] 테스트용 요소 주입
  */
 
@@ -241,7 +254,11 @@ export function createVideoPanel(deps) {
     onTogglePlay = () => {},
     onSeek = () => {},
     getStorageMode = () => 'browser',
+    voice = null,
     getPipState = () => 'unavailable',
+    // "어떤 버튼 다음에 어떤 버튼"을 세는 자리(2026-09-21). ⚠ 이 뷰는 **세어 달라고 말하기만** 한다 —
+    // 표가 어디 담기는지도, 무엇을 짚어 줄지도 모른다(app/main 이 domain/flowStats 와 잇는다).
+    flow = { note: () => {}, suggest: () => null },
     onTogglePip = () => {},
     getTrimState = () => 'no-server',
     getTrimError = () => '',
@@ -262,6 +279,8 @@ export function createVideoPanel(deps) {
   const collapseBtn = byId('videoCollapseBtn');
   const pipBtn = byId('videoPipBtn');
   const frameSlot = byId('videoFrameSlot');
+  const bodyEl = byId('videoBody');
+  const flowSteps = byId('videoFlowSteps');
   const floatBtn = byId('videoFloatBtn');
   const floatBar = byId('videoFloatBar');
   const floatDockBtn = byId('videoFloatDockBtn');
@@ -281,6 +300,7 @@ export function createVideoPanel(deps) {
   const markCancelBtn = byId('videoMarkCancelBtn');
   const markHelp = byId('videoMarkHelp');
   const tapBtn = byId('videoTapBtn');
+  const tapHelp = byId('videoTapHelp');
   const tapCommitBtn = byId('videoTapCommitBtn');
   const tapClearBtn = byId('videoTapClearBtn');
   const bpmInput = byId('videoBpmInput');
@@ -299,6 +319,7 @@ export function createVideoPanel(deps) {
   const inOutClearBtn = byId('videoInOutClearBtn');
   const inOutText = byId('videoInOutText');
   const captureBtn = byId('videoCaptureBtn');
+  const rewindBtn = byId('videoRewindBtn');
   const captureCancelBtn = byId('videoCaptureCancelBtn');
   const captureSkipBtn = byId('videoCaptureSkipBtn');
   const shiftBackBtn = byId('videoShiftBackBtn');
@@ -308,6 +329,10 @@ export function createVideoPanel(deps) {
   const markerBlocksBtn = byId('videoMarkerBlocksBtn');
   const nameSelBtn = byId('videoNameSelBtn');
   const captureHelp = byId('videoCaptureHelp');
+  const voiceField = byId('videoVoiceField');
+  const voiceBtn = byId('videoVoiceBtn');
+  const voiceNow = byId('videoVoiceNow');
+  const voiceHelp = byId('videoVoiceHelp');
   const trimBtn = byId('videoTrimBtn');
   const trimHelp = byId('videoTrimHelp');
   const markerSelBtn = byId('videoMarkerSelBtn');
@@ -327,6 +352,8 @@ export function createVideoPanel(deps) {
   let markerRejectedId = '';
   /** 띄운 창의 `position: fixed` 기준점(floatOrigin). 창 크기가 바뀌면 버린다. */
   let floatOriginCache = null;
+  /** 창이 지금 무엇 때문에 떠 있는가 — `'float'`(⤢ 크게) · `'pip'`(받아 적는 중) · `null`(제자리). */
+  let detachMode = null;
 
   // ── store 읽기 (얇은 접근자) ──────────────────────────────────────────────
 
@@ -513,6 +540,47 @@ export function createVideoPanel(deps) {
   }
 
   /** 템포 구획 전체. "지금 무엇이 정해졌는지"를 화면이 말하게 하는 것이 이 함수의 목적이다. */
+  /**
+   * 탭 줄 아래 한 줄. **BPM 숫자가 아니라 "표 끝에서 몇 카운트"로 말한다** — 0.2% 차이는 숫자로는
+   * 작아 보이지만 52마디 끝에서는 재생 헤드가 한 칸 가까이 밀린다. 사람이 고를 수 있는 단위로 옮긴다.
+   *
+   * ⚠ 탭의 불확실도는 간격의 흔들림을 탭 수로 나눈 것이다(평균의 표준오차 ≈ 흔들림/√(n-1)).
+   *   그래서 탭을 더 두드릴수록 이 수가 줄고, 언제 그만 두드려도 되는지가 화면에 보인다.
+   * @param {number[]} taps
+   * @param {{bpm:number}} t 지금 확정된 템포
+   * @param {{rows:number, cols:number}} board
+   * @returns {string}
+   */
+  function tapHelpText(taps, t, board) {
+    const totalCounts = Math.max(1, board.rows * board.cols);
+    if (taps.length < 2) {
+      return '박자에 맞춰 네 번 이상 두드리세요. 재생 중이면 영상 시계로, 멈춰 있으면 지금 시각으로 잽니다.';
+    }
+    const bpm = bpmFromTaps(taps, 1);
+    if (bpm === null) return '두드린 간격을 읽지 못했습니다 — `탭 지우기` 로 다시 시작하세요.';
+
+    const parts = [`탭 ${taps.length}번 → ${formatBpm(bpm)} BPM`];
+    const spread = tapSpread(taps);
+    if (spread !== null) {
+      const stdErr = spread / Math.sqrt(Math.max(1, taps.length - 1));
+      const own = driftCounts(bpm * (1 + stdErr), bpm, totalCounts);
+      parts.push(`흔들림 ±${(spread * 100).toFixed(1)}%`);
+      if (own !== null) parts.push(`이대로면 표 끝에서 ±${own.toFixed(1)}카운트`);
+    }
+    // 이미 정해 둔 값이 있으면 **둘의 차이**를 같은 단위로 말한다 — 그것이 하이브리드의 판단 근거다.
+    if (isTempoUsable(t)) {
+      const gap = driftCounts(bpm, t.bpm, totalCounts);
+      if (gap !== null) {
+        parts.push(gap < 0.5
+          ? `지금 값(${formatBpm(t.bpm)})과 표 끝에서 ${gap.toFixed(1)}카운트 차이 — 바꿀 것 없습니다`
+          : `지금 값(${formatBpm(t.bpm)})과 표 끝에서 ${gap.toFixed(1)}카운트 차이`);
+      }
+    } else {
+      parts.push('두 점 맞추기(위)가 훨씬 정확합니다 — 멀리 떨어진 두 지점일수록 좋습니다');
+    }
+    return parts.join(' · ');
+  }
+
   function renderTempo() {
     const board = mainBoard();
     const t = tempo();
@@ -543,11 +611,12 @@ export function createVideoPanel(deps) {
     }
     if (markCancelBtn) markCancelBtn.disabled = (p.tempoPoints || []).length === 0;
 
-    // 탭 템포. 시각은 미디어 시계라 멈춘 영상에서는 간격이 벌어지지 않는다 — 그 사실을 라벨로 말한다.
+    // 탭 템포. 재생 중이면 미디어 시계로, 멈춰 있으면 지금 시각으로 잰다(tapClockSec).
     const taps = p.taps || [];
     if (tapBtn) tapBtn.textContent = taps.length ? `탭 (${taps.length})` : '탭';
     if (tapCommitBtn) tapCommitBtn.disabled = taps.length < 2;
     if (tapClearBtn) tapClearBtn.disabled = taps.length === 0;
+    if (tapHelp) tapHelp.textContent = tapHelpText(taps, t, board);
 
     // 직접 입력 — ⚠ 타이핑 중에는 되쓰지 않는다(커서가 끝으로 튀고 입력이 잘린다).
     if (bpmInput && document.activeElement !== bpmInput) bpmInput.value = ready ? formatBpm(t.bpm) : '';
@@ -586,14 +655,38 @@ export function createVideoPanel(deps) {
     const start = panelState().captureSec;
     const running = Number.isFinite(start);
     const ready = isTempoUsable(tempo());
+    // ── 받아 적기는 두 걸음: 처음으로 → 끊기 (2026-09-22) ──────────────────────
+    // **`끊기` 하나가 처음부터 끝까지 맡는다.** 처음 누른 자리가 1카운트이고, 그 뒤로는 경계다.
+    // ⚠⚠ 한때 첫 타를 `● 여기가 1카운트` 라는 다른 버튼으로 갈라 두었다(2026-09-21). 손이 하는
+    //    일은 첫 타든 열째 타든 **같은 한 번의 누름**(`K`)인데 버튼만 둘이라, "지금은 어느 쪽인가"를
+    //    도로 읽게 만들었다 — 가르지 않는 편이 낫다.
+    // ⚠ 라벨도 바뀌지 않는다. 한 자리에서 글자가 오락가락하면 그것도 읽어야 하는 일이 된다.
+    //   지금 받는 중인지는 **안내 줄**(captureHelp)이 시각까지 들어 말해 준다.
     if (captureBtn) {
-      // 연속으로 찍는다(2026-09-13) — 한 동작의 끝이 곧 다음의 시작이라 경계마다 한 번씩이다.
-      captureBtn.textContent = running ? '▮ 여기서 끊기' : '● 받아 적기 시작';
-      captureBtn.className = running ? CLS.warn : CLS.primary;
       captureBtn.disabled = !ready;
     }
     if (captureSkipBtn) captureSkipBtn.disabled = !ready;
     if (captureCancelBtn) captureCancelBtn.disabled = !running;
+    // 받는 중에만 붙는 꼬리 문장 — 오른쪽 위 배지와 **같은 판정**을 말로 푼다(2026-09-22).
+    // ⚠ 배지는 짧게(`· 영상이 더 느림 ≈126`), 여기는 **무엇을 하면 되는지**까지 적는다.
+    //   같은 사실을 두 번 적는 것이 아니라, 눈길이 닿는 자리마다 필요한 만큼만 적는 것이다.
+    function driftSentence() {
+      const t = tempo();
+      const report = driftReport(panelState().captureDrift, t.bpm);
+      if (report.state === 'fast' || report.state === 'slow') {
+        const dir = report.state === 'fast' ? '빠릅니다' : '느립니다';
+        const est = report.bpmEstimate ? ` 끊은 자리로 다시 재면 약 ${formatBpm(report.bpmEstimate)} BPM 입니다 —` : '';
+        return ` ⚠ 끊은 자리가 갈수록 밀립니다: 영상이 지금 BPM(${formatBpm(t.bpm)})보다 ${dir}.${est}`
+          + ' 지금 받는 것을 끝내고 `② 박자 맞추기` 에서 고치면 그다음부터 맞습니다(여기서 저절로 바꾸지는 않습니다).';
+      }
+      if (report.state === 'lag') {
+        const dir = report.mean > 0 ? '늦게' : '일찍';
+        return ` 끊은 자리가 고르게 ${dir} 찍힙니다(평균 ${Math.abs(report.mean).toFixed(2)}카운트).`
+          + ' 박자가 아니라 손이라서, 다 받은 뒤 아래 `표 전체 옮기기` 한 번이면 됩니다.';
+      }
+      return '';
+    }
+
     // 표 전체 옮기기는 박자와 무관하다 — 놓인 블록이 있으면 쓸 수 있다.
     const hasBlocks = typeof commands.canShiftAll === 'function' ? commands.canShiftAll() : false;
     if (shiftBackBtn) shiftBackBtn.disabled = !hasBlocks;
@@ -609,12 +702,68 @@ export function createVideoPanel(deps) {
         captureHelp.textContent = '먼저 `② 박자 맞추기` 에서 BPM 을 정하세요 — 영상의 초를 안무표의 카운트로 바꾸는 데 박자가 필요합니다.';
       } else if (running) {
         captureHelp.textContent = `${formatClock(start)} 부터 받는 중 — 동작이 바뀌는 자리마다 \`B\` 나 \`K\`. `
-          + '안무가 아닌 대목은 `N` 으로 건너뛰고, 스페이스로 재생을 멈췄다 이어 갑니다. 다 되면 `Esc` 나 `■ 그만`.';
+          + '안무가 아닌 대목은 `N` 으로 건너뛰고, 스페이스로 재생을 멈췄다 이어 갑니다. 다 되면 `Esc` 나 `■ 그만`.'
+          + driftSentence();
       } else {
-        captureHelp.textContent = '영상을 보면서 동작이 바뀌는 자리마다 한 번씩(`B` 나 `K`) 누르면 그 사이가 이름 없는 블록(`?`)으로 놓입니다. '
-          + '한 동작의 끝이 곧 다음 동작의 시작이라 두 번 누를 필요가 없습니다. 이름은 나중에 붙입니다. 스페이스로 재생을 멈췄다 이어 갑니다. 글쇠는 `⚙ 설정` 의 `단축키` 에서 바꿉니다.';
+        captureHelp.textContent = '`⏮ 처음으로` 로 되감고, 안무가 시작하는 순간 `▮ 끊기`(`K` 나 `B`)를 누르세요 — '
+          + '**처음 누른 자리가 1카운트**입니다. 그 뒤로는 동작이 바뀌는 자리마다 한 번씩 누르면 그 사이가 이름 없는 블록(`?`)으로 놓입니다. '
+          + '누른 자리는 **두 카운트 격자**(1·3·5·7박)에 붙습니다 — 한 카운트 어긋난 자리에서 시작하는 동작은 없으므로 손의 오차는 여기서 걸러집니다. '
+          + '한 동작의 끝이 곧 다음 동작의 시작이라 두 번 누를 필요가 없습니다. 이름은 나중에 붙입니다. 스페이스로 재생을 멈췄다 이어 갑니다.';
       }
       captureHelp.classList.toggle(CLS.isError, false);
+    }
+    renderVoice(ready, running);
+  }
+
+  /**
+   * 마이크 줄 (2026-09-22). 세 가지를 말한다 — 켜져 있나 · 지금 듣고 있나 · 지금 붙을 이름은 무엇인가.
+   *
+   * ⚠ 「켜져 있다」와 「듣고 있다」는 다르다. 크롬은 조용하면 스스로 멈추고 우리가 다시 켠다.
+   *   그 틈을 `wait` 로 드러낸다 — 안 듣는 줄 모르고 말하는 것이 이 기능의 가장 나쁜 실패다.
+   * ⚠ 받아 적는 중이 아니면 마이크를 켤 수 없다. 붙일 구간이 없기 때문이다.
+   */
+  function renderVoice(ready, running) {
+    const usable = Boolean(voice && voice.available());
+    if (voiceField) voiceField.hidden = !usable;
+    if (voiceHelp) voiceHelp.hidden = !usable;
+    if (!usable) return;
+
+    const wanted = voice.wanted();
+    const listening = voice.listening();
+    const heard = voice.heard ? voice.heard() : null;
+
+    if (voiceBtn) {
+      voiceBtn.disabled = !ready || (!running && !wanted);
+      voiceBtn.textContent = wanted ? '🎤 마이크 끄기' : '🎤 마이크 켜기';
+      voiceBtn.dataset.listening = wanted ? (listening ? 'on' : 'wait') : 'off';
+    }
+    if (voiceNow) {
+      voiceNow.hidden = !heard;
+      if (heard) {
+        voiceNow.textContent = heard.name === heard.heard ? heard.name : `${heard.name} ← “${heard.heard}”`;
+        voiceNow.dataset.sure = heard.needsLlm ? 'no' : 'yes';
+      }
+    }
+    if (voiceHelp) {
+      const err = voice.error();
+      voiceHelp.classList.toggle(CLS.isError, Boolean(err));
+      if (err) {
+        voiceHelp.textContent = err;
+      } else if (!ready) {
+        voiceHelp.textContent = '박자를 먼저 정해야 합니다 — 붙일 구간이 있어야 이름을 받을 수 있습니다.';
+      } else if (!wanted) {
+        voiceHelp.textContent = '받아 적는 동안 동작 이름을 말하면 **그때 열려 있던 구간**에 붙습니다. '
+          + '`▮ 끊기` 로 구간을 연 뒤 영상을 보면서 말하세요. 잘못 들었으면 그 구간 안에서 한 번 더 말하면 나중 것이 이깁니다. '
+          + '⚠ 크롬은 음성을 **구글 서버로 보내** 인식합니다(끌 수 없습니다).';
+      } else if (!listening) {
+        voiceHelp.textContent = '⏸ 잠깐 멈췄습니다 — 다시 켜는 중입니다. 지금 말한 것은 놓칠 수 있습니다.';
+      } else if (heard) {
+        voiceHelp.textContent = heard.needsLlm
+          ? `“${heard.heard}” 로 붙습니다. 동작 목록에서 못 찾아서, 놓인 뒤 LLM 이 정식 이름으로 고쳐 끼웁니다.`
+          : `\`${heard.name}\` 으로 붙습니다 — 동작 목록에 있는 이름입니다.`;
+      } else {
+        voiceHelp.textContent = '🎤 듣고 있습니다. 이 구간의 동작 이름을 말하세요.';
+      }
     }
   }
 
@@ -731,10 +880,384 @@ export function createVideoPanel(deps) {
   //   사용자가 옮기거나 크기를 바꾼 뒤에만 덮어쓴다 — 그래야 처음 띄울 때 화면 크기를 따라간다.
   // ⚠ 창이 화면 밖으로 나가지 않게 가둔다. 끌다 놓친 창을 되찾을 길이 없으면 새로고침밖에 없다.
 
-  /** 화면 크기에 맞춘 기본 폭. 큰 모니터에서 너무 커지지 않게 위를 막는다. */
+  /** 영상이 아무리 커도 이보다 작지는 않다 — 이만큼도 못 주는 창이면 띠 자체가 무의미하다. */
+  const BAND_MIN_H = 200;
+  /**
+   * 띠 아래에 **반드시 남겨 둘** 안무표의 세로(px). 캔버스 바(약 60)와 서너 줄이 들어갈 만큼이다.
+   * ⚠ 영상 크기는 이 수를 뺀 나머지로 정한다 — 그래서 창이 크면 영상이 크고, 작으면 안무표가 먼저다.
+   *   고정 비율(0.38vh)로 두면 큰 창에서는 좌우가 남고 작은 창에서는 표가 두 줄만 남았다(2026-09-21).
+   */
+  const BOARD_MIN_H = 260;
+  /** 띠와 안무표 사이, 그리고 띠 위쪽의 틈(px). */
+  const BAND_GAP = 8;
+  /**
+   * 띠 바로 아래 붙는 조작 줄(`#thumbBar`)의 높이(px).
+   * ⚠ CSS 의 `body[data-videoband="on"] .thumb-bar { height: … }` 와 **같은 수**다. 재서 쓰지 않는다 —
+   *   그 줄의 버튼은 ui/thumbBar 가 이 함수 **뒤에** 그리므로, 첫 렌더에 재면 빈 줄의 높이가 나와
+   *   안무표가 그만큼 덜 밀리고 첫 마디가 줄 밑에 깔린다. 한쪽을 고치면 다른 쪽도 고친다.
+   */
+  const BAND_DOCK_H = 44;
+
+  /** 화면 크기에 맞춘 `⤢ 크게` 의 기본 폭. 큰 모니터에서 너무 커지지 않게 위를 막는다. */
   function defaultFloatWidth() {
-    const vw = window.innerWidth;
-    return Math.round(Math.max(420, Math.min(vw * 0.56, 1100)));
+    return Math.round(Math.max(420, Math.min(window.innerWidth * 0.56, 1100)));
+  }
+
+  /**
+   * 기록에 쓰는 단계 이름. 마크업 순서가 곧 이름이라 라벨을 고쳐도 기록이 끊기지 않는다.
+   * @param {number} i 0-based
+   */
+  const stepId = (i) => `step${i + 1}`;
+
+  /** 눕힌 띠의 단계들(①~⑥). `.vsub`(고급)은 자식이 아니라 손자라 걸리지 않는다. */
+  const STEP_SEL = '.video-body > .vstep';
+  const stepEls = () => [...document.querySelectorAll(STEP_SEL)];
+
+  /**
+   * 띠에 들어설 때 열어 둘 단계 — **아직 안 끝난 첫 단계**다. 영상이 없으면 ①, 박자가 없으면 ②,
+   * 둘 다 됐으면 ③(받아 적기). 차례대로 하는 일이라 "다음에 무엇을 하나"의 답이 곧 이것이다.
+   *
+   * ⚠ **들어설 때 한 번만** 정한다. 렌더마다 다시 정하면 사용자가 연 단계가 자꾸 닫힌다.
+   * @returns {number} 0-based
+   */
+  function firstUnfinishedStep() {
+    if (!clip().source) return 0;
+    if (!isTempoUsable(tempo())) return 1;
+    return 2;
+  }
+
+  /** 그 하나만 연다. 띠에서는 여러 단계가 동시에 펼쳐지면 안무표가 화면 밖으로 밀려난다. */
+  function openOnlyStep(idx) {
+    stepEls().forEach((el, i) => { el.open = i === idx; });
+    renderFlowSteps();
+  }
+
+  /**
+   * 단계 이름을 버튼에 앉힐 만큼 줄인다 — `③ 받아 적기 — 보면서 표에 놓기` → `받아 적기`.
+   *
+   * 떼는 것이 둘이다.
+   *  · `— …` 뒤의 설명 — 여섯을 한 줄에 놓아야 한다(펼치면 본문이 그대로 말해 준다).
+   *  · 앞머리의 **동그라미 숫자**(①~⑨) — 아이콘이 이미 그 자리에 있고, 번호는 왼쪽에서
+   *    오른쪽으로 이어진 줄이 이미 말한다. 아이콘·번호·✓·이름이 한 칸에 겹치면 넷 다 안 읽힌다.
+   * @param {Element} el `<details class="vstep">`
+   * @returns {string}
+   */
+  function stepLabel(el) {
+    const raw = (el.querySelector('summary')?.textContent || '').trim();
+    const head = raw.split('—')[0].trim() || raw;
+    // U+2460~2473 = ① ~ ⑳. 마크업의 `<summary>` 는 번호를 그대로 둔다(패널에서는 차례가 글자다).
+    return head.replace(/^[\u2460-\u2473]\s*/, '').trim() || head;
+  }
+
+  /**
+   * 그 단계가 이미 끝났는가. ①은 영상이, ②는 박자가, ③은 놓인 블록이 있으면 끝이다.
+   * ④~⑥은 있으면 좋은 것이지 차례가 아니라 **끝났다고 말하지 않는다**(거짓 완료 표시가 된다).
+   * @param {number} idx
+   * @returns {boolean}
+   */
+  function stepDone(idx) {
+    if (idx === 0) return Boolean(clip().source);
+    if (idx === 1) return isTempoUsable(tempo());
+    if (idx === 2) return mainBoard().placements.length > 0;
+    return false;
+  }
+
+  /**
+   * 작업 차례를 **화살표로 이은 버튼 줄**로 그린다(2026-09-21). 눕힌 띠에서만 보인다.
+   *
+   * ⚠ 이름과 순서의 주인은 마크업의 `<details class="vstep">` 들이다 — 여기서 목록을 손으로 적지
+   *   않는다. 단계를 하나 더하면 `<details>` 만 더하면 이 줄이 저절로 늘어난다(개발 원칙 R-8).
+   * ⚠ 엄지 바와 같은 규약으로 **버튼을 갈아 끼우지 않는다.** 누르는 순간 엘리먼트가 사라지면 그
+   *   클릭이 허공에 떨어진다. 같은 자리면 라벨·상태만 고친다.
+   */
+  function renderFlowSteps() {
+    if (!flowSteps || detachMode !== 'band') return;
+    const els = stepEls();
+    const btns = reconcileFlowChildren(els.length);
+    // 지금까지의 버릇이 짚어 주는 다음 자리. **없으면 아무 표식도 붙지 않는다** —
+    // 표본이 모자랄 때 우연히 한 번 누른 길을 `다음` 이라고 내세우지 않는다(domain/flowStats).
+    const suggested = flow.suggest();
+    els.forEach((el, i) => {
+      const btn = btns[i];
+      if (!btn) return;
+      const done = stepDone(i);
+      // 아이콘의 주인은 **마크업의 `data-icon`** 이다(이름과 같다) — 여기에 목록을 적지 않는다.
+      const icon = btn.querySelector('.flow-icon');
+      const nameEl = btn.querySelector('.flow-name');
+      if (icon) icon.textContent = el.dataset.icon || '·';
+      // ⚠ `✓` 를 이름 앞에 붙이지 않는다 — 끝난 것은 **색**이 말한다(data-state="done").
+      //   아이콘·✓·번호·이름 넷을 한 칸에 욱여넣으면 넷 다 안 읽힌다.
+      if (nameEl) nameEl.textContent = stepLabel(el);
+      btn.dataset.state = el.open ? 'now' : (done ? 'done' : 'todo');
+      // ⚠ 표식일 뿐이다. 버튼의 **자리도 순서도 크기도 바뀌지 않는다** — 손에 익은 과녁이
+      //   통계 때문에 옮겨 다니면 그것은 적응이 아니라 과녁이 흔들리는 것이다.
+      if (!el.open && suggested === stepId(i)) btn.dataset.next = '1';
+      else delete btn.dataset.next;
+      // 남은 할 일 수. **0 이면 표식을 지운다** — 0 이라고 적힌 배지는 아무 말도 하지 않으면서
+      // 자리만 차지한다(CSS 는 이 값이 있을 때만 배지를 그린다).
+      const open = openCount(store.get().stepTodos, stepId(i));
+      if (open > 0) btn.dataset.todo = String(open);
+      else delete btn.dataset.todo;
+      btn.setAttribute('aria-expanded', String(Boolean(el.open)));
+      // ⚠ onclick 대입이다(addEventListener 가 아니다) — 다시 그릴 때마다 붙이면 한 번 누른 것이
+      //   두 번 돌아간다. 여는 일 자체는 `toggle` 리스너가 나머지를 닫아 준다.
+      // ⚠ **사람이 누른 것만** 센다. openOnlyStep 이 프로그램으로 여는 것은 차례가 아니다.
+      btn.onclick = () => { el.open = true; flow.note(stepId(i)); };
+    });
+    drawFlowTrack(els.length);
+    renderStepTodos();
+  }
+
+  /**
+   * 단계마다 **그 단계에서 할 일**을 적어 둔다(2026-09-21). 적는 자리가 그 일을 할 자리와 같아서,
+   * 나중에 그 단계를 열면 거기 있다.
+   *
+   * ⚠ 마크업에 목록을 만들지 않는다 — 단계가 늘면 여섯 벌을 손으로 베껴야 한다. 여기서 각
+   *   `.vstep-body` 에 한 번 붙이고 그 뒤로는 내용만 고친다.
+   * ⚠ **열린 단계만** 그린다. 닫힌 `<details>` 안은 어차피 안 보이고, 여섯 벌을 매번 그리면
+   *   받아 적는 동안 블록 하나마다 도는 렌더가 그만큼 무거워진다.
+   * ⚠ 입력 중에는 커밋하지 않는다. 확정(Enter·`+ 추가`)에서만 히스토리에 넣는다 — 글자마다
+   *   커밋하면 되돌리기 한 번이 한 글자를 지운다.
+   */
+  function renderStepTodos() {
+    stepEls().forEach((el, i) => {
+      if (!el.open) return;
+      const body = el.querySelector('.vstep-body');
+      if (!body) return;
+      let box = body.querySelector('.step-todo');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'step-todo';
+        box.innerHTML = '<div class="step-todo-head"></div><div class="step-todo-list"></div>'
+          + '<div class="step-todo-add"><input type="text" placeholder="여기서 할 일을 적어 둡니다 — Enter" maxlength="120" />'
+          + '<button type="button" class="ghost accent">+ 추가</button></div>';
+        body.appendChild(box);
+        const input = box.querySelector('input');
+        const addBtn = box.querySelector('button');
+        const submit = () => {
+          const text = input.value.trim();
+          if (!text) return;
+          input.value = '';
+          applyCommitting({ ...commands.addStepTodo({ stepId: stepId(i), text }), committed: true });
+          renderStepTodos();
+        };
+        addBtn.onclick = submit;
+        // ⚠ keydown 이다. `change` 로 받으면 Enter 와 포커스 이동이 같은 뜻이 되어, 다른 칸으로
+        //   옮기기만 해도 할 일이 하나 생긴다.
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+      }
+      const list = (store.get().stepTodos || {})[stepId(i)] || [];
+      const head = box.querySelector('.step-todo-head');
+      const open = list.filter(t => !t.done).length;
+      head.textContent = list.length
+        ? `할 일 ${open}개 남음 · 모두 ${list.length}개`
+        : '할 일 — 지금 멈추지 않고 적어 두었다가 나중에 처리합니다';
+      const listEl = box.querySelector('.step-todo-list');
+      listEl.textContent = '';
+      for (const todo of list) {
+        const row = document.createElement('div');
+        row.className = 'step-todo-row' + (todo.done ? ' is-done' : '');
+        const check = document.createElement('button');
+        check.type = 'button';
+        check.className = 'step-todo-check';
+        check.textContent = todo.done ? '☑' : '☐';
+        check.title = todo.done ? '아직 안 한 것으로' : '했다고 표시';
+        check.onclick = () => {
+          applyCommitting({ ...commands.toggleStepTodo({ stepId: stepId(i), id: todo.id }), committed: true });
+          renderStepTodos();
+        };
+        const text = document.createElement('span');
+        text.className = 'step-todo-text';
+        text.textContent = todo.text;
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'step-todo-del';
+        del.textContent = '✕';
+        del.title = '이 할 일을 지웁니다';
+        del.onclick = () => {
+          applyCommitting({ ...commands.removeStepTodo({ stepId: stepId(i), id: todo.id }), committed: true });
+          renderStepTodos();
+        };
+        row.append(check, text, del);
+        listEl.appendChild(row);
+      }
+    });
+  }
+
+  /**
+   * 줄에 필요한 만큼 버튼과 화살표를 맞춰 두고 **버튼만** 돌려준다.
+   *
+   * ⚠⚠ **자리(index)로 찾지 않는다.** 길 SVG 가 이 줄의 **첫 자식**으로 들어오기 때문에
+   *   `children[i * 2]` 는 한 칸씩 밀려 화살표를 가리킨다 — 2026-09-21 에 실제로 그랬고, 그래서
+   *   길을 그린 뒤의 렌더는 상태·배지를 엉뚱한 요소에 썼다(화면은 옛 값 그대로였다).
+   *   클래스로 찾으면 앞에 무엇이 더 붙어도 흔들리지 않는다.
+   * ⚠ 버튼을 갈아 끼우지 않는다 — 누르는 순간 사라지면 그 클릭이 허공에 떨어진다(엄지 바와 같은 규약).
+   * @param {number} count 단계 수
+   * @returns {HTMLElement[]} 차례대로의 단계 버튼
+   */
+  function reconcileFlowChildren(count) {
+    const isTrack = (n) => n.classList && n.classList.contains('flow-track');
+    let nodes = [...flowSteps.children].filter(n => !isTrack(n));
+    const want = Math.max(0, count * 2 - 1);   // 버튼 n 개 + 화살표 n-1 개
+    while (nodes.length > want) nodes.pop().remove();
+    while (nodes.length < want) {
+      const i = nodes.length;
+      let el;
+      if (i % 2 === 0) {
+        // ⚠ 아이콘과 이름을 **따로** 담는다. 한 덩이 글자로 두면 테마가 아이콘만 발광하는 마디로
+        //   키울 수가 없다(테마가 그렇게 한다).
+        el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'flow-step';
+        const ic = document.createElement('span');
+        ic.className = 'flow-icon';
+        ic.setAttribute('aria-hidden', 'true');
+        const nm = document.createElement('span');
+        nm.className = 'flow-name';
+        el.append(ic, nm);
+      } else {
+        el = document.createElement('span');
+        el.className = 'flow-arrow';
+        el.setAttribute('aria-hidden', 'true');
+        el.textContent = '→';
+      }
+      flowSteps.appendChild(el);
+      nodes.push(el);
+    }
+    return nodes.filter((_, i) => i % 2 === 0);
+  }
+
+  /**
+   * 버튼 뒤에 **길**을 그린다(2026-09-21). 사용자가 건네준 `boot-flow.html` 의 길을 이 띠의 크기로
+   * 옮긴 것이다 — 스플라인 길 · 원근 리본 · 흐르는 입자.
+   *
+   * ⚠ 좌표는 domain/flowTrack 이 만든다. 여기서는 **재서 넘기고 그려 넣기만** 한다.
+   * ⚠ SVG 는 `aria-hidden` 이다. 누를 수 있는 것은 여전히 버튼이고, 길은 그 버튼들이 어떤 차례로
+   *   이어지는지를 **보여 주기만** 한다(원본도 같은 구조였다 — 장식 SVG + 진짜 button).
+   * ⚠ 폭이 바뀌면 다시 그린다. 값을 캐시하지 않는다 — 한 번 그린 길이 창 크기를 따라오지 않으면
+   *   마디가 버튼과 어긋나고, 그 어긋남은 화면에서 바로 보인다.
+   */
+  function drawFlowTrack(count) {
+    if (!flowSteps) return;
+    let svg = flowSteps.querySelector('.flow-track');
+    const rect = flowSteps.getBoundingClientRect();
+    const w = Math.round(rect.width);
+    const h = Math.round(rect.height);
+    const track = flowTrack({ width: w, height: h, count });
+    if (!track) { if (svg) svg.remove(); return; }
+
+    if (!svg) {
+      svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'flow-track');
+      svg.setAttribute('aria-hidden', 'true');
+      // ⚠ **맨 앞에** 둔다. 뒤에 붙이면 버튼 위를 덮어 클릭이 SVG 에 먹힌다.
+      flowSteps.insertBefore(svg, flowSteps.firstChild);
+    }
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    svg.setAttribute('width', String(w));
+    svg.setAttribute('height', String(h));
+    // ⚠ 층을 쌓는 차례가 곧 빛이다(원본과 같다): 안개 → 아스팔트 → 발광 → 색선 → 흰 심 → 입자.
+    svg.innerHTML =
+      `<path class="ft-haze" d="${track.center}" />`
+      + `<path class="ft-road" d="${track.ribbon}" />`
+      + `<path class="ft-glow" d="${track.center}" />`
+      + `<path class="ft-line" d="${track.center}" />`
+      + `<path class="ft-core" d="${track.center}" />`
+      + `<path class="ft-spark" d="${track.center}" />`;
+
+    // 버튼을 마디 자리로 옮긴다. 라벨은 버튼 안에 있으므로 함께 따라간다.
+    const btns = [...flowSteps.querySelectorAll('.flow-step')];
+    btns.forEach((btn, i) => {
+      const pt = track.points[i];
+      if (!pt) return;
+      btn.style.left = `${Math.round(pt.x)}px`;
+      btn.style.top = `${Math.round(pt.y)}px`;
+    });
+  }
+
+  /**
+   * 영상이 앉는 **띠**의 자리. 영상 칸(`.video-panel`)은 이때 오른쪽 세로 칸이 아니라 **눕혀진
+   * 가로 띠**다(CSS 의 `body[data-videoband="on"] .boards-container` 주석). 그 칸을 재서 위쪽에
+   * 영상을 놓고, 같은 값만큼 칸의 `padding-top` 을 줘 아래 내용(단계 칩)이 영상 밑에서 시작하게 한다.
+   *
+   * ⚠ 자리를 기억하지 않는다. 끌 수 없는 것이 이 띠의 요점이다(자리를 정해 두면 가릴 일이 없다).
+   * ⚠ 미는 일과 놓는 일이 **한 함수 안에** 있어야 한다. 둘이 갈리면 높이를 바꿀 때 한쪽만 고쳐져
+   *   단계가 영상에 덮이거나 빈 띠만큼 아래가 내려앉는다.
+   * ⚠ `padding-top` 은 rect 의 top·width 를 바꾸지 않는다 — 그래서 재고 쓰는 순서가 엉키지 않는다.
+   */
+  function placeBand() {
+    const strip = panel;
+    if (!strip) return;
+    const r = strip.getBoundingClientRect();
+
+    // ── 창을 재서 영상 크기를 정한다 ───────────────────────────────────────────
+    // 가로로는 띠의 폭까지, 세로로는 **남는 만큼**. 둘 중 먼저 걸리는 쪽이 크기를 정한다.
+    // ⚠ 머리줄과 단계 칸은 **실측**한다. 둘 다 띠의 padding-top 과 무관하므로 재는 순서가 엉키지
+    //   않는다(그 패딩은 이 함수가 마지막에 쓴다).
+    const head = strip.querySelector('.video-head');
+    const chromeH = (head ? head.getBoundingClientRect().height : 0)
+      + (bodyEl ? bodyEl.getBoundingClientRect().height : 0);
+    const roomH = window.innerHeight - r.top - chromeH - BAND_DOCK_H - BAND_GAP * 3 - BOARD_MIN_H;
+    const widthCap = Math.max(240, r.width - BAND_GAP * 2);
+    const h0 = Math.max(BAND_MIN_H, Math.min(roomH, widthCap * 9 / 16));
+    const w = Math.round(Math.min(h0 * 16 / 9, widthCap));
+    const h = Math.round(w * 9 / 16);
+    frame.style.width = `${w}px`;
+    setFloatViewportPos(r.left + Math.max(0, (r.width - w) / 2), r.top + BAND_GAP, w);
+    strip.style.paddingTop = `${h + BAND_DOCK_H + BAND_GAP * 2}px`;
+
+    // 영상 관련 조작은 **영상 바로 밑에** 모인다(2026-09-21). 그전에는 오른쪽 패널의 `③ 받아 적기`
+    // 안에 있어서, 띠를 보면서 누르려면 눈과 손이 화면을 가로질러야 했다.
+    // ⚠ 버튼을 여기서 만들지 않는다 — 폰의 엄지 바와 **같은 줄, 같은 뷰**(ui/thumbBar)다. 자리만 옮긴다.
+    // ⚠ 좌표는 프레임의 **실측 박스**에서 가져온다. 이 줄은 <body> 바로 아래라 포함 블록이 뷰포트인데,
+    //   프레임의 인라인 left/top 은 제 포함 블록 기준이라 그 값을 그대로 쓰면 어긋난다.
+    const dock = document.getElementById('thumbBar');
+    if (dock) {
+      const box = frame.getBoundingClientRect();
+      dock.style.left = `${Math.round(box.left)}px`;
+      dock.style.top = `${Math.round(box.bottom)}px`;
+      dock.style.width = `${Math.round(box.width)}px`;
+      dock.style.right = 'auto';
+      dock.style.bottom = 'auto';
+    }
+  }
+
+  /**
+   * 창이 지금 무엇 때문에 떠 있는가를 다시 정하고, 그 자리에 놓는다. **렌더와 리사이즈가 함께 부른다.**
+   *
+   * ⚠ **띠는 영상이 실려 있으면 바로 선다**(2026-09-21). 그전에는 `받아 적기 시작` 을 눌러야
+   *   떠서, 패널을 열어 놓고도 "상단에 크게" 가 안 된다는 말을 들었다 — 받아 적기는 영상을 보는
+   *   여러 일 중 하나일 뿐이고, 박자를 맞추거나 마커를 찍을 때도 영상은 크게 보여야 한다.
+   *   ⚠ 소스가 없으면 서지 않는다. 빈 검은 띠가 안무표를 400px 밀어내는 것이 가장 나쁘다.
+   * ⚠ **띠는 넓은 화면에만** 있다. 좁은 화면에서는 CSS 가 정한 오른쪽 위 작은 창 그대로다 —
+   *   거기서는 안무표 위에 띠를 얹을 세로가 없다. 넓은 화면에서 적어 둔 인라인 좌표가 폰 폭에
+   *   남아 있으면 그 배치를 망가뜨리므로, 모드가 아니면 **지운다**.
+   * ⚠ `data-videofloat`·`data-videoband` 를 **먼저** 쓰고 그다음에 잰다. 이 표식이 작업 영역의
+   *   backdrop-filter 를 끄고, 그 filter 가 곧 `position: fixed` 의 기준점이다 — 순서가 뒤집히면
+   *   낡은 기준점으로 잰다(창이 화면 밖으로 날아간다).
+   * @returns {'float'|'band'|null}
+   */
+  function syncDetached() {
+    const p = panelState();
+    const live = p.open && !store.session.editingRoutineId && !p.collapsed;
+    const mode = !live ? null
+      : p.floating ? 'float'
+      : (clip().source && !isStacked()) ? 'band'
+      : null;
+
+    document.body.dataset.videofloat = mode === 'float' ? 'on' : 'off';
+    document.body.dataset.videoband = mode === 'band' ? 'on' : 'off';
+    if (mode !== detachMode) {
+      const entering = mode === 'band' && detachMode !== 'band';
+      detachMode = mode;
+      floatOriginCache = null;     // 기준점이 바뀌었다(위 ⚠)
+      // 띠에 들어서는 순간에만 단계를 정리한다(위 firstUnfinishedStep 의 ⚠).
+      if (entering) openOnlyStep(firstUnfinishedStep());
+    }
+    if (mode === 'band') placeBand();
+    else if (mode === 'float') placeFloat(p);
+    else clearFloat();
+    return mode;
   }
 
   /**
@@ -760,6 +1283,10 @@ export function createVideoPanel(deps) {
     return floatOriginCache;
   }
 
+  /**
+   * `⤢ 크게` 로 띄운 창을 기억된 자리·크기에 놓는다(한 번도 옮긴 적이 없으면 오른쪽 아래).
+   * @param {any} p 패널 상태
+   */
   function placeFloat(p) {
     if (!frame) return;
     const w = Number.isFinite(p.floatW) ? p.floatW : defaultFloatWidth();
@@ -789,10 +1316,14 @@ export function createVideoPanel(deps) {
     frame.style.bottom = 'auto';
   }
 
+  /** 제자리로 되돌린다. ⚠ **띠가 밀어 둔 안무표도 함께 되돌린다** — 안 그러면 빈 띠만큼 표가 내려앉는다. */
   function clearFloat() {
     if (!frame) return;
     floatOriginCache = null;
     for (const k of ['width', 'left', 'top', 'right', 'bottom']) frame.style.removeProperty(k);
+    if (panel) panel.style.removeProperty('padding-top');
+    const dock = document.getElementById('thumbBar');
+    if (dock) for (const k of ['left', 'top', 'right', 'bottom', 'width']) dock.style.removeProperty(k);
   }
 
   /** 구간 자르기·마커 구획. In/Out 은 화면 상태, 마커는 media 에서 읽는다. */
@@ -932,25 +1463,25 @@ export function createVideoPanel(deps) {
     // 툴바 진입점의 활성 표시. '+ 빠른 배치' 와 같은 규칙이라 store 값에서 재도출한다.
     if (openBtn) openBtn.className = p.open ? CLS.quickBtnActive : CLS.ghost;
     if (followBtn) followBtn.className = p.follow ? CLS.quickBtnActive : CLS.ghost;
+    // ⚠ 차례가 있다 — 띄우기 판정이 먼저다. renderPip 이 빈 자리의 글귀를 쓸 때 detachMode 를 읽는다.
+    const mode = syncDetached();
     renderPip();
     if (collapseBtn) collapseBtn.textContent = p.collapsed ? '펼치기' : '접기';
 
-    // ── 큰 창으로 띄우기(2026-09-13) ──
-    // ⚠ 상태는 <body> 의 data-videofloat 하나이고 CSS 가 그것만 읽는다. DOM 을 옮기지 않는다 —
-    //   .video-frame 은 제자리에 있고 position:fixed 로만 떠 있다(iframe 리로드 방지).
+    // ── 패널 밖으로 띄우기(2026-09-13, 받아 적기까지 넓힘 2026-09-20) ──
+    // ⚠ 상태는 <body> 의 data-videofloat · data-videoband 이고 CSS 가 그것만 읽는다.
+    //   DOM 을 옮기지 않는다 — .video-frame 은 제자리에 있고 position:fixed 로만 떠 있다(iframe 리로드 방지).
     // ⚠ 패널이 닫히거나 접히면 띄운 창도 내린다. 안 그러면 패널을 닫았는데 영상만 화면에 남는다.
-    const floating = !!p.floating && shown && !p.collapsed;
-    document.body.dataset.videofloat = floating ? 'on' : 'off';
     if (floatBtn) {
       // ⚠ className 을 통째로 쓰지 않는다. 이 버튼은 마크업에서 `only-wide` 를 달고 있고(좁은 화면에서
       //   숨기는 장치), 통째로 덮으면 그 클래스가 날아가 **폰에서 `⤢ 크게` 가 보인다** — 화면보다 큰
       //   창을 띄우는 버튼이 폰에 뜬 채로 2026-09-13 까지 있었다. 상태 클래스만 토글한다.
-      floatBtn.classList.toggle(CLS.quickBtnActive, floating);
-      floatBtn.classList.toggle(CLS.ghost, !floating);
-      floatBtn.textContent = floating ? '⤡ 제자리로' : '⤢ 크게';
+      floatBtn.classList.toggle(CLS.quickBtnActive, mode === 'float');
+      floatBtn.classList.toggle(CLS.ghost, mode !== 'float');
+      floatBtn.textContent = mode === 'float' ? '⤡ 제자리로' : '⤢ 크게';
     }
-    if (floating) placeFloat(p); else clearFloat();
 
+    renderFlowSteps();
     renderStatus();
     renderClips();
     renderTempo();
@@ -991,7 +1522,10 @@ export function createVideoPanel(deps) {
     if (frameSlot && state === 'on') {
       frameSlot.innerHTML = '영상은 <b>PiP 창</b>으로 빼 두었습니다 — <b>⧉ PiP 끄기</b> 로 되돌립니다';
     } else if (frameSlot) {
-      frameSlot.innerHTML = '영상은 큰 창으로 띄워 두었습니다 — 창의 <b>⤡ 제자리로</b> 로 되돌립니다';
+      // ⚠ detachMode 는 syncDetached 가 **이 함수보다 먼저** 정해 둔 값이다(render 의 차례를 보라).
+      frameSlot.innerHTML = detachMode === 'band'
+        ? '영상은 <b>안무표 바로 위</b>에 크게 떠 있습니다 — 위 <b>채우기</b> 줄의 <b>▶ 영상으로 채우기</b> 로 접습니다'
+        : '영상은 큰 창으로 띄워 두었습니다 — 창의 <b>⤡ 제자리로</b> 로 되돌립니다';
     }
     if (!pipBtn) return;
     pipBtn.hidden = state === 'unavailable';
@@ -1063,9 +1597,31 @@ export function createVideoPanel(deps) {
     };
   }
 
-  // ⚠ 탭의 시각은 **미디어 시각**이다. bpm 은 "미디어 1분에 몇 박"이라 배속을 걸어도 값이 맞고,
-  //   markTempoPoint 와 같은 시계를 써야 두 경로가 어긋나지 않는다.
-  if (tapBtn) tapBtn.onclick = () => render(commands.tapTempo({ atSec: getCurrentSec() }));
+  /**
+   * 탭 하나의 시각.
+   *
+   * ⚠ **재생 중에는 미디어 시각이다.** bpm 은 "미디어 1분에 몇 박"이라 배속을 걸어도 값이 맞고,
+   *   markTempoPoint 와 같은 시계를 써야 두 경로가 어긋나지 않는다.
+   * ⚠ **멈춰 있으면 지금 시각이다**(2026-09-21). 미디어 시계는 멈춘 영상에서 한 값에 붙박여
+   *   모든 탭이 같은 시각이 되고, `bpmFromTaps` 가 null 을 돌려줘 **두드려도 아무 일이 없었다.**
+   *   탭은 "얼마나 빠른가"만 답하므로 간격만 맞으면 되고, 멈춘 채로 머릿속 박자를 두드리는 것도
+   *   쓸모가 있다(영상을 틀기 전에 값을 잡아 두는 길).
+   * ⚠ 두 시계는 값의 자릿수가 아예 다르다 — 재생/정지를 오가며 두드리면 `tapTempo` 의
+   *   "간격이 너무 벌어졌으면 처음부터"(TAP_RESET_SEC) 규칙이 알아서 series 를 끊는다.
+   */
+  const tapClockSec = () => {
+    const st = getPlayerState() || {};
+    return st.play === 'playing' ? getCurrentSec() : performance.now() / 1000;
+  };
+  // ⏮ 처음으로 — 영상을 0초로 **되감고 바로 재생한다**(2026-09-21).
+  // ⚠ 되감기만 하고 멈춰 있으면 누른 사람이 곧바로 재생을 한 번 더 눌러야 한다. 이 버튼을 누르는
+  //   까닭은 "처음부터 보면서 받아 적겠다" 하나뿐이라, 그 두 번째 누름은 언제나 따라온다.
+  // ⚠ 재생은 **사용자 제스처 콜스택 안**이라야 브라우저가 허락한다 — 클릭 핸들러에서 곧바로
+  //   부르고 await 로 한 박자 늦추지 않는다(`스페이스` 의 onTogglePlay 와 같은 규약).
+  // ⚠ 받는 중이어도 그만두지 않는다. 그만두는 버튼은 `■ 그만` 이고, 한 버튼이 두 일을 하면
+  //   둘 다 예측이 안 된다.
+  if (rewindBtn) rewindBtn.onclick = () => { onSeek(0, { play: true }); renderCapture(); };
+  if (tapBtn) tapBtn.onclick = () => render(commands.tapTempo({ atSec: tapClockSec() }));
   if (tapCommitBtn) tapCommitBtn.onclick = () => applyCommitting(commands.commitTaps());
   if (tapClearBtn) tapClearBtn.onclick = () => render(commands.clearTaps());
 
@@ -1149,10 +1705,24 @@ export function createVideoPanel(deps) {
     };
   }
 
+  // 띠에서는 단계가 **하나만** 열린다. 여섯이 다 펼쳐지면 띠 하나가 1300px 이 되어 안무표가
+  // 화면 밖으로 밀려난다(2026-09-21 에 실제로 그랬다).
+  // ⚠ `toggle` 은 **버블하지 않는다** — document 에서 들으려면 캡처 단계여야 한다.
+  // ⚠ 아래에서 다른 단계를 닫으면 그 닫힘도 toggle 을 부른다. `el.open` 이 참일 때만 도므로 멈춘다.
+  document.addEventListener('toggle', (e) => {
+    if (detachMode !== 'band') return;
+    const el = e.target;
+    if (!el || typeof el.matches !== 'function' || !el.matches(STEP_SEL) || !el.open) return;
+    for (const other of stepEls()) if (other !== el) other.open = false;
+    renderFlowSteps();
+  }, true);
+
   // ── 띄우기 조작 ───────────────────────────────────────────────────────────
   if (floatBtn && commands.setFloating) floatBtn.onclick = () => render(commands.setFloating());
   // ⚠ 브라우저 창 크기가 바뀌면 포함 블록의 자리도 바뀐다 — 기준점을 버리고 다시 잰다.
-  window.addEventListener('resize', () => { floatOriginCache = null; });
+  //   그리고 **다시 놓는다**: 1040px 을 넘나들면 받아 적기 창이 떴다 사라지고, 넓은 화면에서 적어 둔
+  //   인라인 좌표가 폰 폭에 남아 있으면 오른쪽 위 작은 창이 엉뚱한 자리에 선다.
+  window.addEventListener('resize', () => { floatOriginCache = null; syncDetached(); });
   if (floatDockBtn && commands.setFloating) {
     floatDockBtn.onclick = (e) => { e.stopPropagation(); render(commands.setFloating({ floating: false })); };
   }
@@ -1189,10 +1759,14 @@ export function createVideoPanel(deps) {
     if (typeof ResizeObserver === 'function') {
       let last = 0;
       const ro = new ResizeObserver(() => {
-        if (document.body.dataset.videofloat !== 'on') return;
+        if (detachMode !== 'float') return;
         const w = Math.round(frame.getBoundingClientRect().width);
         if (!w || Math.abs(w - last) < 2) return;
         last = w;
+        // ⚠ 모서리로 바꾼 폭을 **적어 둔다.** 안 적으면 다음 렌더의 placeFloat 가 기억된 값으로
+        //   되돌려서, 렌더가 한 번 돌 때마다 창이 손에서 튕겨 나간다.
+        //   같은 값을 도로 쓰는 것이라 크기가 다시 바뀌지 않는다(이 콜백이 되돌아오지 않는다).
+        if (commands.setFloatBox) render(commands.setFloatBox({ w }));
         onSync(true);
       });
       ro.observe(frame);
@@ -1245,7 +1819,16 @@ export function createVideoPanel(deps) {
       : `영상 길이에 맞춰 안무표를 ${rows}마디로 늘렸습니다. ` + captureHelp.textContent;
   }
 
+  // ⚠ 한 커맨드다. 처음 누르면 열고(그 시각이 1카운트), 그 뒤로는 경계를 찍는다 — 그 판정은
+  //   usecases/captureCommands 안에 있고 화면은 그것을 흉내 내지 않는다.
   if (captureBtn) captureBtn.onclick = () => captureToggle();
+  if (voiceBtn) {
+    voiceBtn.onclick = () => {
+      if (!voice) return;
+      voice.toggle();
+      renderCapture();
+    };
+  }
   if (captureSkipBtn && commands.captureSkip) {
     captureSkipBtn.onclick = () => { render(strip(commands.captureSkip({ sec: getCurrentSec() }))); renderCapture(); };
   }
@@ -1305,6 +1888,12 @@ export function createVideoPanel(deps) {
   return {
     render: renderPanel,
     renderStatus,
+    /**
+     * 영상이 지금 패널 밖 어디에 나가 있는가 — `'band'`(안무표 위 띠) · `'float'`(⤢ 크게) · `null`.
+     * ⚠ 엄지 바가 "영상 밑에 붙은 상태인가"를 이것으로 판정한다. 값은 이 뷰의 render 가 정하고,
+     *   app/render 는 **영상 패널을 엄지 바보다 먼저** 그린다(그래서 한 프레임 늦지 않는다).
+     */
+    detachMode: () => detachMode,
     /** 잘라내기 상태(대기·진행·실패)가 바뀌었다 — 구획만 다시 그린다(store 를 거치지 않는 값이다). */
     renderCut,
     /**
@@ -1313,14 +1902,56 @@ export function createVideoPanel(deps) {
      * @returns {boolean} 블록이 놓였는가
      */
     captureToggle: () => (panelState().open ? captureToggle() : false),
+    /** 마이크 켜고 끄기. 엄지 바가 같은 것을 부른다 — 폰에는 이 줄이 화면 밖이다. */
+    voiceToggle: () => {
+      if (!voice || !voice.available()) return false;
+      const on = voice.toggle();
+      renderCapture();
+      return on;
+    },
+    voiceState: () => (voice && voice.available()
+      ? { available: true, wanted: voice.wanted(), listening: voice.listening() }
+      : { available: false, wanted: false, listening: false }),
+    /** 마이크 상태만 다시 그린다. 어댑터가 스스로 멈췄다 켜질 때마다 불린다(초당 몇 번). */
+    syncVoice: () => { renderCapture(); },
     /**
-     * `P` — 재생과 일시정지를 번갈아 한다. 패널이 닫혀 있으면 아무것도 하지 않는다
+     * `스페이스` — 재생과 일시정지를 번갈아 한다. 패널이 닫혀 있으면 아무것도 하지 않는다
      * (닫힌 패널의 영상은 소리만 나는 유령이 된다).
+     *
+     * ⚠ **`⧉ PiP` 로 빼 두었으면 패널이 닫혀 있어도 듣는다**(2026-09-20). 그때 영상은 브라우저
+     *   바깥 창에 **보이고 있으므로** 유령이 아니다 — 보이는 것을 세우지 못하는 쪽이 이상하다.
+     * ⚠ 그래도 **PiP 창에 포커스가 있으면 이 글쇠는 오지 않는다.** 그 창은 브라우저 바깥이라
+     *   키 입력이 페이지에 아예 닿지 않는다(앱이 고칠 수 있는 자리가 아니다). 페이지를 한 번
+     *   누르고 나면 그때부터 듣는다.
      * @returns {boolean} 실제로 눌렀는가
      */
     togglePlay: () => {
-      if (!panelState().open) return false;
+      if (!panelState().open && getPipState() !== 'on') return false;
       onTogglePlay();
+      return true;
+    },
+    /**
+     * 탭 한 번. **영상 바로 밑 조작 줄이 같은 것을 부른다**(2026-09-21) — 박자를 잡는 일은
+     * 영상을 보면서 하는 일이라 ② 를 펼쳐 두지 않아도 닿아야 한다.
+     * @returns {boolean} 언제나 참(눌린 것 자체가 결과다)
+     */
+    tap: () => {
+      if (!panelState().open) return false;
+      render(commands.tapTempo({ atSec: tapClockSec() }));
+      return true;
+    },
+    /** 지금까지 두드린 횟수. 조작 줄이 `탭 (3)` 을 그리는 데 쓴다. */
+    tapCount: () => (panelState().taps || []).length,
+    /**
+     * 두드린 것으로 지금 계산되는 BPM. 아직 둘 미만이면 `null`.
+     * ⚠ 조작 줄이 **두드리는 자리 바로 옆에** 이 수를 적는다 — 값이 안 보이면 몇 번을 더 쳐야
+     *   할지, 지금 값이 맞는지 알 길이 없어서 결국 ② 를 펼쳐 봐야 했다(2026-09-21).
+     */
+    tapBpm: () => bpmFromTaps(panelState().taps || [], 1),
+    /** ⏮ 영상을 맨 처음으로 되감고 재생한다. 조작 줄이 같은 것을 부른다(받아 적기의 첫 차례다). */
+    rewind: () => {
+      if (!panelState().open) return false;
+      onSeek(0, { play: true });
       return true;
     },
     /** `N` — 여기까지는 안무가 아니다. 패널이 닫혀 있으면 아무 일도 하지 않는다. */

@@ -20,11 +20,13 @@
 /**
  * @param {{
  *   elements?: Record<string, HTMLElement|null>,
- *   getState: () => { panelOpen: boolean, capturing: boolean, canCapture: boolean, sheetOpen: boolean },
+ *   getState: () => { panelOpen: boolean, capturing: boolean, canCapture: boolean, sheetOpen: boolean,
+ *                     docked?: boolean, taps?: number, tapBpm?: number|null },
  *   actions: {
  *     openPanel: () => void,
  *     togglePlay: () => void,
  *     capture: () => void,
+ *     rewind: () => void,
  *     skip: () => void,
  *     stop: () => void,
  *     toggleSheet: () => void,
@@ -48,31 +50,76 @@ export function createThumbBar(options) {
   function plan() {
     const st = getState();
 
+    // 넓은 화면에서 이 줄은 **영상 띠 바로 아래**에 붙는다(2026-09-21, docked). 그 폭에서는
+    // 동작 목록이 왼쪽에 늘 펼쳐져 있으므로 `≡ 동작`(시트를 여는 버튼)은 할 일이 없다 —
+    // 여기 남는 것은 **영상을 보면서 누르는 것**뿐이다.
+    const keep = (items) => (st.docked ? items.filter(it => it.id !== 'sheet') : items);
+
     if (st.capturing) {
-      // 받는 중 — 이 셋 말고는 누를 일이 없다. `끊기` 가 주 동작이다.
-      return [
+      // 받는 중 — 이 넷 말고는 누를 일이 없다. `끊기` 가 주 동작이다.
+      // ⚠ 마이크는 **있을 때만** 낀다(음성 인식이 없는 브라우저가 있다). 라벨에 듣는 중인지를
+      //   적는다 — 안 듣는 줄 모르고 말하는 것이 이 기능의 가장 나쁜 실패다.
+      const voice = st.voice || {};
+      const micItems = voice.available
+        ? [{
+          id: 'mic',
+          label: voice.wanted ? (voice.listening ? '🎤 듣는 중' : '🎤 …') : '🎤 말로',
+          title: voice.wanted ? '마이크를 끕니다' : '마이크를 켜고 동작 이름을 말하면 지금 열려 있는 구간에 붙습니다',
+          cls: voice.wanted ? 'warn' : 'ghost',
+          run: actions.voice
+        }]
+        : [];
+      return keep([
         { id: 'play', label: '⏯', title: '재생·일시정지', cls: 'ghost', run: actions.togglePlay },
         { id: 'cut', label: '▮ 끊기', title: '동작이 바뀌는 자리', cls: 'warn', main: true, run: actions.capture },
+        ...micItems,
         { id: 'skip', label: '건너뛰기', title: '여기까지는 안무가 아니다', cls: 'ghost', run: actions.skip },
         { id: 'stop', label: '■ 그만', title: '받아 적기를 끝낸다', cls: 'ghost', run: actions.stop }
-      ];
+      ]);
     }
 
     if (st.panelOpen) {
       // 영상은 열렸고 아직 안 받는다 — 박자가 없으면 받기를 못 누른다(까닭은 패널이 적는다).
-      return [
+      // 박자를 잡는 일은 **받기 전에** 하는 일이라 이 상태에만 둔다. 받는 중에는 뺀다 —
+      // 거기서는 `끊기` 가 주 동작이고, 버튼이 다섯을 넘으면 하나도 안 읽힌다.
+      const taps = Number(st.taps) || 0;
+      // ⚠ 두드린 **값을 그 자리에서** 보인다. 숫자가 없으면 몇 번을 더 쳐야 하는지, 지금 값이
+      //   맞는지 알 수 없어 결국 ② 를 펼쳐 보게 된다 — 그러면 조작 줄에 둔 뜻이 없다.
+      const bpm = Number(st.tapBpm);
+      const bpmText = Number.isFinite(bpm) && bpm > 0 ? `${Math.round(bpm * 10) / 10}` : '';
+      // ⚠ 버튼은 **하나**다. 값을 버튼 **안**에 적으면 그 자리에서 숫자가 살아 움직이므로,
+      //   옆에 `… 으로 정하기` 를 따로 세울 까닭이 없다 — 한 가지 일에 과녁이 둘이면 둘 다
+      //   덜 눌린다. 확정은 `② 박자 맞추기` 의 `탭으로 BPM 정하기` 하나가 맡는다(2026-09-21).
+      const tapItems = st.docked && actions.tap
+        ? [{
+          id: 'tap',
+          label: bpmText ? `탭 (${taps}) · ${bpmText}` : (taps ? `탭 (${taps})` : '탭'),
+          title: bpmText ? `두드린 간격으로 ${bpmText} BPM — 더 두드릴수록 정확해집니다` : '박자에 맞춰 두드립니다',
+          cls: 'warn',
+          run: actions.tap
+        }]
+        : [];
+
+      // ⚠ 차례가 왼쪽에서 오른쪽이다 — **되감으면 바로 재생되고 → 안무가 시작할 때 누른다**. ② 박자 맞추기는
+      //   영상의 일부로 싱크를 맞추는 일이라, 여기 올 때 영상은 늘 중간 어딘가에 서 있다.
+      return keep([
         { id: 'sheet', label: '≡ 동작', title: '동작 목록을 연다', cls: 'ghost', run: actions.toggleSheet },
+        ...(actions.rewind ? [{ id: 'rewind', label: '⏮ 처음으로', title: '영상을 맨 처음으로 되감고 바로 재생한다', cls: 'ghost', run: actions.rewind }] : []),
         { id: 'play', label: '⏯', title: '재생·일시정지', cls: 'ghost', run: actions.togglePlay },
+        ...tapItems,
         {
-          id: 'start',
-          label: '● 받아 적기',
-          title: st.canCapture ? '여기서부터 받는다' : '먼저 ② 박자 맞추기에서 BPM 을 정하세요',
-          cls: 'primary',
+          // ⚠ 받는 중의 `cut` 과 **같은 id·같은 라벨·같은 자리**다(2026-09-22). 첫 타든 열째 타든
+          //   손이 하는 일은 같은 한 번의 누름이라, 버튼이 갈리면 "지금은 어느 쪽인가"를 읽게 된다.
+          //   id 가 같으므로 받기 시작해도 **버튼이 갈아 끼워지지 않고** 그 자리에 그대로 있다.
+          id: 'cut',
+          label: '▮ 끊기',
+          title: st.canCapture ? '처음 누른 자리가 1카운트 — 그 뒤로는 동작이 바뀌는 자리마다' : '먼저 ② 박자 맞추기에서 BPM 을 정하세요',
+          cls: 'warn',
           main: true,
           disabled: !st.canCapture,
           run: actions.capture
         }
-      ];
+      ]);
     }
 
     // 영상이 닫혀 있다 — 아직 아무것도 안 정한 상태다.

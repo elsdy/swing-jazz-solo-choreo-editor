@@ -14,9 +14,45 @@ import {
   EDITABLE_ACTIONS, HOTKEY_ACTIONS, MAX_KEYS_PER_ACTION,
   checkKey, eventKey, keysLabel, normalizeHotkeys, ownerOf, setKeys
 } from '../domain/hotkeys.js';
+import { DEFAULT_THEME, THEMES, normalizeTheme } from '../domain/themes.js';
 
 const STYLE_ID = 'settings-view-style';
 const CSS = `
+/* 테마 고르기(2026-09-21). 한 줄이 테마 하나다 — 색 미리보기·이름·한 줄 설명. */
+.settings-themes { display: grid; gap: 6px; }
+.settings-theme {
+  display: flex; align-items: center; gap: 10px; text-align: left; width: 100%;
+  padding: 8px 10px; border-radius: 10px; cursor: pointer;
+  background: rgba(148,163,184,0.06); border: 1px solid rgba(148,163,184,0.22); color: inherit;
+}
+.settings-theme:hover { border-color: rgba(34,197,94,0.5); }
+.settings-theme.is-on { border-color: rgba(34,197,94,0.75); background: rgba(34,197,94,0.12); }
+.settings-theme b { display: block; font-size: 12.5px; }
+.settings-theme small { display: block; font-size: 11px; color: #94a3b8; margin-top: 1px; }
+.settings-theme-swatch {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px;
+  border: 1px solid rgba(148,163,184,0.3);
+}
+.settings-theme-swatch[data-id="basic"] { background: linear-gradient(140deg, #0b1220 0%, #111827 60%, #22c55e 160%); }
+.settings-theme-swatch[data-id="neon"] {
+  background: radial-gradient(circle at 30% 25%, rgba(56,189,248,0.85), transparent 55%),
+              radial-gradient(circle at 75% 80%, rgba(251,191,36,0.9), transparent 55%),
+              linear-gradient(160deg, #050b18, #0b1e38);
+  border-color: rgba(56,189,248,0.5);
+}
+.settings-theme-swatch[data-id="rose"] {
+  background: radial-gradient(circle at 30% 25%, rgba(244,114,182,0.9), transparent 55%),
+              radial-gradient(circle at 78% 82%, rgba(192,132,252,0.9), transparent 55%),
+              linear-gradient(160deg, #140a1c, #2a1236);
+  border-color: rgba(244,114,182,0.5);
+}
+.settings-theme-swatch[data-id="candy"] {
+  background: radial-gradient(circle at 28% 24%, rgba(244,114,182,0.95), transparent 58%),
+              radial-gradient(circle at 78% 80%, rgba(45,212,191,0.9), transparent 58%),
+              linear-gradient(160deg, #fff9fd, #f6f0ff);
+  border-color: rgba(236,72,153,0.45);
+}
+
 /* 단축키 목록(2026-09-20). 한 줄이 동작 하나다 — 이름·하는 일·지금 글쇠·바꾸기. */
 .settings-keys { display: grid; gap: 6px; margin-top: 6px; }
 .settings-key-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
@@ -159,6 +195,11 @@ export function createSettingsView(deps) {
     // ⚠ getHotkeys 는 **게터다** — 설정 화면이 열려 있는 동안에도 바깥이 바꿀 수 있다.
     getHotkeys = null,
     saveHotkeys = () => {},
+    // 작업 차례 기록(2026-09-21). 이 화면은 **읽고 지우기만** 한다 — 세는 것도 담는 것도 바깥이다.
+    flow = { top: () => [], total: () => 0, clear: () => {} },
+    // 테마(2026-09-21). 목록의 주인은 domain/themes 이고, 고르면 바깥이 담고 `<html>` 에 바른다.
+    getTheme = () => DEFAULT_THEME,
+    setTheme = () => {},
     doc = document,
     // 관리 화면을 열 수 있는 기기인지 판정하고 새 탭을 여는 데 쓴다. 테스트가 가짜를 준다.
     win = typeof window === 'undefined' ? { location: { hostname: '' }, open() {} } : window
@@ -301,6 +342,22 @@ export function createSettingsView(deps) {
             <span class="settings-label" data-role="keys-note"></span>
           </div>
         </section>
+        <section class="settings-section" data-role="theme-section" data-cat="theme" data-available="1"
+          data-keywords="테마 모양 색 디자인 네온 neon theme 다크 어둡게 빛">
+          <h3>테마</h3>
+          <div class="helper">화면의 색과 빛을 고릅니다. <b>안무 블록의 색은 바뀌지 않습니다</b> — 그 색은 카테고리의 뜻이라 테마가 아닙니다. 이 브라우저에만 남고 안무표 파일에는 들어가지 않습니다.</div>
+          <div class="settings-themes" data-role="theme-list"></div>
+        </section>
+        <section class="settings-section" data-role="flow-section" data-cat="flow" data-available="1"
+          data-keywords="작업 차례 workflow 순서 기록 버릇 통계 다음 적응형">
+          <h3>작업 차례</h3>
+          <div class="helper">어떤 버튼 다음에 어떤 버튼을 눌렀는지 세어 둔 것입니다. <b>이 기록으로 화면이 바뀌지는 않습니다</b> — 영상 아래 단계 줄에 <code>다음</code> 표식 하나를 어디에 붙일지만 정하고, 같은 길을 다섯 번 넘게 갔으며 그것이 절반을 넘을 때만 붙습니다. 이 브라우저에만 남고 안무표 파일에는 들어가지 않습니다.</div>
+          <div class="settings-path" data-role="flow-list"></div>
+          <div class="settings-row">
+            <button class="ghost" data-act="flow-clear" type="button">기록 지우기</button>
+            <span class="settings-label" data-role="flow-note"></span>
+          </div>
+        </section>
         <div class="settings-empty" data-role="empty" hidden></div>
       </div>
       </div>
@@ -319,7 +376,9 @@ export function createSettingsView(deps) {
   const CATEGORIES = Object.freeze([
     Object.freeze({ id: 'storage', label: '보관 자리', hint: '파일이 어디에 쌓이는가' }),
     Object.freeze({ id: 'models', label: '모델', hint: '자세 분석과 말로 채우기가 쓰는 모델' }),
-    Object.freeze({ id: 'keys', label: '단축키', hint: '손을 자판에 두고 쓰는 글쇠' })
+    Object.freeze({ id: 'keys', label: '단축키', hint: '손을 자판에 두고 쓰는 글쇠' }),
+    Object.freeze({ id: 'flow', label: '작업 차례', hint: '어떤 버튼 다음에 어떤 버튼을 눌렀나' }),
+    Object.freeze({ id: 'theme', label: '테마', hint: '화면 전체의 색과 빛' })
   ]);
   const ALL_CAT = 'all';
 
@@ -626,6 +685,8 @@ export function createSettingsView(deps) {
     // ⚠ 단축키는 **먼저** 그린다. 아래 셋은 서버를 기다리므로(await), 뒤에 두면 서버가 없는
     //   환경에서 목록이 몇 초 뒤에야 나타난다 — 이 절은 서버와 무관하다.
     renderKeys();
+    renderThemes();
+    renderFlow();
     await renderModels();
     await renderLlm();
     await renderProjects();
@@ -968,6 +1029,71 @@ export function createSettingsView(deps) {
           : `\`${key}\` 로 바꿨습니다.`;
       }
     }, true);
+  }
+
+  // ── 작업 차례 (2026-09-21) ───────────────────────────────────────────────
+  //
+  // 세어 둔 것을 **사람이 읽을 수 있게** 내놓는 자리다. 기계가 배운 것을 사람이 못 보면 그것을
+  // 믿을지 말지 정할 수 없고, 못 믿는 추천은 없느니만 못하다.
+  // ⚠ 이 절은 아무것도 바꾸지 않는다(지우기 하나뿐이다). 화면을 움직이는 적응은 만들지 않았다.
+  const flowListEl = overlay.querySelector('[data-role="flow-list"]');
+  const flowNoteEl = overlay.querySelector('[data-role="flow-note"]');
+
+  /** 기록의 id 를 사람 말로. 모르는 id 는 그대로 보인다(단계가 늘어도 화면이 깨지지 않는다). */
+  const FLOW_LABELS = Object.freeze({
+    step1: '① 영상 고르기', step2: '② 박자 맞추기', step3: '③ 받아 적기',
+    step4: '④ 구간 잘라내기', step5: '⑤ 마커', step6: '⑥ 자세 분석',
+    play: '재생·일시정지', tap: '탭', tapok: 'BPM 정하기',
+    capture: '받아 적기·끊기', skip: '건너뛰기', stop: '그만'
+  });
+  const flowLabel = (id) => FLOW_LABELS[id] || id;
+
+  function renderFlow() {
+    if (!flowListEl) return;
+    const rows = typeof flow.top === 'function' ? flow.top(12) : [];
+    const total = typeof flow.total === 'function' ? flow.total() : 0;
+    flowListEl.textContent = rows.length
+      ? rows.map(t => `${flowLabel(t.from)} → ${flowLabel(t.to)}   ${t.n}번`).join('\n')
+      : '아직 기록이 없습니다. 영상 아래 단계 줄과 조작 줄을 쓰면 여기에 쌓입니다.';
+    if (flowNoteEl) flowNoteEl.textContent = total ? `모두 ${total}번` : '';
+  }
+
+  // ── 테마 (2026-09-21) ────────────────────────────────────────────────────
+  // ⚠ 목록을 여기에 적지 않는다 — domain/themes 의 THEMES 를 그대로 그린다.
+  const themeListEl = overlay.querySelector('[data-role="theme-list"]');
+
+  function renderThemes() {
+    if (!themeListEl) return;
+    const cur = normalizeTheme(getTheme());
+    themeListEl.textContent = '';
+    for (const theme of THEMES) {
+      const btn = doc.createElement('button');
+      btn.type = 'button';
+      btn.className = 'settings-theme' + (theme.id === cur ? ' is-on' : '');
+      btn.dataset.id = theme.id;
+      // 색 미리보기 — 고르기 전에 무엇이 되는지 보여 준다(이름만으로는 아무도 모른다).
+      const swatch = doc.createElement('span');
+      swatch.className = 'settings-theme-swatch';
+      swatch.dataset.id = theme.id;
+      const main = doc.createElement('span');
+      const name = doc.createElement('b');
+      name.textContent = theme.label;
+      const hint = doc.createElement('small');
+      hint.textContent = theme.hint;
+      main.append(name, hint);
+      btn.append(swatch, main);
+      btn.onclick = () => { setTheme(theme.id); renderThemes(); };
+      themeListEl.appendChild(btn);
+    }
+  }
+
+  const flowClearBtn = overlay.querySelector('[data-act="flow-clear"]');
+  if (flowClearBtn) {
+    flowClearBtn.onclick = () => {
+      if (typeof flow.clear === 'function') flow.clear();
+      renderFlow();
+      if (flowNoteEl) flowNoteEl.textContent = '기록을 지웠습니다.';
+    };
   }
 
   const keysResetBtn = overlay.querySelector('[data-act="keys-reset"]');
