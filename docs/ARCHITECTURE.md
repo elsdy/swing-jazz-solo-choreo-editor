@@ -233,6 +233,12 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `markers.js` | 영상 구간 ↔ 안무표 카운트 구간 마커(2026-09-10). 정규화·추가·삭제·잘라내기 뒤 이동(`shiftMarkersForTrim`). id 는 값에서 결정론적으로 만들어 난수가 없다. 마커는 변환(tempo)을 건드리지 않는다 — 박자에 반영하는 것은 유스케이스의 명시적 조작이다 |
 | `choreoPlan.js` | LLM 플랜(`server.py` PLAN_SCHEMA) → 격자 항목. 이름을 동작 목록과 느슨하게 맞추고(공백·대소문자 무시, 3글자 이상 포함), 마디를 넘는 카운트를 다음 마디로 넘기며, 못 쓰는 항목은 버린 이유와 함께 남긴다 |
 | `phrasing.js` | 프레이즈·코러스 구조. 마디 번호 → 몇 번째 프레이즈·코러스인가와 그 색. 색을 **전역 순번**으로 고르는 한 줄 규칙이 32마디 곡과 블루스를 함께 맞춘다(팔레트 길이를 4·6 으로 어긋나게 둔 것도 같은 이유) |
+| `moveMatch.js` | 마이크로 들은 거친 말 → 동작 목록의 동작(2026-09-22). 말버릇 제거·초성·편집 거리로 **점수**를 매기고, 확신이 안 서면 `null` 을 돌려준다. ⚠ `choreoPlan.matchMove` 와 다른 일이다 — 그쪽은 LLM 이 이미 깔끔히 내놓은 이름을 잇는 일이라 너그러워도 되지만, 이쪽은 틀리면 **엉뚱한 이름이 조용히 붙는다**. 「킥볼체인지」→`Kick Ball Change` 처럼 글자가 안 겹치는 것은 일부러 포기하고 LLM 에 넘긴다 |
+| `captureDrift.js` | 받아 적으며 격자에서 벗어난 거리를 모아 판정(2026-09-22). 치우침이 **고르면** 손(반응 지연), **커지면** 영상 속도가 BPM 과 다르다 — 기울기가 곧 상대 템포 오차라 추정 BPM 까지 낸다. 표본이 모자라거나 흩어지면 아무 말도 하지 않는다 |
+| `stepTodos.js` | 작업 차례 단계마다의 할 일 목록(2026-09-21). 아무 일도 안 한 경로는 **들어온 객체를 그대로** 돌려준다 — 호출부가 참조 비교 한 번으로 "바뀐 것 없음"을 안다 |
+| `flowStats.js` | 「어떤 버튼 다음에 어떤 버튼」 세기(2026-09-21). 같은 id 연속은 세지 않는다. **이 표로 화면을 움직이지 않는다** — 판정은 2026-10-05 로 미뤘다([로드맵](ROADMAP.md)) |
+| `flowTrack.js` | 작업 차례 줄의 스플라인·리본 기하(2026-09-21). 그리는 일은 `ui/videoPanel` 이 한다 |
+| `themes.js` | 테마 목록과 정규화(2026-09-21). 기본 테마는 속성을 아예 안 붙인다 |
 | `project/schema.js` | 저장 포맷 상수와 필드 목록. 로직이 없고 import 도 0개. `UNDO_FIELDS` 와 `DOC_FIELDS` 는 같은 집합이다(`rows` `cols` `placements` `moveLibrary` `categories` `routines` `links` `media`, 순서만 다르다) — 파일과 undo 가 같은 것을 상태로 본다 |
 | `project/media.js` | 영상 블록(`{tempo, source}`)의 정규화·직렬화. **비어 있으면 `serializeMedia` 가 `null` 을 돌려주고 파일에서 키가 통째로 빠진다** — 영상을 안 쓴 사용자의 저장 파일은 이 기능 전과 바이트가 같다. 로직이 있어야 해서 `schema.js`(import 0개 리프)가 아니라 여기다 |
 | `project/serialize.js` | 파일로 내보낼 페이로드 조립 |
@@ -260,6 +266,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `media/youtubePlayer.js` | YouTube IFrame API 를 `MediaPlayer` 계약으로 감싼다. **이 앱의 첫 외부 스크립트 의존**이라 실패를 예외가 아니라 상태로 다룬다 — 스크립트가 막히면 `getState().load === 'error'` 이고 한국어 문구는 뷰가 만든다. 생성만으로는 DOM 도 네트워크도 안 건드린다 |
 | `llmServer.js` | `server.py` 의 LLM 중계 클라이언트(`/api/llm/*`). 브라우저는 모델을 직접 부르지 않는다 — 키가 브라우저에 가면 안 되고 로컬 LLM 은 CORS 에 막힌다. 어떤 함수도 던지지 않는다 |
 | `clipServer.js` | `server.py` 의 클립 API 클라이언트. 서버가 있는지 `probe` 하고, 업로드(`PUT /api/clips`, 본문이 파일 바이트라 multipart 가 없다)·존재 확인·재생 URL(`/clips/<path>`)을 준다. 어떤 함수도 던지지 않는다 — 서버가 없으면 null 이고 `app/main` 이 브라우저 폴더 방식으로 떨어진다 |
+| `speechInput.js` | 마이크로 받아 적기(2026-09-22). 크롬의 Web Speech API 를 감싼다. **중간 결과가 처음 온 순간**을 「말이 시작된 시각」으로 함께 준다 — 말이 *끝난* 시각으로 붙이면 한 구간씩 밀린다. 조용하면 브라우저가 스스로 멈추므로 다시 켜고, 듣는 중인지를 늘 밖에 알린다. ⚠ 크롬은 음성을 **구글 서버로 보내** 인식한다(끌 수 없다) |
 | `pose/mediapipePose.js` | 받아 둔 MediaPipe 파일로 `PoseEstimator` 계약을 채운다. **번호를 이름으로 옮기는 표(`LANDMARK_NAMES`)가 여기 하나뿐**이라, 다른 모델로 갈아 끼울 때 고치는 것이 그 표다. `<video>` 를 탐색하거나 이미 뽑아 둔 프레임(`{images}`)을 받는다 — 뒤쪽은 탭이 안 보여 `<video>` 가 디코드되지 않는 자동화에서 쓴다 |
 | `modelServer.js` | 자세 분석 모델의 보관 위치(`server.py`). **받아 두고 위치를 아는 것까지**가 전부다 — 모델을 로드하지 않는다(그건 추정기 어댑터의 몫이고, 한 파일에 두면 설정 화면이 20MB 를 로드하게 된다) |
 | `clipLibrary.js` | 영상 보관 폴더(브라우저 방식). File System Access API 의 폴더 핸들을 IndexedDB 에 남기고 `<subdir>/<프로젝트>/<파일>` 로 복사·재읽기한다. 경로 규칙은 `domain/clips.js` 가 정하고 여기서는 이름을 만들지 않는다. 지원하지 않는 브라우저에서는 "없음"으로 답한다 |
@@ -281,6 +288,9 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `videoCommands.js` | 영상 패널 상태·두 점 앵커·탭 템포·소스 확정·`clearMedia`. **DOM 도 플레이어도 시계도 모른다** — 시각(초)은 전부 인자로 들어온다(`check-arch` 가 `performance` 를 막는다). 재생 위치·재생 상태는 여기에도 store 에도 없다 |
 | `planCommands.js` | 플랜 미리보기와 채우기. 새 배치 경로를 만들지 않고 `paletteCommands.createAndPlace`(빠른 동작 생성과 같은 길)로 하나씩 놓는다 — 겹침·스택·클램프가 손으로 놓을 때와 같아진다. 행이 모자라면 `setBoardRows` |
 | `phrasingCommands.js` | 곡 구조 바꾸기(프리셋·토글·직접 입력). Dirty 는 `{phrasing:true}` 하나 — 배치가 안 바뀌므로 행을 다시 그리지 않는다 |
+| `captureCommands.js` | 받아 적기(영상 → 안무표). 경계를 **두 카운트 격자**에 붙이고(`domain/tempo`), 자리가 모자라면 마디를 늘리고, 격자에서 벗어난 거리를 표본으로 모은다. 붙일 이름은 `session.video.voiceHeard` 를 읽어 온다 — `voiceNameCommands` 와 서로 import 하지 않고 **그 키 하나가 둘 사이의 계약**이다 |
+| `voiceNameCommands.js` | 마이크로 말한 이름을 **그때 열려 있던 구간**에 붙인다(2026-09-22). 확신이 서면 그 자리에서 정식 표기로(공짜), 아니면 들은 대로 붙여 놓고 LLM 줄에 세운다. LLM 이 고쳐 끼울 때 **사람이 이미 손댄 블록은 건드리지 않는다** |
+| `stepTodoCommands.js` | 작업 차례 단계별 할 일. `domain/stepTodos` 의 참조 비교로 "바뀐 것 없음"을 가린다 |
 | `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 8필드(링크·영상 템포 포함), 루틴은 3필드. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
 
 ### `src/ui/` — DOM 렌더
@@ -290,6 +300,9 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `domContract.js` | 셀렉터·클래스명·dataset 키 상수. rank 3 교차의 유일한 예외 |
 | `boardView.js` | 보드 1개당 인스턴스. `rowRefs` 를 여기 가두고 `setSelected` 를 제공한다 |
 | `placementView.js` | placement 1개 → DOM, 그리고 비고 칸 문자열 |
+| `bpmBadge.js` | 오른쪽 위 기준 박자 배지(2026-09-22). 받아 적는 중에는 `domain/captureDrift` 의 판정을 꼬리말로 단다. **BPM 을 스스로 바꾸지 않는다** — 저절로 바꾸면 이미 놓인 블록이 통째로 어긋난다 |
+| `modeBar.js` | 앱바 아래 `채우기` 줄(2026-09-21). 줄 위의 버튼은 전부 이미 있던 진입점이다 |
+| `placementActionPopup.js` | 안무표의 블록을 눌렀을 때 뜨는 팝업(`✎ 동작 정하기` · `☐ 선택하기` · `× 지우기`). 폰에서 더블클릭이 안 맞아 만든 길이다 |
 | `paletteView.js` | `동작 목록` 렌더와 카드 팩토리, 동작 컨텍스트 메뉴 |
 | `categoryView.js` | 범례·카테고리 관리 행·`<select>` 세 렌더 |
 | `toolbarView.js` | 메인 보드 툴바. `루틴으로 편성` 버튼의 선택 개수 표시를 갱신한다 |
