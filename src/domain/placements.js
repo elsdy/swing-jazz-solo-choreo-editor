@@ -273,8 +273,8 @@ export function nameGroup(placements, groupId, name, category) {
 /**
  * 보드의 **모든 배치**를 카운트 축에서 `delta` 만큼 옮긴다. 음수면 앞으로 당긴다.
  *
- * 받아 적기는 사람의 반응 지연을 한 칸까지만 흡수한다(domain/tempo.boundarySpanToCountRange).
- * 곡이 빠르거나 그날 손이 늦으면 통째로 한두 칸이 밀리는데, 그때 블록을 하나씩 옮기는 대신
+ * 받아 적기는 누른 자리를 가장 가까운 칸으로 붙이므로 앞뒤로 반 칸까지만 흡수한다
+ * (domain/tempo.boundarySpanToCountRange). 곡이 빠르거나 그날 손이 늦으면 통째로 한두 칸이 밀리는데, 그때 블록을 하나씩 옮기는 대신
  * 표 전체를 같은 만큼 움직이는 길이다. 변환에 상수 보정을 박는 것과 다르다 — 이건 사람이
  * 결과를 보고 고치는 것이라, 제때 누른 표까지 함께 당겨지지 않는다.
  *

@@ -10,6 +10,7 @@ import { cloneCategories } from '../domain/categories.js';
 import { rowIndices } from '../domain/grid.js';
 import { normalizeMedia } from '../domain/project/media.js';
 import { normalizePhrasing } from '../domain/phrasing.js';
+import { normalizeStepTodos } from '../domain/stepTodos.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 보드 식별자와 보드별 정책
@@ -248,6 +249,9 @@ function createInitialState(ids) {
     // 2026-09-13 신설(프레이즈·코러스). `{on, rowsPerPhrase, phrasesPerChorus, startRow}` 넷이며
     // UNDO_FIELDS·DOC_FIELDS 의 9번째 필드다 — 곡의 구조는 안무의 일부다(schema.js 주석).
     phrasing: normalizePhrasing(null),
+    // 2026-09-21 신설(단계별 할 일). UNDO_FIELDS·DOC_FIELDS 의 10번째 필드다 —
+    // 이 안무표에 대한 할 일이라 Undo 를 타고 파일에도 실린다(비었으면 안 실린다).
+    stepTodos: normalizeStepTodos(null),
     recents: {                // 1403-1405, 각각 상한 10 / 3 / 3 (4042·4053·4063)
       projects: [],
       moves: [],
@@ -398,6 +402,7 @@ export function createStore(initial = {}) {
     get links() { return state.links; },
     get media() { return state.media; },
     get phrasing() { return state.phrasing; },
+    get stepTodos() { return state.stepTodos; },
     get recents() { return state.recents; },
     get palette() { return state.palette; },
     get selection() { return state.selection; },

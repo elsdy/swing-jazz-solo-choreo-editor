@@ -222,6 +222,16 @@ export const DESKTOP_CELL_W = 76;
 export const MIN_FIT_CELL_W = 44;
 
 /**
+ * 남는 자리에 맞춰 **늘릴 때의 상한**(2026-09-21).
+ *
+ * 그전에는 `min(baseCellW, …)` 이라 76px 에서 멈췄다 — 영상 패널이 안무표 위 띠로 올라가 폭이
+ * 통째로 남게 되자, 8칸 표가 808px 만 쓰고 오른쪽에 250px 가 빈 채로 남았다. 자리가 있으면 쓴다.
+ * ⚠ 상한이 필요한 까닭: 1~2칸짜리 표에서는 칸 하나가 화면 절반이 된다. 카운트 한 칸이 그만큼
+ *   클 이유는 없고, 블록을 끌어 놓을 때 손이 가는 거리만 길어진다.
+ */
+export const MAX_FIT_CELL_W = 168;
+
+/**
  * 넓은 화면에서 격자가 제 자리에 안 들어갈 때 **셀 폭만** 줄여 맞춘다(2026-09-12).
  *
  * 영상 패널을 열면 안무표에 남는 폭이 300px 쯤 줄어든다 — 1280px 창에서 8칸 표가 162px 모자랐다.
@@ -233,6 +243,8 @@ export const MIN_FIT_CELL_W = 44;
  *   식이 그대로 성립한다.
  * ⚠ 현재 셀 폭에서 재도 된다 — `fixed` 가 셀 폭과 무관하기 때문이다. 그래서 한 번 줄인 뒤 자리가
  *   다시 생기면 baseCellW 까지 **도로 커진다**(한쪽으로만 가는 계산이 아니다).
+ * ⚠ **남으면 늘린다**(2026-09-21). 그전에는 기준값 76px 에서 멈춰서, 자리가 남아도 오른쪽이
+ *   빈 채였다. 이제 상한(maxCellW)까지 자란다 — 한 마디가 화면을 꽉 채우는 것이 이 격자의 값이다.
  * ⚠ 하한(minCellW)에 닿으면 거기서 멈춘다. 그 아래는 줄이는 것이 아니라 못 쓰게 만드는 것이고,
  *   칸이 아주 많은 안무표(32칸 등)는 그때부터 원래대로 가로로 밀어 본다.
  *
@@ -243,18 +255,19 @@ export const MIN_FIT_CELL_W = 44;
  * @param {number} args.currentCellW 지금 적용돼 있는 셀 폭(px). neededW 를 잴 때의 값
  * @param {number} [args.baseCellW]  줄이기 전 기준값(기본 DESKTOP_CELL_W)
  * @param {number} [args.minCellW]   하한(기본 MIN_FIT_CELL_W)
+ * @param {number} [args.maxCellW]   상한(기본 MAX_FIT_CELL_W). **늘리는 쪽의 한계**다
  * @returns {number|null} 적용할 셀 폭. **줄일 까닭도 되돌릴 까닭도 없으면 null** (CSS 기본값 그대로 둔다)
  */
 export function fitCellWidth({
   neededW, availableW, cols, currentCellW,
-  baseCellW = DESKTOP_CELL_W, minCellW = MIN_FIT_CELL_W
+  baseCellW = DESKTOP_CELL_W, minCellW = MIN_FIT_CELL_W, maxCellW = MAX_FIT_CELL_W
 }) {
   if (![neededW, availableW, cols, currentCellW].every(Number.isFinite)) return null;
   if (!(cols > 0) || !(availableW > 0) || !(currentCellW > 0)) return null;
   const fixed = neededW - cols * currentCellW;          // 행 라벨 + 비고 + 틈
   const room = availableW - fixed;
   const raw = Math.floor(room / cols);
-  const next = Math.max(minCellW, Math.min(baseCellW, raw));
+  const next = Math.max(minCellW, Math.min(maxCellW, raw));
   return next === baseCellW ? null : next;              // 기준값이면 변수를 쓰지 않고 CSS 에 맡긴다
 }
 

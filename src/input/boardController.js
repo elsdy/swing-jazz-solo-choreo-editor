@@ -39,6 +39,9 @@ import { groupCount } from '../domain/placements.js';
  * @param {Object} deps.touchDrag            input/touchDrag 인스턴스(이 보드의 것)
  * @param {Object} deps.quickPicker          ui/quickPicker 인스턴스(이 보드의 것)
  * @param {Object} [deps.routineActionPopup] ui/routineActionPopup (메인 보드만 쓴다)
+ * @param {Object} [deps.placementActionPopup] ui/placementActionPopup (2026-09-21, 터치 폭에서만 뜬다)
+ * @param {() => boolean} [deps.isTouchLayout] 손가락으로 쓰는 폭인가(기본 false).
+ *   ⚠ 여기서 폭을 재지 않는다 — 브레이크포인트의 주인은 ui/layout 하나이고 app/main 이 이어 준다.
  * @param {Object} [deps.policy]             기본값 store.policy(boardId)
  * @param {Document} [deps.doc]              기본값 document (document mouseup 등록 대상)
  * @returns {{ boardId: string, el: HTMLElement }}
@@ -65,6 +68,8 @@ export function createBoardController(deps) {
     pointerSession,
     touchDrag,
     quickPicker,
+    placementActionPopup = null,
+    isTouchLayout = () => false,
     routineActionPopup = null,
     policy = store.policy(boardId),
     doc = document
@@ -167,12 +172,34 @@ export function createBoardController(deps) {
 
     const groupId = placementEl.dataset[DATA.groupId];
 
+    // `✎` — 이 블록의 동작 정하기(2026-09-20). 선택 토글보다 **먼저** 본다. 이 단추는 고른 블록에만
+    // 뜨므로 여기 닿았다는 것은 이미 고른 블록이라는 뜻이고, 토글로 넘기면 팝업을 여는 클릭이
+    // 선택을 풀어 버려 단추가 손 밑에서 사라진다.
+    if (e.target.closest(SEL.nameBtn)) {
+      e.stopPropagation();
+      quickPicker?.openForGroup(groupId, e.clientX, e.clientY);
+      return;
+    }
+
     // 루틴 배치 단일 클릭 → 편집/삭제 팝업
     if (placementEl.classList.contains(CLS.isRoutine)) {
       const placement = board().placements.find(p => p.groupId === groupId);
       if (!placement) return;
       e.stopPropagation();
       routineActionPopup?.open(placement, e.clientX, e.clientY);
+      return;
+    }
+
+    // ── 터치 폭: 한 번 탭하면 **무엇을 할 수 있는지**가 팝업으로 뜬다 (2026-09-21) ──
+    // 그전에는 탭 = 고르기, 두 번 탭 = 지우기였는데 둘 다 손가락에게 불친절했다(팝업 파일의 주석).
+    // ⚠ 여기 `click` 에서 연다. touchstart 에서 열면 preventDefault 로 **스크롤을 막아야** 하고,
+    //   블록을 짚고 표를 굴리는 흔한 동작이 죽는다. 합성 click 은 손가락이 움직이면 아예 안 온다 —
+    //   브라우저가 이미 "탭인가 스크롤인가"를 가려 주는 셈이라 그 판정을 다시 만들지 않는다.
+    if (placementActionPopup && isTouchLayout()) {
+      e.stopPropagation();
+      const placement = board().placements.find(p => p.groupId === groupId);
+      if (!placement) return;
+      placementActionPopup.open(placement, e.clientX, e.clientY, groupCount(board().placements, groupId));
       return;
     }
 
@@ -183,8 +210,24 @@ export function createBoardController(deps) {
     apply(commands.toggleSelection({ groupId }));
   });
 
+  // ── ④-b contextmenu — 마우스에서도 같은 팝업에 닿는 길 (2026-09-21) ───────
+  // ⚠ 마우스의 한 번/두 번 클릭은 그대로 둔다(손에 익었고 과녁도 충분하다). 우클릭은 **더하는**
+  //   길이라 빼앗는 것이 없다 — 동작 목록의 이름도 같은 관습이다(우클릭·롱프레스로 메뉴).
+  el.addEventListener('contextmenu', (e) => {
+    if (!placementActionPopup || !policy.allowsSelection) return;
+    const placementEl = e.target.closest(SEL.placement);
+    if (!placementEl || placementEl.classList.contains(CLS.isRoutine)) return;
+    e.preventDefault();
+    const groupId = placementEl.dataset[DATA.groupId];
+    const placement = board().placements.find(p => p.groupId === groupId);
+    if (!placement) return;
+    placementActionPopup.open(placement, e.clientX, e.clientY, groupCount(board().placements, groupId));
+  });
+
   // ── ⑤ dblclick — 마우스 삭제 (2467-2474) ───────────────────────────────────
   el.addEventListener('dblclick', (e) => {
+    // `✎` 를 두 번 누른 것은 "지워라"가 아니다 — 팝업을 열려다 손이 두 번 간 것이다.
+    if (e.target.closest(SEL.nameBtn)) return;
     const placementEl = e.target.closest(SEL.placement);
     if (!placementEl) return;
     // 2470: 루틴은 팝업으로 처리 (`ctx === mainCtx`)
@@ -257,7 +300,11 @@ export function createBoardController(deps) {
       touchDrag.start(placementEl.dataset[DATA.groupId], e.touches[0].clientX, e.touches[0].clientY);
       return;
     }
-    // 더블탭으로 배치 삭제 (move-handle, resize-handle 외 영역 터치 시)
+    // 더블탭으로 배치 삭제 (move-handle, resize-handle, ✎ 외 영역 터치 시)
+    // ⚠ **팝업이 뜨는 폭에서는 이 길을 닫는다**(2026-09-21). 지우기는 팝업 안에 있고, 그대로 두면
+    //   첫 탭이 연 팝업 **위로** 둘째 탭이 떨어져 엉뚱한 줄이 눌린다(팝업이 누른 자리에 뜬다).
+    if (e.target.closest(SEL.nameBtn)) return;
+    if (placementActionPopup && isTouchLayout()) return;
     const placementEl = e.target.closest(SEL.placement);
     if (placementEl) {
       const groupId = placementEl.dataset[DATA.groupId];

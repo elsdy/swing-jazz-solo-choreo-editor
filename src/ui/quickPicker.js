@@ -96,6 +96,10 @@ function makeAddBtn() {
  *   boardCommands.placeMoveAt 을 감싼 것 (원본 placeMove(m.id,row,cellIndex,count[,reCtx]))
  * @property {(boardId:string, name:string, categoryKey:string, row:number, cellIndex:number, count:number)=>any} createAndPlace
  *   paletteCommands.createAndPlace (원본 createAndPlaceQuickMove 2229 / placeWithCat 5029)
+ * @property {(boardId:string, groupId:string, moveId:string)=>any} [setGroupMove]
+ *   boardCommands.setGroupMove — **이미 놓인 블록**의 동작을 정한다(`✎` 로 열었을 때).
+ * @property {(boardId:string, groupId:string, name:string, categoryKey:string)=>any} [createAndSetGroupMove]
+ *   paletteCommands.createAndSetGroupMove — 목록에 없는 이름이면 동작을 만들고 그 블록에 붙인다.
  * @property {(key:string, label:string, color:string)=>any} addCategory
  *   categoryCommands.addCategory (원본 2118 / 5018)
  * @property {(moveName:string)=>any} toggleMoveFavorite ★ (⚠ id 가 아니라 이름)
@@ -116,6 +120,27 @@ export function createQuickPicker(deps, options = {}) {
 
   /** 열려 있는 팝업. 원본의 모듈 변수 quickPickerEl(1718) / reQuickPickerEl(4772). */
   let popupEl = null;
+
+  /**
+   * 이 팝업이 지금 무엇을 하려는가. **고르는 화면은 하나이고 고른 뒤에 하는 일만 둘이다**(2026-09-20) —
+   *  · `cell`  — 빈 칸을 눌러 열었다. 고른 동작을 그 자리에 **놓는다**(원래의 빠른 배치).
+   *  · `group` — 이미 놓인 블록의 `✎` 로 열었다. 그 블록의 **동작을 정한다**(자리·길이는 그대로).
+   * 검색·즐겨찾기·카테고리·`[+] 새 동작` 이 두 경우에 똑같이 필요해서 화면을 두 벌로 만들지 않았다.
+   * @type {{kind:'cell'} | {kind:'group', groupId:string}}
+   */
+  let target = { kind: 'cell' };
+
+  /** 고른 동작을 적용한다. 칸이면 놓고, 블록이면 그 블록의 동작으로 정한다. */
+  function applyMove(move, row, cellIndex, count) {
+    if (target.kind === 'group') return commands.setGroupMove(opts.boardId, target.groupId, move.id);
+    return commands.placeMove(opts.boardId, move.id, row, cellIndex, count);   // 1903
+  }
+
+  /** 목록에 없던 이름을 만들어 적용한다. 동작 목록에는 두 경우 모두 **똑같이 등록된다**. */
+  function applyNew(name, catKey, row, cellIndex, count) {
+    if (target.kind === 'group') return commands.createAndSetGroupMove(opts.boardId, target.groupId, name, catKey);
+    return commands.createAndPlace(opts.boardId, name, catKey, row, cellIndex, count);
+  }
 
   /**
    * 팝업을 닫는다.
@@ -218,7 +243,7 @@ export function createQuickPicker(deps, options = {}) {
 
     const header = document.createElement('div');
     header.className = CLS.quickPopupHeader;
-    header.appendChild(qLabel(opts.title));
+    header.appendChild(qLabel(target.kind === 'group' ? '동작 정하기' : opts.title));
     const closeBtn = document.createElement('button');
     closeBtn.className = CLS.iconBtn;
     closeBtn.type = 'button';
@@ -257,7 +282,7 @@ export function createQuickPicker(deps, options = {}) {
     /** 항목 하나를 만들고 목록·콜백 배열에 함께 넣는다(원본은 4줄이 6번 반복됐다). */
     function pushMove(move) {
       const cb = () => {
-        render(commands.placeMove(opts.boardId, move.id, row, cellIndex, count));   // 1903
+        render(applyMove(move, row, cellIndex, count));
         render(commit(opts.boardId));                                               // 1903 saveHistory(Re)
         close();                                                                    // 1903
       };
@@ -430,7 +455,7 @@ export function createQuickPicker(deps, options = {}) {
       //    deriveKey 를 커맨드 안으로 옮기면 uid 소비 순서가 달라져 골든 결정성이 깨진다.
       const key = deriveKey(catLabel, store.categories, ids);      // 2116-2117
       render(commands.addCategory(key, catLabel, catColorInput.value));   // 2118-2120
-      render(commands.createAndPlace(opts.boardId, moveName, key, row, cellIndex, count));   // 2121
+      render(applyNew(moveName, key, row, cellIndex, count));   // 2121
       render(commit(opts.boardId));                                // 2240 saveHistory / 5034 saveHistoryRe
       close();                                                     // 2122
     });
@@ -453,7 +478,7 @@ export function createQuickPicker(deps, options = {}) {
     /** 기존 카테고리로 바로 만들고 배치한다(원본 createAndPlaceQuickMove 2229 / placeWithCat 5029). */
     function pushCat(key) {
       const cb = () => {
-        render(commands.createAndPlace(opts.boardId, moveName, key, row, cellIndex, count));
+        render(applyNew(moveName, key, row, cellIndex, count));
         render(commit(opts.boardId));   // createAndPlaceQuickMove 안의 saveHistory(2240)
         close();
       };
@@ -557,6 +582,7 @@ export function createQuickPicker(deps, options = {}) {
    */
   function open(row, cellIndex, clientX, clientY, count) {
     const total = count === undefined ? store.session.defaultCount : count;
+    target = { kind: 'cell' };
     close(true);   // 1809: 기존 팝업만 제거, 미리보기는 유지
     const popup = document.createElement('div');
     popup.className = CLS.quickPopup;
@@ -570,8 +596,28 @@ export function createQuickPicker(deps, options = {}) {
     bindOutsideClose(() => popupEl, () => close());
   }
 
+  /**
+   * 이미 놓인 블록의 동작을 정하려고 연다(`✎`). 화면은 `open()` 과 **같은 것**이고 고른 뒤가 다르다.
+   * ⚠ 자리·카운트를 쓰지 않으므로 0,0,1 을 넘긴다 — group 갈래에서는 세 값이 쓰이지 않는다.
+   * @param {string} groupId
+   * @param {number} clientX
+   * @param {number} clientY
+   */
+  function openForGroup(groupId, clientX, clientY) {
+    target = { kind: 'group', groupId };
+    close(true);
+    const popup = document.createElement('div');
+    popup.className = CLS.quickPopup;
+    popupEl = popup;
+    document.body.appendChild(popup);
+    positionPopup(popup, clientX, clientY);
+    showMoveScreen(popup, 0, 0, clientX, clientY, 1);
+    bindOutsideClose(() => popupEl, () => close());
+  }
+
   return {
     open,
+    openForGroup,
     close,
     isOpen: () => popupEl !== null,
     element: () => popupEl,

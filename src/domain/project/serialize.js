@@ -7,6 +7,7 @@
 import { LEGACY_FILE_VERSION } from './schema.js';
 import { serializeMedia } from './media.js';
 import { serializePhrasing } from '../phrasing.js';
+import { serializeStepTodos } from '../stepTodos.js';
 
 /** 프로젝트 파일이 이미 쓰는 최상위 키. passthrough 가 이것들을 덮어쓰지 못하게 막는다. */
 const PROJECT_KEYS = new Set([
@@ -64,6 +65,7 @@ export function buildProjectFile(source, options = {}) {
     : new Set(Array.isArray(favoriteRoutineIds) ? favoriteRoutineIds : []);
   const media = serializeMedia(source.media);
   const phrasing = serializePhrasing(source.phrasing);
+  const stepTodos = serializeStepTodos(source.stepTodos);
 
   return {
     version: LEGACY_FILE_VERSION,
@@ -86,6 +88,9 @@ export function buildProjectFile(source, options = {}) {
     // ⚠ 빈 phrasing 도 키째로 빠진다(serializePhrasing → null). 프레이즈 표시를 한 번도 켜지 않은
     //   사용자의 저장 파일은 이 기능이 들어오기 전과 바이트가 같다.
     ...(phrasing ? { phrasing } : {}),
+    // ⚠ 빈 할 일도 키째로 빠진다(serializeStepTodos → null). 한 번도 적지 않은 사람의 저장 파일은
+    //   이 기능이 들어오기 전과 바이트가 같다.
+    ...(stepTodos ? { stepTodos } : {}),
     ...unknownKeys(passthrough, PROJECT_KEYS)
   };
 }

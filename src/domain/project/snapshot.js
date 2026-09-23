@@ -17,6 +17,7 @@ import { normalizeMedia } from './media.js';
 // 세 번째 import. phrasing 도 media 와 같은 이유다 — 기본값이 domain/phrasing.js 의 DEFAULT_PHRASING 이라
 // 손으로 적으면 그 상수가 두 벌이 된다.
 import { normalizePhrasing } from '../phrasing.js';
+import { normalizeStepTodos } from '../stepTodos.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 복제 — 브라우저의 구조적 복제 내장 함수는 도메인에서 금지라 명시적 재귀 복제를 쓴다
@@ -194,7 +195,8 @@ export function applySnapshot(snapshot, deps = {}) {
     categories: normalizeCategories(data.categories || defaultCategories),
     links: toLinkBundle(data.links),
     media: normalizeMedia(data.media),
-    phrasing: normalizePhrasing(data.phrasing)
+    phrasing: normalizePhrasing(data.phrasing),
+    stepTodos: normalizeStepTodos(data.stepTodos)
   };
   if (Array.isArray(data.routines)) patch.routines = data.routines;
   return patch;

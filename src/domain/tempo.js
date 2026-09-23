@@ -59,6 +59,64 @@ function floorCount(linear) {
   return Math.floor(linear + COUNT_EPSILON);
 }
 
+/**
+ * 경계를 **가장 가까운 칸**으로 붙이는 반올림(2026-09-22).
+ * ⚠ 엡실론을 더하고 반올림한다 — countToTime 을 거쳐 돌아온 값은 7.999999999999998 처럼 오차를
+ *   달고 오고, 정확히 x.5 인 경계는 **뒤 칸**으로 보낸다(사용자가 말한 "사이면 다음 박").
+ */
+function roundCount(linear) {
+  return Math.round(linear + COUNT_EPSILON);
+}
+
+/**
+ * 받아 적기가 경계를 붙이는 격자 — **두 카운트** (2026-09-22).
+ *
+ * 스윙·재즈 솔로의 동작은 두 카운트 단위로 시작한다(카운트 축의 0·2·4·6 = 화면의 1·3·5·7박).
+ * 한 카운트만 어긋난 자리에서 동작이 시작하는 일은 없으므로, 반올림한 값이 홀수 카운트를
+ * 가리키면 그것은 **손이 빨랐거나 늦었다는 뜻**이지 안무가 그렇다는 뜻이 아니다.
+ *
+ * 격자의 위상은 **카운트 0**(안무표의 1카운트)에 맞춘다 — `② 박자 맞추기` 가 정한 기준 박자가
+ * 거기이므로, 그것이 곧 사용자가 "첫 박" 이라고 부르는 자리다.
+ *
+ * ⚠ 이 값을 1 로 두면 2026-09-22 이전처럼 한 카운트 격자가 된다. 6카운트·3카운트 안무를 받아
+ *   적어야 하는 날이 오면 그때 화면 스위치로 꺼낼 자리이고, 지금은 상수다.
+ */
+export const CAPTURE_GRID_COUNTS = 2;
+
+/**
+ * 경계를 `gridCounts` 칸마다 하나씩 있는 격자에 붙인다.
+ * ⚠ **반올림한 정수를 다시 붙이지 않는다.** 두 번 반올림하면 2.6 이 3 을 거쳐 4 로 가는데,
+ *   2.6 은 4 보다 2 에 가깝다. 언제나 원래 실수에서 한 번에 붙인다.
+ */
+function snapCount(linear, gridCounts) {
+  const g = Number(gridCounts);
+  if (!(g > 1)) return roundCount(linear);
+  return Math.round((linear + COUNT_EPSILON) / g) * g;
+}
+
+/**
+ * 경계 하나를 카운트 축에서 읽는다 — 잰 값·격자에 붙인 값·그 차이.
+ *
+ * `offset` 이 이 기능의 요점이다(2026-09-22). 사람이 누른 자리와 격자 사이의 거리인데,
+ *  · 여러 번 눌러도 **한쪽으로 일정하면** 반응 지연이다 → `표 전체 옮기기` 로 고친다.
+ *  · 누를수록 **한쪽으로 커지면** 영상의 실제 속도가 정한 BPM 과 다르다는 뜻이다.
+ * 어느 쪽인지는 domain/captureDrift.js 가 표본을 모아 판정한다.
+ *
+ * @param {number} sec
+ * @param {Tempo} tempo
+ * @param {number} [gridCounts]
+ * @returns {{ raw:number, snapped:number, offset:number }|null} 읽을 수 없으면 null
+ */
+export function boundaryCount(sec, tempo, gridCounts = 1) {
+  // ⚠ 초를 **먼저** 본다. timeToCount 는 못 읽는 값을 0 으로 흘려보내므로, 여기서 안 막으면
+  //   NaN 이 "카운트 0 에서 딱 맞게 눌렀다"는 표본이 되어 판정을 조용히 끈다.
+  if (!Number.isFinite(Number(sec))) return null;
+  const raw = timeToCount(Number(sec), tempo);
+  if (!Number.isFinite(raw)) return null;
+  const snapped = snapCount(raw, gridCounts);
+  return { raw, snapped, offset: raw - snapped };
+}
+
 /** 유한한 실수인가. NaN·Infinity·문자열·null 을 전부 거른다. */
 function finiteOr(value, fallback) {
   const n = typeof value === 'number' ? value : Number(value);
@@ -290,7 +348,7 @@ export function spanToCountRange(startSec, endSec, cols, tempo) {
 /**
  * **경계로 끊은** 구간 → 격자 범위. 잇달아 놓아도 서로 겹치지 않는다 (2026-09-20).
  *
- * spanToCountRange 와 무엇이 다른가 — 끝을 `ceil-1` 이 아니라 **내림 −1** 로 잡는다.
+ * spanToCountRange 와 무엇이 다른가 — 끝을 `ceil-1` 이 아니라 **반올림 −1** 로 잡는다.
  * 그쪽 규칙("칸 중간에서 끝나도 그 칸을 덮는다")은 마커처럼 **혼자 떨어진 구간**에는 맞지만,
  * 받아 적기처럼 경계 하나가 앞 구간의 끝이면서 뒤 구간의 시작인 사슬에서는 그 칸을 둘이
  * 동시에 갖는다. 그러면 배치가 겹쳐 한 마디가 두 줄로 쌓인다 — 순서대로 받아 적은 안무에
@@ -300,33 +358,53 @@ export function spanToCountRange(startSec, endSec, cols, tempo) {
  *   경계 8.6카운트에서 끊었을 때
  *     spanToCountRange   앞 …8  뒤 8…   ← 칸 8 을 둘이 갖는다 (겹침)
  *     반올림             앞 …8  뒤 9…   ← 겹치진 않지만 한 칸 늦다
- *     이 함수(내림)      앞 …7  뒤 8…   ← 누른 순간이 **든 칸** 이 그 동작의 첫 칸이다
+ *     이 함수(반올림)    앞 …7  뒤 8…   ← 누른 순간에서 **가장 가까운 칸**이 그 동작의 첫 칸이다
  * ```
  *
- * **왜 반올림이 아니라 내림인가** (2026-09-20, 사용자 보고로 바꿨다).
- * 사람은 동작이 바뀌는 것을 **보고 나서** 누른다 — 반응 지연이 150~250ms 이고, bpm 180 에
- * 1박 카운트면 한 칸이 333ms 라 지연만으로 반 칸에서 한 칸이 밀린다. 반올림은 그 지연을
- * 그대로 한 칸 뒤로 옮겨 적는다("생각했던 것보다 한 카운트 뒤"). 내림은 누른 순간이 **아직
- * 그 칸 안에 있으면 그 칸**으로 붙이므로 한 칸 어치의 지연까지 흡수한다.
- * ⚠ 한 칸을 넘는 지연은 여전히 밀린다. 그건 `③ 받아 적기` 의 `전체 ← 1카운트` 로 뒤에 고친다 —
- *   변환에 상수 보정을 박아 넣으면 제때 누른 사람이 반대로 한 칸 당겨진다.
+ * **왜 반올림인가** — 이 규칙은 두 번 뒤집혔다. 그 기록을 남겨 둔다.
+ *
+ *  · 처음(2026-09-12)엔 반올림이었다.
+ *  · 2026-09-20 에 **내림**으로 바꿨다 — "생각했던 것보다 한 카운트 뒤에 놓인다"는 보고 때문이다.
+ *    사람은 동작이 바뀌는 것을 보고 나서 누르므로(반응 지연 150~250ms) 늦게 누르는 쪽으로 치우치고,
+ *    내림은 누른 순간이 아직 그 칸 안에 있으면 그 칸으로 붙여 한 칸 어치 지연까지 흡수한다.
+ *  · 2026-09-22 에 **반올림으로 되돌렸다** — "7박과 8박 사이에서 끊으면 8박에서 시작해야 한다"는
+ *    요청이다. 내림은 **미리 누르는 것**을 전혀 못 받아 준다: 8박을 겨누고 0.3칸 일찍 누르면
+ *    7.7 → 칸 7 로 떨어져 한 칸 당겨진다. 익숙해진 사람은 박이 오는 것을 알고 미리 누르므로
+ *    이쪽이 더 잦다.
+ *
+ * **바꾸면서 잃는 것**(다음에 또 뒤집기 전에 읽을 것): 반 칸을 넘게 **늦게** 누르면 이제 다음
+ * 칸으로 간다. 내림이 흡수하던 "한 칸까지의 지연"이 "반 칸까지"로 줄어든 것이다. 둘 다 만족시키는
+ * 값은 없다 — 한쪽으로 치우친 사람에게 맞추면 반대쪽이 틀린다.
+ * ⚠ 치우침이 일정하면(늘 반 칸 늦다면) 변환을 고치지 말고 `③ 받아 적기` 의 `전체 ← 1카운트` 로
+ *   뒤에 통째로 민다 — 변환에 상수 보정을 박아 넣으면 제때 누른 사람이 반대로 당겨진다.
  *
  * ⚠ 두 경계가 **같은 칸에 들면** `to` 가 `from` 보다 작다. 놓을 칸이 없다는 뜻이고,
  *   호출부가 그것을 보고 아무것도 놓지 않는다(억지로 한 칸을 만들면 그 칸을 또 겹쳐 문다).
  *   그래서 여기서는 spanToCountRange 처럼 `Math.max(fromN, …)` 로 접지 **않는다.**
- * ⚠ `floorCount` 를 쓴다(단순 Math.floor 가 아니다) — countToTime 을 거쳐 돌아온 값은
- *   7.999999999999998 처럼 오차를 달고 오므로, 그냥 내리면 칸 하나가 통째로 어긋난다.
+ * ⚠ `roundCount` 를 쓴다(단순 Math.round 가 아니다) — countToTime 을 거쳐 돌아온 값은
+ *   7.999999999999998 처럼 오차를 달고 오고, 정확히 x.5 인 경계는 뒤 칸으로 보내야 한다.
+ * ⚠ **양 끝이 같은 함수를 쓴다.** 한쪽만 반올림하면 앞 구간의 끝과 뒤 구간의 시작이 어긋나
+ *   칸을 겹쳐 물거나 버린다 — 이 함수가 존재하는 까닭 자체가 그 겹침이었다. `gridCounts` 도
+ *   마찬가지로 양 끝에 똑같이 먹인다.
+ *
+ * **`gridCounts`** (2026-09-22) — 2 를 주면 경계가 **짝수 카운트에만** 붙는다(CAPTURE_GRID_COUNTS).
+ * 동작이 두 카운트 단위로만 시작하는 안무에서는 홀수 카운트로 떨어진 경계가 언제나 손의 오차이고,
+ * 그것을 그대로 두면 한 칸 밀린 블록이 앞 동작의 첫 칸을 파고든다. 붙이고 남은 거리는 버리지 말고
+ * `boundaryCount` 로 따로 재서 속도 어긋남을 알리는 데 쓴다.
+ * ⚠ 격자를 키우면 **놓을 수 없는 구간도 늘어난다** — 두 경계가 같은 짝수 칸에 붙으면 `empty` 다.
+ *   두 카운트보다 짧은 동작은 애초에 없다는 전제가 이 값의 근거다.
  *
  * @param {number} startSec 이 구간을 연 경계
  * @param {number} endSec   이 구간을 닫은(=다음 구간을 연) 경계
  * @param {number} cols
  * @param {Tempo} tempo
+ * @param {number} [gridCounts] 1 이면 칸마다, 2 면 짝수 칸에만 붙인다
  * @returns {{ from:{row:number,index:number}, to:{row:number,index:number}, empty:boolean }}
  *   empty: 두 경계가 같은 칸이라 놓을 것이 없다
  */
-export function boundarySpanToCountRange(startSec, endSec, cols, tempo) {
-  const fromN = floorCount(timeToCount(startSec, tempo));
-  const toN = floorCount(timeToCount(endSec, tempo)) - 1;
+export function boundarySpanToCountRange(startSec, endSec, cols, tempo, gridCounts = 1) {
+  const fromN = snapCount(timeToCount(startSec, tempo), gridCounts);
+  const toN = snapCount(timeToCount(endSec, tempo), gridCounts) - 1;
   return { from: cellOf(fromN, cols), to: cellOf(toN, cols), empty: toN < fromN };
 }
 
@@ -462,6 +540,49 @@ export function removeTempoPoint(tempo, count) {
  */
 export function clearTempoPointsOf(tempo) {
   return normalizeTempo({ ...tempo, points: [] });
+}
+
+/**
+ * 두드린 간격이 얼마나 고른가 — 간격의 표준편차를 평균으로 나눈 값(0 이면 완벽, 0.02 면 2%).
+ *
+ * `bpmFromTaps` 는 **처음과 끝만** 쓴다(중간 탭은 개수로만 들어간다). 그래서 값 하나로는 그것이
+ * 고르게 두드린 결과인지 손이 흔들린 결과인지 알 수 없다 — 이 함수가 그 차이를 값으로 만든다.
+ * 화면은 이것을 "표 끝에서 몇 카운트 어긋나는가"로 번역해 보여 준다(그게 사용자의 결정 근거다).
+ *
+ * ⚠ 간격이 둘은 있어야 흔들림을 말할 수 있다(탭 3번). 그보다 적으면 `null` 이다.
+ * @param {number[]} tapSecs 두드린 시각(초). 증가 순서여야 한다
+ * @returns {number|null} 상대 표준편차. 못 재면 null
+ */
+export function tapSpread(tapSecs) {
+  if (!Array.isArray(tapSecs) || tapSecs.length < 3) return null;
+  const gaps = [];
+  for (let i = 1; i < tapSecs.length; i++) {
+    const gap = tapSecs[i] - tapSecs[i - 1];
+    if (!Number.isFinite(gap) || gap <= 0) return null;
+    gaps.push(gap);
+  }
+  const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  if (!(mean > 0)) return null;
+  const varSum = gaps.reduce((a, g) => a + (g - mean) * (g - mean), 0);
+  return Math.sqrt(varSum / gaps.length) / mean;
+}
+
+/**
+ * BPM 이 `refBpm` 만큼 틀렸다면 `counts` 카운트 뒤에 몇 카운트가 어긋나는가.
+ *
+ * **BPM 의 오차는 거리에 비례해 쌓인다.** 0.2% 차이는 1마디에서는 0.016카운트라 아무도 못 느끼지만
+ * 52마디(416카운트) 끝에서는 0.83카운트 — 재생 헤드가 한 칸 가까이 밀린다. 그래서 두 값을 견줄 때
+ * "BPM 175.2 대 174.8" 이 아니라 **이 수**를 보여야 한다. 사람이 고를 수 있는 단위이기 때문이다.
+ *
+ * @param {number} bpm 견줄 값
+ * @param {number} refBpm 기준 값
+ * @param {number} counts 안무표의 총 카운트
+ * @returns {number|null} 어긋나는 카운트 수. 못 재면 null
+ */
+export function driftCounts(bpm, refBpm, counts) {
+  if (!Number.isFinite(bpm) || !Number.isFinite(refBpm) || !Number.isFinite(counts)) return null;
+  if (!(bpm > 0) || !(refBpm > 0) || !(counts > 0)) return null;
+  return Math.abs(bpm - refBpm) / refBpm * counts;
 }
 
 /**

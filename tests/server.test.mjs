@@ -157,12 +157,20 @@ function fakeOllama() {
       }
       const body = JSON.parse(buf || '{}');
       seen.push({ url: req.url, body });
-      const content = body.format
-        ? JSON.stringify({ title: '테스트', moves: [
-            { bar: 1, count: 1, length: 8, name: 'Charleston', category: 'step', note: '' },
-            { bar: 'x', count: 1, length: 1, name: 'bad', category: '', note: '' }
-          ], notes: ['임의로 정함'] })
-        : '8x1 1카운트부터 8카운트: Charleston';
+      // 스키마가 붙어 오면 그 스키마에 맞는 답을 낸다. 이름 맞추기(NAME_SCHEMA)와 안무표
+      // 만들기(PLAN_SCHEMA)를 `properties.names` 로 가른다.
+      const wantsNames = body.format && body.format.properties && body.format.properties.names;
+      const content = wantsNames
+        ? JSON.stringify({ names: [
+            { heard: '킥볼체인지', name: 'Kick Ball Change', category: 'step', isNew: false, sure: true },
+            { heard: '뭔지모를말', name: '뭔지모를말', category: '', isNew: true, sure: false }
+          ] })
+        : body.format
+          ? JSON.stringify({ title: '테스트', moves: [
+              { bar: 1, count: 1, length: 8, name: 'Charleston', category: 'step', note: '' },
+              { bar: 'x', count: 1, length: 1, name: 'bad', category: '', note: '' }
+            ], notes: ['임의로 정함'] })
+          : '8x1 1카운트부터 8카운트: Charleston';
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ message: { role: 'assistant', content } }));
     });
@@ -272,6 +280,31 @@ test('server.py: LLM 설정은 키를 돌려주지 않고, 로컬 제공자로 �
 
     assert.equal((await fetch(`${s.base}/api/llm/refine`, { method: 'POST', body: '{"text":""}' })).status, 400);
     assert.equal((await fetch(`${s.base}/api/llm/compose`, { method: 'POST', body: '{}' })).status, 400);
+
+    // ── 말로 들은 것 → 동작 이름 (2026-09-22) ──
+    await fetch(`${s.base}/api/llm/config`, { method: 'PUT', body: JSON.stringify({ provider: 'ollama', baseUrl: ol.base, model: 'fake' }) });
+    const named = await (await fetch(`${s.base}/api/llm/name`, {
+      method: 'POST',
+      body: JSON.stringify({ texts: ['킥볼체인지', '뭔지모를말'], context: ctx })
+    })).json();
+    assert.equal(named.ok, true);
+    assert.equal(named.names.length, 2, '들어온 개수만큼 나온다');
+    assert.equal(named.names[0].name, 'Kick Ball Change', '한글로 적힌 영어가 원어로 돌아온다');
+    assert.equal(named.names[1].sure, false, '모르겠다고 한 것은 그대로 전해진다');
+
+    // ⚠ 답이 빠진 줄은 **버리지 않고 들은 말 그대로**로 채운다. 한 줄이 비면 그 블록만 이름이
+    //   사라져서, 사용자는 무엇이 빠졌는지 알 수 없다.
+    const partial = await (await fetch(`${s.base}/api/llm/name`, {
+      method: 'POST',
+      body: JSON.stringify({ texts: ['킥볼체인지', '답이없는말'], context: ctx })
+    })).json();
+    assert.equal(partial.names.length, 2);
+    assert.equal(partial.names[1].name, '답이없는말');
+    assert.equal(partial.names[1].sure, false);
+
+    assert.equal((await fetch(`${s.base}/api/llm/name`, { method: 'POST', body: '{}' })).status, 400);
+    assert.equal((await fetch(`${s.base}/api/llm/name`, { method: 'POST', body: '{"texts":[]}' })).status, 400);
+    assert.equal((await fetch(`${s.base}/api/llm/name`, { method: 'POST', body: '{"texts":["  "]}' })).status, 400);
     assert.equal((await fetch(`${s.base}/api/nope`, { method: 'POST', body: '{}' })).status, 404);
   } finally {
     ol.srv.close();
@@ -445,7 +478,8 @@ test('server.py: 안무표는 projects 폴더에 덮어쓰기로 쌓이고, 지�
     //   목록이 같은 이름으로 가득 찬다.
     res = await put('9월 공연 안무', { version: 2, fileName: '9월 공연 안무' });
     assert.equal(res.status, 201);
-    assert.deepEqual(readdirSync(path.join(s.root, 'projects')), ['9월 공연 안무.json']);
+    // 2026-09-22 부터 .history 점 폴더가 옆에 생긴다 — 목록에 보이는 것은 여전히 하나다.
+    assert.deepEqual(readdirSync(path.join(s.root, 'projects')).filter((n) => !n.startsWith('.')), ['9월 공연 안무.json']);
     const back = await (await fetch(`${s.base}/api/projects/${encodeURIComponent('9월 공연 안무')}`)).json();
     assert.equal(back.version, 2, '덮어쓰지 않고 옛 내용이 남았다');
 
@@ -480,6 +514,138 @@ test('server.py: 안무표는 projects 폴더에 덮어쓰기로 쌓이고, 지�
     // 없는 것을 읽으면 404, 이름이 없으면 400.
     assert.equal((await fetch(`${s.base}/api/projects/없는것`)).status, 404);
     assert.equal((await fetch(`${s.base}/api/projects?name=`, { method: 'DELETE' })).status, 400);
+  } finally { s.stop(); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 안무표 파일의 안전망 (2026-09-22) — 로드맵 「기둥 D」 첫 항목
+//
+// 그전에는 같은 이름을 제자리에서 덮어쓰고(write_bytes) 삭제는 unlink 였다. 실측으로 이름 붙은
+// 안무가 저장본 없이 작업 문서 한 칸에만 살아 있던 날, 결정을 기다리지 않고 먼저 넣기로 했다.
+// 지키는 것 넷 — 반쪽 파일이 서지 않는다 · 덮어쓰기 전 판이 남는다 · 삭제는 휴지통이다 ·
+// 복구는 무엇도 지우지 않는다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('server.py: 덮어쓰기 전 판이 .history 에 남고, 삭제는 휴지통이며, 복구는 아무것도 지우지 않는다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    const dir = path.join(s.root, 'projects');
+    const put = (name, body) => fetch(`${s.base}/api/projects?name=${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(body) });
+    const names = (folder) => (existsSync(folder) ? readdirSync(folder).filter((n) => n.endsWith('.json')).sort() : []);
+
+    // ① 첫 저장에는 직전 판이 없다.
+    let r = await (await put('공연', { version: 1, tag: 'a' })).json();
+    assert.equal(r.history, null, '처음 쓰는 파일에는 남길 직전 판이 없다');
+    assert.deepEqual(names(dir), ['공연.json']);
+    assert.ok(!readdirSync(dir).some((n) => n.includes('.tmp-')), '임시 파일이 남았다 — os.replace 뒤에 지워져야 한다');
+
+    // ② 덮어쓰면 옛 내용이 .history/공연.<시각>.json 으로 남고, 본체는 새 내용이다.
+    r = await (await put('공연', { version: 1, tag: 'b' })).json();
+    assert.ok(r.history && r.history.startsWith('공연.') && r.history.endsWith('.json'), `이력 파일 이름이 꼴에 안 맞다: ${r.history}`);
+    const hist = path.join(dir, '.history');
+    assert.deepEqual(names(hist), [r.history]);
+    assert.equal(JSON.parse(readFileSync(path.join(hist, r.history), 'utf8')).tag, 'a', '이력에는 **덮어쓰기 전** 내용이 있어야 한다');
+    assert.equal((await (await fetch(`${s.base}/api/projects/공연`)).json()).tag, 'b');
+
+    // ③ 이력 목록 API — 최근이 앞. 점으로 시작하는 경로라 어떤 안무표 이름과도 겹치지 않는다.
+    await put('공연', { version: 1, tag: 'c' });
+    const hl = await (await fetch(`${s.base}/api/projects/.history?name=공연`)).json();
+    assert.equal(hl.ok, true);
+    assert.equal(hl.items.length, 2);
+    assert.ok(hl.items.every((it) => it.name === '공연' && /^\d{8}-\d{6}(-\d+)?$/.test(it.stamp)), JSON.stringify(hl.items));
+    assert.equal(hl.items[0].mtime >= hl.items[1].mtime, true, '최근이 앞이어야 한다');
+    // ⚠ 목록(GET /api/projects)에는 점 폴더가 안 보인다.
+    const list = await (await fetch(`${s.base}/api/projects`)).json();
+    assert.deepEqual(list.projects.map((p) => p.name), ['공연.json']);
+
+    // ④ 작업 문서(`_` 로 시작)는 1.2초마다 덮어쓰므로 저장마다 남기면 초당 한 장이다 — 10분에 한 번만.
+    await put('_작업중', { version: 1, n: 1 });
+    const d1 = await (await put('_작업중', { version: 1, n: 2 })).json();
+    assert.ok(d1.history, '첫 덮어쓰기는 남긴다');
+    const d2 = await (await put('_작업중', { version: 1, n: 3 })).json();
+    assert.equal(d2.history, null, '10분 안의 두 번째 덮어쓰기는 남기지 않는다');
+    assert.equal(names(hist).filter((n) => n.startsWith('_작업중.')).length, 1);
+
+    // ④-2 **이름 붙은 파일도 자동 담기(auto=1)면 같은 규칙이다**(2026-09-22). 묶인 파일에 1.2초마다
+    //     들어오므로, 사람이 누른 저장과 같게 남기면 이력 20장이 24초에 다 찬다.
+    await fetch(`${s.base}/api/projects?name=${encodeURIComponent('묶인것')}&auto=1`, { method: 'PUT', body: '{"version":1,"n":1}' });
+    const a1 = await (await fetch(`${s.base}/api/projects?name=${encodeURIComponent('묶인것')}&auto=1`, { method: 'PUT', body: '{"version":1,"n":2}' })).json();
+    assert.ok(a1.history, '첫 덮어쓰기는 남긴다');
+    const a2 = await (await fetch(`${s.base}/api/projects?name=${encodeURIComponent('묶인것')}&auto=1`, { method: 'PUT', body: '{"version":1,"n":3}' })).json();
+    assert.equal(a2.history, null, '10분 안의 자동 담기는 남기지 않는다');
+    // 반면 **사람이 누른 저장**(auto 없음)은 매번 남긴다 — 그것이 「여기」라고 표시한 자리다.
+    const m1 = await (await put('묶인것', { version: 1, n: 4 })).json();
+    assert.ok(m1.history, '사람이 누른 저장은 바로 앞이 자동 담기였어도 남긴다');
+    assert.equal(names(hist).filter((n) => n.startsWith('묶인것.')).length, 2);
+
+    // ⑤ 삭제는 파일을 .trash/ 로 옮긴다. 목록에서는 사라지고, 휴지통 목록에는 보인다.
+    const del = await (await fetch(`${s.base}/api/projects?name=공연`, { method: 'DELETE' })).json();
+    assert.ok(del.trashed && del.trashed.startsWith('공연.'), `휴지통 파일 이름: ${del.trashed}`);
+    assert.ok(!existsSync(path.join(dir, '공연.json')), '본체가 남아 있으면 목록에 도로 나타난다');
+    const trash = path.join(dir, '.trash');
+    assert.deepEqual(names(trash), [del.trashed]);
+    const tl = await (await fetch(`${s.base}/api/projects/.trash`)).json();
+    assert.equal(tl.items.length, 1);
+    assert.equal(tl.items[0].name, '공연');
+    assert.equal(tl.items[0].file, del.trashed);
+    // 없는 것을 지워도 성공(멱등)이고 휴지통에 아무것도 더해지지 않는다.
+    const del2 = await (await fetch(`${s.base}/api/projects?name=공연`, { method: 'DELETE' })).json();
+    assert.equal(del2.ok, true);
+    assert.equal(del2.trashed, null);
+    assert.deepEqual(names(trash), [del.trashed]);
+
+    // ⑥ 휴지통에서 복구 — 파일이 제자리로 **옮겨** 오고 휴지통은 빈다.
+    let rs = await (await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: JSON.stringify({ from: 'trash', file: del.trashed }) })).json();
+    assert.equal(rs.ok, true);
+    assert.equal(rs.name, '공연.json');
+    assert.equal((await (await fetch(`${s.base}/api/projects/공연`)).json()).tag, 'c');
+    assert.deepEqual(names(trash), []);
+
+    // ⑦ 이력에서 복구 — 이력은 **복사**라 그대로 남고, 덮이는 지금 파일은 먼저 이력에 남는다(복구가 무엇도 지우지 않는다).
+    const before = names(hist).length;
+    const oldest = hl.items[hl.items.length - 1];
+    rs = await (await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: JSON.stringify({ from: 'history', file: oldest.file }) })).json();
+    assert.equal(rs.ok, true);
+    assert.equal((await (await fetch(`${s.base}/api/projects/공연`)).json()).tag, 'a', '가장 오래된 판(a)으로 돌아와야 한다');
+    assert.equal(names(hist).length, before + 1, '덮인 판(c)이 이력에 하나 더 남아야 한다');
+    assert.ok(existsSync(path.join(hist, oldest.file)), '이력 원본은 그대로 남는다');
+
+    // ⑦-2 **더 새 것을 덮지 않는다**(2026-09-22). 읽을 때 받은 표식을 쓸 때 되돌려주고, 그 사이에
+    //     다른 곳에서 바뀌었으면 409 로 거절한다 — 두 탭·두 기기가 서로를 말없이 지우던 자리다.
+    const head = await fetch(`${s.base}/api/projects/${encodeURIComponent('공연')}`);
+    const ns = head.headers.get('X-Choreo-Mtime-Ns');
+    assert.ok(ns && /^\d+$/.test(ns), `읽기 응답에 판의 표식이 없다: ${ns}`);
+    // 같은 표식이면 쓴다.
+    const okWrite = await fetch(`${s.base}/api/projects?name=${encodeURIComponent('공연')}&ifMtimeNs=${ns}`, { method: 'PUT', body: '{"version":1,"tag":"mine"}' });
+    assert.equal(okWrite.status, 201);
+    const ns2 = (await okWrite.json()).mtimeNs;
+    assert.ok(ns2 && String(ns2) !== ns, '쓰고 나면 표식이 새로워져야 한다');
+    // ⚠⚠ **표식은 문자열이어야 한다.** 나노초는 1.79e18 이라 JS 의 안전 정수(9.0e15)를 넘는다 —
+    //   숫자로 보내면 `JSON.parse` 가 끝자리를 깎고, 그 값을 되돌려받은 서버가 「다르다」고 답해
+    //   **혼자서도 충돌한다**(브라우저에서 실측으로 그랬고, 담기가 통째로 멈췄다).
+    //   아래 왕복 한 줄이 그것을 잡는 자리다 — 위의 `!==` 만으로는 둘 다 같은 만큼 깎여서 안 걸린다.
+    assert.equal(typeof ns2, 'string', `표식이 숫자로 왔다(끝자리가 깎인다): ${ns2}`);
+    const again = await fetch(`${s.base}/api/projects?name=${encodeURIComponent('공연')}&ifMtimeNs=${ns2}`, { method: 'PUT', body: '{"version":1,"tag":"round-trip"}' });
+    assert.equal(again.status, 201, '방금 받은 표식으로 다시 쓰지 못했다 — 자기 자신과 충돌한다');
+    // 헤더와 본문이 같은 글자여야 한다(읽기는 헤더로, 쓰기는 본문으로 표식을 준다).
+    const both = await fetch(`${s.base}/api/projects/${encodeURIComponent('공연')}`);
+    assert.equal(both.headers.get('X-Choreo-Mtime-Ns'), String((await again.json()).mtimeNs));
+    // 옛 표식으로 쓰면 거절하고 지금 표식을 알려 준다. **파일은 그대로다.**
+    const stale = await fetch(`${s.base}/api/projects?name=${encodeURIComponent('공연')}&ifMtimeNs=${ns}`, { method: 'PUT', body: '{"version":1,"tag":"덮으면 안 된다"}' });
+    assert.equal(stale.status, 409);
+    const info = await stale.json();
+    assert.equal(info.mtimeNs, both.headers.get('X-Choreo-Mtime-Ns'), '거절하면서 지금 판의 표식을 알려 줘야 한다');
+    assert.equal((await (await fetch(`${s.base}/api/projects/${encodeURIComponent('공연')}`)).json()).tag, 'round-trip', '거절했는데 파일이 바뀌었다');
+    // 표식을 안 보내면 조건 없이 쓴다(사람이 누른 저장이 이 길이다).
+    assert.equal((await put('공연', { version: 1, tag: 'forced' })).status, 201);
+    // 파일이 없으면 표식이 있어도 그냥 쓴다 — 누가 지웠다고 내 작업까지 버릴 까닭은 없다.
+    assert.equal((await fetch(`${s.base}/api/projects?name=${encodeURIComponent('아예 없던 것')}&ifMtimeNs=${ns}`, { method: 'PUT', body: '{"version":1}' })).status, 201);
+
+    // ⑧ 잘못된 요청은 400/404 이고, 폴더 밖 이름은 접힌다.
+    assert.equal((await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: '{"from":"nope","file":"x.json"}' })).status, 400);
+    assert.equal((await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: '{"from":"trash","file":"없는것.json"}' })).status, 404);
+    assert.equal((await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: '{"from":"trash","file":"../../탈출.json"}' })).status, 404);
+    assert.equal((await fetch(`${s.base}/api/projects/.history?name=`)).status, 400);
   } finally { s.stop(); }
 });
 

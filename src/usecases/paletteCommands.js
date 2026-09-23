@@ -11,6 +11,9 @@ import {
 } from './store.js';
 import * as Moves from '../domain/moves.js';
 import * as BoardOps from '../domain/boardOps.js';
+// ⚠ 같은 계층(usecases)끼리는 부를 수 있다. 블록에 동작을 붙이는 규칙의 주인은 boardCommands 하나다 —
+//   여기서 nameGroup 을 다시 부르면 같은 규칙이 두 곳에 생긴다.
+import { setGroupMove } from './boardCommands.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 호출 규약
@@ -330,6 +333,33 @@ export function cancelActivePaletteMove(ctx) {
  * @param {number} [count] 생략하면 store.session.defaultCount(원본 DEFAULT_COUNT 기본 인자)
  * @returns {import('./store.js').Dirty}
  */
+/**
+ * 목록에 없던 이름을 **동작 목록에 만들고**, 이미 놓인 블록의 동작으로 정한다(2026-09-20).
+ *
+ * `createAndPlace` 와 앞 절반이 같다 — 같은 이름이 이미 있으면 재사용하고(uid 를 쓰지 않는다),
+ * 없으면 만들어 목록 맨 뒤에 붙인다. 뒤 절반만 "놓기" 대신 "그 블록에 붙이기"다.
+ * 이것이 받아 적은 `?` 블록과 동작 목록을 잇는 자리다 — 여기서 만든 동작은 다음부터 팔레트에서
+ * 끌어 쓸 수 있고 즐겨찾기·카테고리도 그대로 따라온다.
+ *
+ * ⚠ 이미 있는 동작이면 **카테고리를 갱신하지 않는다**(createAndPlace 와 같은 규칙).
+ * @param {PaletteCtx} ctx
+ * @param {'main'|'routine'} boardId
+ * @param {string} groupId
+ * @param {string} name
+ * @param {string} categoryKey 새로 만들 때만 쓰인다
+ * @returns {import('./store.js').Dirty}
+ */
+export function createAndSetGroupMove(ctx, boardId, groupId, name, categoryKey) {
+  const state = ctx.store.get();
+  const found = Moves.findOrCreateByName(state.library, name, categoryKey, ctx.ids);
+  let dirty = NONE;
+  if (found.created) {
+    ctx.store.update({ library: found.moveLibrary });
+    dirty = { palette: true };
+  }
+  return mergeDirty(dirty, setGroupMove(ctx.store, { boardId, groupId, moveId: found.move.id }));
+}
+
 export function createAndPlace(ctx, boardId, name, categoryKey, row, cellIndex, count) {
   const state = ctx.store.get();
   const totalCount = count === undefined ? state.session.defaultCount : count;

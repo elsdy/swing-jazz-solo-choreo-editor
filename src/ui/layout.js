@@ -118,12 +118,36 @@ export function syncCellSize({
 }
 
 /**
+ * 격자가 **실제로** 차지하는 폭. 헤더의 열 셋(행 라벨 · 카운트 · 비고)과 그 사이 틈을 더한다.
+ *
+ * ⚠ 카운트 열만 `cols × cellW` 로 되돌려 계산한다 — fitCellWidth 가 그 값을 다시 빼서 고정분을
+ *   역산하기 때문이다(그쪽 주석 참조). 실측한 폭을 그대로 넘기면 두 식이 같은 것을 두 번 빼게 된다.
+ * @param {HTMLElement} boardEl
+ * @param {number} cols
+ * @param {number} cellW 지금 적용돼 있는 셀 폭(px)
+ * @returns {number} 못 재면 0
+ */
+function measureBoardWidth(boardEl, cols, cellW) {
+  const header = boardEl.querySelector(`.${CLS.boardHeader}`);
+  const kids = header ? [...header.children] : [];
+  if (kids.length < 3 || !(cellW > 0)) return 0;
+  const gap = parseFloat(getComputedStyle(header).columnGap) || 0;
+  const label = kids[0].getBoundingClientRect().width;
+  const note = kids[kids.length - 1].getBoundingClientRect().width;
+  return label + note + gap * (kids.length - 1) + cols * cellW;
+}
+
+/**
  * 넓은 화면에서 격자가 제 자리에 안 들어가면 셀 폭을 줄여 맞춘다(2026-09-12). 산술은 도메인이 한다
  * (domain/grid.fitCellWidth) — 여기서는 **재고 쓰기만** 한다.
  *
  * ⚠ 반드시 clearGridVars 와 applyNoteWidth **뒤**다. 비고 칸 폭이 계산의 재료이고, 기준값(76px)에서
  *   재야 자리가 다시 생겼을 때 도로 커진다.
  * ⚠ `clientWidth` 는 패딩을 포함하므로 빼고 잰다. 안 빼면 매번 패딩만큼 더 줄인다.
+ * ⚠⚠ 격자가 차지하는 폭을 `boardEl.scrollWidth` 로 재면 **안 된다**(2026-09-21에 고쳤다).
+ *   내용이 컨테이너보다 좁으면 scrollWidth 는 **컨테이너 폭**을 돌려준다 — 그래서 자리가 남아도
+ *   `남는 자리 = 0` 으로 보여 늘릴 까닭을 영영 못 찾았다. 실제로 8칸 표가 오른쪽에 41px 를 비워
+ *   둔 채였다. 열 셋(행 라벨·트랙·비고)을 **따로 재서 더한다**.
  * ⚠ 잴 것이 없으면(보드가 아직 안 그려졌거나 폭이 0) 아무것도 하지 않는다 — 0 으로 나눈 값을
  *   CSS 변수에 쓰면 격자가 통째로 사라진다.
  *
@@ -137,7 +161,7 @@ function fitWideCells(root, boardEl, cols) {
   if (!wrap) return;
   const cs = getComputedStyle(wrap);
   const availableW = wrap.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
-  const neededW = boardEl.scrollWidth;
+  const neededW = measureBoardWidth(boardEl, cols, readCellW(root));
   if (!(availableW > 0) || !(neededW > 0)) return;
   const next = fitCellWidth({ neededW, availableW, cols, currentCellW: readCellW(root) });
   if (next == null) return;
@@ -222,6 +246,8 @@ export function initLayout(deps = {}) {
     sidebarLockBtn = doc.getElementById('sidebarLockBtn'),
     boardLockBtn = doc.getElementById('boardLockBtn'),
     dividerEl = doc.getElementById('resizeDivider'),
+    videoDividerEl = doc.getElementById('videoDivider'),
+    videoBodyEl = doc.getElementById('videoBody'),
     appEl = doc.querySelector(SEL.app),
     sidebarEl = doc.querySelector(SEL.sidebar),
     // 좁은 화면 전용 토글 4개(2026-09-12). 넓은 화면에서는 CSS 가 숨기므로 눌릴 일이 없다.
@@ -264,6 +290,63 @@ export function initLayout(deps = {}) {
   const onGesture = (e) => { if (isAnyLockActive()) e.preventDefault(); };
   on(doc, 'gesturestart', onGesture, { passive: false });
   on(doc, 'gesturechange', onGesture, { passive: false });
+
+  // ── 영상↔안무표 높이 나누기 (2026-09-21, 좁은 화면 전용) ──────────────────
+  //
+  // 좁은 화면에서는 영상과 안무표가 **세로로 쌓인다.** 어느 쪽에 얼마를 줄지는 지금 무엇을 하는지에
+  // 따라 매번 다르다 — 박자를 맞출 때는 영상이 커야 하고, 블록을 놓을 때는 표가 커야 한다.
+  // 그래서 둘 사이에 손잡이를 두고 사람이 정하게 한다.
+  //
+  // ⚠ 넓은 화면에는 없다. 거기서는 영상이 안무표 **위의 띠**이고 크기는 남는 세로로 저절로
+  //   정해진다(ui/videoPanel.placeBand). 두 곳에서 같은 것을 다르게 정하지 않는다.
+  // ⚠ 바꾸는 것은 `--video-h` 하나이고 CSS 의 `.video-body { max-height: var(--video-h, 52vh) }` 가
+  //   읽는다. 기본값을 CSS 의 var 기본값으로 둔 까닭은 **손대기 전의 몫을 한 자리에만** 적기 위해서다.
+  // ⚠ 끄는 동안 store 를 건드리지 않는다(재생 헤드의 채널 B 와 같은 규약) — CSS 변수만 쓴다.
+  let vDragging = false;
+  let vStartY = 0;
+  let vStartH = 0;
+
+  function onVideoStart(e) {
+    if (!isMobileLayout() || !videoBodyEl) return;
+    e.preventDefault();
+    vDragging = true;
+    vStartY = getPointerY(e);
+    vStartH = videoBodyEl.getBoundingClientRect().height;
+    videoDividerEl.classList.add(CLS.active);
+    doc.body.style.userSelect = 'none';
+    doc.body.style.webkitUserSelect = 'none';
+  }
+
+  function onVideoMove(e) {
+    if (!vDragging) return;
+    e.preventDefault();
+    // ⚠ 아래로 끌면 영상이 커진다(손잡이가 영상의 **아래쪽** 경계라 그 방향이 직관과 맞는다).
+    const next = vStartH + (getPointerY(e) - vStartY);
+    // ⚠ 위아래 모두 막는다. 0 으로 줄이면 되살릴 손잡이가 사라지고, 화면을 다 먹으면 안무표가 없어진다.
+    const maxH = Math.max(120, win.innerHeight * 0.78);
+    root.style.setProperty('--video-h', `${Math.round(Math.max(96, Math.min(maxH, next)))}px`);
+    sync();
+  }
+
+  function onVideoEnd() {
+    if (!vDragging) return;
+    vDragging = false;
+    videoDividerEl.classList.remove(CLS.active);
+    doc.body.style.userSelect = '';
+    doc.body.style.webkitUserSelect = '';
+  }
+
+  if (videoDividerEl) {
+    on(videoDividerEl, 'mousedown', onVideoStart);
+    on(videoDividerEl, 'touchstart', onVideoStart, { passive: false });
+    on(doc, 'mousemove', onVideoMove);
+    on(doc, 'touchmove', onVideoMove, { passive: false });
+    on(doc, 'mouseup', onVideoEnd);
+    on(doc, 'touchend', onVideoEnd);
+    on(doc, 'touchcancel', onVideoEnd);
+    // 두 번 누르면 기본값으로 — 끌다가 잃어버린 비율을 되찾는 길이 하나는 있어야 한다.
+    on(videoDividerEl, 'dblclick', () => { root.style.removeProperty('--video-h'); sync(); });
+  }
 
   // ── 1597-1662: 리사이즈 디바이더 (사이드바↔워크스페이스 비율) ───────────
   let dragging = false;

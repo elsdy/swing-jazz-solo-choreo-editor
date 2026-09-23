@@ -34,6 +34,8 @@ export const CLS = Object.freeze({
   moveHandle: 'move-handle',
   label: 'label',
   resizeHandle: 'resize-handle',
+  /** 고른 블록에만 뜨는 `✎`(2026-09-20). 누르면 동작 고르기 팝업이 열린다. */
+  nameBtn: 'name-btn',
 
   // ── 배치 블록의 상태 클래스 ──
   isRoutine: 'is-routine',    // 3423 — 루틴 블록
@@ -169,6 +171,7 @@ export const SEL = Object.freeze({
   placement: '.placement',         // 1529 · 2439 · 2468 · 2533 · 2586 · 2591 · 3382
   moveHandle: '.move-handle',      // 2477 · 2490 · 2523
   resizeHandle: '.resize-handle',  // 2498 · 2514
+  nameBtn: '.name-btn',            // 2026-09-20 — 클릭·더블클릭·터치가 모두 이것을 먼저 비켜 간다
   /**
    * ⚠ 원본 2608·2621·2690·2727 이 한 덩어리로 쓰는 복합 셀렉터. **순서까지 그대로**다.
    * 그리기 시작 전에 "블록/핸들 위면 그만둔다"를 한 번에 판정한다.

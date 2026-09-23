@@ -9,7 +9,7 @@
 
 import * as boardOps from '../domain/boardOps.js';
 import { clamp, clampToGrid, totalCellsFrom } from '../domain/grid.js';
-import { getGroup, groupCount, shiftAllPlacements } from '../domain/placements.js';
+import { affectedRowsByGroup, getGroup, groupCount, nameGroup, shiftAllPlacements } from '../domain/placements.js';
 import { BOARD_MAIN, BOARD_ROUTINE, NONE, boardOf, mergeDirty } from './store.js';
 import { clearLinks } from './linkCommands.js';
 import { clearMedia } from './videoCommands.js';
@@ -216,6 +216,34 @@ export function removeGroup(store, args) {
   return { ...dirty, selection: true, toolbar: true };                  // 3572
 }
 
+/**
+ * **이미 놓인 블록**의 동작을 정한다(2026-09-20). 자리도 길이도 건드리지 않는다 — 이름과 카테고리만.
+ *
+ * 받아 적기가 만든 `?` 블록에 나중에 이름을 붙이는 길이고(`✎`), 이름이 있던 블록의 동작을 갈아
+ * 끼우는 길이기도 하다. 그래서 `pending` 여부를 **묻지 않는다** — 고른 사람이 고친 것이다.
+ *
+ * ⚠ 동작 목록에 없는 id 면 아무것도 하지 않는다(`placeMoveAt` 이 move 를 못 찾았을 때와 같다).
+ * ⚠ 레인은 건드리지 않는다. 길이가 그대로라 겹침이 달라질 일이 없다 — repack 을 부르면 오히려
+ *   이름만 바꿨는데 블록이 다른 층으로 뛴다.
+ *
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', groupId:string, moveId:string }} args
+ * @returns {object} Dirty
+ */
+export function setGroupMove(store, args) {
+  const { boardId = BOARD_MAIN, groupId, moveId } = args;
+  const state = store.get();
+  const move = state.library.find(m => m.id === moveId);
+  if (!move) return NONE;
+  const board = boardOf(state, boardId);
+  const rows = affectedRowsByGroup(board.placements, groupId);
+  if (!rows.length) return NONE;
+  const placements = nameGroup(board.placements, groupId, move.name, move.category);
+  if (placements === board.placements) return NONE;
+  store.setBoard(boardId, { placements });
+  return { boards: { [boardId]: { rows: [...new Set(rows)] } } };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 보드 크기
 // ─────────────────────────────────────────────────────────────────────────────
@@ -268,6 +296,28 @@ export function setBoardRows(store, args) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 보드 비우기 — 메인과 루틴은 **별개 커맨드**다
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 안무표의 블록만 비운다(2026-09-21). **링크·영상·동작 목록은 그대로 둔다.**
+ *
+ * `clearBoard`(전체 초기화)와 갈라 둔 까닭: 받아 적기를 한 판 망쳤을 때 필요한 것은 블록을
+ * 비우는 것뿐이다. 거기서 영상과 박자까지 날아가면, 애써 맞춘 싱크를 다시 잡아야 해서
+ * 아무도 그 버튼을 못 쓴다 — 실제로 그래서 "안무표 초기화"를 따로 달라는 말이 나왔다.
+ *
+ * ⚠ 비어 있으면 NONE 이다. 헛 커밋이 Undo 스택에 빈 단계를 만들지 않게 한다.
+ * ⚠ 선택 집합도 함께 알린다 — 지워진 블록을 가리키는 선택이 남으면 툴바가 `루틴으로 편성 (2)` 를
+ *   계속 보인다(removeGroup 이 같은 까닭으로 selection 을 손본다).
+ * @param {object} store
+ * @returns {object} Dirty
+ */
+export function clearPlacements(store) {
+  const board = boardOf(store.get(), BOARD_MAIN);
+  if (!board.placements.length) return NONE;
+  // ⚠ `rows` 는 중복을 남긴 채 넘긴다 — clearBoard(원본 4482)와 같은 모양이라 렌더 경로가 같다.
+  const rows = board.placements.map(p => p.row);
+  store.setBoard(BOARD_MAIN, { placements: [] });
+  return { boards: { [BOARD_MAIN]: { rows } }, selection: true, toolbar: true };
+}
 
 /**
  * 메인 보드를 비운다. clearBoard(4481-4492).
@@ -415,8 +465,9 @@ export function setDefaultCount(store, args) {
 /**
  * 보드의 배치 전부를 카운트 축에서 `delta` 만큼 옮긴다. 음수면 앞으로 당긴다.
  *
- * 받아 적은 뒤 "통째로 한 칸 밀렸다"를 고치는 자리다. 받아 적기의 초→칸 변환은 반응 지연을
- * 한 칸까지만 흡수하므로(domain/tempo.boundarySpanToCountRange), 그 이상 밀린 날은 여기서 고친다.
+ * 받아 적은 뒤 "통째로 한 칸 밀렸다"를 고치는 자리다. 받아 적기의 초→칸 변환은 누른 자리를 가장
+ * 가까운 칸으로 붙여 반 칸까지만 흡수하므로(domain/tempo.boundarySpanToCountRange), 그 이상 밀린
+ * 날은 여기서 고친다.
  *
  * ⚠ **하나라도 격자 밖으로 나가면 아무것도 옮기지 않는다.** 반만 옮기면 표 끝의 동작이나
  *   인트로 앞의 동작이 소리 없이 사라진다. 그때는 `blocked` 로 알리고 화면이 까닭을 적는다.

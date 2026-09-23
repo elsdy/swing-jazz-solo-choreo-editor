@@ -56,7 +56,7 @@ export const LEGACY_FILE_VERSION = 1;
  *   **파일**에만 빈 블록을 쓰지 않는다(serialize.js).
  * @see index.html:2833
  */
-export const UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing']);
+export const UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing', 'stepTodos']);
 
 /**
  * 루틴 편집기 undo 스냅샷 필드. snapshotStateRe(2900-2902)의 리터럴 키 순서 그대로다.
@@ -72,7 +72,7 @@ export const ROUTINE_UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements'])
  *   지킨다). 한쪽에 필드를 더할 때 다른 쪽을 함께 보라: 파일에만 있으면 Undo 로 안 돌아오고,
  *   스냅샷에만 있으면 저장·불러오기에서 새어 나간다.
  */
-export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibrary', 'placements', 'routines', 'links', 'media', 'phrasing']);
+export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibrary', 'placements', 'routines', 'links', 'media', 'phrasing', 'stepTodos']);
 
 /**
  * 영상 블록(`media`)의 필드. 키 순서가 곧 저장 바이트다.

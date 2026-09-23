@@ -132,6 +132,22 @@ export function clearSegmentsArea(placements, segments, ignoreGroupId = null, su
 }
 
 /**
+ * 씨앗 행에 한 세그먼트라도 걸친 그룹의 **모든 행**까지 넓힌 행 목록.
+ * 그룹은 모든 행에서 같은 레인에 서야 하므로(Phase 2), 재배정도 그룹 단위로 해야 값이 맞는다.
+ * @param {object[]} placements
+ * @param {number[]} rows
+ * @returns {number[]} 중복 없는 행 번호
+ */
+function expandToGroupRows(placements, rows) {
+  const seed = new Set(rows);
+  const groups = new Set();
+  for (const p of placements) if (seed.has(p.row)) groups.add(p.groupId);
+  const out = new Set(seed);
+  for (const p of placements) if (groups.has(p.groupId)) out.add(p.row);
+  return [...out];
+}
+
+/**
  * 지정 행들의 subRow를 재정렬: 갭 없이 0부터 촘촘하게 재배정.
  * 배치 이동/삭제 후 "빈 상단 레이어" 현상을 방지한다.
  *
@@ -140,10 +156,9 @@ export function clearSegmentsArea(placements, segments, ignoreGroupId = null, su
  *    ⚠ stable sort 동점 순서(3512)에 결과가 의존하므로 비교 함수를 절대 바꾸지 말 것.
  *  - Phase 2: 여러 행에 걸친 그룹의 subRow 를 maxSub 이상에서 통일.
  *
- * ⚠ 보존해야 하는 결함(FINAL-architecture.md §5 #4): Phase 2 는 인자로 받은 rows **밖의 행**까지
- *   바꿀 수 있는데 원본 호출부는 그 행을 다시 그리지 않는다. changedRows 는 그 사실을 값으로 드러낼 뿐
- *   **렌더 대상이 아니다** — 오늘의 호출부는 각자의 affectedRows 로만 renderRows 를 부른다.
- *   changedRows 를 렌더에 쓰면 동작이 바뀐다.
+ * ⚠ 2026-09-20 에 **고쳐서 내보냈다**(그전에는 보존 대상 결함 FINAL-architecture.md §5 #4 였다):
+ *   이 함수는 인자로 받은 rows 밖의 행까지 바꿀 수 있는데 호출부가 그 행을 다시 그리지 않아
+ *   화면이 데이터와 어긋났다. 이제 boardOps.finish 가 `changedRows` 를 renderRows 에 합쳐 준다.
  *
  * @see index.html:3506
  * @param {object[]} placements
@@ -156,7 +171,11 @@ export function repackLanes(placements, rows) {
   //   원본의 `p.subRow = s` 와 키 순서가 같아 JSON 바이트가 보존된다(syncCurrentRoutine 경로).
   const work = placements.map(p => ({ ...p }));
 
-  const uniqueRows = [...new Set(rows)];
+  // ⚠ **인자로 받은 행보다 넓게 본다**(2026-09-20). 아래 Phase 2 가 여러 행에 걸친 그룹의 subRow 를
+  //   `maxSub` 으로 통일하기 때문에, 그 그룹의 행 중 하나만 재배정하면 나머지 행의 낡은 레인이 최대값이
+  //   되어 **방금 내린 것이 도로 올라간다.** 실제로 그래서 겹친 둘 중 하나를 지워도 남은 블록이
+  //   아래층에 남고 행이 두 줄인 채였다. 씨앗 행에 걸친 그룹의 **모든 행**을 함께 재배정한다.
+  const uniqueRows = expandToGroupRows(work, rows);
   // Phase 1: 행별 탐욕 배정 (기존 로직)
   uniqueRows.forEach(row => {
     const rp = work.filter(p => p.row === row);

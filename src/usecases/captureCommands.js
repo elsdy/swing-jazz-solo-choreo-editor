@@ -21,7 +21,8 @@
 
 import { BOARD_MAIN, NONE, boardOf, mergeDirty } from './store.js';
 import { placeBlockAt, setBoardRows } from './boardCommands.js';
-import { boundarySpanToCountRange, isTempoUsable, normalizeTempo, rowsForDuration } from '../domain/tempo.js';
+import { CAPTURE_GRID_COUNTS, boundaryCount, boundarySpanToCountRange, isTempoUsable, normalizeTempo, rowsForDuration } from '../domain/tempo.js';
+import { clearDriftSamples, driftReport, noteDriftSample } from '../domain/captureDrift.js';
 import { cellOf, linearOf } from '../domain/grid.js';
 import { normalizeMarkers } from '../domain/markers.js';
 import { activeClipOf } from '../domain/project/media.js';
@@ -56,6 +57,28 @@ export const MAX_AUTO_ROWS = 2048;
  * @param {object} store
  * @returns {number|null}
  */
+/**
+ * 받아 적으며 쌓인 「격자에서 얼마나 어긋났나」 표본. 휘발성이고 저장되지 않는다.
+ * @param {object} store
+ * @returns {import('../domain/captureDrift.js').DriftSample[]}
+ */
+export function captureDriftSamples(store) {
+  const v = store.get().session.video;
+  const list = v ? v.captureDrift : null;
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * 지금까지 누른 경계로 본 판정 — 잘 맞는가 · 한쪽으로 쏠렸는가 · 영상이 더 빠른가 느린가.
+ * 화면(오른쪽 위 BPM 배지 · 받아 적기 안내 줄)이 이것을 읽어 문구를 만든다.
+ * @param {object} store
+ * @returns {ReturnType<typeof driftReport>}
+ */
+export function captureDrift(store) {
+  const tempo = normalizeTempo(activeClipOf(store.get().media).tempo);
+  return driftReport(captureDriftSamples(store), tempo.bpm);
+}
+
 export function captureStartSec(store) {
   const v = store.get().session.video;
   const sec = v ? v.captureSec : null;
@@ -75,6 +98,28 @@ export function canCapture(store) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 쓰기
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 방금 누른 경계가 짝수 격자에서 얼마나 떨어졌는지를 표본으로 남긴다 (2026-09-22).
+ *
+ * 격자에 붙이면서 버려지는 거리를 여기서만 주워 둔다 — 이것이 없으면 "왜 내가 누른 자리가
+ * 아닌 곳에 놓였나" 를 화면이 설명할 길이 없다.
+ * ⚠ **블록이 실제로 놓인 누름과 여는 누름만 담는다.** 되감거나(다시 여기서부터) 손이 떨려
+ *   두 번 눌린 경계는 박을 겨냥한 누름이 아니라 표본을 흐린다. `captureSkip`(건너뛰기)도
+ *   같은 까닭으로 뺀다 — "여기까지는 안무가 아니다" 는 박에 맞춰 누를 까닭이 없다.
+ * @param {object} store
+ * @param {number} sec
+ * @param {import('../domain/captureDrift.js').DriftSample[]} [base] 이 목록 뒤에 붙인다
+ * @returns {object|null} 표본이 생겼으면 patchVideo 에 얹을 값, 아니면 null
+ */
+function driftPatch(store, sec, base) {
+  const tempo = normalizeTempo(activeClipOf(store.get().media).tempo);
+  if (!isTempoUsable(tempo)) return null;
+  const read = boundaryCount(sec, tempo, CAPTURE_GRID_COUNTS);
+  if (!read) return null;
+  const list = base === undefined ? captureDriftSamples(store) : base;
+  return { captureDrift: noteDriftSample(list, { at: read.snapped, off: read.offset }) };
+}
 
 /** session.video 를 통째로 갈아 끼우지 않고 한 키만 바꾼다(다른 휘발성 값이 날아가지 않게). */
 function patchVideo(store, values) {
@@ -157,7 +202,8 @@ export function growRowsForDuration(store, args = {}) {
  * @param {object} store
  * @param {{ inSec:number, outSec:number, boardId?:'main'|'routine', name?:string, category?:string }} args
  * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
- * @returns {object & {placed?:boolean, needsTempo?:boolean}} Dirty
+ * @returns {object & {placed?:boolean, needsTempo?:boolean, groupId?:string}} Dirty
+ *   groupId: 방금 놓인 블록의 그룹. 마이크로 붙인 이름을 나중에 LLM 이 고쳐 끼울 때 쓴다
  */
 export function captureSpan(store, args, deps = {}) {
   const { boardId = BOARD_MAIN } = args;
@@ -168,7 +214,7 @@ export function captureSpan(store, args, deps = {}) {
   const tempo = normalizeTempo(activeClipOf(state.media).tempo);
   if (!isTempoUsable(tempo)) return { ...NONE, needsTempo: true };
   const board = boardOf(state, boardId);
-  const { from, to, empty } = boundarySpanToCountRange(inSec, outSec, board.cols, tempo);
+  const { from, to, empty } = boundarySpanToCountRange(inSec, outSec, board.cols, tempo, CAPTURE_GRID_COUNTS);
   if (empty) return NONE;                                // 두 경계가 같은 칸이다 — 놓을 자리가 없다
   const totalCount = linearOf(to.row, to.index, board.cols) - linearOf(from.row, from.index, board.cols) + 1;
   if (totalCount <= 0) return NONE;
@@ -179,6 +225,9 @@ export function captureSpan(store, args, deps = {}) {
   //   여기서 갈라내고, needsTempo·placed 와 같은 결로 호출부까지 얹어 보낸다.
   const { grew, capped, ...grownDirty } = growRowsTo(store, { rows: to.row, boardId });
   const notes = { ...(grew ? { grew } : {}), ...(capped ? { capped: true } : {}) };
+  // ⚠ 놓기 **전** 의 그룹을 적어 둔다. 놓인 블록의 groupId 를 알아내는 길이 이것뿐이다 —
+  //   placeBlockAt 은 Dirty 만 돌려주고, 자리로 찾으면 같은 칸에 겹친 옛 블록과 구별이 안 된다.
+  const beforeGroups = new Set(boardOf(store.get(), boardId).placements.map((p) => p.groupId));
   const dirty = placeBlockAt(
     store,
     { boardId, name: args.name, category: args.category, startRow: from.row, startIndex: from.index, totalCount },
@@ -186,7 +235,8 @@ export function captureSpan(store, args, deps = {}) {
   );
   // 늘렸는데도 못 놓았다 — 되감아 인트로 앞(음수 카운트)으로 간 경우다. 늘린 것은 살린다.
   if (dirty === NONE) return grew ? { ...grownDirty, ...notes } : NONE;
-  return { ...mergeDirty(grownDirty, dirty), placed: true, ...notes };
+  const fresh = boardOf(store.get(), boardId).placements.find((p) => !beforeGroups.has(p.groupId));
+  return { ...mergeDirty(grownDirty, dirty), placed: true, ...notes, ...(fresh ? { groupId: fresh.groupId } : {}) };
 }
 
 /**
@@ -208,10 +258,17 @@ export function captureSpan(store, args, deps = {}) {
  *   그전처럼 시작점을 지우면 연속으로 찍던 흐름이 거기서 끊긴다.
  * ⚠ 블록을 못 놓아도(보드 밖) 경계는 **언제나 옮긴다.** 안 그러면 사용자가 같은 자리에 갇힌다.
  *
+ * ── 마이크로 말한 이름 (2026-09-22) ──
+ * 구간을 놓을 때 `session.video.voiceHeard` 에 들어 둔 이름이 있으면 **그것을 이름으로 삼는다.**
+ * 그 값을 만드는 쪽은 usecases/voiceNameCommands 이고, 여기서는 키 하나를 읽을 뿐이다(서로
+ * import 하지 않는다 — 둘 다 같은 층이고, 이 키가 둘 사이의 계약이다).
+ * ⚠ 이름을 붙였으면 반환값의 `heard`·`voiceGroupId` 로 알린다. 호출부가 그걸로 LLM 줄을 세운다.
+ *
  * @param {object} store
  * @param {{ sec:number, boardId?:'main'|'routine' }} args
  * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
- * @returns {object & {started?:boolean, placed?:boolean, needsTempo?:boolean}} Dirty
+ * @returns {object & {started?:boolean, placed?:boolean, needsTempo?:boolean,
+ *                     heard?:string, needsLlm?:boolean, voiceGroupId?:string}} Dirty
  */
 export function captureToggle(store, args, deps = {}) {
   const sec = Number(args.sec);
@@ -223,7 +280,13 @@ export function captureToggle(store, args, deps = {}) {
     // 하는 것이 목적이고, 길이를 모르면(args.durationSec 이 null) 아무 일도 하지 않는다 —
     // 그때는 받을 때마다 captureSpan 이 모자라는 만큼 늘린다.
     const { grew, capped, ...grownDirty } = growRowsForDuration(store, { ...args, boardId: args.boardId });
-    const opened = patchVideo(store, { captureSec: sec });
+    // 여는 누름부터 표본이다 — 첫 경계도 짝수 격자에 붙으므로 어긋난 거리가 똑같이 나온다.
+    // ⚠ **빈 목록에서 시작한다.** 지난 판의 표본이 남아 있으면 이번 판정이 그것에 끌려간다.
+    const opened = patchVideo(store, {
+      captureSec: sec,
+      captureDrift: clearDriftSamples(),
+      ...(driftPatch(store, sec, clearDriftSamples()) || {})
+    });
     return {
       ...mergeDirty(grownDirty, opened),
       started: true,
@@ -232,13 +295,25 @@ export function captureToggle(store, args, deps = {}) {
     };
   }
   const moved = patchVideo(store, { captureSec: sec });     // 경계는 언제나 옮긴다
-  if (sec - start < MIN_SPAN_SEC) return moved;             // 되감았거나 두 번 눌렸다
-  const span = captureSpan(store, { ...args, inSec: start, outSec: sec }, deps);
+  if (sec - start < MIN_SPAN_SEC) return moved;             // 되감았거나 두 번 눌렸다 — 표본에도 안 담는다
+  // 말로 들어 둔 이름이 있으면 그것으로 놓는다(없으면 여느 때처럼 이름 없는 `?` 블록이다).
+  const voice = store.get().session.video.voiceHeard || null;
+  const span = captureSpan(
+    store,
+    { ...args, inSec: start, outSec: sec, ...(voice && voice.name ? { name: voice.name } : {}) },
+    deps
+  );
+  if (span.placed) patchVideo(store, driftPatch(store, sec) || {});
+  // 붙였으면 비운다 — 다음 구간이 앞 구간의 이름을 물려받으면 안 된다.
+  if (voice) patchVideo(store, { voiceHeard: null });
   // ⚠ mergeDirty 는 **아는 키만** 골라 새 객체를 만든다 — grew·capped·placed 는 여기서 다시 얹는다.
   const dirty = mergeDirty(moved, span);
   const notes = { ...(span.grew ? { grew: span.grew } : {}), ...(span.capped ? { capped: true } : {}) };
   if (span.needsTempo) return { ...dirty, needsTempo: true };
-  return span.placed ? { ...dirty, placed: true, ...notes } : { ...dirty, ...notes };
+  const heardNote = voice && span.placed && voice.needsLlm && span.groupId
+    ? { heard: voice.heard, needsLlm: true, voiceGroupId: span.groupId }
+    : {};
+  return span.placed ? { ...dirty, placed: true, ...notes, ...heardNote } : { ...dirty, ...notes };
 }
 
 /**
@@ -270,7 +345,10 @@ export function captureSkip(store, args = {}) {
  */
 export function stopCapture(store) {
   if (captureStartSec(store) === null) return NONE;
-  return patchVideo(store, { captureSec: null });
+  // 표본도 함께 버린다 — 다음 판의 판정에 지난 판의 어긋남이 섞이면 안 된다.
+  // ⚠ 들어 둔 이름(voiceHeard)도 비운다. 열려 있던 구간은 버려지므로 그 이름도 갈 곳이 없다.
+  //   LLM 줄(voiceQueue)은 **남긴다** — 이미 놓인 블록의 것이라 아직 고쳐 끼울 곳이 있다.
+  return patchVideo(store, { captureSec: null, captureDrift: clearDriftSamples(), voiceHeard: null });
 }
 
 /** 옛 이름. 하는 일은 stopCapture 와 같다 — 부르는 곳이 아직 남아 있어 둔다. */

@@ -30,6 +30,26 @@ const HOTKEY_COMMANDS = Object.freeze({
   play: 'togglePlay'
 });
 
+/**
+ * 표에 적힌 커맨드가 파사드에 실제로 있는지 **묶을 때 한 번** 본다.
+ *
+ * ⚠⚠ 없으면 **증상이 없다.** 아래 dispatch 는 `typeof commands[name] === 'function'` 으로
+ *   조용히 걸러 내고, `Space` 는 결과와 무관하게 preventDefault 되므로 스크롤조차 안 된다 —
+ *   겉으로는 "그 키만 죽었다"로 보이고 콘솔에도 아무것도 안 남는다. 2026-09-20 에 `togglePlay` 가
+ *   app/main 의 파사드에서 빠진 채 사흘을 갔다.
+ * ⚠ 던지지 않는다. 키 하나가 빠졌다고 앱이 안 뜨면 그게 더 나쁘다 — 개발자 콘솔에만 적는다.
+ * @param {Record<string, unknown>} commands
+ * @param {Console} [log]
+ */
+function warnMissingHotkeyCommands(commands, log = console) {
+  const missing = Object.entries(HOTKEY_COMMANDS)
+    .filter(([, name]) => typeof commands[name] !== 'function')
+    .map(([id, name]) => `${id} → commands.${name}`);
+  if (missing.length && log && typeof log.warn === 'function') {
+    log.warn('[단축키] 표에 있는데 커맨드가 없다 — 그 글쇠는 아무 일도 하지 않는다:', missing.join(' · '));
+  }
+}
+
 /** 커맨드가 실제로 무언가를 바꿨는가. store.NONE 은 얼어붙은 빈 객체다. */
 const changed = (dirty) => !!dirty && Object.keys(dirty).length > 0;
 
@@ -40,6 +60,12 @@ const changed = (dirty) => !!dirty && Object.keys(dirty).length > 0;
  *   있지 않아 괄호를 달았다 — 확인 문구('정말요?')는 confirmOnce 가 고정으로 쓴다.
  */
 export const CLEAR_BTN_LABEL = '전체 초기화(링크 포함)';
+
+/**
+ * `안무표만 비우기` 버튼의 라벨. 위와 같은 규약이다 — 마크업의 글자와 **한 글자도 다르면 안 된다**
+ * (confirmOnce 가 확인 뒤 이 문자열로 버튼을 되돌린다).
+ */
+export const CLEAR_BOARD_BTN_LABEL = '안무표만 비우기';
 
 /**
  * 사이드바·툴바 바인딩 일체.
@@ -53,7 +79,7 @@ export const CLEAR_BTN_LABEL = '전체 초기화(링크 포함)';
  *   paletteSearch, sortAlphaBtn, sortAddedBtn, sortCategoryBtn, sortDirBtn,
  *   addMoveBtn, newMoveName, newMoveCategory,
  *   saveBtn, loadFileBtn, mergeFileBtn, saveMoveListBtn, loadMoveListBtn,
- *   saveCategoriesBtn, loadCategoriesBtn, clearBtn,
+ *   saveCategoriesBtn, loadCategoriesBtn, clearBtn, clearBoardBtn,
  *   fileLoader, mergeFileLoader, moveListLoader, categoryLoader,
  *   fileNameInput, moveListFileNameInput, categoryFileNameInput,
  *   boardColsInput, boardColsDec, boardColsInc,
@@ -120,6 +146,18 @@ export function bindControls(deps) {
   //   배치뿐 아니라 링크바 4필드까지 비우므로(4484-4490) 무엇이 함께 지워지는지를 라벨이 말한다 —
   //   index.html 의 #clearBtn 글자와 **같아야 한다**(다르면 확인 뒤 버튼 이름이 바뀐다).
   //   버튼이 좁아 짧게 적는다. 2026-09 이후로는 Undo 로 링크까지 되돌아온다(UNDO_FIELDS).
+  // 안무표만 비우기(2026-09-21). 링크·영상·박자·동작 목록은 그대로 둔다.
+  // ⚠ 되돌릴 수 있는 일이지만(Undo 한 번) 잃는 것이 크므로 아래 `전체 초기화` 와 **같은 2단계 확인**을
+  //   쓴다. 확인 문구는 confirmOnce 가 고정으로 쓴다(`정말요?`).
+  if (els.clearBoardBtn) {
+    els.clearBoardBtn.addEventListener('click', (e) => {
+      confirmOnce(e.currentTarget, CLEAR_BOARD_BTN_LABEL, () => {
+        apply(commands.clearPlacements());
+        apply(commands.commitHistory('main'));
+      });
+    });
+  }
+
   els.clearBtn.addEventListener('click', (e) => {
     confirmOnce(e.currentTarget, CLEAR_BTN_LABEL, () => {
       apply(commands.clearBoard());              // 4482-4490 (링크 초기화 포함)
@@ -267,6 +305,30 @@ export function bindHotkeys(deps) {
   } = deps;
   const apply = (dirty) => { if (dirty) render(dirty); };
 
+  // 표와 파사드가 어긋났는지 여기서 한 번 본다(위 ⚠⚠). 묶는 시점이라 값이 다 갖춰져 있다.
+  warnMissingHotkeyCommands(commands);
+
+  /**
+   * 재생기 자신이 이미 그 글쇠를 처리했는가.
+   *
+   * ⚠⚠ `<video>` 에 포커스가 있으면 **브라우저가 먼저** `스페이스` 를 재생/일시정지로 쓴다.
+   *   그 처리는 기본 동작이 아니라 재생기 안쪽의 리스너라, 우리가 document 에서 `preventDefault`
+   *   해도 이미 일어난 뒤다 — 그러고서 우리 커맨드까지 돌면 **두 번 토글되어 아무 일도 안 한
+   *   것처럼 보인다.** 영상을 크게 띄운 뒤로 영상을 눌러 포커스를 주는 일이 흔해지면서 "스페이스가
+   *   안 먹는다"가 됐다(2026-09-21).
+   * ⚠ 그래서 재생기가 포커스를 쥐고 있으면 **우리는 비킨다.** 글쇠 하나에 주인은 하나다.
+   *   막지도 않는다(preventDefault 없음) — 막으면 재생기 쪽 처리까지 취소되어 진짜로 아무 일도
+   *   일어나지 않는다.
+   * ⚠ 재생/일시정지에만 해당한다. `B`·`K`·`N` 은 재생기가 쓰지 않는 글쇠라 그대로 우리 것이다.
+   * @param {EventTarget|null} target
+   * @param {string} pressed normalizeKey 를 거친 이름
+   */
+  const playerOwnsKey = (target, pressed) => {
+    if (pressed !== 'Space') return false;
+    const tag = target && target.tagName;
+    return tag === 'VIDEO' || tag === 'AUDIO';
+  };
+
   /** 지금 글자를 치고 있는가. 홑글쇠 단축키는 여기서 막힌다. */
   const typing = (target) => {
     const el = target;
@@ -292,6 +354,8 @@ export function bindHotkeys(deps) {
     if (!typing(e.target)) {
       const pressed = eventKey(e);
       const map = hotkeys();
+      // 재생기가 쥔 글쇠면 우리는 비킨다(위 ⚠⚠). 막지도 않는다.
+      if (playerOwnsKey(e.target, pressed)) return;
       for (const action of EDITABLE_ACTIONS) {
         if (!(map[action.id] || []).includes(pressed)) continue;
         // ⚠ **결과와 무관하게 먼저 막는다.** `Space` 는 포커스가 버튼에 있으면 그 버튼을 다시

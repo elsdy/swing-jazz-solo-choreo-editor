@@ -89,10 +89,17 @@ export function createPlacementEl(placement, visualSubRow, deps) {
   // 이름 없는 블록은 자리와 길이만 있다. 빈 칸으로 두면 "왜 아무것도 안 적혔지"가 되므로 `?` 를 세운다
   // (docs/EDITING_FLOWS.md 1단계). name 은 빈 문자열 그대로라 이름을 붙이면 이 분기가 저절로 풀린다.
   const shown = placement.pending ? '?' : escapeHtml(placement.name);
+  // `✎` 는 **고른 블록에만** 보인다(CSS). 자리를 차지하지 않는 절대 배치다 — 흐름에 끼우면
+  // 고르는 순간 라벨이 밀려서, 지우려고 더블클릭하는 손이 첫 클릭 뒤에 과녁을 잃는다.
+  // ⚠ 고를 수 없는 보드(루틴 편집기)에는 아예 만들지 않는다 — 영영 안 보이는 DOM 을 두지 않는다.
+  const nameBtn = policy?.allowsSelection
+    ? `<button class="${CLS.nameBtn}" type="button" title="동작 정하기">✎</button>`
+    : '';
   el.innerHTML = `<div class="${CLS.tooltip}">${placement.pending ? '이름 없는 블록' : escapeHtml(placement.name)} ${cnt}c</div>`
     + `<div class="${CLS.moveHandle}" draggable="true" title="위치 이동"></div>`
     + `<div class="${CLS.label}">${shown} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div>`
-    + `<div class="${CLS.resizeHandle}" title="길이 조절"></div>`;
+    + `<div class="${CLS.resizeHandle}" title="길이 조절"></div>`
+    + nameBtn;
   return el;
 }
 

@@ -49,6 +49,7 @@ import { phraseMark } from '../domain/phrasing.js';
  *   start?: { sync(): void },
  *   thumb?: { render(): void },
  *   project?: { render(): void },
+ *   bpm?: { render(): void },
  *   notify?: (n: { kind: 'alert', message: string }) => void
  * }} views
  * @param {{ dev?: boolean, paranoid?: boolean }} [options]
@@ -96,7 +97,7 @@ export function createRenderer(store, views, options = {}) {
 
     // 메인 보드의 배치가 바뀌었으면 '비었는가'가 달라졌을 수 있다 — 빈 안내와 시작 카드를 맞춘다.
     // ⚠ layout 은 여기 넣지 않는다. 칸 폭이 바뀌어도 비었는지는 그대로다.
-    if (d.boards?.[BOARD_MAIN]) views.start?.sync();
+    if (d.boards?.[BOARD_MAIN]) views.start?.sync();   // ui/modeBar — 빈 안무표 안내
 
     // ── ②' 프레이즈·코러스 — 행을 다시 그리지 않고 dataset·CSS 변수만 입힌다 ────────────
     // ⚠ 보드가 조금이라도 다시 그려졌으면 함께 부른다. 골격 재생성(innerHTML='')이 dataset 을
@@ -138,6 +139,9 @@ export function createRenderer(store, views, options = {}) {
     if (d.video || d.boards?.[BOARD_MAIN] || d.toolbar) views.thumb?.render();
     // 프로젝트 칸은 영상 목록(이름·날짜·지금 보는 것)을 비춘다 — 영상이 바뀌면 함께 다시 그린다.
     if (d.video) views.project?.render();
+    // 오른쪽 위 기준 박자 배지(2026-09-22). 박자를 고치는 것도 받아 적으며 경계를 찍는 것도
+    // `video` 를 더럽히므로 이 한 줄이면 둘 다 따라온다.
+    if (d.video) views.bpm?.render();
     if (d.savedLists) {
       for (const kind of d.savedLists) views.savedLists?.render(kind, store.recents[kind]);
     }
