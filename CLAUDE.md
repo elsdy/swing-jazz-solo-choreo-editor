@@ -68,6 +68,7 @@ node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
 이 파일은 여러 저장소를 한 화면에 모아 보는 **로드맵 보드**(`~/Github/roadmap-board`, `python3 rb.py next`)가 읽고 쓴다.
 항목을 더하면 문서의 칸 · 추적 표 · JSON 세 곳을 같은 `RM-nn` 으로 고친다 — 어긋나면 `tests/unit/roadmapFile.test.mjs` 가 붉어진다.
 걸음은 끝낸 **뒤에** 적고, 보드가 쓴 JSON 변경은 그 항목의 PR 에 함께 커밋한다.
+`index.html` 끝의 짧은 인라인 스크립트는 그 보드의 **떠 있는 위젯**(오른쪽 아래 `🧭 로드맵`, Alt+R)을 불러온다 — 앱의 코드가 아니고 `src/` 와 무관하며, 보드가 꺼져 있으면 아무것도 뜨지 않는다. 지우지 않는다.
 
 ## PR 을 내기 전에
 
