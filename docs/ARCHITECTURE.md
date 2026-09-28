@@ -239,9 +239,10 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `flowStats.js` | 「어떤 버튼 다음에 어떤 버튼」 세기(2026-09-21). 같은 id 연속은 세지 않는다. **이 표로 화면을 움직이지 않는다** — 판정은 2026-10-05 로 미뤘다([로드맵](ROADMAP.md)) |
 | `flowTrack.js` | 작업 차례 줄의 스플라인·리본 기하(2026-09-21). 그리는 일은 `ui/videoPanel` 이 한다 |
 | `themes.js` | 테마 목록과 정규화(2026-09-21). 기본 테마는 속성을 아예 안 붙인다 |
-| `project/schema.js` | 저장 포맷 상수와 필드 목록. 로직이 없고 import 도 0개. `UNDO_FIELDS` 와 `DOC_FIELDS` 는 같은 집합이다(`rows` `cols` `placements` `moveLibrary` `categories` `routines` `links` `media`, 순서만 다르다) — 파일과 undo 가 같은 것을 상태로 본다 |
+| `project/schema.js` | 저장 포맷 상수와 **필드 등록표**(`FIELD_TABLE`, 2026-09-28 · RM-01) — 안무표에 저장되는 필드 하나가 한 줄이다(10필드: `rows` `cols` `categories` `moveLibrary` `placements` `routines` `links` `media` `phrasing` `stepTodos`). `UNDO_FIELDS` · `DOC_FIELDS` 는 이 표에서 나온다. 함수가 없고 import 도 0개 — 필드마다의 규칙은 쓰는 파일이 필드 이름을 키로 한 표로 갖는다 |
+| `project/fields.js` | 필드별 규칙 표(`snapshot.UNDO_OPS` · `serialize.FILE_OPS` · `usecases/docFields`)가 등록표와 **같은 키 집합**인지 재는 `byField` 하나. 어긋나면 모듈을 불러오는 순간 던진다 — 필드를 늘리다 한 자리를 빠뜨려 값이 조용히 사라지던 부류를 막는다 |
 | `project/media.js` | 영상 블록(`{tempo, source}`)의 정규화·직렬화. **비어 있으면 `serializeMedia` 가 `null` 을 돌려주고 파일에서 키가 통째로 빠진다** — 영상을 안 쓴 사용자의 저장 파일은 이 기능 전과 바이트가 같다. 로직이 있어야 해서 `schema.js`(import 0개 리프)가 아니라 여기다 |
-| `project/serialize.js` | 파일로 내보낼 페이로드 조립 |
+| `project/serialize.js` | 파일로 내보낼 페이로드 조립. 필드마다 싣는 법(`FILE_OPS`)을 등록표 차례로 돌고, passthrough 를 막는 `PROJECT_KEYS` 도 등록표에서 파생한다 |
 | `project/normalize.js` | 불러온 데이터의 정규화·클리핑 |
 | `project/merge.js` | `부분 불러오기` 의 전 알고리즘 |
 | `project/migrations.js` | 저장 포맷 마이그레이션 |
@@ -283,6 +284,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `categoryCommands.js` | 카테고리 추가·색 미리보기/확정·이름 변경·삭제 |
 | `routineCommands.js` | 루틴 CRUD 와 편집기 세션(`openEditor` `syncFromEditor` `setRoutineSize`) |
 | `projectCommands.js` | 저장·불러오기·`부분 불러오기`·최근 목록 |
+| `docFields.js` | 필드 등록표의 store 쪽 한 줄씩 — 그 필드가 store 의 어디에 사는지(`library` · 보드 칸)와 바뀌면 무엇을 다시 그리나. `docView` · `writeDoc` · `docDirty` 를 되돌리기와 저장·열기가 같이 쓴다(2026-09-28) |
 | `linkCommands.js` | 링크바 상태 전이와 제목 조회 상태머신 |
 | `poseCommands.js` | 자세 분석의 화면 상태(2026-09-12). **관절점은 여기 들어오지 않는다** — 30초를 12fps 로 보면 숫자 수만 개라 undo 스냅샷이 통째로 불어난다. store 에는 요약(몇 장·몇 명·어느 궤적·앵커)만 있고 결과는 `app/main.js` 가 모듈 변수로 든다. undo 도 타지 않는다 — 분석은 안무가 아니라 영상을 들여다보는 일이다 |
 | `videoCommands.js` | 영상 패널 상태·두 점 앵커·탭 템포·소스 확정·`clearMedia`. **DOM 도 플레이어도 시계도 모른다** — 시각(초)은 전부 인자로 들어온다(`check-arch` 가 `performance` 를 막는다). 재생 위치·재생 상태는 여기에도 store 에도 없다 |
@@ -291,7 +293,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `captureCommands.js` | 받아 적기(영상 → 안무표). 경계를 **두 카운트 격자**에 붙이고(`domain/tempo`), 자리가 모자라면 마디를 늘리고, 격자에서 벗어난 거리를 표본으로 모은다. 붙일 이름은 `session.video.voiceHeard` 를 읽어 온다 — `voiceNameCommands` 와 서로 import 하지 않고 **그 키 하나가 둘 사이의 계약**이다 |
 | `voiceNameCommands.js` | 마이크로 말한 이름을 **그때 열려 있던 구간**에 붙인다(2026-09-22). 확신이 서면 그 자리에서 정식 표기로(공짜), 아니면 들은 대로 붙여 놓고 LLM 줄에 세운다. LLM 이 고쳐 끼울 때 **사람이 이미 손댄 블록은 건드리지 않는다** |
 | `stepTodoCommands.js` | 작업 차례 단계별 할 일. `domain/stepTodos` 의 참조 비교로 "바뀐 것 없음"을 가린다 |
-| `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 8필드(링크·영상 템포 포함), 루틴은 3필드. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
+| `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 등록표의 10필드, 루틴은 3필드. 뽑기 · 되돌리기 · 다시 그리기는 `docFields` 를 돈다. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
 
 ### `src/ui/` — DOM 렌더
 

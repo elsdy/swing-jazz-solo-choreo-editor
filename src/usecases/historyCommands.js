@@ -10,10 +10,10 @@
 // ⚠ 8번째는 media(템포·소스)다. 링크와 달리 localStorage 에 살지 않으므로 되쓰기가 없다 —
 //   상태만 되돌리면 끝이다. 반대로 **재생 위치는 스냅샷에 들어오지 않는다**(휘발성 채널 B).
 // ⚠ 9번째는 phrasing(프레이즈·코러스 구조, 2026-09-13), 10번째는 stepTodos(단계별 할 일,
-//   2026-09-21)이고 둘 다 media 와 같은 규칙이다. 이 파일에서 손볼 자리가 셋이라는 것만 기억하면
-//   된다 — mainSnapshotView(뽑기) · restoreMain(되돌리기) · mainRestoreDirty(다시 그리기).
-//   하나만 빠져도 "되돌렸는데 화면이 그대로"가 되고, **뽑기를 빠뜨리면 커밋 자체가 무시된다**
-//   (값이 안 바뀐 커밋은 스택을 늘리지 않는다 — 2026-09-21 에 실제로 그랬다).
+//   2026-09-21)이고 둘 다 media 와 같은 규칙이다.
+// ⚠ 뽑기 · 되돌리기 · 다시 그리기가 이제 **필드 등록표를 순회한다**(RM-01, 2026-09-28 — usecases/docFields.js).
+//   전에는 이 파일에서 필드마다 세 자리를 손으로 고쳤고, 하나만 빠져도 "되돌렸는데 화면이 그대로"가 됐다.
+//   **뽑기를 빠뜨리면 커밋 자체가 무시됐다**(값이 안 바뀐 커밋은 스택을 늘리지 않는다 — 2026-09-21 에 실제로 그랬다).
 
 import { UNDO_FIELDS, ROUTINE_UNDO_FIELDS } from '../domain/project/schema.js';
 import { snapshotMain, snapshotRoutine, applySnapshot } from '../domain/project/snapshot.js';
@@ -21,6 +21,7 @@ import { normalize as normalizeCategories } from '../domain/categories.js';
 import { DEFAULT_CATEGORIES } from '../domain/defaults.js';
 import { serializeLinks } from '../domain/links.js';
 import { BOARD_MAIN, BOARD_ROUTINE, BOARD_IDS, boardOf, NONE } from './store.js';
+import { docView, writeDoc, docDirty } from './docFields.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 보드별 스냅샷 규격
@@ -51,26 +52,12 @@ export const SNAPSHOT_SPEC = Object.freeze({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * snapshotState(2834-2839)가 보던 그대로의 평평한 뷰. 키 순서는 snapshotMain 이 UNDO_FIELDS 로 고정한다.
- * ⚠ links·media·phrasing 은 원본에 없던 필드다. 복제는 snapshot.pickUndoFields 가 한다 — 여기서는 참조만 넘긴다.
- * ⚠ media 는 `{tempo, source}` 뿐이다. 재생 위치·재생 상태는 store 에 아예 없으므로 스냅샷에도 없다.
+ * snapshotState(2834-2839)가 보던 그대로의 평평한 뷰 — 등록표의 모든 필드(docFields.docView). 키 순서는
+ * snapshotMain 이 UNDO_FIELDS 로 고정하고, 복제는 snapshot.pickUndoFields 가 한다 — 여기서는 참조만 넘긴다.
+ * ⚠ media 는 `{activeId, clips}` 뿐이다. 재생 위치·재생 상태는 store 에 아예 없으므로 스냅샷에도 없다.
  */
 function mainSnapshotView(state) {
-  const board = boardOf(state, BOARD_MAIN);
-  return {
-    rows: board.rows,
-    cols: board.cols,
-    placements: board.placements,
-    moveLibrary: state.library,
-    categories: state.categories,
-    routines: state.routines,
-    links: state.links,
-    media: state.media,    // 2026-09 — UNDO_FIELDS 의 8번째. 값 복제는 snapshot.pickUndoFields 가 한다
-    phrasing: state.phrasing,  // 2026-09-13 — 9번째. ⚠ 여기 빠뜨리면 Undo 가 곡 구조를 기본값으로 되돌린다
-    // 2026-09-21 — 10번째. ⚠ 여기 빠뜨리면 할 일을 적어도 **스냅샷이 그대로**라 커밋이 무시되고
-    //   (값이 안 바뀐 커밋은 스택을 늘리지 않는다), Undo 로도 돌아오지 않는다. 실제로 그랬다.
-    stepTodos: state.stepTodos
-  };
+  return docView(state);
 }
 
 /** snapshotStateRe(2901)가 보던 그대로. BoardDoc 의 hasIntroRow 는 ROUTINE_UNDO_FIELDS 밖이라 무시된다. */
@@ -107,22 +94,9 @@ function restoreMain(store, snapshot, storage) {
     normalizeCategories,
     defaultCategories: DEFAULT_CATEGORIES
   });
-  store.setBoard(BOARD_MAIN, {
-    rows: patch.rows,
-    cols: patch.cols,
-    placements: patch.placements
-  });
-  const top = {
-    library: patch.moveLibrary,   // state.moveLibrary (2848)
-    categories: patch.categories, // 2849
-    links: patch.links,           // 2026-09 — UNDO_FIELDS 에 links 가 들어온 자리
-    media: patch.media,           // 2026-09 — 템포·소스. 재생 위치는 여기 없다(휘발성)
-    phrasing: patch.phrasing,     // 2026-09-13 — 곡 구조(프레이즈·코러스)
-    stepTodos: patch.stepTodos,   // 2026-09-21 — 단계별 할 일. media 와 같은 규칙(되쓸 저장소가 없다)
-    selection: new Set()          // state.selectedGroupIds.clear() (2851)
-  };
-  if ('routines' in patch) top.routines = patch.routines; // 2850
-  store.update(top);
+  // 보드 칸(rows·cols·placements)은 setBoard, 나머지는 update 한 번 — 이름이 다른 것(moveLibrary → library)도
+  // 등록표가 옮긴다. 패치에 'routines' 키가 없으면 기존 routines 를 **건드리지 않는다**(2850, 보존 대상 결함).
+  writeDoc(store, patch, { selection: new Set() });   // state.selectedGroupIds.clear() (2851)
   store.patch('session', {
     youtubeTitleFetch: { status: 'idle', title: patch.links.youtubeTitle }
   });
@@ -161,21 +135,9 @@ function restoreRoutine(store, snapshot) {
  *   패널이 닫혀 있으면 뷰가 알아서 아무것도 하지 않는다 — 켜야 보이는 기능이라 끈 화면은 그대로다.
  */
 function mainRestoreDirty() {
-  return {
-    layout: true,
-    boards: { [BOARD_MAIN]: { skeleton: true, rows: 'all' } },
-    selection: true,
-    palette: true,
-    legend: true,
-    categorySelect: true,
-    routineList: true,
-    links: true,
-    toolbar: true,
-    history: true,
-    video: true,
-    // ⚠ boards.skeleton 이 행 dataset 을 날리므로 프레이즈 표시도 반드시 다시 입혀야 한다.
-    phrasing: true
-  };
+  // 필드마다의 다시 그리기(docFields 의 dirty)를 합치고, 필드와 무관하게 늘 다시 그리는 셋을 더한다.
+  // ⚠ boards.skeleton 이 행 dataset 을 날리므로 프레이즈 표시도 반드시 다시 입힌다 — phrasing 줄의 dirty 가 싣는다.
+  return { ...docDirty(), selection: true, toolbar: true, history: true };
 }
 
 /**
