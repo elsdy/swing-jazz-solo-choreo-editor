@@ -4,21 +4,38 @@
 // saveCategoriesFile 의 페이로드부(4060-4062)를 옮겼다.
 // projectPayload(4025-4036)는 호출처가 0인 죽은 코드라 이관하지 않았다(grep 으로 확인, 아래 주석 참조).
 
-import { LEGACY_FILE_VERSION } from './schema.js';
+import { LEGACY_FILE_VERSION, FIELD_TABLE, LINK_FIELDS } from './schema.js';
 import { serializeMedia } from './media.js';
 import { serializePhrasing } from '../phrasing.js';
 import { serializeStepTodos } from '../stepTodos.js';
+import { byField } from './fields.js';
 
-/** 프로젝트 파일이 이미 쓰는 최상위 키. passthrough 가 이것들을 덮어쓰지 못하게 막는다. */
-const PROJECT_KEYS = new Set([
-  'version', 'savedAt', 'fileName', 'rows', 'cols', 'categories', 'moveLibrary',
-  'placements', 'routines', 'youtubeUrl', 'youtubeTitle', 'clickupUrl', 'customLinks',
-  // 2026-09 신설. 값이 비면 아래에서 키를 아예 쓰지 않지만, 목록에는 있어야 한다 —
-  // 없으면 passthrough 가 옛 파일의 media 를 되살려 우리가 뺀 자리에 도로 끼워 넣는다.
-  'media',
-  // 2026-09-13 신설. 위와 같은 이유로 목록에 있어야 한다.
-  'phrasing'
-]);
+/**
+ * 프로젝트 파일이 이미 쓰는 최상위 키 — **필드 등록표에서 나온다**(RM-01). passthrough 가 이것들을 덮어쓰지 못하게 막는다.
+ * ⚠ 비면 키째로 빠지는 필드(media · phrasing · stepTodos)도 여기 있어야 한다 — 없으면 passthrough 가 옛 파일의 값을
+ *   되살려 우리가 뺀 자리에 도로 끼워 넣는다. 손으로 적던 때 stepTodos 가 이 목록에서 빠져 있었다(2026-09-28 에 고침).
+ */
+const PROJECT_KEYS = new Set(['version', 'savedAt', 'fileName', ...FIELD_TABLE.flatMap(f => f.file)]);
+
+/**
+ * 필드마다 파일에 싣는 법 — 등록표의 한 줄씩이다. `null` 을 돌려주면 그 필드는 키째로 빠진다.
+ * source 는 state 처럼 링크 4필드가 **평평하게** 놓인 객체다(원본 projectPayloadWithRoutines 의 입력).
+ */
+const FILE_OPS = byField({
+  rows:        s => ({ rows: s.rows }),
+  cols:        s => ({ cols: s.cols }),
+  categories:  s => ({ categories: s.categories }),
+  moveLibrary: s => ({ moveLibrary: s.moveLibrary }),
+  placements:  s => ({ placements: s.placements }),
+  // isFavorite 을 favoriteRoutineIds 기준으로 동기화해서 저장 (원본 5281). `|| []` 가드를 넣지 않는다 — 원본과 같은 자리에서 같이 던진다
+  routines:    (s, ctx) => ({ routines: s.routines.map(r => ({ ...r, isFavorite: ctx.favorites.has(r.id) })) }),
+  links:       s => Object.fromEntries(LINK_FIELDS.map(k => [k, s[k]])),
+  // ⚠ 비면 키째로 빠진다(serialize* → null). 그 기능을 한 번도 안 쓴 사람의 저장 파일은 그 기능이 들어오기 전과
+  //   **바이트 단위로 같아야** 한다.
+  media:       s => { const v = serializeMedia(s.media); return v ? { media: v } : null; },
+  phrasing:    s => { const v = serializePhrasing(s.phrasing); return v ? { phrasing: v } : null; },
+  stepTodos:   s => { const v = serializeStepTodos(s.stepTodos); return v ? { stepTodos: v } : null; }
+}, 'domain/project/serialize.js');
 
 /** 카테고리 사전을 키 오름차순으로 재조립한다. 동작목록·카테고리 두 파일이 같은 규칙을 쓴다(4051·4062). */
 function sortCategoriesByKey(categories) {
@@ -42,6 +59,7 @@ function unknownKeys(passthrough, known) {
  *
  * ⚠ 2026-09 신설: `media` 블록(`{tempo, source}`)이 customLinks 뒤에 붙는다. **비어 있으면 붙지 않는다** —
  *   그래서 이 기능을 안 쓰는 사용자의 파일은 예전과 바이트가 같다(domain/project/media.serializeMedia).
+ * ⚠ 필드마다 싣는 법은 위의 FILE_OPS 가 갖고, 이 함수는 등록표를 순회할 뿐이다(RM-01, 2026-09-28).
  *
  * ⚠ 오늘 그대로인 점 세 가지:
  *  1. `version` 은 LEGACY_FILE_VERSION(=1) 이다. SCHEMA_VERSION(=2)로 쓰면 저장 파일이 달라진다.
@@ -63,36 +81,11 @@ export function buildProjectFile(source, options = {}) {
   const favorites = favoriteRoutineIds instanceof Set
     ? favoriteRoutineIds
     : new Set(Array.isArray(favoriteRoutineIds) ? favoriteRoutineIds : []);
-  const media = serializeMedia(source.media);
-  const phrasing = serializePhrasing(source.phrasing);
-  const stepTodos = serializeStepTodos(source.stepTodos);
 
-  return {
-    version: LEGACY_FILE_VERSION,
-    savedAt,
-    fileName,
-    rows: source.rows,
-    cols: source.cols,
-    categories: source.categories,
-    moveLibrary: source.moveLibrary,
-    placements: source.placements,
-    // isFavorite 을 favoriteRoutineIds 기준으로 동기화해서 저장 (원본 5281)
-    routines: source.routines.map(r => ({ ...r, isFavorite: favorites.has(r.id) })),
-    youtubeUrl: source.youtubeUrl,
-    youtubeTitle: source.youtubeTitle,
-    clickupUrl: source.clickupUrl,
-    customLinks: source.customLinks,
-    // ⚠ 빈 media 는 키째로 빠진다(serializeMedia → null). 템포를 한 번도 안 정한 사용자의
-    //   저장 파일은 영상 기능이 들어오기 전과 **바이트 단위로 같아야** 한다.
-    ...(media ? { media } : {}),
-    // ⚠ 빈 phrasing 도 키째로 빠진다(serializePhrasing → null). 프레이즈 표시를 한 번도 켜지 않은
-    //   사용자의 저장 파일은 이 기능이 들어오기 전과 바이트가 같다.
-    ...(phrasing ? { phrasing } : {}),
-    // ⚠ 빈 할 일도 키째로 빠진다(serializeStepTodos → null). 한 번도 적지 않은 사람의 저장 파일은
-    //   이 기능이 들어오기 전과 바이트가 같다.
-    ...(stepTodos ? { stepTodos } : {}),
-    ...unknownKeys(passthrough, PROJECT_KEYS)
-  };
+  const out = { version: LEGACY_FILE_VERSION, savedAt, fileName };
+  // 등록표의 차례가 곧 파일의 키 차례다(원본 5273-5286 의 리터럴 차례와 같다 — schema.FIELD_TABLE 주석)
+  for (const { key } of FIELD_TABLE) Object.assign(out, FILE_OPS[key](source, { favorites }));
+  return { ...out, ...unknownKeys(passthrough, PROJECT_KEYS) };
 }
 
 /** 동작목록 파일이 이미 쓰는 최상위 키. */

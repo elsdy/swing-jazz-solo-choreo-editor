@@ -44,6 +44,10 @@ node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
 
 `node tools/check-arch.mjs` 가 이 규칙을 강제한다. 규칙을 우회하고 싶어지면 대개 파일 위치가 틀린 것이다.
 
+## 저장되는 필드를 더할 때
+
+안무표에 저장되는 필드는 **필드 등록표**(`src/domain/project/schema.js` 의 `FIELD_TABLE`) 한 곳에서 시작한다. 한 줄을 더하고, 필드마다의 규칙 표 셋(`snapshot.js` 의 `UNDO_OPS` · `serialize.js` 의 `FILE_OPS` · `src/usecases/docFields.js`)과 왕복 시험의 견본(`tests/unit/docFields.test.mjs` 의 `SAMPLES`)에 같은 이름으로 한 줄씩 더한다. 하나라도 빠지면 모듈을 불러오는 순간 던지거나 시험이 붉어진다 — 손으로 여덟 자리를 고치던 때 `phrasing` 이 저장에서 빠졌었다.
+
 ## 동작을 바꾸는 일과 구조를 바꾸는 일을 섞지 않는다
 
 한 커밋은 둘 중 하나만 한다. 구조를 옮기는 커밋은 골든이 그대로 통과해야 하고, 동작을 바꾸는 커밋은 골든을 함께 고친다. 섞으면 어느 쪽이 회귀인지 알 수 없다.

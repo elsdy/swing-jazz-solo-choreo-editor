@@ -13,6 +13,8 @@ import { DEFAULT_CATEGORIES } from '../domain/defaults.js';
 import { normalize as normalizeCategories, categoryNames } from '../domain/categories.js';
 import { normalizeLibrary } from '../domain/moves.js';
 import { normalizeLinks, serializeLinks } from '../domain/links.js';
+import { DOC_FIELDS } from '../domain/project/schema.js';
+import { docView, writeDoc, docDirty } from './docFields.js';
 import { LEGACY_FILE_VERSION } from '../domain/project/schema.js';
 import { buildProjectFile, buildMoveListFile, buildCategoryFile } from '../domain/project/serialize.js';
 import { normalizeProject } from '../domain/project/normalize.js';
@@ -65,21 +67,10 @@ function commitMainHistory(deps) {
  * 링크 4필드는 최상위로 펼친다(저장 키 순서를 바꾸지 않기 위해).
  */
 function mainView(state) {
-  const board = boardOf(state, BOARD_MAIN);
-  return {
-    rows: board.rows,
-    cols: board.cols,
-    placements: board.placements,
-    moveLibrary: state.library,
-    categories: state.categories,
-    routines: state.routines,
-    ...state.links,
-    // media 는 링크와 달리 **평평하게 풀지 않는다** — 원래 블록 하나이고, 비어 있으면
-    // buildProjectFile 이 키째로 뺀다(저장 바이트가 예전과 같아야 한다).
-    media: state.media,
-    // 단계별 할 일도 같다(2026-09-21) — 블록 하나이고, 비어 있으면 buildProjectFile 이 키째로 뺀다.
-    stepTodos: state.stepTodos
-  };
+  // 등록표의 모든 필드(docFields.docView) + 링크 4필드를 최상위로 펼친 것(buildProjectFile 의 입력 모양).
+  // ⚠ 손으로 적던 때 phrasing 이 여기서 빠져 **파일에 실리지 않았다**(2026-09-28 에 RM-01 의 왕복 시험이 찾았다).
+  const doc = docView(state);
+  return { ...doc, ...doc.links };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -284,20 +275,14 @@ function applyProjectData(deps, data) {
     return NONE;
   }
 
-  store.setBoard(BOARD_MAIN, {
-    rows: normalized.rows,                                          // 4343
-    cols: normalized.cols,                                          // 4344
-    placements: normalized.placements                               // 4349-4361
-  });
-  store.update({
-    categories: normalized.categories,                              // 4345
-    library: normalized.moveLibrary,                                // 4347
-    routines: normalized.routines                                   // 4363-4375
-  });
-  // media(템포·소스)는 신설이라 원본 대응 줄이 없다. **`media` 가 없는 옛 파일은 여기서
-  // DEFAULT_MEDIA 로 떨어지므로** 열리는 모습이 지금과 똑같다(normalize.js 참조).
-  store.update({ media: normalized.media });
-  store.update({ stepTodos: normalized.stepTodos });
+  // 등록표의 필드를 한 번에 쓴다(docFields.writeDoc — 보드 칸은 setBoard, 나머지는 update). 원본 대응 줄:
+  // rows 4343 · cols 4344 · categories 4345 · library 4347 · placements 4349-4361 · routines 4363-4375.
+  // media · phrasing · stepTodos 는 신설이라 원본 대응 줄이 없다 — 없는 옛 파일은 기본값으로 떨어지므로 열리는 모습이 같다.
+  // ⚠ 링크는 여기서 쓰지 않는다 — 아래 applyLinksData 가 항목까지 정규화하고 즉시 저장한다(4380).
+  // ⚠ 손으로 적던 때 phrasing 이 여기서 빠져 **열어도 돌아오지 않았다**(2026-09-28 에 RM-01 의 왕복 시험이 찾았다).
+  const fields = {};
+  for (const key of DOC_FIELDS) if (key !== 'links') fields[key] = normalized[key];
+  writeDoc(store, fields);
   store.patch('favorites', { routineIds: normalized.favoriteRoutineIds }); // 4372·4376
   storage.saveRoutineFavorites([...normalized.favoriteRoutineIds]);  // 4373·4377 (두 갈래 모두)
 
@@ -310,17 +295,10 @@ function applyProjectData(deps, data) {
   store.update({ links });
   storage.saveLinks(serializeLinks(links));                          // 5125 saveLinks()
 
-  const dirty = {
-    categorySelect: true,     // 4346 renderCategoryOptions
-    links: true,              // 5126 renderLinksBar
-    layout: true,             // 4381 syncBoardSizeUI → updateMobileCellSize
-    toolbar: true,            // 4381 syncBoardSizeUI → boardColsInput.value / boardTitle
-    legend: true,             // 4382
-    palette: true,            // 4383
-    boards: { [BOARD_MAIN]: { rows: 'all', skeleton: true } },       // 4384 renderBoard(true)
-    routineList: true,        // 4385
-    video: true               // 2026-09 신설 — 불러온 템포·소스를 패널에 반영한다(닫혀 있으면 무해)
-  };
+  // 다시 그릴 것 — 필드마다의 dirty(docFields)를 합친 것 + 툴바(4381 syncBoardSizeUI → boardColsInput.value / boardTitle).
+  // 원본 대응: categorySelect 4346 · links 5126 · layout 4381 · legend 4382 · palette 4383 · boards 4384 · routineList 4385.
+  // ⚠ 손으로 적던 때 phrasing 이 빠져, 불러온 프레이즈 표시가 행에 다시 입혀지지 않았다(boards.skeleton 이 dataset 을 날린다).
+  const dirty = { ...docDirty(), toolbar: true };
   return mergeDirty(dirty, commitMainHistory(deps));                 // 4386
 }
 
