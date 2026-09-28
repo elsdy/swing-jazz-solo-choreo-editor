@@ -18,6 +18,7 @@ import { normalizeMedia } from './media.js';
 // 손으로 적으면 그 상수가 두 벌이 된다.
 import { normalizePhrasing } from '../phrasing.js';
 import { normalizeStepTodos } from '../stepTodos.js';
+import { byField } from './fields.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 복제 — 브라우저의 구조적 복제 내장 함수는 도메인에서 금지라 명시적 재귀 복제를 쓴다
@@ -101,26 +102,45 @@ export function createEmptyDoc(seed = {}) {
 // 스냅샷 — 문자열 비교로 중복을 거르므로 키 순서가 곧 동작이다
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** restore 가 이것을 돌려주면 패치에 그 키를 싣지 않는다 — 호출부의 지금 값이 그대로 남는다. */
+const KEEP = Symbol('keep');
+
 /**
- * undo 스냅샷에 들어갈 필드만 UNDO_FIELDS 순서로 뽑는다.
- * 값이 undefined 인 키는 JSON.stringify 가 통째로 빼므로 원본의 객체 리터럴과 결과가 같다.
+ * 필드마다 **스냅샷에 담는 법(pick)** 과 **되살리는 법(restore)** — 필드 등록표(schema.FIELD_TABLE)의 한 줄씩이다.
+ * 등록표에 필드를 더하고 여기를 빠뜨리면 byField 가 불러오는 순간 던진다(RM-01).
  *
- * ⚠ links·media 만 **값 복제**다(toLinkBundle / normalizeMedia). 나머지 6필드는 원본대로 얕은 참조를 담는다 —
- *   docSignature 가 곧바로 JSON.stringify 하므로 서명 문자열은 어느 쪽이든 같지만,
- *   이 함수의 반환값을 그대로 들고 있는 호출부가 생기면 중첩 customLinks 배열을 store 와
- *   공유하게 되어 스냅샷이 조용히 "지금 값"으로 따라 변한다. 그 문을 여기서 닫는다.
+ * pick: links·media·phrasing 만 **값 복제**다(toLinkBundle / normalizeMedia / normalizePhrasing). 나머지는 원본대로
+ *   얕은 참조를 담는다 — docSignature 가 곧바로 JSON.stringify 하므로 서명 문자열은 어느 쪽이든 같지만, 반환값을
+ *   그대로 들고 있는 호출부가 생기면 중첩 배열을 store 와 공유하게 되어 스냅샷이 조용히 "지금 값"으로 따라 변한다.
+ * restore: restoreSnapshot(2845-2850)과 같은 기본값 사슬이다 — rows||8 · cols||8 · placements||[] · moveLibrary||[] ·
+ *   categories 는 normalizeCategories 통과. ⚠ routines 는 **배열일 때만** 싣는다(KEEP) — 원본 2850 의
+ *   `if (Array.isArray(...))` 그대로, 보존 대상 결함이다. ⚠ links·media·phrasing·stepTodos 는 **언제나** 싣는다 —
+ *   없는 옛 스냅샷에서 "지금 값을 남기면" 지운 상태를 Undo 로 되돌릴 수 없다(2026-09 에 고친 그 구멍).
+ */
+const same = v => v;
+const UNDO_OPS = byField({
+  rows:        { pick: same, restore: v => v || 8 },
+  cols:        { pick: same, restore: v => v || 8 },
+  categories:  { pick: same, restore: (v, d) => d.normalizeCategories(v || d.defaultCategories) },
+  moveLibrary: { pick: same, restore: v => v || [] },
+  placements:  { pick: same, restore: v => v || [] },
+  routines:    { pick: same, restore: v => (Array.isArray(v) ? v : KEEP) },
+  links:       { pick: toLinkBundle, restore: toLinkBundle },
+  media:       { pick: normalizeMedia, restore: normalizeMedia },
+  phrasing:    { pick: normalizePhrasing, restore: normalizePhrasing },
+  stepTodos:   { pick: same, restore: normalizeStepTodos }
+}, 'domain/project/snapshot.js');
+
+/**
+ * undo 스냅샷에 들어갈 필드만 UNDO_FIELDS 순서로 뽑는다. 필드마다 담는 법은 위의 UNDO_OPS 가 갖는다.
+ * 값이 undefined 인 키는 JSON.stringify 가 통째로 빼므로 원본의 객체 리터럴과 결과가 같다.
  * @see index.html:2833
  * @param {Object} source  state 또는 ChoreoDoc
  * @returns {Object}
  */
 export function pickUndoFields(source) {
   const out = {};
-  for (const key of UNDO_FIELDS) {
-    if (key === 'links') out[key] = toLinkBundle(source.links);
-    else if (key === 'media') out[key] = normalizeMedia(source.media);
-    else if (key === 'phrasing') out[key] = normalizePhrasing(source.phrasing);
-    else out[key] = source[key];
-  }
+  for (const key of UNDO_FIELDS) out[key] = UNDO_OPS[key].pick(source[key]);
   return out;
 }
 
@@ -187,18 +207,11 @@ export function applySnapshot(snapshot, deps = {}) {
     return { rows: data.rows, cols: data.cols, placements: data.placements };
   }
 
-  const patch = {
-    rows: data.rows || 8,
-    cols: data.cols || 8,
-    placements: data.placements || [],
-    moveLibrary: data.moveLibrary || [],
-    categories: normalizeCategories(data.categories || defaultCategories),
-    links: toLinkBundle(data.links),
-    media: normalizeMedia(data.media),
-    phrasing: normalizePhrasing(data.phrasing),
-    stepTodos: normalizeStepTodos(data.stepTodos)
-  };
-  if (Array.isArray(data.routines)) patch.routines = data.routines;
+  const patch = {};
+  for (const key of UNDO_FIELDS) {
+    const value = UNDO_OPS[key].restore(data[key], { normalizeCategories, defaultCategories });
+    if (value !== KEEP) patch[key] = value;
+  }
   return patch;
 }
 

@@ -41,6 +41,55 @@ export const LEGACY_FILE_VERSION = 1;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * 루틴 편집기 undo 스냅샷 필드. snapshotStateRe(2900-2902)의 리터럴 키 순서 그대로다.
+ * 루틴 이름·색은 스냅샷에 없다(그래서 루틴 편집기 undo 로는 이름이 되돌아오지 않는다).
+ * ⚠ 여기에는 links 를 더하지 않는다 — 루틴 보드에는 링크바가 아예 없다.
+ * @see index.html:2900
+ */
+export const ROUTINE_UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements']);
+
+/**
+ * v1 프로젝트 파일이 최상위에 평평하게 들고 있는 링크 4필드.
+ * migrations.js 가 doc.links 로 중첩하면서도 이 4필드를 미러로 남길 때 쓴다.
+ * @see index.html:5283
+ */
+export const LINK_FIELDS = Object.freeze(['youtubeUrl', 'youtubeTitle', 'clickupUrl', 'customLinks']);
+
+/**
+ * **필드 등록표**(RM-01, 2026-09-28) — ChoreoDoc 의 필드 하나가 **한 줄**이다. 아래 목록들은 전부 이 표에서 나온다.
+ *
+ * 겪은 일: 필드 하나를 늘리려면 네 파일 여덟 자리(UNDO_FIELDS · DOC_FIELDS · serialize 의 PROJECT_KEYS ·
+ * 저장용 뷰 · 불러오기 · 스냅샷 뷰 · 복원 · 정규화)를 사람이 기억해야 했고, 빠뜨리면 오류 없이 **값만 사라졌다**.
+ * 2026-09 에만 다섯 필드가 늘었고 그중 둘이 빠졌다 — stepTodos 는 되돌리기를 안 탔고(2026-09-22 고침),
+ * phrasing 은 저장·불러오기에서 빠져 있었다(2026-09-28 에 이 표를 만들다 찾았다).
+ *
+ * 칸:
+ *   key       ChoreoDoc 의 이름
+ *   undo      undo 스냅샷 안의 자리(= UNDO_FIELDS 의 순서). 원본 snapshotState 의 리터럴 순서를 지킨다
+ *   file      프로젝트 파일 최상위에 실리는 키들 — links 만 평평한 4키다
+ *   optional  비었으면 파일에서 **키째로 빠진다**(그 기능을 안 쓴 사람의 저장 바이트가 그대로다)
+ * 표의 순서가 곧 DOC_FIELDS 이고 파일의 키 순서다(원본 projectPayloadWithRoutines 의 리터럴 순서).
+ *
+ * ⚠ 함수는 여기 두지 않는다 — 이 파일은 런타임 import 가 0개다. 필드마다의 정규화·직렬화·복제는
+ *   ./fields.js 가, store 의 어느 자리에 사는지는 usecases/docFields.js 가 **같은 key 로** 갖고,
+ *   둘 다 이 표와 key 가 하나라도 어긋나면 불러올 때 던진다.
+ * ⚠ 필드를 더하는 법: 여기 한 줄 → fields.js 한 줄 → docFields.js 한 줄 → 왕복 시험의 견본 한 줄
+ *   (tests/unit/docFields.test.mjs). 넷 중 하나를 빠뜨리면 시험이나 불러오기가 붉어진다.
+ */
+export const FIELD_TABLE = Object.freeze([
+  Object.freeze({ key: 'rows',        undo: 0, file: Object.freeze(['rows']) }),
+  Object.freeze({ key: 'cols',        undo: 1, file: Object.freeze(['cols']) }),
+  Object.freeze({ key: 'categories',  undo: 4, file: Object.freeze(['categories']) }),
+  Object.freeze({ key: 'moveLibrary', undo: 3, file: Object.freeze(['moveLibrary']) }),
+  Object.freeze({ key: 'placements',  undo: 2, file: Object.freeze(['placements']) }),
+  Object.freeze({ key: 'routines',    undo: 5, file: Object.freeze(['routines']) }),
+  Object.freeze({ key: 'links',       undo: 6, file: LINK_FIELDS }),
+  Object.freeze({ key: 'media',       undo: 7, file: Object.freeze(['media']), optional: true }),
+  Object.freeze({ key: 'phrasing',    undo: 8, file: Object.freeze(['phrasing']), optional: true }),
+  Object.freeze({ key: 'stepTodos',   undo: 9, file: Object.freeze(['stepTodos']), optional: true })
+]);
+
+/**
  * undo/redo 스냅샷에 들어가는 필드. 앞 6개는 snapshotState(2833-2841)의 리터럴 키 순서 그대로고,
  * `links` 는 **맨 뒤에** 더했다(DOC_FIELDS 도 links 가 맨 뒤다 — 두 목록의 꼬리를 맞춘다).
  *
@@ -56,15 +105,7 @@ export const LEGACY_FILE_VERSION = 1;
  *   **파일**에만 빈 블록을 쓰지 않는다(serialize.js).
  * @see index.html:2833
  */
-export const UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing', 'stepTodos']);
-
-/**
- * 루틴 편집기 undo 스냅샷 필드. snapshotStateRe(2900-2902)의 리터럴 키 순서 그대로다.
- * 루틴 이름·색은 스냅샷에 없다(그래서 루틴 편집기 undo 로는 이름이 되돌아오지 않는다).
- * ⚠ 여기에는 links 를 더하지 않는다 — 루틴 보드에는 링크바가 아예 없다.
- * @see index.html:2900
- */
-export const ROUTINE_UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements']);
+export const UNDO_FIELDS = Object.freeze(FIELD_TABLE.slice().sort((a, b) => a.undo - b.undo).map(f => f.key));
 
 /**
  * ChoreoDoc 의 필드. 파일 본문 = 버전 스냅샷 = undo 스냅샷이 공유하는 단일 타입.
@@ -72,7 +113,7 @@ export const ROUTINE_UNDO_FIELDS = Object.freeze(['rows', 'cols', 'placements'])
  *   지킨다). 한쪽에 필드를 더할 때 다른 쪽을 함께 보라: 파일에만 있으면 Undo 로 안 돌아오고,
  *   스냅샷에만 있으면 저장·불러오기에서 새어 나간다.
  */
-export const DOC_FIELDS = Object.freeze(['rows', 'cols', 'categories', 'moveLibrary', 'placements', 'routines', 'links', 'media', 'phrasing', 'stepTodos']);
+export const DOC_FIELDS = Object.freeze(FIELD_TABLE.map(f => f.key));
 
 /**
  * 영상 블록(`media`)의 필드. 키 순서가 곧 저장 바이트다.
@@ -104,13 +145,6 @@ export const MEDIA_FIELDS = Object.freeze(['activeId', 'clips']);
  *   같은 내용인데 diff 가 생긴다.
  */
 export const CLIP_FIELDS = Object.freeze(['id', 'name', 'takenAt', 'note', 'source', 'tempo', 'markers']);
-
-/**
- * v1 프로젝트 파일이 최상위에 평평하게 들고 있는 링크 4필드.
- * migrations.js 가 doc.links 로 중첩하면서도 이 4필드를 미러로 남길 때 쓴다.
- * @see index.html:5283
- */
-export const LINK_FIELDS = Object.freeze(['youtubeUrl', 'youtubeTitle', 'clickupUrl', 'customLinks']);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 타입 — 전부 JSDoc typedef. 런타임 코드 없음.
