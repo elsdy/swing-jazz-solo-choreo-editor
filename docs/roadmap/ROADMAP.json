@@ -1,0 +1,727 @@
+{
+  "schema": "roadmap-board/1",
+  "version": 1,
+  "project": {
+    "id": "swing-jazz-choreo",
+    "name": "안무 편집기",
+    "docs": "docs/ROADMAP.md"
+  },
+  "about": "로드맵의 추적 자리 — 항목마다 마지막으로 끝낸 걸음(stage)·PR 번호·사람이 고른 차례(order)·권장 흐름(flow)만 저장하고, 할 수 있음·차례 대기·결정 필요는 셈한다. 무엇을 왜 만드는지는 docs/ROADMAP.md 의 같은 RM 번호 항목이 말한다. 스키마는 roadmap-board 의 SCHEMA.md.",
+  "tagNames": {
+    "A": "겉모습",
+    "B": "편집",
+    "C": "정보 구조",
+    "D": "견고함",
+    "E": "온보딩",
+    "★": "추천 기능"
+  },
+  "stages": [
+    {
+      "key": "branch",
+      "name": "브랜치",
+      "hint": "main 에서 바로 고치지 않는다 — 항목 이름으로 브랜치를 딴다"
+    },
+    {
+      "key": "build",
+      "name": "구현",
+      "hint": "동작 변경과 구조 변경을 한 커밋에 섞지 않는다"
+    },
+    {
+      "key": "test",
+      "name": "시험·검사",
+      "hint": "node --test · tests/run.mjs(골든) · check-arch · check-docs 전부 초록"
+    },
+    {
+      "key": "docs",
+      "name": "문서",
+      "hint": "/pre-pr-docs — 라벨을 바꿨으면 튜토리얼·기능 설명서도"
+    },
+    {
+      "key": "check",
+      "name": "눈으로 확인",
+      "hint": "화면을 건드렸으면 python3 server.py 로 띄워 브라우저로 본다"
+    },
+    {
+      "key": "commit",
+      "name": "커밋",
+      "hint": "/commit 을 부를 때만 — 한국어 제목, 본문에 사용자 관점의 변화"
+    },
+    {
+      "key": "merged",
+      "name": "병합",
+      "hint": "/pr-merge — PR 번호를 함께 적는다"
+    }
+  ],
+  "questions": {
+    "items": [
+      {
+        "id": "Q1",
+        "title": "배포 형태",
+        "answer": "설치형 앱, 로컬 우선 (2026-09-23)",
+        "doc": "docs/DECISIONS.md#배포-형태는-설치형-앱-로컬-우선을-정체성으로-2026-09-23-m0-①"
+      },
+      {
+        "id": "Q2",
+        "title": "라이선스 — LICENSE(GPL v2)와 README(GPL-3.0)를 하나로",
+        "answer": null,
+        "revisit": "외부 기여를 받기 전"
+      },
+      {
+        "id": "Q3",
+        "title": "첫 대상(혼자 배우는 댄서 / 강사)과 시장 언어",
+        "answer": null,
+        "revisit": "RM-26 을 시작할 때"
+      },
+      {
+        "id": "Q4",
+        "title": "원본 동작 보존 원칙의 졸업",
+        "answer": null,
+        "revisit": "기둥 B 를 시작할 때"
+      },
+      {
+        "id": "Q5",
+        "title": "개발 전용 도구(브라우저 회귀 시험) 허용",
+        "answer": null,
+        "revisit": "RM-08 1단이 끝났을 때"
+      },
+      {
+        "id": "Q6",
+        "title": "파트를 마커와 합칠까",
+        "answer": null,
+        "revisit": "RM-23 을 시작할 때"
+      },
+      {
+        "id": "Q7",
+        "title": "루틴 편집 보드에도 카운트 ↔ 시간",
+        "answer": null
+      },
+      {
+        "id": "Q8",
+        "title": "공유 링크·클라우드",
+        "answer": null,
+        "revisit": "RM-21 이 나간 뒤"
+      },
+      {
+        "id": "Q9",
+        "title": "적응형 작업 차례 — 기록을 살릴까 끌까",
+        "answer": null,
+        "revisit": "2026-10-05"
+      }
+    ]
+  },
+  "order": [],
+  "flow": {
+    "note": "「다음」 칸의 토대부터 — 결정이 선 작은 것으로 몸을 풀고, 뒤의 여럿이 밟을 채널을 먼저 놓는다.",
+    "ids": [
+      "RM-01",
+      "RM-02",
+      "RM-03",
+      "RM-05",
+      "RM-04",
+      "RM-07",
+      "RM-06",
+      "RM-08"
+    ],
+    "why": {
+      "RM-01": "버그 9건의 뿌리 · 남은 덫 하나를 함께 닫는다",
+      "RM-02": "결정이 섰고 S — 골든 하나만 다시 뜬다",
+      "RM-03": "S · 안전망(시험)을 함께 심는다",
+      "RM-05": "S · 아홉 번 재발한 U-12 를 기계로",
+      "RM-04": "RM-09 · RM-19 가 이 채널을 쓴다",
+      "RM-07": "RM-01 과 같은 스냅샷 자리",
+      "RM-06": "라벨 개명이 문서 없이 병합되는 부류",
+      "RM-08": "화면·입력 층 버그 22건의 안전망"
+    }
+  },
+  "tracks": [
+    {
+      "id": "next",
+      "name": "다음",
+      "what": "곧 만들 것 — 조용히 실패하지 않는다",
+      "plan": "docs/ROADMAP.md#다음-곧-만들-것",
+      "items": [
+        {
+          "id": "RM-01",
+          "name": "필드 등록표 — 저장·복원·되돌리기가 표 하나를 순회",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "D"
+          ],
+          "what": "필드마다 저장·복원·되돌리기 규칙을 한 줄씩 적은 표를 두고 모두가 그 표를 순회하게 한다. 필드 하나 늘릴 때 네 파일 여덟 자리를 기억하지 않아도 되고, 빠뜨려서 값이 조용히 사라지는 부류가 닫힌다.",
+          "stage": null,
+          "pr": null,
+          "startedAt": "2026-09-28"
+        },
+        {
+          "id": "RM-02",
+          "name": "복사도 층을 위로 당긴다",
+          "size": "S",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "B"
+          ],
+          "what": "복사로 놓은 블록도 겹침이 사라지면 층을 위로 당긴다. 놓기·이동·삭제·늘이기는 이미 그렇고 복사만 예외다(2026-09-23 결정).",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-03",
+          "name": "초기화·전체 불러오기 뒤 남는 선택을 지운다",
+          "size": "S",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "B"
+          ],
+          "what": "전체 초기화·전체 불러오기·안무표만 비우기 뒤에 사라진 배치를 가리키는 선택을 비운다. 눌러도 아무 일 없는 「루틴으로 편성 (2)」가 떠 있지 않게.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-04",
+          "name": "알림 세 급 — alert·prompt 를 토스트·인라인으로",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "C",
+            "D"
+          ],
+          "what": "막는 오류는 모달, 알아야 할 실패는 토스트, 참고는 상태줄로 나눈다. 지금은 성공 알림까지 alert 라 받아 적는 중에도 흐름이 끊긴다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-05",
+          "name": "check-principles — 기계로 잡히는 원칙을 검사기로",
+          "size": "S",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "D"
+          ],
+          "what": "grep 으로 잡히는 개발 원칙(U-11 · U-12 · D-5 · R-6 · D-14)을 검사기 하나로 옮긴다. U-12 는 같은 원인으로 아홉 번 재발했다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-06",
+          "name": "문서의 라벨 인용을 코드와 대조하는 검사",
+          "size": "S",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "E"
+          ],
+          "what": "튜토리얼·기능 설명서가 인용한 버튼 이름을 화면의 실제 라벨과 대조하는 검사를 더한다. 없어진 화면을 설명하는 문서가 병합된 적이 있다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-07",
+          "name": "메인 Undo 직후의 유령 단계",
+          "size": "M",
+          "after": [],
+          "soft": [
+            "RM-01"
+          ],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "D"
+          ],
+          "what": "Undo 한 번 뒤 무엇이든 하면 되돌리기 단계가 하나 더 쌓이고 다시 실행이 날아가는 결함을 고친다. 저장 파일의 키 순서가 바뀌므로 마이그레이션과 함께 낸다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-08",
+          "name": "화면·터치 상태기계를 DOM 밖으로 빼 시험",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [
+            "Q5"
+          ],
+          "tags": [
+            "D"
+          ],
+          "what": "히트 판정·포인터 상태기계·팝업 위치 계산을 순수 함수로 떼어 시험으로 덮는다. 기록된 버그 53건 중 22건이 시험이 거의 없는 화면·입력 층이다.",
+          "stage": null,
+          "pr": null
+        }
+      ]
+    },
+    {
+      "id": "then",
+      "name": "그다음",
+      "what": "토대가 선 뒤 — 한 벌의 도구로 보이고, 잡으면 움직인다",
+      "plan": "docs/ROADMAP.md#그다음-토대가-선-뒤",
+      "items": [
+        {
+          "id": "RM-09",
+          "name": "명령 등록부 — 라벨·단축키·실행의 주인 하나",
+          "size": "L",
+          "after": [
+            "RM-04"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "C"
+          ],
+          "what": "라벨·툴팁·단축키·실행을 한 표에 두고 모든 버튼이 그것을 참조한다. 같은 명령이 다섯 곳에 흩어진 것이 모이고, 명령 팔레트와 단축키 일람이 그 위에 선다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-10",
+          "name": "용어집과 라벨 문자열 표",
+          "size": "M",
+          "after": [
+            "RM-09"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "C"
+          ],
+          "what": "화면 낱말을 용어집 하나로 정하고 라벨 문자열의 주인을 파일 하나로 둔다. 지우기와 삭제처럼 헷갈리는 말을 가르고 영어 UI 의 준비가 된다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-11",
+          "name": "포인터 이벤트 하나로 마우스·터치 통일",
+          "size": "L",
+          "after": [],
+          "soft": [],
+          "questions": [
+            "Q4"
+          ],
+          "defaults": [],
+          "tags": [
+            "B"
+          ],
+          "what": "마우스·터치 갈림을 창 폭이 아니라 포인터 종류로 한다. 터치 그리기의 행 넘김·복사·루틴 가드가 마우스와 같아진다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-12",
+          "name": "직접 조작 문법 — 몸통 끌기·가장자리 트리밍·두 번 누르면 이름",
+          "size": "L",
+          "after": [
+            "RM-11"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "B"
+          ],
+          "what": "몸통 끌기는 이동, 가장자리는 트리밍, 두 번 누르기는 이름 정하기로 문법을 정한다. 삭제는 Delete·액션 바·팝업으로만 하고 되돌리기 토스트를 붙인다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-13",
+          "name": "키보드 편집 — 화살표·Delete·복사/붙여넣기",
+          "size": "M",
+          "after": [
+            "RM-09"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "B"
+          ],
+          "what": "화살표로 한 칸, Shift+화살표로 한 마디, Delete·복사·붙여넣기·복제를 키보드로 한다. 입력창 가드와 활성 보드 라우팅은 이미 있다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-14",
+          "name": "선택을 편집 단위로 — 범위·마퀴·선택 액션 바",
+          "size": "M",
+          "after": [
+            "RM-13"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "B"
+          ],
+          "what": "Shift+클릭 범위·빈 칸 마퀴로 여럿을 고르고 묶음으로 옮긴다. 고른 것에 대한 동작을 액션 바 하나에 모은다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-15",
+          "name": "인라인 이름 편집과 Tab 으로 다음 ?",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "B"
+          ],
+          "what": "고른 블록에서 타이핑하면 그 자리에 이름 입력이 뜨고 동작 목록으로 자동완성된다. Tab 으로 다음 이름 없는 블록으로 간다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-16",
+          "name": "분할·병합·마디 삽입·삭제",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "B"
+          ],
+          "what": "재생 헤드에서 자르기·인접한 같은 이름 병합·마디 삽입·삭제·복제·이동을 한다. 지금은 블록을 지우고 다시 그려야 한다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-17",
+          "name": "디자인 토큰 한 벌",
+          "size": "L",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "A"
+          ],
+          "what": "색·글자·간격·모서리·그림자를 토큰 한 벌로 접는다. 지금 글자 크기 18가지·색 289가지·그림자 56가지가 흩어져 있고 테마는 토큰만 바꾸게 된다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-18",
+          "name": "아이콘 한 벌(SVG 스프라이트)",
+          "size": "M",
+          "after": [
+            "RM-17"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "A"
+          ],
+          "what": "이모지 라벨 29개를 SVG 아이콘 한 벌로 바꾼다. 글자가 주인이고 아이콘은 보조다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-19",
+          "name": "상태줄과 상시 안내 문장 걷기",
+          "size": "M",
+          "after": [
+            "RM-04"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "A",
+            "C"
+          ],
+          "what": "받는 중·듣는 중·저장됨·되돌릴 수 있음을 상태줄 한 자리에 세운다. 늘 떠 있는 안내 문장 14곳은 툴팁과 처음 한 번 안내로 옮긴다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-20",
+          "name": "영상 패널을 「차례」와 「도구」로 · 유튜브 주소를 ① 로",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "C"
+          ],
+          "what": "영상 패널을 순서가 있는 ①②③ 과 도구 탭으로 가르고 유튜브 주소 칸을 「① 영상 고르기」 안으로 옮긴다. 지금은 층이 다른 「🔗 링크」 안에 숨어 있다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-21",
+          "name": "★ 카운트 시트 내보내기 — 종이·텍스트·읽기 전용 HTML",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "★"
+          ],
+          "what": "안무표를 A4 한 장·마디당 한 줄 텍스트·읽기 전용 HTML 로 내보낸다. 강사가 학생에게 줄 한 장이 지금은 화면 캡처뿐이다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-22",
+          "name": "★ 마디 반복 연습기 — 마디 단위 반복·배속·미러·카운트 소리",
+          "size": "L",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "★"
+          ],
+          "what": "반복 구간을 초가 아니라 마디·블록·파트로 잡고 배속·미러·카운트 소리를 붙인다. 카운트 축이 있는 이 도구만 할 수 있는 연습기다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-23",
+          "name": "★ 파트(섹션) — 곡 구조를 1급으로",
+          "size": "L",
+          "after": [
+            "RM-16"
+          ],
+          "soft": [],
+          "questions": [
+            "Q6"
+          ],
+          "defaults": [],
+          "tags": [
+            "★"
+          ],
+          "what": "마디 위의 묶음(intro·A·B·코러스)을 저장 포맷에 넣어 접고 통째로 옮기고 되풀이한다. 마커와 합칠지를 먼저 정한다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-24",
+          "name": "★ ? 정리함 — 이름 없는 블록 몰아서 붙이기",
+          "size": "M",
+          "after": [
+            "RM-15"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "★"
+          ],
+          "what": "받아 적기가 만든 이름 없는 블록만 모아 차례로 이름을 붙인다. 고르면 영상이 그 대목을 반복하고 말로 이름 붙이기가 그대로 붙는다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-25",
+          "name": "안전망 판본 화면 — .history 를 앱에서 고른다",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "D"
+          ],
+          "what": "서버가 덮어쓰기 전에 남기는 판을 앱에서 골라 되살린다. 「어제 것으로」가 한 번 누름이 된다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-26",
+          "name": "예제 안무 · 첫 실행 코치마크 · 맥락 도움말 ?",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [
+            "Q3"
+          ],
+          "tags": [
+            "E"
+          ],
+          "what": "예제 안무 하나·첫 실행 코치마크 3장·단계마다 그 절로 가는 ? 도움말을 둔다. 저자가 아닌 사람이 10분 안에 쓸 수 있게.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-27",
+          "name": "지원 매트릭스(OS × 브라우저 × 서버)",
+          "size": "S",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "D"
+          ],
+          "what": "OS × 브라우저 × 서버 유무 × 기능 표를 문서와 설정에 같이 둔다. 폰의 확대 차단도 걷는다.",
+          "stage": null,
+          "pr": null
+        }
+      ]
+    },
+    {
+      "id": "later",
+      "name": "나중",
+      "what": "방향은 맞지만 지금은 아닌 것",
+      "plan": "docs/ROADMAP.md#나중-방향은-맞지만-지금은-아닌-것",
+      "items": [
+        {
+          "id": "RM-28",
+          "name": "설치형 앱으로 포장",
+          "size": "L",
+          "after": [
+            "RM-26"
+          ],
+          "soft": [],
+          "questions": [
+            "Q1"
+          ],
+          "defaults": [],
+          "tags": [
+            "E"
+          ],
+          "what": "server.py 와 ffmpeg 를 품은 맥·윈도우 앱으로 포장한다. 방향은 정했지만 처음 켠 사람의 10분(RM-26)이 먼저다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-29",
+          "name": "★ 판본과 연습 기록 — 이름 붙인 판본·테이크별 기록",
+          "size": "L",
+          "after": [
+            "RM-25"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "★"
+          ],
+          "what": "이름 붙인 판본(A안·B안·공연본)과 테이크별 연습 기록을 둔다. 한 안무에 영상 여럿, 박자·마커는 영상마다로 절반 정해졌다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-30",
+          "name": "자세 분석 결과 저장과 테이크 비교",
+          "size": "L",
+          "after": [
+            "RM-29"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "what": "자세 분석 결과를 클립 옆과 프로젝트에 남겨 테이크끼리 비교한다. 계산·모델·오버레이는 섰고 결과를 남길 자리가 없다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-31",
+          "name": "안무표에서 고른 구간을 영상으로 잘라 내보내기",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "what": "안무표에서 고른 마디·블록을 템포로 초 구간으로 바꿔 영상으로 잘라 낸다. 영상 쪽 자르기와 변환 재료는 이미 있다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-32",
+          "name": "영어 UI",
+          "size": "L",
+          "after": [
+            "RM-10"
+          ],
+          "soft": [],
+          "questions": [],
+          "defaults": [
+            "Q3"
+          ],
+          "tags": [
+            "C"
+          ],
+          "what": "화면을 영어로도 낸다. 스윙 커뮤니티는 국제적이고 동작 이름은 이미 영어다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-33",
+          "name": "정적 경로의 저장을 IndexedDB 로",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "D"
+          ],
+          "what": "서버 없이 열 때의 저장을 localStorage 에서 IndexedDB 로 옮긴다. 지금은 쿼터 초과가 조용히 실패한다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-34",
+          "name": "루틴 색을 고른다 · 순번을 저장한다",
+          "size": "S",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "A"
+          ],
+          "what": "루틴 색을 고르고 순번을 저장한다. 다시 열면 다른 루틴이 같은 색을 쓸 수 있다.",
+          "stage": null,
+          "pr": null
+        },
+        {
+          "id": "RM-35",
+          "name": "보드 부분 렌더 — 규모를 먼저 잰다",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "D"
+          ],
+          "what": "동작 하나 옮길 때마다 보드 전체를 다시 그리는 것을 부분 렌더로 바꿀지 먼저 잰다. 느리지 않으면 전체 렌더를 규칙으로 못 박는다.",
+          "stage": null,
+          "pr": null,
+          "flags": [
+            "measure"
+          ]
+        }
+      ]
+    }
+  ]
+}

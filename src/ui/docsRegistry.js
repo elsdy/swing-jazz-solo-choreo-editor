@@ -56,7 +56,14 @@ export const DOCS = [
     group: 'changes',
     title: '로드맵',
     path: 'docs/ROADMAP.md',
-    desc: '앞으로 무엇을 만들고, 무엇을 안 하기로 했는지',
+    desc: '다음·그다음·나중 — 무엇을 왜 만들고, 지금 어디까지 왔는지',
+  },
+  {
+    id: 'decisions',
+    group: 'changes',
+    title: '결정 기록',
+    path: 'docs/DECISIONS.md',
+    desc: '사람이 정해야 했던 것과 그 까닭 · 버린 선택지',
   },
   {
     id: 'editing-flows',

@@ -62,6 +62,13 @@ node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
 
 사용자에게 보이는 새 한국어 문구를 만들 때는 기존 문구의 어투를 따른다. 확인은 `confirm()` 이 아니라 버튼 라벨이 `정말요?` 로 2초 바뀌는 `confirmOnce` 방식이다.
 
+## 로드맵
+
+무엇을 왜 만드는지는 [로드맵](docs/ROADMAP.md), **어디까지 왔는지**(끝낸 걸음·PR 번호·내 차례)는 `docs/roadmap/ROADMAP.json` 에 있다.
+이 파일은 여러 저장소를 한 화면에 모아 보는 **로드맵 보드**(`~/Github/roadmap-board`, `python3 rb.py next`)가 읽고 쓴다.
+항목을 더하면 문서의 칸 · 추적 표 · JSON 세 곳을 같은 `RM-nn` 으로 고친다 — 어긋나면 `tests/unit/roadmapFile.test.mjs` 가 붉어진다.
+걸음은 끝낸 **뒤에** 적고, 보드가 쓴 JSON 변경은 그 항목의 PR 에 함께 커밋한다.
+
 ## PR 을 내기 전에
 
 **PR 생성과 병합 전에는 `/pre-pr-docs` 문서화 패스를 먼저 돌린다.** 코드와 문서를 같은 PR 로 낸다.
