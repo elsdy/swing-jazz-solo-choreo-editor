@@ -34,6 +34,20 @@
     "date": "2026-09-20",
     "why": "repackLanes 가 **씨앗 행에 걸친 그룹의 모든 행**을 함께 재배정하게 하고(그전에는 인자로 받은 행만 봐서, 여러 행에 걸친 그룹은 Phase 2 의 maxSub 통일 때문에 방금 내린 레인이 도로 올라갔다), boardOps.finish 가 레인이 바뀐 행을 renderRows 에 합치게 했다. 그전에는 데이터만 바뀌고 화면은 옛 층에 남아, 겹친 둘 중 하나를 지워도 행이 두 줄인 채로 보였다 — 더블클릭 과녁이 흔들리던 까닭이다. 기대값은 손으로 적지 않고 tests/replay.mjs 로 재생한 실제 결과를 기록했다. 이전 기대값: render 가 `main:rows:[2]` 뿐이었다(3행의 subRow 는 바뀌었는데 그리지 않았다). 지금은 `main:rows:[2,3]` 이다. 배치 결과 자체는 그대로다.",
     "pr": "병합 전 — capture-band-and-naming"
+   },
+   {
+    "scenario": "copy-06-repack-target-row",
+    "previousId": null,
+    "date": "2026-09-29",
+    "why": "RM-02 — COPY_POLICY.repack 을 true 로. 놓기·이동·삭제·늘이기가 전부 겹침이 사라지면 층을 곧바로 위로 당기는데 복사만 예외였다(2026-09-23 결정 D-1 「겹침이 사라지면 층은 즉시 위로 당긴다」). 이 차이를 가르는 시나리오가 골든에 없어서(copy-05 는 빈 행에 복사해 두 규칙의 결과가 같다) 새로 넣었다. 기대값은 손으로 적지 않고 tests/replay.mjs 로 재생한 실제 결과를 기록했다. 옛 규칙의 결과: 5행의 「턴」이 subRow 1 에 그대로 남아 행이 두 줄이었다 — [{\"g\": \"G1\", \"name\": \"스텝\", \"category\": \"step\", \"row\": 2, \"startIndex\": 0, \"length\": 4, \"subRow\": 0}, {\"g\": \"G2\", \"name\": \"스텝\", \"category\": \"step\", \"row\": 5, \"startIndex\": 4, \"length\": 4, \"subRow\": 0}, {\"g\": \"G3\", \"name\": \"턴\", \"category\": \"turn\", \"row\": 5, \"startIndex\": 0, \"length\": 4, \"subRow\": 1}]. 지금은 subRow 0 으로 내려와 한 줄이다.",
+    "pr": "병합 전 — copy-repack"
+   },
+   {
+    "scenario": "copy-05-source-row-untouched",
+    "previousId": "copy-05-no-repack",
+    "date": "2026-09-29",
+    "why": "이름과 설명만 바꿨다 — 기대값은 그대로다. 옛 이름 「복사는 repack 을 부르지 않는다」가 RM-02 뒤로는 틀린 말이 된다. 이 시나리오는 빈 행에 복사하므로 다시 채우든 안 채우든 결과가 같고, 지금은 「원본 행은 건드리지 않는다」를 붙잡는다.",
+    "pr": "병합 전 — copy-repack"
    }
   ]
  },
@@ -4943,8 +4957,8 @@
    }
   },
   {
-   "id": "copy-05-no-repack",
-   "desc": "복사는 repack 을 부르지 않아 빈 레인 0 이 그대로 남는다",
+   "id": "copy-05-source-row-untouched",
+   "desc": "복사는 붙여 넣은 행만 다시 채운다 — 원본 행(레인 3 에 혼자 있는 블록)은 건드리지 않는다. 빈 행에 넣는 복사라 2026-09-29 전후로 결과가 같다",
    "setup": {
     "rows": 8,
     "cols": 8,
@@ -5042,6 +5056,127 @@
     "alerts": [],
     "aliases": {
      "CP": "G2"
+    }
+   }
+  },
+  {
+   "id": "copy-06-repack-target-row",
+   "desc": "복사해 넣은 행은 다시 채운다 — 겹침이 사라져 레인 1 에 혼자 남은 블록이 레인 0 으로 내려와 행이 한 줄로 돌아온다(2026-09-23 결정 D-1)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "B",
+      "name": "턴",
+      "category": "turn",
+      "row": 5,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 1
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "copy",
+     "group": "A",
+     "row": 5,
+     "startIndex": 4,
+     "as": "CP"
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "턴",
+      "category": "turn",
+      "row": 5,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "G3",
+      "name": "스텝",
+      "category": "step",
+      "row": 5,
+      "startIndex": 4,
+      "length": 4,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:rows:[0,1,2,3,4,5,6,7,8]"
+    ],
+    "alerts": [],
+    "aliases": {
+     "CP": "G3"
     }
    }
   },

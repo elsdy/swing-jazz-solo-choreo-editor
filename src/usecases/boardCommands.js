@@ -148,7 +148,7 @@ export function moveGroupTo(store, args, deps = {}) {
 
 /**
  * 그룹을 복사한다. copyPlacementGroup(3673-3704).
- * ⚠ 이동과 달리 unmarkDraggingGroups 도 repack 도 없다(COPY_POLICY 의 보존 대상 결함).
+ * ⚠ 이동과 달리 unmarkDraggingGroups 가 없다. 붙여 넣은 행을 다시 채우는 것(repack)은 2026-09-29 부터 COPY_POLICY 가 한다(RM-02).
  *
  * @param {{ boardId:'main'|'routine', groupId:string, targetRow:number, targetStartIndex:number }} args
  * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
