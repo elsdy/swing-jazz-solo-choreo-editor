@@ -356,7 +356,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 
 `tests/golden/placement-algorithms.json` 은 시나리오 150개와 그 기대값이다. 각 시나리오는 초기 보드·동작·루틴을 세운 뒤 `placeMove` `move` `copy` `rebuild` `remove` `repack` `clearArea` `merge` `boardSize` `syncRoutine` `probe` 같은 op 를 순서대로 재생하고, 끝난 뒤의 배치 배열·렌더 로그·alert 문구를 대조한다. 갈래는 `grid` 20 · `merge` 16 · `place` 15 · `resize` 15 · `move` 13 · `flow` 10 순으로 많다.
 
-**이 파일은 옳은 동작의 정의가 아니라 현재 동작의 기록이다.** 기대값은 리팩터링 전 `index.html` 원문에서 생성했고, 알려진 결함도 그대로 굳어 있다. `copy-05-no-repack` 은 복사만 레인 재정렬을 빠뜨리는 결함을 고정한 것이고, `routine-02-place-no-clamp` 는 루틴 블록이 보드 밖으로 나가면 조용히 사라지는 것을 고정한 것이다. 무엇이 왜 그대로인지는 [일부러 두고 온 것](deviations.md)에 있다.
+**이 파일은 옳은 동작의 정의가 아니라 현재 동작의 기록이다.** 기대값은 리팩터링 전 `index.html` 원문에서 생성했고, 알려진 결함도 그대로 굳어 있다. `routine-02-place-no-clamp` 는 루틴 블록이 보드 밖으로 나가면 조용히 사라지는 것을 고정한 것이다. 의도적으로 바꾼 시나리오(복사도 층을 정리하는 `copy-06-repack-target-row` 같은)는 `meta.intentionalChanges` 에 이전 기대값과 함께 적혀 있다. 무엇이 왜 그대로인지는 [일부러 두고 온 것](deviations.md)에 있다.
 
 **예외는 `meta.intentionalChanges` 에 적힌 시나리오들이다.** 결함을 고쳐 동작이 달라지면 그 시나리오의 기대값은 더 이상 원본 기록이 아니므로, 무엇을 왜 바꿨는지와 **이전 기대값이 무엇이었는지**를 그 배열에 남긴다(이름을 바꾼 시나리오는 `previousId`, 설명만 고친 것은 `previousDesc` 도 함께 — 옛 이름으로 찾아도 걸리게 하려는 것이다). 지금 세 항목이 있고 전부 2026-09-07 의 리사이즈 충돌 규칙 변경이다. 새 기대값은 손으로 적지 않고 `tests/replay.mjs` 로 재생한 실제 결과를 기록한다.
 
