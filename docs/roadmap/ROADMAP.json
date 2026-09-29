@@ -109,7 +109,15 @@
       }
     ]
   },
-  "order": [],
+  "order": [
+    "RM-02",
+    "RM-03",
+    "RM-04",
+    "RM-05",
+    "RM-06",
+    "RM-07",
+    "RM-08"
+  ],
   "flow": {
     "note": "「다음」 칸의 토대부터 — 결정이 선 작은 것으로 몸을 풀고, 뒤의 여럿이 밟을 채널을 먼저 놓는다.",
     "ids": [
@@ -168,11 +176,23 @@
           "tags": [
             "B"
           ],
-          "what": "복사로 놓은 블록도 겹침이 사라지면 층을 위로 당긴다. 놓기·이동·삭제·늘이기는 이미 그렇고 복사만 예외다(2026-09-23 결정).",
+          "what": "Alt를 누른 채 블록을 끌어 복사해 넣었을 때도, 그 행에 겹침이 사라져 아래층에 혼자 떠 있던 블록을 위로 끌어올려 행을 한 줄로 줄인다. 놓기·이동·삭제·늘이기는 이미 그렇게 하는데 복사만 빠져 있어서, 같은 결과를 내는 두 조작이 서로 다른 화면을 남겼다. 2026-09-23 결정(D-1, 「층은 뜻이 없는 자리이니 겹침이 사라지면 곧바로 당긴다」)을 복사에도 맞추는 작은 고침이다.",
           "stage": "merged",
           "pr": 32,
           "startedAt": "2026-09-29",
-          "mergedAt": "2026-09-29"
+          "mergedAt": "2026-09-29",
+          "files": [
+            "src/domain/boardOps.js#COPY_POLICY",
+            "src/usecases/boardCommands.js#copyGroupTo",
+            "tests/golden/placement-algorithms.json",
+            "docs/FEATURES.md",
+            "docs/deviations.md",
+            "docs/ARCHITECTURE.md",
+            "docs/ROADMAP.md",
+            "docs/roadmap/ROADMAP.json",
+            "CLAUDE.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-02.md"
         },
         {
           "id": "RM-03",
@@ -185,9 +205,21 @@
           "tags": [
             "B"
           ],
-          "what": "전체 초기화·전체 불러오기·안무표만 비우기 뒤에 사라진 배치를 가리키는 선택을 비운다. 눌러도 아무 일 없는 「루틴으로 편성 (2)」가 떠 있지 않게.",
+          "what": "안무표에서 블록 몇 개를 고른 채 「전체 초기화(링크 포함)」·「전체 불러오기」·「안무표만 비우기」를 누르면, 블록은 사라져도 고른 목록은 그대로 남는다. 그래서 도구 모음에 「루틴으로 편성 (2)」가 계속 떠 있고, 눌러도 편성할 블록이 없어 아무 일도 없다. 이 세 동작이 끝날 때 고른 목록도 함께 비워, 버튼이 사라지는 것이 맞는 모습이 되게 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/usecases/boardCommands.js#clearBoard",
+            "src/usecases/boardCommands.js#clearPlacements",
+            "src/usecases/projectCommands.js#applyProjectData",
+            "src/usecases/docFields.js#writeDoc",
+            "tests/unit/",
+            "docs/deviations.md",
+            "docs/BUG_REPORTS.md",
+            "docs/ROADMAP.md",
+            "docs/roadmap/ROADMAP.json"
+          ],
+          "plan": "docs/roadmap/plans/RM-03.md"
         },
         {
           "id": "RM-04",
@@ -201,9 +233,29 @@
             "C",
             "D"
           ],
-          "what": "막는 오류는 모달, 알아야 할 실패는 토스트, 참고는 상태줄로 나눈다. 지금은 성공 알림까지 alert 라 받아 적는 중에도 흐름이 끊긴다.",
+          "what": "앱이 사용자에게 무언가를 알리는 길을 세 급으로 나눈다. 작업을 멈춰야 하는 오류만 창을 띄워 막고, 알아야 할 실패는 화면 구석에 잠깐 떴다 사라지는 토스트로, 참고할 소식은 상태줄로 보낸다. 지금은 「병합 완료」 같은 성공 소식까지 브라우저 alert 창으로 뜬다. 그래서 영상을 틀어 놓고 동작을 받아 적는 도중에도 확인 버튼을 눌러야만 이어 갈 수 있다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/usecases/store.js",
+            "src/app/render.js",
+            "src/app/main.js",
+            "src/ui/toastView.js",
+            "src/ports/env.js",
+            "src/adapters/browser.js",
+            "src/usecases/projectCommands.js",
+            "src/usecases/categoryCommands.js",
+            "src/usecases/paletteCommands.js",
+            "src/usecases/routineCommands.js",
+            "src/usecases/captureCommands.js#nameSelected",
+            "src/input/controls.js",
+            "src/ui/categoryView.js",
+            "src/ui/videoPanel.js",
+            "src/testing/golden-adapter.mjs",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-04.md"
         },
         {
           "id": "RM-05",
@@ -216,9 +268,28 @@
           "tags": [
             "D"
           ],
-          "what": "grep 으로 잡히는 개발 원칙(U-11 · U-12 · D-5 · R-6 · D-14)을 검사기 하나로 옮긴다. U-12 는 같은 원인으로 아홉 번 재발했다.",
+          "what": "사람이 리뷰할 때마다 기억해야 했던 개발 원칙 가운데, 코드 글자만 보고도 어긴 것을 알 수 있는 다섯 가지(U-11 · U-12 · D-5 · R-6 · D-14)를 검사 스크립트 하나로 옮긴다. 원칙이 30개를 넘자 사람이 다 기억하지 못했다. 특히 「display 를 준 클래스가 hidden 숨김을 이긴다」(U-12)는 이미 적어 둔 원칙인데도 새 화면을 만들 때마다 다시 빠뜨려 네 번 났다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "tools/check-principles.mjs",
+            "tests/unit/checkPrinciples.test.mjs",
+            "CLAUDE.md",
+            "docs/PRINCIPLES.md",
+            "index.html",
+            "src/input/controls.js#HOTKEY_COMMANDS",
+            "src/app/main.js",
+            "src/domain/project/normalize.js",
+            "src/domain/project/merge.js",
+            "src/domain/routines.js",
+            "src/domain/choreoPlan.js",
+            "src/ui/settingsView.js",
+            "src/ui/docsHub.js",
+            "src/ui/phrasingView.js",
+            "docs/roadmap/ROADMAP.json",
+            "docs/ROADMAP.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-05.md"
         },
         {
           "id": "RM-06",
@@ -231,9 +302,23 @@
           "tags": [
             "E"
           ],
-          "what": "튜토리얼·기능 설명서가 인용한 버튼 이름을 화면의 실제 라벨과 대조하는 검사를 더한다. 없어진 화면을 설명하는 문서가 병합된 적이 있다.",
+          "what": "튜토리얼과 기능 설명서가 따옴표(백틱)로 인용한 버튼·제목 이름이 지금 화면에 실제로 있는지를 기계로 대조하는 검사를 더한다. 화면 라벨을 바꾸고 문서를 안 고친 채 병합한 일이 있었다(`동작 팔레트` → `동작 목록`). 개편 뒤 튜토리얼 첫 절이 없어진 화면을 설명한 적도 있다. 사람이 우연히 찾기 전에 검사가 붉어지게 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "tools/check-docs.mjs",
+            "tests/unit/checkDocs.test.mjs",
+            "docs/TUTORIAL.md",
+            "docs/FEATURES.md",
+            "index.html",
+            "admin.html",
+            "src/ui/",
+            "CLAUDE.md",
+            "docs/PRINCIPLES.md",
+            "docs/ROADMAP.md",
+            "docs/roadmap/ROADMAP.json"
+          ],
+          "plan": "docs/roadmap/plans/RM-06.md"
         },
         {
           "id": "RM-07",
@@ -248,9 +333,26 @@
           "tags": [
             "D"
           ],
-          "what": "Undo 한 번 뒤 무엇이든 하면 되돌리기 단계가 하나 더 쌓이고 다시 실행이 날아가는 결함을 고친다. 저장 파일의 키 순서가 바뀌므로 마이그레이션과 함께 낸다.",
+          "what": "되돌리기(Undo)를 한 번 누른 직후에 무엇이든 하면, 되돌리기 단계가 하나 더 쌓이고 다시 실행(Redo)이 사라지는 결함을 고친다. 원인은 되돌릴 때 카테고리 순서가 가나다순으로 다시 정렬되는 데 있다. 편집기에서 삭제를 물어보지 않으므로 Undo 는 유일한 안전망이다. 그래서 Undo 는 한 번 누르면 정확히 한 단계만 되돌아가야 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/project/snapshot.js",
+            "src/domain/categories.js#normalize",
+            "src/domain/categories.js#addCategory",
+            "src/domain/defaults.js",
+            "src/usecases/historyCommands.js",
+            "src/usecases/store.js",
+            "src/domain/project/serialize.js",
+            "src/domain/project/migrations.js",
+            "tests/unit/domain.test.mjs",
+            "tests/unit/docFields.test.mjs",
+            "docs/deviations.md",
+            "docs/BUG_REPORTS.md",
+            "docs/ROADMAP.md",
+            "docs/roadmap/ROADMAP.json"
+          ],
+          "plan": "docs/roadmap/plans/RM-07.md"
         },
         {
           "id": "RM-08",
@@ -265,9 +367,29 @@
           "tags": [
             "D"
           ],
-          "what": "히트 판정·포인터 상태기계·팝업 위치 계산을 순수 함수로 떼어 시험으로 덮는다. 기록된 버그 53건 중 22건이 시험이 거의 없는 화면·입력 층이다.",
+          "what": "보드 위 터치·마우스 동작(어느 칸을 눌렀나, 탭인가 끌기인가, 팝업을 어디에 띄우나)을 정하는 계산을 화면 코드에서 떼어 순수 함수로 만들고 시험으로 덮는다. 기록된 버그 53건 중 22건이 이 화면·입력 층에서 나왔다. 그런데 이 층 1만 2천 줄 가운데 시험이 불러 쓰는 파일은 세 개뿐이다. 동작은 바꾸지 않는다. 지금 동작을 시험에 기록해 두어 뒤의 편집 개선(RM-11·RM-12)이 무엇을 깨는지 바로 보이게 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/input/boardController.js",
+            "src/input/touchDrag.js",
+            "src/input/pointerSession.js",
+            "src/input/hitTest.js#hitTest",
+            "src/input/paletteInput.js",
+            "src/input/dragSession.js",
+            "src/ui/popup.js#positionPopup",
+            "src/ui/placementActionPopup.js",
+            "src/ui/routineActionPopup.js",
+            "src/ui/paletteView.js",
+            "src/domain/gestureMath.js",
+            "src/domain/grid.js",
+            "tools/check-arch.mjs",
+            "tests/unit/",
+            "docs/deviations.md",
+            "docs/BUG_REPORTS.md",
+            "docs/ARCHITECTURE.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-08.md"
         }
       ]
     },
@@ -290,9 +412,29 @@
           "tags": [
             "C"
           ],
-          "what": "라벨·툴팁·단축키·실행을 한 표에 두고 모든 버튼이 그것을 참조한다. 같은 명령이 다섯 곳에 흩어진 것이 모이고, 명령 팔레트와 단축키 일람이 그 위에 선다.",
+          "what": "지금은 같은 명령(영상 열기 · 되돌리기 · 프로젝트 이름 등)이 화면 여러 곳에 따로 만들어져 있다. 그래서 라벨 · 툴팁 · 단축키가 제각각 어긋난다. 명령마다 이름 · 라벨 · 툴팁 · 단축키 · 실행을 한 표에 적고 모든 버튼과 글쇠가 그 표를 따르게 한다. 그 위에 Ctrl+K 명령 팔레트와 `?` 단축키 일람을 얹는다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/hotkeys.js",
+            "src/domain/commands.js",
+            "src/input/controls.js",
+            "src/ui/toolbarView.js",
+            "src/ui/routineEditorView.js",
+            "src/ui/fileMenu.js",
+            "src/ui/videoPanel.js",
+            "src/ui/savedListsView.js",
+            "src/ui/settingsView.js",
+            "src/ui/commandPalette.js",
+            "src/app/main.js",
+            "index.html",
+            "tools/check-docs.mjs",
+            "tests/unit/",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/ARCHITECTURE.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-09.md"
         },
         {
           "id": "RM-10",
@@ -307,9 +449,37 @@
           "tags": [
             "C"
           ],
-          "what": "화면 낱말을 용어집 하나로 정하고 라벨 문자열의 주인을 파일 하나로 둔다. 지우기와 삭제처럼 헷갈리는 말을 가르고 영어 UI 의 준비가 된다.",
+          "what": "화면에 나오는 낱말(안무표·영상·동작·루틴·구간·마커·마디·카운트 등)의 뜻과 쓰는 법을 용어집 한 장에 정하고, 버튼·툴팁·안내에 쓰는 한국어 글자를 파일 하나에 모은다. 지금은 같은 일을 곳에 따라 「지우기」·「삭제」로, 되돌리기를 `Undo` 로 부르는 등 말이 제각각이고 글자가 수십 개 파일에 흩어져 있다. 그래서 라벨을 바꿀 때마다 문서가 틀어지고 영어 UI(RM-32)도 시작할 수 없다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "docs/GLOSSARY.md",
+            "src/domain/strings.js",
+            "src/domain/commands.js",
+            "src/domain/hotkeys.js",
+            "src/ui/placementActionPopup.js",
+            "src/ui/routineActionPopup.js",
+            "src/ui/toolbarView.js",
+            "src/ui/routineEditorView.js",
+            "src/ui/videoPanel.js",
+            "src/ui/fileMenu.js",
+            "src/ui/settingsView.js",
+            "src/ui/savedListsView.js",
+            "src/ui/paletteView.js",
+            "src/ui/categoryView.js",
+            "src/ui/routineListView.js",
+            "src/ui/linksBarView.js",
+            "src/ui/composeView.js",
+            "src/ui/widgets.js",
+            "src/ui/docsRegistry.js",
+            "index.html",
+            "tools/check-docs.mjs",
+            "tests/unit/",
+            "docs/TUTORIAL.md",
+            "docs/FEATURES.md",
+            "docs/ARCHITECTURE.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-10.md"
         },
         {
           "id": "RM-11",
@@ -324,9 +494,27 @@
           "tags": [
             "B"
           ],
-          "what": "마우스·터치 갈림을 창 폭이 아니라 포인터 종류로 한다. 터치 그리기의 행 넘김·복사·루틴 가드가 마우스와 같아진다.",
+          "what": "지금 편집기는 마우스와 손가락을 서로 다른 이벤트 코드 두 벌로 받는다. 어느 쪽 규칙을 쓸지도 입력 기기가 아니라 창 폭(1040px)으로 가른다. 이 항목은 입력을 포인터 이벤트 한 벌로 합치고, 갈림은 「무엇으로 눌렀나」로 정한다. 그러면 손가락으로 그려도 다음 행으로 이어지고 루틴 블록 가드도 마우스와 같아진다. 이 일은 원본 동작을 그대로 두어야 한다는 원칙(Q4)을 처음으로 깨는 일이라, 그 원칙을 끝낼지부터 정해야 시작할 수 있다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/input/boardController.js",
+            "src/input/touchDrag.js",
+            "src/input/pointerSession.js",
+            "src/input/dragSession.js",
+            "src/input/paletteInput.js",
+            "src/adapters/browser.js",
+            "src/app/main.js",
+            "src/ui/popup.js#positionPopup",
+            "src/ui/placementActionPopup.js",
+            "src/ui/layout.js",
+            "src/domain/gestureMath.js#resolveDragCount",
+            "docs/deviations.md",
+            "docs/TUTORIAL.md",
+            "docs/FEATURES.md",
+            "tests/golden/placement-algorithms.json"
+          ],
+          "plan": "docs/roadmap/plans/RM-11.md"
         },
         {
           "id": "RM-12",
@@ -341,9 +529,30 @@
           "tags": [
             "B"
           ],
-          "what": "몸통 끌기는 이동, 가장자리는 트리밍, 두 번 누르기는 이름 정하기로 문법을 정한다. 삭제는 Delete·액션 바·팝업으로만 하고 되돌리기 토스트를 붙인다.",
+          "what": "안무표 블록을 잡는 방법을 동영상·음악 편집기와 같은 문법으로 맞춘다. 몸통을 끌면 옮겨지고, 양쪽 끝을 끌면 앞이나 뒤가 잘리며, 두 번 누르면 동작 이름을 정하는 창이 뜬다. 지금은 두 번 누르면 확인 없이 블록이 지워지고, 작은 손잡이를 정확히 짚어야만 옮길 수 있다. 이 불편과 사고를 없애는 것이 목적이다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/input/boardController.js",
+            "src/input/pointerSession.js",
+            "src/input/touchDrag.js",
+            "src/input/dragSession.js",
+            "src/ui/placementView.js",
+            "src/ui/domContract.js",
+            "src/ui/overlays.js",
+            "src/ui/placementActionPopup.js",
+            "src/ui/quickPicker.js",
+            "src/domain/boardOps.js#resizeGroup",
+            "src/domain/gestureMath.js",
+            "src/usecases/boardCommands.js#resizeGroupTo",
+            "src/app/main.js",
+            "index.html",
+            "tests/golden/placement-algorithms.json",
+            "docs/deviations.md",
+            "docs/TUTORIAL.md",
+            "docs/FEATURES.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-12.md"
         },
         {
           "id": "RM-13",
@@ -358,9 +567,23 @@
           "tags": [
             "B"
           ],
-          "what": "화살표로 한 칸, Shift+화살표로 한 마디, Delete·복사·붙여넣기·복제를 키보드로 한다. 입력창 가드와 활성 보드 라우팅은 이미 있다.",
+          "what": "블록을 마우스로 잡지 않고 키보드로도 고치게 한다. 고른 블록을 화살표로 한 칸, Shift+화살표로 한 마디씩 옮기고, Delete로 지우고, Ctrl+C/V/D로 복사·붙여넣기·복제한다. 지금은 키보드로 할 수 있는 편집이 되돌리기·다시 하기와 받아 적기 글쇠뿐이다. 그래서 한 칸만 옮기려 해도 작은 손잡이를 정확히 끌어야 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/hotkeys.js",
+            "src/domain/commands.js",
+            "src/input/controls.js#bindHotkeys",
+            "src/usecases/boardCommands.js",
+            "src/domain/boardOps.js",
+            "src/app/main.js",
+            "src/ui/settingsView.js",
+            "tests/unit/",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/deviations.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-13.md"
         },
         {
           "id": "RM-14",
@@ -375,9 +598,33 @@
           "tags": [
             "B"
           ],
-          "what": "Shift+클릭 범위·빈 칸 마퀴로 여럿을 고르고 묶음으로 옮긴다. 고른 것에 대한 동작을 액션 바 하나에 모은다.",
+          "what": "안무표에서 블록을 여러 개 한꺼번에 고르고, 고른 묶음을 한 덩어리로 옮기거나 지우거나 복제하게 한다. Shift+클릭으로 두 블록 사이를 모두 고르고, 빈 칸을 끌어 네모로 감싸 고른다. 고른 것에 할 수 있는 일은 떠 있는 선택 액션 바 하나에 모은다. 지금 선택은 「루틴으로 편성」에만 쓰여서, 여러 블록을 고쳐도 하나씩 따로 손대야 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/input/boardController.js",
+            "src/usecases/boardCommands.js#toggleSelection",
+            "src/usecases/boardCommands.js#clearSelection",
+            "src/usecases/boardCommands.js#moveGroupTo",
+            "src/usecases/boardCommands.js#removeGroup",
+            "src/domain/boardOps.js",
+            "src/domain/gestureMath.js",
+            "src/domain/routines.js",
+            "src/usecases/store.js",
+            "src/ui/overlays.js",
+            "src/ui/toolbarView.js#syncSelection",
+            "src/ui/boardView.js",
+            "src/ui/placementActionPopup.js",
+            "src/app/render.js",
+            "src/app/main.js",
+            "index.html",
+            "tests/unit/",
+            "tests/golden/placement-algorithms.json",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/deviations.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-14.md"
         },
         {
           "id": "RM-15",
@@ -390,9 +637,29 @@
           "tags": [
             "B"
           ],
-          "what": "고른 블록에서 타이핑하면 그 자리에 이름 입력이 뜨고 동작 목록으로 자동완성된다. Tab 으로 다음 이름 없는 블록으로 간다.",
+          "what": "블록을 고른 채 글자를 치면 창 없이 그 블록 위에서 바로 이름 입력이 열리고, 동작 목록에서 맞는 이름이 추천된다. Tab 을 누르면 이름이 붙고 다음 이름 없는 블록(`?`)으로 넘어간다. 받아 적기로 쌓인 `?` 에 이름을 붙이려면 지금은 블록마다 창을 열고 닫아야 하는데, 이 항목은 키보드만으로 줄줄이 채우게 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/placements.js#pendingGroupIds",
+            "src/domain/moveMatch.js",
+            "src/domain/hotkeys.js",
+            "src/input/controls.js",
+            "src/input/boardController.js",
+            "src/ui/placementView.js",
+            "src/ui/quickPicker.js",
+            "src/ui/videoPanel.js",
+            "src/ui/domContract.js",
+            "src/usecases/boardCommands.js#setGroupMove",
+            "src/usecases/captureCommands.js#nameSelected",
+            "src/usecases/paletteCommands.js",
+            "src/app/main.js",
+            "index.html",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/EDITING_FLOWS.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-15.md"
         },
         {
           "id": "RM-16",
@@ -405,9 +672,28 @@
           "tags": [
             "B"
           ],
-          "what": "재생 헤드에서 자르기·인접한 같은 이름 병합·마디 삽입·삭제·복제·이동을 한다. 지금은 블록을 지우고 다시 그려야 한다.",
+          "what": "안무표에 놓인 블록을 쪼개고 붙이는 편집과, 마디(행)를 통째로 끼우고 지우고 복제하고 옮기는 편집을 더한다. 지금은 블록을 둘로 나누거나 가운데에 한 마디를 끼우려면 블록을 지우고 다시 그리거나 뒤의 블록을 하나씩 옮겨야 한다. 한 번 누르면 끝나야 할 흔한 고침이 여러 단계의 손일이 되고, 그 과정에서 간격이 어긋난다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/boardOps.js",
+            "src/domain/placements.js",
+            "src/domain/lanes.js",
+            "src/domain/grid.js",
+            "src/domain/markers.js",
+            "src/domain/hotkeys.js",
+            "src/usecases/boardCommands.js",
+            "src/usecases/videoCommands.js",
+            "src/input/boardController.js",
+            "src/ui/boardView.js",
+            "src/ui/placementActionPopup.js",
+            "src/app/main.js",
+            "tests/golden/placement-algorithms.json",
+            "tests/unit/",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-16.md"
         },
         {
           "id": "RM-17",
@@ -420,9 +706,26 @@
           "tags": [
             "A"
           ],
-          "what": "색·글자·간격·모서리·그림자를 토큰 한 벌로 접는다. 지금 글자 크기 18가지·색 289가지·그림자 56가지가 흩어져 있고 테마는 토큰만 바꾸게 된다.",
+          "what": "화면 곳곳에 그때그때 적어 둔 색·글자 크기·간격·모서리·그림자 값을 이름 붙은 값 몇 개(디자인 토큰)로 모은다. 지금은 글자 크기가 18가지, 색이 289가지(hex 75·rgba 214), 그림자가 56가지, 모서리가 19가지나 된다. 그래서 화면마다 다른 사람이 만든 것처럼 보이고, 테마를 바꿔도 색이 따라오지 않는 자리가 남는다. 토큰으로 모으면 테마는 토큰 값만 갈아 끼우는 일이 된다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "index.html",
+            "admin.html",
+            "src/domain/themes.js",
+            "src/ui/settingsView.js",
+            "src/ui/docsHub.js",
+            "src/ui/composeView.js",
+            "src/ui/phrasingView.js",
+            "src/ui/quickPicker.js",
+            "src/ui/overlays.js",
+            "src/ui/meshView.js",
+            "src/ui/poseOverlay.js",
+            "tools/",
+            "docs/ROADMAP.md",
+            "docs/FEATURES.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-17.md"
         },
         {
           "id": "RM-18",
@@ -437,9 +740,25 @@
           "tags": [
             "A"
           ],
-          "what": "이모지 라벨 29개를 SVG 아이콘 한 벌로 바꾼다. 글자가 주인이고 아이콘은 보조다.",
+          "what": "지금 버튼 라벨 앞에 붙은 이모지 29개(✨ 📁 🎤 같은 컬러 그림과 ▶ ⤢ ▮ 같은 흑백 기호가 한 줄에 섞여 있다)를 모양이 고른 SVG 아이콘 한 벌로 바꾼다. 이모지는 OS마다 다르게 그려지고, 어두운 바탕 위에서 채도가 튀어 화면을 가장 촌스럽게 만든다. 글자 라벨이 주인이고 아이콘은 옆에서 돕기만 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "index.html",
+            "src/ui/composeView.js",
+            "src/ui/routineActionPopup.js",
+            "src/ui/toolbarView.js",
+            "src/ui/settingsView.js",
+            "src/ui/phrasingView.js",
+            "src/app/main.js",
+            "src/ui/",
+            "tools/",
+            "docs/TUTORIAL.md",
+            "docs/FEATURES.md",
+            "docs/VIDEO_TO_CHART.md",
+            "docs/ROADMAP.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-18.md"
         },
         {
           "id": "RM-19",
@@ -455,9 +774,23 @@
             "A",
             "C"
           ],
-          "what": "받는 중·듣는 중·저장됨·되돌릴 수 있음을 상태줄 한 자리에 세운다. 늘 떠 있는 안내 문장 14곳은 툴팁과 처음 한 번 안내로 옮긴다.",
+          "what": "지금 앱의 상태(받아 적는 중인지, 마이크가 듣는 중인지, 저장됐는지, 되돌릴 수 있는지)는 영상 배지·패널 제목·엄지 바·파일 메뉴 여기저기에 흩어져 있다. 이것을 화면 한 자리의 상태줄에 모은다. 한 번 읽으면 그다음부터는 소음이 되는 상시 안내 문장 14곳은 툴팁과 「처음 한 번」 안내로 옮기고, 평소에는 비워 둔다. RM-04 가 나눈 알림 세 급 가운데 「참고 → 상태줄」 급이 받을 자리를 이 항목이 만든다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "index.html",
+            "src/ui/statusBar.js",
+            "src/ui/videoPanel.js",
+            "src/ui/fileMenu.js",
+            "src/ui/thumbBar.js",
+            "src/app/render.js",
+            "src/app/main.js",
+            "src/usecases/store.js",
+            "src/adapters/browser.js",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-19.md"
         },
         {
           "id": "RM-20",
@@ -470,9 +803,22 @@
           "tags": [
             "C"
           ],
-          "what": "영상 패널을 순서가 있는 ①②③ 과 도구 탭으로 가르고 유튜브 주소 칸을 「① 영상 고르기」 안으로 옮긴다. 지금은 층이 다른 「🔗 링크」 안에 숨어 있다.",
+          "what": "영상 패널에 섞여 있는 여섯 단계를 가른다. 차례대로 하는 ①영상 고르기 · ②박자 맞추기 · ③받아 적기만 번호와 완료 표시를 달고, 필요할 때만 꺼내 쓰는 구간 자르기 · 마커 · 자세 분석은 「도구」 탭으로 뺀다. 유튜브 주소 칸도 안무표 위 `🔗 링크` 줄에서 `① 영상 고르기` 안으로 옮긴다. 그래야 처음 온 사람이 영상을 어디서 넣는지 찾아 헤매지 않는다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "index.html",
+            "src/ui/videoPanel.js",
+            "src/ui/linksBarView.js",
+            "src/ui/layout.js",
+            "src/ui/settingsView.js",
+            "src/ui/thumbBar.js",
+            "src/ui/bpmBadge.js",
+            "src/app/main.js",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-20.md"
         },
         {
           "id": "RM-21",
@@ -485,9 +831,27 @@
           "tags": [
             "★"
           ],
-          "what": "안무표를 A4 한 장·마디당 한 줄 텍스트·읽기 전용 HTML 로 내보낸다. 강사가 학생에게 줄 한 장이 지금은 화면 캡처뿐이다.",
+          "what": "안무표를 남에게 건넬 수 있는 꼴 세 가지로 내보낸다. 첫째는 A4 한 장으로 인쇄하는 것(브라우저 인쇄로 PDF도 된다), 둘째는 `8x3 · 1 Swing Out · 5 Kick Ball Change`처럼 마디 하나를 한 줄에 적는 텍스트, 셋째는 앱 없이도 열리는 읽기 전용 HTML 한 장이다. 지금은 강사가 학생에게 안무를 주려면 화면을 캡처하는 수밖에 없고, 앱이 내보낼 수 있는 것도 다시 불러오기 위한 JSON 하나뿐이다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/countSheet.js",
+            "src/domain/choreoPlan.js#normalizePlan",
+            "src/domain/choreoPlan.js#cellLabel",
+            "src/domain/lanes.js",
+            "src/domain/markers.js",
+            "src/usecases/projectCommands.js",
+            "src/ports/storage.js",
+            "src/adapters/browser.js",
+            "src/ui/fileMenu.js",
+            "src/ui/toolbarView.js",
+            "src/app/main.js",
+            "index.html",
+            "tests/unit/",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-21.md"
         },
         {
           "id": "RM-22",
@@ -500,9 +864,32 @@
           "tags": [
             "★"
           ],
-          "what": "반복 구간을 초가 아니라 마디·블록·파트로 잡고 배속·미러·카운트 소리를 붙인다. 카운트 축이 있는 이 도구만 할 수 있는 연습기다.",
+          "what": "영상의 반복 구간을 초가 아니라 안무표의 마디·블록(나중에는 파트) 단위로 잡는다. 여기에 배속·좌우 반전(미러)·박자에 맞춘 카운트 소리를 붙인 연습 도구다. 지금은 In/Out을 초로 찍어야 반복할 수 있어서 「8x3만 다시」를 하려면 영상을 뒤져야 한다. 영상과 카운트가 한 축에 묶인 이 편집기라서 마디를 누르는 것만으로 반복이 된다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/app/main.js#enforceLoop",
+            "src/app/main.js#ensurePlayer",
+            "src/usecases/videoCommands.js#setInOut",
+            "src/usecases/videoCommands.js#setLoop",
+            "src/usecases/videoCommands.js#panelState",
+            "src/usecases/store.js",
+            "src/domain/tempo.js#placementToSpan",
+            "src/domain/tempo.js#groupToSpan",
+            "src/domain/tempo.js#countToTime",
+            "src/ports/media.js",
+            "src/adapters/media/youtubePlayer.js",
+            "src/adapters/media/filePlayer.js",
+            "src/adapters/audio/",
+            "src/ui/videoPanel.js",
+            "src/ui/playhead.js",
+            "src/ui/poseOverlay.js",
+            "index.html",
+            "docs/TUTORIAL.md",
+            "docs/FEATURES.md",
+            "tests/unit/"
+          ],
+          "plan": "docs/roadmap/plans/RM-22.md"
         },
         {
           "id": "RM-23",
@@ -519,9 +906,33 @@
           "tags": [
             "★"
           ],
-          "what": "마디 위의 묶음(intro·A·B·코러스)을 저장 포맷에 넣어 접고 통째로 옮기고 되풀이한다. 마커와 합칠지를 먼저 정한다.",
+          "what": "안무표의 마디 위에 인트로·A·B·브레이크·코러스 같은 「파트」 묶음을 두고, 안무표 파일에 함께 저장한다. 파트 단위로 접고, 통째로 옮기고, 「B 파트 한 번 더」처럼 되풀이한다. 스윙 안무는 파트와 코러스로 외우고 가르치는데, 지금 안무표는 마디가 평평하게 늘어선 목록이라 곡의 뼈대를 담을 자리가 없다. 만들기 전에 파트를 영상 마커와 합칠지 따로 둘지(Q6)를 먼저 정해야 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/project/schema.js",
+            "src/domain/project/fields.js",
+            "src/domain/project/snapshot.js",
+            "src/domain/project/serialize.js",
+            "src/usecases/docFields.js",
+            "tests/unit/docFields.test.mjs",
+            "src/domain/parts.js",
+            "src/usecases/partCommands.js",
+            "src/domain/boardOps.js",
+            "src/usecases/boardCommands.js",
+            "src/domain/phrasing.js",
+            "src/ui/phrasingView.js",
+            "src/ui/boardView.js",
+            "src/ui/domContract.js",
+            "src/app/main.js",
+            "src/app/render.js",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/EDITING_FLOWS.md",
+            "docs/ROADMAP.md",
+            "docs/roadmap/ROADMAP.json"
+          ],
+          "plan": "docs/roadmap/plans/RM-23.md"
         },
         {
           "id": "RM-24",
@@ -536,9 +947,29 @@
           "tags": [
             "★"
           ],
-          "what": "받아 적기가 만든 이름 없는 블록만 모아 차례로 이름을 붙인다. 고르면 영상이 그 대목을 반복하고 말로 이름 붙이기가 그대로 붙는다.",
+          "what": "받아 적기로 쌓인 이름 없는 블록(`?`)만 한 목록에 모아 차례로 이름을 붙이는 화면이다. 한 줄을 고르면 영상이 그 대목을 되풀이해 틀어 주고, 입력칸이나 마이크로 이름을 붙인다. 모양이 같은 `?` 는 「아까 그것」으로 묶어 한 번에 채운다. 이 화면이 없으면 받아 적은 블록은 `?` 로 남고, 이름을 붙이려면 영상을 처음부터 다시 봐야 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/placements.js#pendingGroupIds",
+            "src/domain/placements.js#nameGroup",
+            "src/domain/tempo.js#groupToSpan",
+            "src/domain/moveMatch.js",
+            "src/usecases/captureCommands.js#nameSelected",
+            "src/usecases/captureCommands.js#pendingCount",
+            "src/usecases/voiceNameCommands.js#hearUtterance",
+            "src/usecases/videoCommands.js#setLoop",
+            "src/usecases/paletteCommands.js",
+            "src/ui/videoPanel.js",
+            "src/ui/domContract.js",
+            "src/app/main.js",
+            "index.html",
+            "tests/unit/",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/EDITING_FLOWS.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-24.md"
         },
         {
           "id": "RM-25",
@@ -551,9 +982,24 @@
           "tags": [
             "D"
           ],
-          "what": "서버가 덮어쓰기 전에 남기는 판을 앱에서 골라 되살린다. 「어제 것으로」가 한 번 누름이 된다.",
+          "what": "서버는 안무표를 덮어쓰기 전에 직전 판을 보관 폴더 안의 숨은 칸(.history)에 벌써 남기고 있지만, 앱에는 그것을 보고 고르는 화면이 없다. 파일 서랍에 「이 안무표의 지난 판」 목록을 두고, 하나를 누르면 그 판으로 되살려 바로 연다. 잘못 덮어쓴 날에도 폴더를 뒤질 필요 없이 「어제 것으로」가 한 번 누름이 되게 하려는 것이다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/ui/historyView.js",
+            "src/ui/trashView.js",
+            "src/ui/fileMenu.js",
+            "src/app/main.js",
+            "src/adapters/projectServer.js",
+            "src/adapters/draftStore.js",
+            "index.html",
+            "server.py#_restore_project",
+            "tests/server.test.mjs",
+            "tests/unit/",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-25.md"
         },
         {
           "id": "RM-26",
@@ -568,9 +1014,24 @@
           "tags": [
             "E"
           ],
-          "what": "예제 안무 하나·첫 실행 코치마크 3장·단계마다 그 절로 가는 ? 도움말을 둔다. 저자가 아닌 사람이 10분 안에 쓸 수 있게.",
+          "what": "처음 앱을 켠 사람이 빈 격자 앞에서 멈추지 않도록 세 가지를 둔다. 첫째, 바로 열어 볼 수 있는 예제 안무 하나다. 둘째, 처음 한 번만 뜨고 채우기 줄 → 동작 목록 → 영상 차례로 짚어 주는 안내 말풍선(코치마크) 3장이다. 셋째, 화면 곳곳에 두는 `?` 단추로, 누르면 설명서의 해당 절로 곧장 연다. 지금은 만든 사람만 쓸 줄 알고, 설치형 포장(RM-28)보다 「처음 켠 사람이 10분 안에 쓸 수 있는가」가 먼저라서 이 항목을 앞에 둔다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/ui/modeBar.js",
+            "src/ui/docsHub.js",
+            "src/ui/docsRegistry.js",
+            "src/ui/settingsView.js",
+            "src/ui/fileMenu.js",
+            "src/ui/videoPanel.js",
+            "src/app/main.js",
+            "index.html",
+            "tools/check-docs.mjs",
+            "docs/TUTORIAL.md",
+            "docs/FEATURES.md",
+            "examples/"
+          ],
+          "plan": "docs/roadmap/plans/RM-26.md"
         },
         {
           "id": "RM-27",
@@ -583,9 +1044,29 @@
           "tags": [
             "D"
           ],
-          "what": "OS × 브라우저 × 서버 유무 × 기능 표를 문서와 설정에 같이 둔다. 폰의 확대 차단도 걷는다.",
+          "what": "이 앱은 어떤 브라우저로 여느냐, 로컬 서버를 켰느냐에 따라 되는 기능이 다르다. 그런데 그 차이가 지금은 코드 주석과 기능 설명서 여기저기에만 흩어져 있다. 그래서 「OS × 브라우저 × 서버 유무 × 기능」 표 하나를 만들어 문서와 설정 화면에 같이 보이고, 폰에서 화면 확대를 막아 둔 임시방편도 걷어 낸다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "index.html",
+            "src/ui/layout.js",
+            "src/ui/settingsView.js",
+            "src/ui/docsRegistry.js",
+            "src/app/main.js",
+            "src/adapters/clipLibrary.js",
+            "src/adapters/speechInput.js",
+            "src/adapters/pose/mediapipePose.js",
+            "src/domain/",
+            "src/adapters/",
+            "docs/SUPPORT.md",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/deviations.md",
+            "docs/BUG_REPORTS.md",
+            "docs/PRINCIPLES.md",
+            "tests/unit/"
+          ],
+          "plan": "docs/roadmap/plans/RM-27.md"
         }
       ]
     },
@@ -610,9 +1091,28 @@
           "tags": [
             "E"
           ],
-          "what": "server.py 와 ffmpeg 를 품은 맥·윈도우 앱으로 포장한다. 방향은 정했지만 처음 켠 사람의 10분(RM-26)이 먼저다.",
+          "what": "지금은 터미널에서 python3 server.py 를 켜고 브라우저로 localhost 를 열어야 쓸 수 있다. 이 과정을 맥·윈도우에서 두 번 눌러 켜는 앱 하나로 싸서, 파이썬이나 ffmpeg 를 따로 깔 줄 모르는 사람도 영상 보관·자르기·자세 분석까지 그대로 쓰게 한다. 방향은 「설치형·로컬 우선」으로 이미 정했다(Q1). 다만 처음 켠 사람이 10분 안에 쓸 수 있게 하는 일(RM-26)이 먼저라서 차례를 기다린다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "server.py#main",
+            "server.py#data_home",
+            "server.py#config_home",
+            "server.py#cache_home",
+            "server.py#default_data_root",
+            "server.py#find_ffmpeg",
+            "server.py#folder_chooser",
+            "packaging/",
+            "tests/server.test.mjs",
+            "CLAUDE.md",
+            "README.md",
+            "docs/DECISIONS.md",
+            "docs/TUTORIAL.md",
+            "docs/FEATURES.md",
+            "docs/ROADMAP.md",
+            "docs/roadmap/ROADMAP.json"
+          ],
+          "plan": "docs/roadmap/plans/RM-28.md"
         },
         {
           "id": "RM-29",
@@ -627,9 +1127,33 @@
           "tags": [
             "★"
           ],
-          "what": "이름 붙인 판본(A안·B안·공연본)과 테이크별 연습 기록을 둔다. 한 안무에 영상 여럿, 박자·마커는 영상마다로 절반 정해졌다.",
+          "what": "한 안무를 A안·B안·공연본처럼 이름 붙인 판본으로 갈라 두고, 연습할 때마다 날짜·속도·메모·잘 된 정도를 한 줄씩 적는 기록을 붙인다. 지금은 변형을 만들려면 파일을 따로 저장해야 하고, 영상 목록의 날짜·메모 말고는 연습을 남길 자리가 없다. 「이 안무가 어떻게 바뀌었고 내가 얼마나 나아졌나」를 한 파일 안에서 시간 순으로 보려는 항목이다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/project/schema.js",
+            "src/domain/project/migrations.js",
+            "src/domain/project/serialize.js",
+            "src/domain/project/normalize.js",
+            "src/domain/project/media.js",
+            "src/ports/storage.js",
+            "src/usecases/projectCommands.js",
+            "src/usecases/videoCommands.js",
+            "src/usecases/store.js",
+            "src/adapters/projectServer.js",
+            "src/adapters/localStore.js",
+            "src/ui/projectPanel.js",
+            "src/ui/fileMenu.js",
+            "src/app/main.js",
+            "index.html",
+            "server.py",
+            "tests/unit/",
+            "tests/server.test.mjs",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/PORTS.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-29.md"
         },
         {
           "id": "RM-30",
@@ -641,9 +1165,30 @@
           "soft": [],
           "questions": [],
           "defaults": [],
-          "what": "자세 분석 결과를 클립 옆과 프로젝트에 남겨 테이크끼리 비교한다. 계산·모델·오버레이는 섰고 결과를 남길 자리가 없다.",
+          "what": "영상에서 잰 관절 각도를 저장해 두고, 같은 동작을 찍은 지난 테이크와 오늘 테이크를 나란히 견준다. 각도 계산, 모델, 영상 위 뼈대 그림은 이미 되어 있다. 하지만 결과가 어디에도 저장되지 않아 영상을 바꾸면 사라진다. 그래서 「무릎이 지난주보다 20° 더 열렸다」를 말할 수 없다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/rom.js",
+            "src/domain/kinematics.js",
+            "src/domain/poseTracks.js",
+            "src/domain/project/media.js",
+            "src/domain/project/serialize.js",
+            "src/ports/pose.js",
+            "src/ports/storage.js",
+            "src/usecases/poseCommands.js",
+            "src/adapters/clipServer.js",
+            "src/ui/poseView.js",
+            "src/ui/projectPanel.js",
+            "src/app/main.js",
+            "server.py",
+            "tests/unit/",
+            "tests/server.test.mjs",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/PORTS.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-30.md"
         },
         {
           "id": "RM-31",
@@ -653,9 +1198,22 @@
           "soft": [],
           "questions": [],
           "defaults": [],
-          "what": "안무표에서 고른 마디·블록을 템포로 초 구간으로 바꿔 영상으로 잘라 낸다. 영상 쪽 자르기와 변환 재료는 이미 있다.",
+          "what": "안무표에서 블록이나 마디를 고르면, 그 대목에 해당하는 영상만 잘라 새 영상 파일로 만든다. 지금은 영상 쪽에서 In/Out 시각을 손으로 찍어야만 자를 수 있다. 박자를 이미 맞춰 두었으니 「이 여섯 마디」라고 고르기만 하면 초 구간은 앱이 계산하게 하려는 것이다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/tempo.js#groupToSpan",
+            "src/usecases/videoCommands.js#applyTrim",
+            "src/adapters/clipServer.js",
+            "server.py#_trim_clip",
+            "src/ui/videoPanel.js#selectedRange",
+            "src/app/main.js",
+            "index.html",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "tests/unit/"
+          ],
+          "plan": "docs/roadmap/plans/RM-31.md"
         },
         {
           "id": "RM-32",
@@ -672,9 +1230,30 @@
           "tags": [
             "C"
           ],
-          "what": "화면을 영어로도 낸다. 스윙 커뮤니티는 국제적이고 동작 이름은 이미 영어다.",
+          "what": "앱의 버튼·메뉴·안내·오류 문구를 영어로도 내고, 설정에서 언어를 고르게 한다. 스윙 커뮤니티는 나라를 넘나들고 동작 이름(Swing Out, Tuck Turn 같은)은 이미 영어인데, 화면 글자는 한국어 한 벌이라 영어권 댄서·강사는 쓸 수 없다. RM-10 이 글자를 표 하나로 모은 뒤, 그 표에 영어 한 벌을 옆에 놓는 일이다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/strings.js",
+            "src/ui/settingsView.js",
+            "src/adapters/localStore.js",
+            "src/app/main.js",
+            "index.html",
+            "src/ui/videoPanel.js",
+            "src/ui/fileMenu.js",
+            "src/ui/savedListsView.js",
+            "src/ui/trashView.js",
+            "src/ui/widgets.js",
+            "src/ui/composeView.js",
+            "src/adapters/speechInput.js",
+            "src/usecases/",
+            "tools/check-docs.mjs",
+            "tests/unit/",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/ARCHITECTURE.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-32.md"
         },
         {
           "id": "RM-33",
@@ -687,9 +1266,26 @@
           "tags": [
             "D"
           ],
-          "what": "서버 없이 열 때의 저장을 localStorage 에서 IndexedDB 로 옮긴다. 지금은 쿼터 초과가 조용히 실패한다.",
+          "what": "서버 없이 정적 파일로 열었을 때 안무표를 브라우저 안에 담는 자리를 localStorage 에서 IndexedDB 로 옮긴다. 지금은 최근 목록이 안무표 10개의 내용을 localStorage 한 칸에 통째로 넣는다. 그래서 용량(보통 5MB 안팎)이 차면 목록에 오르지 않거나 자동 담기가 멈추는데, 사용자는 그 사실을 모른다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/ports/storage.js",
+            "src/adapters/localStore.js",
+            "src/adapters/draftStore.js",
+            "src/adapters/clipLibrary.js",
+            "src/app/main.js#refreshProjectFolder",
+            "src/app/main.js#openFromFolder",
+            "src/usecases/projectCommands.js#pushRecent",
+            "src/usecases/projectCommands.js#persist",
+            "src/usecases/projectCommands.js#saveProject",
+            "src/usecases/projectCommands.js#loadProjectFromFile",
+            "src/testing/golden-adapter.mjs",
+            "tests/unit/",
+            "docs/ARCHITECTURE.md",
+            "docs/FEATURES.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-33.md"
         },
         {
           "id": "RM-34",
@@ -702,9 +1298,22 @@
           "tags": [
             "A"
           ],
-          "what": "루틴 색을 고르고 순번을 저장한다. 다시 열면 다른 루틴이 같은 색을 쓸 수 있다.",
+          "what": "루틴을 만들면 여덟 색이 만든 순서대로 하나씩 붙는데, 몇 번째 색까지 썼는지를 기억하지 않는다. 그래서 안무표를 다시 열면 순서가 첫 색부터 다시 시작해, 이미 있는 루틴과 같은 색이 새 루틴에 붙는다. 이 항목은 겹치지 않게 색을 붙이고, 사용자가 루틴 색을 직접 바꿀 수 있게 한다.",
           "stage": null,
-          "pr": null
+          "pr": null,
+          "files": [
+            "src/domain/routines.js#nextColor",
+            "src/usecases/routineCommands.js",
+            "src/usecases/store.js",
+            "src/ui/routineListView.js",
+            "src/app/main.js",
+            "src/domain/categories.js",
+            "tests/unit/domain.test.mjs",
+            "docs/deviations.md",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-34.md"
         },
         {
           "id": "RM-35",
@@ -717,12 +1326,27 @@
           "tags": [
             "D"
           ],
-          "what": "동작 하나 옮길 때마다 보드 전체를 다시 그리는 것을 부분 렌더로 바꿀지 먼저 잰다. 느리지 않으면 전체 렌더를 규칙으로 못 박는다.",
+          "what": "동작 하나를 옮기거나 복사할 때마다 안무표의 모든 마디를 지우고 다시 그린다. 되돌리기용 스냅샷도 매번 안무표 전체를 글자로 바꿔 쌓는다. 이 항목은 먼저 큰 안무표(64마디 × 3층 × 동작 300개)에서 이 일이 실제로 느린지 잰다. 느리면 바뀐 마디만 다시 그리게 고치고, 느리지 않으면 「보드는 전부 다시 그린다」를 규칙으로 못 박아 반년째 이어진 갈팡질팡을 끝낸다.",
           "stage": null,
           "pr": null,
           "flags": [
             "measure"
-          ]
+          ],
+          "files": [
+            "src/domain/boardOps.js",
+            "src/usecases/boardCommands.js",
+            "src/app/render.js",
+            "src/ui/boardView.js#renderRows",
+            "src/domain/project/snapshot.js",
+            "src/usecases/historyCommands.js#commit",
+            "src/domain/lanes.js",
+            "tests/golden/placement-algorithms.json",
+            "docs/PRINCIPLES.md",
+            "docs/BUG_REPORTS.md",
+            "docs/deviations.md",
+            "docs/roadmap/plans/RM-35.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-35.md"
         }
       ]
     }
