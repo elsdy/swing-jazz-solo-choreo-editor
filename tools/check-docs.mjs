@@ -22,6 +22,9 @@ const NOT_APP_DOCS = [
   /^node_modules\//,
   /^tests\//,
   /^\.claude\//,
+  // 로드맵 보드(~/Github/roadmap-board)가 만들고 읽는 항목별 계획서 — 앱의 문서 허브가 아니라 보드의 항목 자세히와
+  // 떠 있는 위젯(`🧭 로드맵`)에서 읽는다. 35개가 등록부에 한 줄씩 들어오면 문서 목록이 계획서로 덮인다(2026-09-29)
+  /^docs\/roadmap\/plans\//,
 ];
 
 function walkMarkdown(dir, acc = []) {
