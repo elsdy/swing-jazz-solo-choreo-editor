@@ -57,13 +57,16 @@ export const MOVE_POLICY = Object.freeze({
 
 /**
  * copyPlacementGroup(3673-3704)의 규칙.
- * ⚠ repack:false 는 오타가 아니라 **보존 대상 결함**이다(FINAL-architecture.md §5 #2, 골든 copy-05-no-repack).
- * 이동은 repack 하는데 복사만 하지 않아 복사 후 빈 레인 0 이 그대로 남는다.
+ * 2026-09-29 에 repack 을 true 로 뒤집어 **원본과 다른 동작**이 됐다(RM-02). 원본은 이동은 repack 하는데
+ * 복사만 하지 않아, 붙여 넣은 행에 겹침이 사라진 뒤 위층에 혼자 남은 블록이 그대로 떠 있었다. 2026-09-23 결정
+ * D-1(「겹침이 사라지면 층은 즉시 위로 당긴다」)에 맞춰 놓기·이동·삭제·늘이기와 같은 규칙이 됐다.
+ * 다시 채우는 것은 **붙여 넣은 행**뿐이다 — 원본 행은 바뀌지 않았으므로 건드리지 않는다.
+ * 골든: copy-06-repack-target-row(차이) · copy-05-source-row-untouched(원본 행). meta.intentionalChanges 참조.
  * @see index.html:3673
  */
 export const COPY_POLICY = Object.freeze({
   clamp: true,          // 3676
-  repack: false,        // ⚠ 결함 보존
+  repack: true,         // 2026-09-29 — 원본은 false(RM-02)
   renderAllRows: true   // 3700-3703
 });
 

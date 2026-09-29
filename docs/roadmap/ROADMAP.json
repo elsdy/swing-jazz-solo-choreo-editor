@@ -177,8 +177,10 @@
             "B"
           ],
           "what": "Alt를 누른 채 블록을 끌어 복사해 넣었을 때도, 그 행에 겹침이 사라져 아래층에 혼자 떠 있던 블록을 위로 끌어올려 행을 한 줄로 줄인다. 놓기·이동·삭제·늘이기는 이미 그렇게 하는데 복사만 빠져 있어서, 같은 결과를 내는 두 조작이 서로 다른 화면을 남겼다. 2026-09-23 결정(D-1, 「층은 뜻이 없는 자리이니 겹침이 사라지면 곧바로 당긴다」)을 복사에도 맞추는 작은 고침이다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 32,
+          "startedAt": "2026-09-29",
+          "mergedAt": "2026-09-29",
           "files": [
             "src/domain/boardOps.js#COPY_POLICY",
             "src/usecases/boardCommands.js#copyGroupTo",
