@@ -924,6 +924,15 @@ test('boardOps: 네 조작의 정책이 모두 겹친 그룹을 보존한다(D-2
   assert.equal(Object.hasOwn(RESIZE_POLICY, 'keepLane'), true, 'RESIZE_POLICY 에서 keepLane 키가 사라졌다');
 });
 
+test('boardOps: 기존 블록을 움직이는 세 조작(이동·복사·늘이기)이 모두 층을 다시 채운다(D-2, RM-02)', () => {
+  // 2026-09-23 결정 D-1 — 겹침이 사라지면 층은 곧바로 위로 당긴다. 복사만 이 스위치가 꺼져 있었는데(원본 그대로)
+  // 골든은 하나도 깨지지 않았다 — 행동만 보는 시험은 빈 행에 복사하는 경우만 있어 차이를 못 봤다. 그래서 선언을 직접 읽는다.
+  // ⚠ 목록에서 새로 놓기(PLACE_POLICY)는 아직 꺼져 있다 — RM-02 계획서 「갈리는 대목」, 따로 정한다.
+  for (const [name, policy] of [['MOVE', MOVE_POLICY], ['COPY', COPY_POLICY], ['RESIZE', RESIZE_POLICY]]) {
+    assert.equal(policy.repack, true, `${name}_POLICY 가 층을 다시 채우지 않는다 — 그 조작만 위층에 떠 있는 블록을 남긴다`);
+  }
+});
+
 /**
  * 같은 보드·같은 겹침을 네 조작으로 만들면 **같은 레인**이 나온다.
  * 블로커 B 가 row1 [2..5] lane0 에 있고, 네 조작 모두 row1 [0..3] 을 차지하려 한다 — 2·3 에서 겹친다.
