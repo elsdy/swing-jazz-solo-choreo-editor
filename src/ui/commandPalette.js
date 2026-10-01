@@ -202,7 +202,7 @@ export function createCommandPalette(deps) {
     const foot = doc.createElement('div');
     foot.className = 'shortcut-sheet-foot';
     const note = doc.createElement('small');
-    note.textContent = '글자를 치는 중(이름칸 · 검색창)에는 홑글쇠가 먹지 않습니다. 글쇠는 설정에서 바꿉니다.';
+    note.textContent = '글자를 치는 중(이름칸 · 검색창)에는 Escape · Ctrl+K · Ctrl+S 만 먹습니다 — 화살표 · Delete · Ctrl+Z 는 글자 편집입니다. 글쇠는 설정에서 바꿉니다.';
     const toSettings = doc.createElement('button');
     toSettings.type = 'button';
     toSettings.className = 'ghost';

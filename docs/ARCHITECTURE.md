@@ -223,7 +223,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `grid.js` | 격자 기하와 카운트 축. `rowIndices` `totalCellsFrom` `buildSegments` `clampToGrid` |
 | `lanes.js` | `subRow`(레인) 규칙 전담. `overlaps` `findFreeLane` `clearSegmentsArea` `repackLanes`. `clearSegmentsArea` 는 2026-09-07 이후 운영 경로에서 호출되지 않는다 — 정책 플래그로만 살아나는 가지이고 골든 `clear-*` 가 직접 검사한다 |
 | `placements.js` | placement 질의와 생성. `makeSegmentPlacements` 가 키 순서를 고정하는 유일한 팩토리 |
-| `boardOps.js` | 배치 전이 6개(놓기·루틴 블록·이동·복사·리사이즈·삭제)와 그 정책 상수 |
+| `boardOps.js` | 배치 전이 7개(놓기·루틴 블록·이동·복사·리사이즈·삭제, 그리고 값으로 붙이는 `pasteBlock` — 2026-10-01 RM-13, `copyGroup` 과 같은 규칙)와 그 정책 상수 |
 | `categories.js` | 카테고리 사전 트랜잭션과 색 판정. `deriveKey` `resolvePlacementColor` `textColorOn` `contrastRatio` `darken` |
 | `moves.js` | 동작 라이브러리 트랜잭션과 팔레트 검색·정렬 파이프라인 |
 | `routines.js` | 루틴 값 객체와 변환. `buildFromSelection` `redistributeBlocks` |
@@ -231,6 +231,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `boardGesture.js` | 보드 위 그리기·빠른 배치·더블탭의 **전이 함수**(2026-10-01, RM-08). `(상태, 이벤트, env) → (다음 상태, 할 일 목록)` 꼴이고 `input/boardController` 는 이벤트를 값으로 바꿔 넘긴 뒤 할 일을 차례대로 실행할 뿐이다. 측정(사각형 재기·포인터 밑 찾기)은 env 의 함수로 받아 원본이 부르던 그 자리에서만 부른다. 마우스와 터치의 다른 규칙이 그대로 들어 있다 — 시험은 `tests/unit/boardGesture.test.mjs` |
 | `popupPlacement.js` | 떠 있는 창 넷(빠른 배치 팝업 · 블록 동작 팝업 · 루틴 블록 팝업 · 동작 메뉴)의 자리 산술(2026-10-01, RM-08). 넷은 일부러 다르다 — **합치지 않고** 따로 떼어 지금 값을 시험에 굳혔다. 크기를 재는 일과 한 프레임 기다리는 순서는 화면 쪽에 남는다 |
 | `commands.js` | **명령 등록부**(2026-10-01, RM-09). 명령마다 한 줄 — id · 라벨 · 설명 · 기본 글쇠 · 버튼 글자 · 툴팁 몸말 · 글자를 치는 중에도 듣는가(`whileTyping`). 실행 함수는 없다 — 실행은 `app/main` 의 `COMMAND_RUNNERS` 가 같은 id 로 잇는다. id 는 바꾼 글쇠가 저장되는 이름이라 바꾸지 않는다 |
+| `keyboardEdit.js` | 키보드 편집의 **자리 계산**(2026-10-01, RM-13). 화살표 한 칸 · 한 행 · 한 마디의 목표 자리(`shiftedStart` — 표 끝에서 잘리기 전에 null), 고른 묶음의 이동 계획(`planNudge` — 하나라도 못 가면 null), 붙일 자리(`cellAfter`), 담기(`clipOf` — 이름 · 길이 · 서로의 간격)와 붙이기 계획(`pastePlan`). 옮기기 · 붙이기 자체는 `boardOps` 의 `moveGroup` · `pasteBlock`(= `copyGroup` 과 같은 규칙)이 한다 — 끌기와 층 규칙이 갈라지지 않게 |
 | `hotkeys.js` | 단축키 규칙. 단축키 표(`HOTKEY_ACTIONS`)는 등록부에서 글쇠가 있는 줄을 고른 것이다. 글쇠 이름 정규화 · 사용자가 바꾼 표의 정규화 · 충돌(한 글쇠는 한 명령) · 눌린 글쇠 → 명령(`commandForKey`) |
 | `links.js` | YouTube URL 정규화와 커스텀 링크 목록 규칙 |
 | `defaults.js` | 초기값만. `makeDefaultMoves(ids)` 가 uid 소비 순서를 결정적으로 만든다 |

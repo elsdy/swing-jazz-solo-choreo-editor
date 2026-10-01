@@ -8,9 +8,10 @@
 // DOM 조회도 렌더 호출도 한 줄 없다 — 무엇을 다시 그릴지는 Dirty 로 돌려준다.
 
 import * as boardOps from '../domain/boardOps.js';
+import { allGroupIds, cellAfter, clipOf, pastePlan, planNudge } from '../domain/keyboardEdit.js';
 import { clamp, clampToGrid, totalCellsFrom } from '../domain/grid.js';
 import { affectedRowsByGroup, getGroup, groupCount, nameGroup, shiftAllPlacements } from '../domain/placements.js';
-import { BOARD_MAIN, BOARD_ROUTINE, NONE, boardOf, mergeDirty } from './store.js';
+import { BOARD_MAIN, BOARD_ROUTINE, NONE, boardOf, mergeDirty, notice } from './store.js';
 import { clearLinks } from './linkCommands.js';
 import { clearMedia } from './videoCommands.js';
 
@@ -492,4 +493,129 @@ export function shiftAllCounts(store, args, deps = {}) {
   store.setBoard(boardId, { placements: next });
   // 전부 옮겼으니 전 행을 다시 그린다 — 어느 행이 바뀌었는지 세는 것보다 싸고 틀릴 여지가 없다.
   return { boards: { [boardId]: { rows: 'all' } }, moved: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 키보드 편집 (2026-10-01, RM-13) — 고른 블록을 화살표로 옮기고, 지우고, 담고, 붙이고, 모두 고른다
+//
+// ⚠ 새 배치 규칙이 **없다.** 자리 계산은 domain/keyboardEdit 이 하고, 옮기기 · 지우기 · 붙이기는 끌기가
+//   쓰는 그 커맨드(moveGroupTo · removeGroup · boardOps.pasteBlock = copyGroup 과 같은 규칙)를 그대로 부른다.
+//   그래서 겹치면 아래 층으로 쌓이고, 겹침이 사라지면 층이 위로 당겨지는 것이 마우스와 같다(D-1 · D-2).
+// ⚠ 고르기는 메인 보드에만 있다(BOARD_POLICY.allowsSelection). 루틴 보드에서는 고른 것이 없으니 다섯 다
+//   아무 일도 하지 않는다 — 루틴 보드의 고르기는 RM-14 의 몫이다.
+// ⚠ 히스토리 커밋은 이 파일의 공통 규약대로 호출부(app/main)가 한다. 글쇠 한 번이 되돌리기 한 단계다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 이 보드에서 지금 고른 그룹 id — 보드 위에 실제로 있는 것만. */
+function selectedOn(store, boardId) {
+  if (!store.policy(boardId).allowsSelection) return [];
+  const state = store.get();
+  const present = new Set(boardOf(state, boardId).placements.map(p => p.groupId));
+  return [...state.selection].filter(id => present.has(id));
+}
+
+/**
+ * 고른 블록을 delta 카운트만큼 옮긴다(←/→ ±1 · ↑/↓ ±행 · Shift+←/→ ±8).
+ * ⚠ 하나라도 표 밖이나 잘릴 자리로 가면 **아무것도 옮기지 않는다**(keyboardEdit.planNudge).
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', delta:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty — 고른 것이 없으면 NONE, 막혔으면 notify 만
+ */
+export function nudgeSelection(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, delta } = args;
+  const picked = selectedOn(store, boardId);
+  if (!picked.length || !delta) return NONE;
+  const plan = planNudge(boardOf(store.get(), boardId), picked, delta);
+  if (!plan) return { notify: notice('status', '표 끝이라 더 옮기지 않았습니다.') };
+  let dirty = NONE;
+  for (const step of plan) {
+    dirty = mergeDirty(dirty, moveGroupTo(store, { boardId, groupId: step.groupId, targetRow: step.row, targetStartIndex: step.startIndex }, deps));
+  }
+  return dirty;
+}
+
+/**
+ * 고른 블록을 모두 지운다(Delete · Backspace). 지운 것은 고른 목록에서도 빠진다(removeGroup 이 한다, D-16).
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine' }} args
+ * @returns {object} Dirty — 고른 것이 없으면 NONE
+ */
+export function removeSelection(store, args = {}) {
+  const { boardId = BOARD_MAIN } = args;
+  let dirty = NONE;
+  for (const groupId of selectedOn(store, boardId)) dirty = mergeDirty(dirty, removeGroup(store, { boardId, groupId }));
+  return dirty;
+}
+
+/**
+ * 고른 블록을 담는다(Ctrl+C). 상태를 바꾸지 않고 담을 값만 돌려준다 — 담는 자리는 조립 층이 쥔다.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine' }} args
+ * @returns {import('../domain/keyboardEdit.js').ClipBlock[]} 고른 것이 없으면 빈 배열
+ */
+export function copySelection(store, args = {}) {
+  const { boardId = BOARD_MAIN } = args;
+  return clipOf(boardOf(store.get(), boardId), selectedOn(store, boardId));
+}
+
+/**
+ * 붙일 자리 — 고른 블록 바로 뒤, 고른 것이 없으면 마지막으로 누른 빈 칸(`fallback`). 둘 다 없으면 null.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', fallback?:{row:number, startIndex:number}|null }} args
+ * @returns {{row:number, startIndex:number}|null}
+ */
+export function pasteAnchor(store, args = {}) {
+  const { boardId = BOARD_MAIN, fallback = null } = args;
+  const picked = selectedOn(store, boardId);
+  if (picked.length) return cellAfter(boardOf(store.get(), boardId), picked);
+  return fallback || null;
+}
+
+/**
+ * 담아 둔 블록을 at 부터 붙인다(Ctrl+V · Ctrl+D 가 함께 쓴다). 붙인 블록이 새로 **고른 것**이 된다 —
+ * 한 번 더 누르면 그 뒤에 또 붙는다.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', clip:import('../domain/keyboardEdit.js').ClipBlock[], at:{row:number, startIndex:number}|null }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+export function pasteClip(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, clip, at } = args;
+  if (!Array.isArray(clip) || !clip.length) return NONE;
+  if (!at) return { notify: notice('status', '붙일 자리가 없습니다. 블록이나 빈 칸을 누른 뒤 다시 붙여 넣으세요.') };
+  const plan = pastePlan(boardOf(store.get(), boardId), clip, at);
+  if (!plan.length) return { notify: notice('status', '표 끝이라 붙이지 않았습니다.') };
+  let dirty = NONE;
+  const pasted = [];
+  for (const step of plan) {
+    const result = boardOps.pasteBlock(boardOf(store.get(), boardId), { block: step.block, targetRow: step.row, targetStartIndex: step.startIndex }, deps.ids);
+    const applied = applyBoardResult(store, boardId, result);
+    if (!applied) continue;
+    pasted.push(result.groupId);
+    dirty = mergeDirty(dirty, applied);
+  }
+  if (pasted.length && store.policy(boardId).allowsSelection) {
+    store.update({ selection: new Set(pasted) });
+    dirty = mergeDirty(dirty, { selection: true, toolbar: true });
+  }
+  // 묶음의 뒤쪽이 표 밖으로 나가 빠졌으면 말한다 — 말없이 빠지면 둘을 붙였는데 하나만 보인다.
+  const dropped = clip.length - pasted.length;
+  if (pasted.length && dropped > 0) dirty = mergeDirty(dirty, { notify: notice('status', `표 끝을 넘는 ${dropped}개는 붙이지 않았습니다.`) });
+  return dirty;
+}
+
+/**
+ * 이 보드의 블록을 모두 고른다(Ctrl+A). 루틴 보드는 고르기가 없어 NONE.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine' }} args
+ * @returns {object} Dirty
+ */
+export function selectAll(store, args = {}) {
+  const { boardId = BOARD_MAIN } = args;
+  if (!store.policy(boardId).allowsSelection) return NONE;
+  const ids = allGroupIds(boardOf(store.get(), boardId));
+  if (!ids.length) return NONE;
+  store.update({ selection: new Set(ids) });
+  return { selection: true, toolbar: true };
 }

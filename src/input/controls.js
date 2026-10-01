@@ -231,7 +231,10 @@ export function bindControls(deps) {
   //   아니다) 등록 순서가 결과를 바꾸지 않는다 — 여기에 두어도 동작이 같다.
   if (els.mainBoardEl) {
     els.mainBoardEl.addEventListener('click', (e) => {
-      if (!e.target.closest(SEL.placement)) apply(commands.clearSelection());
+      if (e.target.closest(SEL.placement)) return;
+      apply(commands.clearSelection());
+      // 붙여넣기(Ctrl+V)가 고른 블록이 없을 때 놓일 자리 — 마지막으로 누른 빈 칸(RM-13). 칸 계산은 조립 층이 한다.
+      if (typeof deps.rememberCell === 'function') deps.rememberCell(e.clientX, e.clientY);
     });
   }
 
@@ -263,6 +266,9 @@ export function bindCommandButtons(deps) {
   });
 }
 
+/** 재생기(`<video>` · `<audio>`)가 포커스를 쥐었을 때 그쪽에 양보하는 화살표. */
+const PLAYER_KEYS = Object.freeze(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Shift+ArrowLeft', 'Shift+ArrowRight']);
+
 /**
  * 전역 단축키. 원본 onHotkey(2820-2831) + bindControls 의 등록(2380).
  *
@@ -271,12 +277,11 @@ export function bindCommandButtons(deps) {
  * Undo/Redo 가 여기 박혀 있었고, 바꿀 수 있는 글쇠는 `HOTKEY_COMMANDS` 라는 셋째 표를 거쳐 파사드의 이름을
  * 찾았다 — 이름 하나가 빠지면 그 글쇠가 말없이 죽었다(원칙 D-14).
  *
- * ⚠ 보존 대상 결함 #11 두 가지를 그대로 둔다:
- *   1) 입력 필드 가드가 없다 — <input> 안에서 Ctrl+Z 를 눌러도 보드가 undo 된다. 등록부의 `whileTyping` 이
- *      그 자리다(undo · redo · stop 만 참).
- *   2) 언제나 메인 보드다 — 루틴 편집기가 열려 있어도 단축키가 루틴 히스토리에 가지 않는다.
- *      activeBoardId 를 인자로 받되 **기본값이 () => 'main'** 이라 오늘 동작이 유지된다
- *      (HOTKEY_ACTIVE_BOARD 플래그를 켜는 날 이 함수만 바꾸면 된다).
+ * ⚠ 예전에 일부러 두고 온 결함(#11) 둘을 2026-10-01(RM-13)에 고쳤다:
+ *   1) 입력 필드 가드 — <input> 안에서 Ctrl+Z 를 누르면 보드가 아니라 글자가 되돌아간다. 등록부의 `whileTyping`
+ *      이 그 자리다(`stop` 과 화면을 여는 조합 글쇠만 참).
+ *   2) 활성 보드 — 루틴 편집기가 열려 있으면 단축키가 루틴 보드로 간다. 무엇이 활성인지는 조립 층이
+ *      activeBoardId 로 알려 준다(기본값 () => 'main' 은 시험 · 조립 전용).
  * ⚠ 홑글쇠(`B`·`K`·`N`·`Space`)는 **입력 필드 안에서는 듣지 않는다** — 가드가 없으면 동작 이름을 타이핑하는
  *   동안 블록이 쌓인다.
  * ⚠ 실행기가 참을 돌려주면 기본 동작을 막는다. `Escape`(stop)는 언제나 거짓이다 — 예전에도 막지 않았다.
@@ -308,12 +313,13 @@ export function bindHotkeys(deps) {
    * ⚠ 그래서 재생기가 포커스를 쥐고 있으면 **우리는 비킨다.** 글쇠 하나에 주인은 하나다.
    *   막지도 않는다(preventDefault 없음) — 막으면 재생기 쪽 처리까지 취소되어 진짜로 아무 일도
    *   일어나지 않는다.
-   * ⚠ 재생/일시정지에만 해당한다. `B`·`K`·`N` 은 재생기가 쓰지 않는 글쇠라 그대로 우리 것이다.
+   * ⚠ 재생/일시정지와 화살표에만 해당한다. `B`·`K`·`N` 은 재생기가 쓰지 않는 글쇠라 그대로 우리 것이다.
    * @param {EventTarget|null} target
    * @param {string} pressed normalizeKey 를 거친 이름
    */
   const playerOwnsKey = (target, pressed) => {
-    if (pressed !== 'Space') return false;
+    // 화살표도 재생기가 쥐면 되감기 · 소리 크기다(RM-13) — 고른 블록이 있어도 비킨다.
+    if (pressed !== 'Space' && !PLAYER_KEYS.includes(pressed)) return false;
     const tag = target && target.tagName;
     return tag === 'VIDEO' || tag === 'AUDIO';
   };

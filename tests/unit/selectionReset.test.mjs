@@ -59,6 +59,13 @@ test('안무표만 비우기 뒤 고른 목록이 빈다', () => {
   assertCleared(store, Board.clearPlacements(store), '안무표만 비우기');
 });
 
+test('키보드 Delete(고른 블록 지우기) 뒤 고른 목록이 빈다 (RM-13)', () => {
+  const store = twoSelected();
+  const dirty = Board.removeSelection(store, { boardId: BOARD_MAIN });
+  assert.equal(store.get().boards[BOARD_MAIN].placements.length, 0, '준비: 둘 다 지웠다');
+  assertCleared(store, dirty, '키보드 Delete');
+});
+
 test('파일에서 전체 불러오기 뒤 고른 목록이 빈다', () => {
   const store = twoSelected();
   const dirty = Project.loadProjectFromFile(deps(store), { data: structuredClone(OTHER), fileName: '다른 안무.json' });

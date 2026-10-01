@@ -4571,6 +4571,10 @@ test('normalizeKey: 같은 조합은 언제나 같은 이름이 된다', () => {
 
   // Shift 는 **조합으로만** 센다 — 대문자로 친 사람이 아무것도 못 누르면 안 된다.
   assert.equal(normalizeKey({ key: 'B', shift: true }), 'B');
+  // 화살표만은 Shift 홀로도 센다 — Shift+← 는 한 마디 이동이다(RM-13)
+  assert.equal(normalizeKey({ key: 'ArrowLeft', shift: true }), 'Shift+ArrowLeft');
+  assert.equal(normalizeKey({ key: 'ArrowLeft' }), 'ArrowLeft');
+  assert.equal(normalizeKey({ key: 'Escape', shift: true }), 'Escape', '화살표 밖의 이름 글쇠는 그대로');
   assert.equal(normalizeKey({ key: '' }), '');
 
   // eventKey 는 KeyboardEvent 모양을 그대로 받는 껍질이다.
@@ -4648,7 +4652,8 @@ test('단축키 표: 바꿀 수 있는 것과 기본 글쇠', () => {
   // 기본 재생 글쇠는 스페이스다(2026-09-20 에 P 에서 바꿨다 — 사용자 요청).
   assert.deepEqual(DEFAULT_HOTKEYS.play, ['Space']);
   // 명령 팔레트 · 단축키 일람(RM-09)도 바꿀 수 있다 — 글쇠를 비우면 그 화면은 버튼 · 팔레트로만 열린다.
-  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play', 'palette', 'shortcuts']);
+  // 키보드 편집(RM-13)에서는 복제(Ctrl+D)와 저장(Ctrl+S)만 바꿀 수 있다 — 둘 다 브라우저가 따로 쓰는 글쇠다.
+  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play', 'duplicate', 'palette', 'shortcuts', 'saveProject']);
   assert.equal(HOTKEY_ACTIONS.every(a => a.keys.length > 0), true, '글쇠 없는 동작을 두지 않는다');
   assert.equal(keysLabel(['B', 'K']), 'B · K');
   assert.equal(keysLabel([]), '없음');
@@ -4681,11 +4686,14 @@ test('commandForKey: 글쇠 → 명령, 글자를 치는 중에는 whileTyping �
   assert.equal(commandForKey(map, 'Cmd+Y').id, 'redo');
   assert.equal(commandForKey(map, 'Q'), null);
   assert.equal(commandForKey(map, ''), null);
-  // 입력칸 안 — 홑글쇠는 듣지 않고 Escape · Ctrl 조합은 듣는다(보존 결함 #11)
+  // 입력칸 안 — 홑글쇠는 듣지 않고 Escape 는 듣는다
   assert.equal(commandForKey(map, 'B', true), null);
   assert.equal(commandForKey(map, 'Space', true), null);
   assert.equal(commandForKey(map, 'Escape', true).id, 'stop');
-  assert.equal(commandForKey(map, 'Ctrl+Z', true).id, 'undo');
+  // 입력칸 안의 Ctrl+Z 는 글자를 되돌린다 — 안무표가 아니다(2026-10-01 RM-13, 옛 결함 #11)
+  assert.equal(commandForKey(map, 'Ctrl+Z', true), null, '이름칸의 Ctrl+Z 가 안무표를 되돌린다');
+  assert.equal(commandForKey(map, 'Cmd+Shift+Z', true), null);
+  assert.equal(commandForKey(map, 'Ctrl+Z', false).id, 'undo');
   // 팔레트는 이름칸에 글을 치다가도 열리고(조합 글쇠), 일람의 `?` 는 글자를 칠 때 먹지 않는다
   assert.equal(commandForKey(map, 'Ctrl+K', true).id, 'palette');
   assert.equal(commandForKey(map, 'Cmd+K').id, 'palette');
