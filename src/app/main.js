@@ -20,7 +20,7 @@
 
 import { createRenderer } from './render.js';
 
-import { createStore, mergeDirty, NONE, BOARD_MAIN, BOARD_ROUTINE } from '../usecases/store.js';
+import { createStore, mergeDirty, notice, NONE, BOARD_MAIN, BOARD_ROUTINE } from '../usecases/store.js';
 import * as History from '../usecases/historyCommands.js';
 import * as BoardCmd from '../usecases/boardCommands.js';
 import * as PaletteCmd from '../usecases/paletteCommands.js';
@@ -191,7 +191,10 @@ const render = (dirty, opts) => {
   saveDraftSoon();
 };
 
-/** alert 는 언제나 렌더 뒤다(app/render 의 마지막 단계). */
+/**
+ * 알림은 언제나 렌더 뒤다(app/render 의 마지막 단계). 급(block·toast·status)은 유스케이스가 정하고
+ * 어디에 띄울지는 여기서 정한다(RM-04).
+ */
 views.notify = (n) => browserDialogs.alert(n.message);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -199,7 +202,7 @@ views.notify = (n) => browserDialogs.alert(n.message);
 // ─────────────────────────────────────────────────────────────────────────────
 
 const paletteCtx = { store, dialogs: browserDialogs, ids: browserEnv, storage: { saveFavorites } };
-const categoryCtx = { store, dialogs: browserDialogs, storage: { saveFavorites } };
+const categoryCtx = { store, storage: { saveFavorites } };
 const linkCtx = { store, ids: browserEnv, storage };
 
 /**
@@ -434,7 +437,6 @@ views.category = createCategoryView({
   store,
   render,
   commit: (boardId) => commitHistory(boardId),
-  dialogs: browserDialogs,
   commands: {
     previewColor: (key, color) => CategoryCmd.previewColor(categoryCtx, key, color),
     commitColor: () => CategoryCmd.commitColor(categoryCtx),          // ⚠ 인자 없이 부른다
@@ -494,7 +496,7 @@ function openFromFolder(data, item, run) {
   const name = item && item.fileName;
   if (!name) return undefined;
   projectServer.read(name).then((payload) => {
-    if (!payload) { browserDialogs.alert(`보관 폴더에서 '${name}' 을 읽지 못했습니다.`); return; }
+    if (!payload) { render({ notify: notice('toast', `보관 폴더에서 '${name}' 을 읽지 못했습니다.`) }); return; }
     render(run(projectDeps, payload));
     openLinksIfAny(undefined);
     // 폴더에서 **연** 것은 그 파일이 곧 지금 보는 문서다 — 자동 담기를 거기로 돌린다(2026-09-22).
@@ -726,7 +728,6 @@ bindControls({
   render,
   confirmOnce,
   fileIO: browserFileIO,
-  dialogs: browserDialogs,
   // ⚠ 게터다 — 설정에서 바꾸면 다음 입력부터 바로 들어야 한다(값으로 주면 묶은 시점에 갇힌다).
   hotkeys: () => hotkeyMap,
   commands: {

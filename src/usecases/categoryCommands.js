@@ -5,7 +5,7 @@
 // (showCategoryScreen 2113-2121 / showReCategoryScreen 5013-5022, 글자 단위로 같다)을 옮겼다.
 // DOM 과 render*() 호출은 전부 걷어내고 Dirty 를 돌려준다.
 
-import { NONE, boardOf, BOARD_MAIN, BOARD_ROUTINE } from './store.js';
+import { NONE, boardOf, BOARD_MAIN, BOARD_ROUTINE, notice } from './store.js';
 import * as Categories from '../domain/categories.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ import * as Categories from '../domain/categories.js';
 /**
  * @typedef {Object} CategoryCtx
  * @property {ReturnType<import('./store.js').createStore>} store
- * @property {import('../ports/env.js').Dialogs} dialogs  alert 만 쓴다
+ * @property {object} [dialogs]  ⚠ RM-04 부터 쓰지 않는다 — 거부 사유는 Dirty.notify 로 돌려준다
  * @property {{ saveFavorites?: (fav:{moveNames:string[],categories:string[]}) => unknown }} [storage]
  *   ⚠ paletteCommands 와 **같은 함수**를 넘겨라. 원본 saveFavorites(4227-4230)는 두 키를 함께 쓴다.
  */
@@ -167,8 +167,7 @@ export function removeCategory(ctx, key) {
     key
   );
   if (!res.ok) {
-    ctx.dialogs.alert('카테고리는 최소 1개 이상 있어야 합니다.');   // 3012
-    return NONE;
+    return { notify: notice('toast', '카테고리는 최소 1개 이상 있어야 합니다.') };   // 3012
   }
   ctx.store.update({ categories: res.categories, library: res.moveLibrary });   // 3014·3016
   ctx.store.setBoard(BOARD_MAIN, { placements: res.placements });               // 3015

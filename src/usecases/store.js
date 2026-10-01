@@ -61,9 +61,36 @@ export const BOARD_POLICY = Object.freeze({
  *   routineList?: true, routineEditor?: true,
  *   savedLists?: ('projects'|'moves'|'categories')[],
  *   links?: true, toolbar?: true, history?: true, video?: true,
- *   notify?: { kind:'alert', message:string }
+ *   notify?: Notice
  * }} Dirty
  */
+
+/**
+ * 알림 한 건(RM-04). 유스케이스는 **급과 문구만** 돌려주고, 어디에 어떻게 띄울지는 조립부(app/main)가 정한다.
+ *   block  — 작업을 멈춰야 하는 오류. 앱 안 모달로 막는다(파일이 깨져 불러오기를 못 할 때).
+ *   toast  — 알아야 할 실패나 되돌릴 수 있는 일. 화면 구석에 잠깐 떴다 저절로 사라진다.
+ *   status — 참고할 소식(병합 완료 등). 상태줄 자리(RM-19)가 서기 전까지는 토스트로 대신 뜬다.
+ * action 은 토스트에 버튼 하나를 단다. 값만 싣는다(함수를 싣지 않는다) — 무엇을 부를지는 조립부가 안다.
+ * @typedef {{
+ *   kind: 'block'|'toast'|'status',
+ *   message: string,
+ *   action?: { label: string, command: 'undo', boardId: 'main'|'routine' }
+ * }} Notice
+ */
+
+/** 알림의 급. 순서는 무겁기 순이다. */
+export const NOTICE_KINDS = Object.freeze(['block', 'toast', 'status']);
+
+/**
+ * 알림 하나를 만든다. 유스케이스가 `{ notify: notice('toast', '…') }` 로 쓴다.
+ * @param {'block'|'toast'|'status'} kind
+ * @param {string} message
+ * @param {Notice['action']} [action]
+ * @returns {Notice}
+ */
+export function notice(kind, message, action) {
+  return action ? { kind, message, action: { ...action } } : { kind, message };
+}
 
 /** 아무것도 다시 그릴 것이 없다. 커맨드가 무동작일 때 이걸 돌려준다. */
 export const NONE = Object.freeze({});
@@ -148,7 +175,7 @@ export function mergeDirty(a, b) {
   const savedLists = mergeSavedLists(left.savedLists, right.savedLists);
   if (savedLists !== undefined) out.savedLists = savedLists;
   const notify = right.notify !== undefined ? right.notify : left.notify;
-  if (notify !== undefined) out.notify = { ...notify };
+  if (notify !== undefined) out.notify = notify.action ? { ...notify, action: { ...notify.action } } : { ...notify };
   return out;
 }
 
@@ -190,8 +217,17 @@ export function assertDirty(d, label = 'Dirty') {
   }
   if (d.notify !== undefined) {
     if (typeof d.notify !== 'object' || d.notify === null) throw new TypeError(`${label}.notify: 객체여야 한다`);
-    if (d.notify.kind !== 'alert') throw new TypeError(`${label}.notify.kind: 'alert' 만 지원한다`);
+    if (!NOTICE_KINDS.includes(d.notify.kind)) {
+      throw new TypeError(`${label}.notify.kind: ${NOTICE_KINDS.join('·')} 중 하나여야 한다`);
+    }
     if (typeof d.notify.message !== 'string') throw new TypeError(`${label}.notify.message: 문자열이어야 한다`);
+    const a = d.notify.action;
+    if (a !== undefined) {
+      if (typeof a !== 'object' || a === null) throw new TypeError(`${label}.notify.action: 객체여야 한다`);
+      if (typeof a.label !== 'string') throw new TypeError(`${label}.notify.action.label: 문자열이어야 한다`);
+      if (a.command !== 'undo') throw new TypeError(`${label}.notify.action.command: 'undo' 만 지원한다`);
+      if (!BOARD_IDS.includes(a.boardId)) throw new TypeError(`${label}.notify.action.boardId: 알 수 없는 보드`);
+    }
   }
   return d;
 }

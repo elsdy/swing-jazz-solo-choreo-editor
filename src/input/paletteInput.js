@@ -50,7 +50,8 @@ export function createPaletteInput(deps) {
   const defaultCount = () => store.get().session.defaultCount;
   const apply = (dirty) => { if (dirty) render(dirty); };
   /** 커맨드가 실제로 무언가를 바꿨는가(NONE 은 빈 객체다). 원본의 조기 반환 = 히스토리 미커밋. */
-  const changed = (dirty) => !!dirty && Object.keys(dirty).length > 0;
+  //   ⚠ notify(알림만 싣고 돌아온 실패)는 세지 않는다(RM-04).
+  const changed = (dirty) => !!dirty && Object.keys(dirty).some(k => k !== 'notify');
 
   /**
    * 카드의 드래그 입력. 원본 buildCard 의 dragstart(3079-3088)·dragend(3089-3096) +

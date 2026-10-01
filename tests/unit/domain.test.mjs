@@ -317,8 +317,9 @@ const DIRTY_SAMPLES = [
   { boards: { main: { rows: 'all' }, routine: { skeleton: true } } },
   { boards: { routine: { rows: [3] } }, savedLists: ['moves'] },
   { savedLists: ['projects', 'moves'], history: true },
-  { notify: { kind: 'alert', message: '첫 번째' } },
-  { notify: { kind: 'alert', message: '두 번째' }, toolbar: true }
+  { notify: { kind: 'toast', message: '첫 번째' } },
+  { notify: { kind: 'status', message: '두 번째' }, toolbar: true },
+  { notify: { kind: 'toast', message: '지웠습니다', action: { label: '되돌리기', command: 'undo', boardId: 'main' } } }
 ];
 
 test('store: mergeDirty 는 결합법칙을 지킨다', () => {
@@ -368,8 +369,8 @@ test('store: mergeDirty 의 savedLists 는 합집합, notify 는 나중 것이 �
     ['projects', 'moves', 'categories']
   );
   const merged = mergeDirty(
-    { notify: { kind: 'alert', message: '첫 번째' } },
-    { notify: { kind: 'alert', message: '두 번째' } }
+    { notify: { kind: 'block', message: '첫 번째' } },
+    { notify: { kind: 'toast', message: '두 번째' } }
   );
   assert.equal(merged.notify.message, '두 번째');
   assert.deepEqual(mergeDirty(NONE, NONE), {});
@@ -5320,7 +5321,7 @@ test('미래 스키마 파일은 열지 않고 왜인지 말한다', () => {
 
   for (const run of [ProjectCmd.loadProjectFromRecent, ProjectCmd.mergeProjectFromRecent]) {
     const dirty = run(deps, future);
-    assert.equal(dirty.notify.kind, 'alert');
+    assert.equal(dirty.notify.kind, 'block', '못 여는 파일은 막는 급이다(RM-04)');
     assert.match(dirty.notify.message, /더 새 판/, run.name);
     assert.equal(dirty.boards, undefined, `${run.name}: 열지 않아야 한다`);
   }

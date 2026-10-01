@@ -26,9 +26,12 @@ import { selectPaletteMoves } from '../domain/moves.js';
 /** 동작 CRUD 는 전부 메인 보드 스냅샷에 커밋된다(원본 saveHistory). */
 const MAIN = 'main';
 
-/** Dirty 가 '아무 일도 없었다'(store.NONE)인지. ui 는 usecases 를 import 할 수 없어 키 개수로 본다. */
+/**
+ * Dirty 가 '아무 일도 없었다'(store.NONE)가 아닌지. ui 는 usecases 를 import 할 수 없어 키로 본다.
+ * ⚠ notify 는 세지 않는다(RM-04) — 「이름을 비워둘 수 없습니다」처럼 알림만 싣고 돌아온 것은 바꾼 것이 아니다.
+ */
 function changed(dirty) {
-  return !!dirty && Object.keys(dirty).length > 0;
+  return !!dirty && Object.keys(dirty).some(k => k !== 'notify');
 }
 
 /**

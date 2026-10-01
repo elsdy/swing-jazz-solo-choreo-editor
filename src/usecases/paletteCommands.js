@@ -4,10 +4,10 @@
 // buildCard 의 카드 클릭/select/×/★ 핸들러(3067-3072·3120-3126·3134-3145·3147-3159) ·
 // openMoveContextMenu 의 카테고리 변경(3265-3281) · bindControls 의 검색·정렬 버튼(2304-2325) ·
 // cancelActivePaletteMove(2814-2818) · createAndPlaceQuickMove(2229-2241, 루틴판 5029-5035) 를 옮겼다.
-// DOM 접근과 render*() 호출은 전부 걷어내고 Dirty 를 돌려준다. prompt/alert 는 주입받은 Dialogs 로만 한다.
+// DOM 접근과 render*() 호출은 전부 걷어내고 Dirty 를 돌려준다. 거부 사유는 Dirty.notify(토스트)로 돌려준다(RM-04).
 
 import {
-  NONE, mergeDirty, boardOf, BOARD_MAIN
+  NONE, mergeDirty, boardOf, BOARD_MAIN, notice
 } from './store.js';
 import * as Moves from '../domain/moves.js';
 import * as BoardOps from '../domain/boardOps.js';
@@ -73,8 +73,7 @@ function persistFavorites(ctx) {
 export function addMove(ctx, rawName, category) {
   const name = String(rawName ?? '').trim();
   if (!name) {                                                  // 3993
-    ctx.dialogs.alert('동작 이름을 입력해 주세요.');
-    return NONE;
+    return { notify: notice('toast', '동작 이름을 입력해 주세요.') };
   }
   const state = ctx.store.get();
   ctx.store.update({ library: Moves.addMove(state.library, name, category, ctx.ids) });   // 3994
@@ -104,7 +103,7 @@ export function renameMove(ctx, moveId) {
   const board = boardOf(state, BOARD_MAIN);
   const res = Moves.renameMove(state.library, board.placements, moveId, next);
   if (!res.ok) {
-    if (res.reason === 'empty-name') ctx.dialogs.alert('이름을 비워둘 수 없습니다.');   // 3189
+    if (res.reason === 'empty-name') return { notify: notice('toast', '이름을 비워둘 수 없습니다.') };   // 3189
     return NONE;
   }
   ctx.store.update({ library: res.moveLibrary });                // 3190
@@ -178,8 +177,7 @@ export function promptMoveCategory(ctx, moveId) {
   if (!next) return NONE;                                       // 3267
   const trimmed = next.trim();                                  // 3268
   if (!state.categories[trimmed]) {                             // 3269
-    ctx.dialogs.alert('존재하는 카테고리 키를 입력해 주세요.');
-    return NONE;
+    return { notify: notice('toast', '존재하는 카테고리 키를 입력해 주세요.') };
   }
   const board = boardOf(state, BOARD_MAIN);
   const res = Moves.setMoveCategory(state.library, board.placements, moveId, trimmed);

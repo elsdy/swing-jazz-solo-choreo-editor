@@ -139,7 +139,11 @@ export function createAdapter() {
     return out;
   }
 
-  /** 즉시 alert(silentDialogs.calls)를 아직 안 옮긴 것만 순서대로 옮긴다. */
+  /**
+   * 즉시 alert(silentDialogs.calls)를 아직 안 옮긴 것만 순서대로 옮긴다.
+   * ⚠ RM-04 부터 유스케이스는 dialogs.alert 를 부르지 않는다(실패도 Dirty.notify 로 돌려준다) — 그래서 오늘은
+   *   늘 빈손이다. 누가 다시 즉시 alert 를 부르면 골든의 알림 순서가 바로 잡아내도록 길은 남겨 둔다.
+   */
   function drainDialogAlerts() {
     for (; dialogCursor < dialogs.calls.length; dialogCursor++) {
       const call = dialogs.calls[dialogCursor];
@@ -171,6 +175,7 @@ export function createAdapter() {
         });
       }
     }
+    // 급(block·toast·status)과 무관하게 문구만 적는다 — 골든은 「무엇을 어떤 순서로 알렸나」를 기록한다.
     if (dirty.notify) alertLog.push(dirty.notify.message);
   }
 
