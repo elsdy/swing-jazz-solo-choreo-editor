@@ -4647,7 +4647,8 @@ test('toSaved: 손대지 않은 것은 담지 않는다', () => {
 test('단축키 표: 바꿀 수 있는 것과 기본 글쇠', () => {
   // 기본 재생 글쇠는 스페이스다(2026-09-20 에 P 에서 바꿨다 — 사용자 요청).
   assert.deepEqual(DEFAULT_HOTKEYS.play, ['Space']);
-  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play']);
+  // 명령 팔레트 · 단축키 일람(RM-09)도 바꿀 수 있다 — 글쇠를 비우면 그 화면은 버튼 · 팔레트로만 열린다.
+  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play', 'palette', 'shortcuts']);
   assert.equal(HOTKEY_ACTIONS.every(a => a.keys.length > 0), true, '글쇠 없는 동작을 두지 않는다');
   assert.equal(keysLabel(['B', 'K']), 'B · K');
   assert.equal(keysLabel([]), '없음');
@@ -4685,6 +4686,12 @@ test('commandForKey: 글쇠 → 명령, 글자를 치는 중에는 whileTyping �
   assert.equal(commandForKey(map, 'Space', true), null);
   assert.equal(commandForKey(map, 'Escape', true).id, 'stop');
   assert.equal(commandForKey(map, 'Ctrl+Z', true).id, 'undo');
+  // 팔레트는 이름칸에 글을 치다가도 열리고(조합 글쇠), 일람의 `?` 는 글자를 칠 때 먹지 않는다
+  assert.equal(commandForKey(map, 'Ctrl+K', true).id, 'palette');
+  assert.equal(commandForKey(map, 'Cmd+K').id, 'palette');
+  assert.equal(commandForKey(map, '?').id, 'shortcuts');
+  assert.equal(commandForKey(map, '?', true), null, '이름에 ? 를 치는 사람이 있다');
+  assert.equal(normalizeKey({ key: '?', shift: true }), '?', 'Shift+/ 는 그대로 ? 다');
   // 사용자가 바꾼 글쇠를 따른다
   const moved = setKeys(map, 'play', ['P']);
   assert.equal(commandForKey(moved, 'P').id, 'play');

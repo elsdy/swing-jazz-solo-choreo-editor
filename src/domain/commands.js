@@ -87,7 +87,7 @@ export const COMMANDS = Object.freeze([
   def({
     id: 'undo',
     label: '되돌리기',
-    hint: 'OS 관례라 바꾸지 않는다',
+    hint: '방금 한 일을 하나 되돌린다. 글쇠는 OS 관례라 바꾸지 않는다',
     keys: ['Ctrl+Z', 'Cmd+Z'],
     fixed: true,
     whileTyping: true,
@@ -96,13 +96,32 @@ export const COMMANDS = Object.freeze([
   def({
     id: 'redo',
     label: '다시 하기',
-    hint: 'OS 관례라 바꾸지 않는다',
+    hint: '되돌린 것을 다시 한다. 글쇠는 OS 관례라 바꾸지 않는다',
     keys: ['Ctrl+Y', 'Cmd+Shift+Z'],
     // 예전 글쇠 처리는 Ctrl·Cmd 어느 쪽이든 `Y` 와 `Shift+Z` 를 모두 들었다 — 화면에는 관례 둘만 적는다.
     alsoKeys: ['Ctrl+Shift+Z', 'Cmd+Y'],
     fixed: true,
     whileTyping: true,
     button: 'Redo',
+  }),
+  // ── 명령을 찾는 두 화면 — 둘 다 이 표를 읽기만 한다 ─────────────────────────
+  // ⚠ 둘 다 바꿀 수 있다(설정 › 단축키). 일부 브라우저는 Ctrl+K 를 주소창 검색에 쓰고, `?` 는 자판에 따라
+  //   손이 멀다 — 글쇠를 비우면 그 화면은 팔레트 · 버튼으로만 열린다(끄는 길이 곧 이것이다).
+  def({
+    id: 'palette',
+    label: '명령 찾기',
+    hint: '명령 이름을 몇 글자 쳐서 찾고 Enter 로 실행한다',
+    keys: ['Ctrl+K', 'Cmd+K'],
+    fixed: false,
+    // 이름칸에 글을 치다가도 연다 — 조합 글쇠라 글자가 들어갈 일이 없다.
+    whileTyping: true,
+  }),
+  def({
+    id: 'shortcuts',
+    label: '단축키 일람',
+    hint: '지금 쓸 수 있는 단축키를 한 장으로 본다. 설정에서 바꾼 글쇠가 그대로 나온다',
+    keys: ['?'],
+    fixed: false,
   }),
   // ── 글쇠 없이 버튼 · 팔레트로 부르는 명령 ──────────────────────────────────
   // 같은 일의 입구가 여럿인 것들이다. 입구마다 글자 · 툴팁을 따로 적다가 서로 달라졌다
@@ -144,6 +163,18 @@ export const COMMANDS = Object.freeze([
     label: '이름 바꾸기',
     hint: '파일 메뉴를 열고 이름칸에 커서를 둔다',
     title: '안무표 이름을 바꿉니다',
+    fixed: false,
+  }),
+  def({
+    id: 'openSettings',
+    label: '설정 열기',
+    hint: '보관 위치 · 단축키 · 테마 · 모델',
+    fixed: false,
+  }),
+  def({
+    id: 'openDocs',
+    label: '문서 열기',
+    hint: '튜토리얼 · 기능 설명서 · 이력을 앱 안에서 읽는다',
     fixed: false,
   }),
 ]);

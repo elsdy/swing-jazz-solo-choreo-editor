@@ -75,6 +75,7 @@ import { createSpeechInput } from '../adapters/speechInput.js';
 import * as VoiceCmd from '../usecases/voiceNameCommands.js';
 import { createFileMenu } from '../ui/fileMenu.js';
 import { commandFace, syncCommandTitles } from '../ui/commandButtons.js';
+import { createCommandPalette } from '../ui/commandPalette.js';
 import { createDraftStore, debounceSave, DRAFT_NAME } from '../adapters/draftStore.js';
 import { createThumbBar } from '../ui/thumbBar.js';
 import { flowTotal, nextAfter, noteTransition, topTransitions } from '../domain/flowStats.js';
@@ -825,7 +826,12 @@ const COMMAND_RUNNERS = Object.freeze({
     return true;
   },
   saveProject: () => { render(saveProjectNow({ fileName: byId('fileNameInput').value })); return true; },
-  rename: () => { views.fileMenu?.open(); return true; }
+  rename: () => { views.fileMenu?.open(); return true; },
+  // 명령을 찾는 두 화면 — 등록부를 읽기만 한다. 실행은 다시 이 표로 돌아온다.
+  palette: () => { views.commandPalette?.openPalette(); return true; },
+  shortcuts: () => { views.commandPalette?.openSheet(); return true; },
+  openSettings: () => { views.settings?.open(); return true; },
+  openDocs: () => { views.docs?.open(); return true; }
 });
 
 /**
@@ -849,6 +855,9 @@ function runCommand(id, ctx = {}) {
 
 // 마크업의 `data-command` 버튼에 등록부의 툴팁을 단다(RM-09). 글쇠를 바꾸면 applyHotkeys 가 다시 단다.
 syncCommandTitles(document, keysNow);
+
+// Ctrl+K 명령 팔레트 · `?` 단축키 일람(RM-09). 둘 다 등록부를 읽기만 하고, 고른 명령은 runCommand 로 돌아온다.
+views.commandPalette = createCommandPalette({ run: (id) => runCommand(id, { source: 'palette' }), keysOf: keysNow });
 
 bindControls({
   els,
@@ -1964,7 +1973,7 @@ views.layout.syncCellSize();
 // 17. 문서 허브 — 상단 액션 줄에 '문서' 버튼을 붙인다
 // ─────────────────────────────────────────────────────────────────────────────
 
-createDocsHub({ container: document.querySelector('.top-actions') });
+views.docs = createDocsHub({ container: document.querySelector('.top-actions') });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 18. 설정 — 영상 보관 폴더. 어댑터(clipLibrary·localStore)를 아는 자리는 여기다.

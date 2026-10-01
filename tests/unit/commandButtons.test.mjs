@@ -79,3 +79,17 @@ test('등록부 — 버튼이 있는 명령은 툴팁 몸말이 있고, 줄마�
     assert.ok(c.label && c.hint, `${c.id} 의 라벨 · 설명`);
   }
 });
+
+test('matchCommands — 라벨로 시작하는 것이 먼저, 설명 · 버튼 글자로도 찾고, 팔레트 자신은 빠진다', async () => {
+  const { matchCommands } = await import('../../src/ui/commandPalette.js');
+  const ids = (q) => matchCommands(q).map(c => c.id);
+  assert.ok(!ids('').includes('palette'), '팔레트 안에 팔레트');
+  assert.equal(ids('').length, COMMANDS.length - 1, '검색어가 없으면 전부');
+  assert.equal(ids('되돌')[0], 'undo');
+  assert.equal(ids('영상')[0], 'videoPanel', '라벨이 「영상」으로 시작하는 것이 앞');
+  assert.ok(ids('영상').includes('videoFile'));
+  assert.ok(ids('빠른배치').includes('quickPlace'), '띄어쓰기를 무시한다');
+  assert.ok(ids('UNDO').includes('undo'), '대소문자를 무시한다(버튼 글자 · id)');
+  assert.ok(ids('보관 위치').includes('openSettings'), '설명으로도 찾는다');
+  assert.deepEqual(ids('없는말없는말'), []);
+});
