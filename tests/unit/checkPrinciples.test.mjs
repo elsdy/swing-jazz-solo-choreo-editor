@@ -55,7 +55,7 @@ test('위반이 있으면 종료 코드 1과 파일:줄 — 원칙 꼴로 찍는
   assert.match(good.stdout, /원칙 검사 통과 — 어긴 자리 0/);
 
   // 원칙마다 규칙이 표 한 줄 — { 원칙, 무엇, 고치는 법, scan }
-  assert.deepEqual(RULES.map(r => r.principle), ['U-11', 'U-12', 'D-5', 'R-6', 'D-14']);
+  assert.deepEqual(RULES.map(r => r.principle), ['U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14']);
   for (const r of RULES) {
     assert.equal(typeof r.scan, 'function');
     assert.ok(r.what && r.fix, `${r.principle}: 무엇 · 고치는 법이 비었다`);
@@ -142,6 +142,20 @@ test('D-14 명령 등록부 · 실행 표 · 버튼의 id 가 어긋나면 잡�
   assert.match(said({ ...good, 'src/app/main.js': main('  play: () => 1,\n  undo: () => 1', '    addMove: () => 1,') }), /commands\.setSortMode/);
   // 실행 표를 하나도 못 읽으면(꼴이 바뀌었다) 조용히 통과하지 않는다
   assert.match(said({ ...good, 'src/app/main.js': 'const COMMAND_RUNNERS = makeRunners();\nbindControls({\n  commands: {\n    setSortMode,\n  }\n});\n' }), /COMMAND_RUNNERS 의 키을\(를\) 하나도 읽지 못했다/);
+});
+
+test('R-10 조립부가 같은 views 이름을 두 번 달면 잡는다', () => {
+  // 2026-10-01(RM-09) — 명령 팔레트를 동작 목록 뷰의 이름(views.palette)에 달아 부팅 중 views.palette.render() 가 던졌다
+  const bad = "views.palette = paletteView;\nviews.palette.render();\nviews.palette = createCommandPalette({});\n";
+  const v = run('R-10', { 'src/app/main.js': bad });
+  assert.equal(v.length, 1);
+  assert.equal(v[0].line, 3);
+  assert.match(v[0].snippet, /views\.palette 를 1번째 줄에서 이미 달았다/);
+  // 이름이 다르면, 비교(===)·화살표·읽기는 넘긴다
+  const fine = "views.palette = paletteView;\nviews.commandPalette = createCommandPalette({});\nif (views.palette === x) f();\nconst g = () => views.palette;\n";
+  assert.equal(run('R-10', { 'src/app/main.js': fine }).length, 0);
+  // 일부러 갈아 끼우는 것은 이유를 단 표식으로
+  assert.equal(run('R-10', { 'src/app/main.js': bad.replace('views.palette = create', '// 원칙-예외(R-10): 시험용으로 갈아 끼운다\nviews.palette = create') }).length, 0);
 });
 
 test('지금 저장소는 통과한다', () => {

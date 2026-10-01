@@ -456,6 +456,24 @@ export const RULES = [
     },
   },
   {
+    principle: 'R-10',
+    what: '조립부가 같은 뷰 이름(views.X)을 두 번 단다 — 앞의 뷰가 말없이 덮여 그것을 부르는 그리기가 던진다',
+    fix: '새 뷰에 아직 없는 이름을 준다(grep 으로 먼저 찾는다). 일부러 바꿔 끼우는 것이면 원칙-예외 표식에 이유를 적는다',
+    scan(files) {
+      const out = [];
+      const main = files['src/app/main.js'];
+      if (!main) return out;
+      const code = blankJs(main);
+      const first = new Map();
+      for (const m of code.matchAll(/(?<![\w$.])views\.([\w$]+)\s*=(?![=>])/g)) {
+        const line = lineAt(main, m.index);
+        if (!first.has(m[1])) { first.set(m[1], line); continue; }
+        if (!excused(main, line, 'R-10')) out.push({ file: 'src/app/main.js', line, snippet: `views.${m[1]} 를 ${first.get(m[1])}번째 줄에서 이미 달았다 — 여기서 덮는다` });
+      }
+      return out;
+    },
+  },
+  {
     principle: 'D-14',
     what: '이름으로 잇는 명령 배선이 어긋났다 — 그 글쇠나 버튼은 말없이 아무 일도 하지 않는다',
     fix: 'domain/commands 의 COMMANDS · app/main 의 COMMAND_RUNNERS · 마크업의 data-command 를 같은 id 로 맞춘다',
