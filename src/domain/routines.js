@@ -6,8 +6,8 @@
 // syncCurrentRoutine 의 재분산부(4651-4671) · mergeProjectData 의 루틴 '(n)' 이름 규칙(4083-4108) ·
 // applyProjectData 의 루틴 정규화(4362-4369) 를 옮겼다.
 //
-// ⚠ 원본의 nextRoutineColor 는 모듈 전역 카운터 `_routineColorIdx` 를 증가시킨다. 순수하게 만들려고
-//   인덱스를 인자로 받고 [색, 다음인덱스] 를 돌려주도록 바꿨다 — 같은 인덱스에서 시작하면 색 순서가 같다.
+// ⚠ 원본의 nextRoutineColor 는 모듈 전역 카운터 `_routineColorIdx` 를 증가시켰다. RM-34 에서 카운터를 없애고
+//   지금 루틴들의 색을 세는 pickRoutineColor 로 바꿨다 — 다시 열어도 겹치지 않는다.
 // ⚠ 루틴 이름 변경은 routineId 기준이라 placements.rewriteMoveName(이름 기준)과 다르다. 여기서 따로 구현한다.
 
 import { buildSegments } from './grid.js';
@@ -28,7 +28,7 @@ import { DEFAULT_ROUTINE_COLOR } from './categories.js';
 const idsOf = (ids) => (typeof ids === 'function' ? ids : ids.uid);
 
 /**
- * 루틴 색 팔레트. 순서가 곧 배정 순서다.
+ * 루틴 색 팔레트. 순서가 곧 배정 순서이고(쓰인 횟수가 같으면 앞선 색), 견본판의 순서다.
  * @see index.html:4496
  */
 // ⚠ 이 여덟 색은 눈으로 고른 것이 아니라 대비비를 재서 정한 것이다. 전부 검은 글자로
@@ -38,15 +38,55 @@ const idsOf = (ids) => (typeof ids === 'function' ? ids : ids.uid);
 export const ROUTINE_COLORS = ['#818cf8', '#a78bfa', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#06b6d4'];
 
 /**
- * 다음 루틴 색과 다음 인덱스. 원본 nextRoutineColor(4498-4502) 를 무상태화한 것.
- * ⚠ 인덱스는 세션 전역이고 루틴을 지워도 되돌아가지 않는다(원본 그대로) — 루틴 개수에서 유도하면 안 된다.
- * @see index.html:4498
- * @param {string[]} colors
- * @param {number} idx
- * @returns {[string, number]} [색, 다음 인덱스]
+ * 새 루틴에 붙일 색. 지금 루틴들이 쓰는 색을 세어 **가장 적게 쓰인 색** 가운데 팔레트에서 앞선 것을 고른다(RM-34).
+ * 그래서 다시 열거나 불러와도 여덟 색을 다 쓰기 전에는 겹치지 않고, 다 쓴 뒤에는 고르게 겹친다.
+ *
+ * ⚠ 원본(nextRoutineColor 4498-4502)은 세션 카운터를 돌려 썼다 — 저장되지 않아 새로고침하면 첫 색부터
+ *   다시 붙어 겹쳤다(deviations 「고쳐서 내보낸 것」). 이제 상태가 없다: 루틴 배열이 곧 기억이다.
+ * ⚠ 루틴을 지우면 그 색이 다시 비어 다음 루틴이 받는다(원본의 「지워도 되돌아가지 않는다」와 다르다 — 계획서의 갈림).
+ * ⚠ 팔레트에 없는 색(사용자 파일 · 옛 색 `#6366f1`)은 셈에 들지 않는다. 대소문자는 가리지 않는다.
+ * @param {string[]} colors 팔레트
+ * @param {{ color?: string }[]} routines 지금 안무표의 루틴들
+ * @returns {string}
  */
-export function nextColor(colors, idx) {
-  return [colors[idx % colors.length], idx + 1];
+export function pickRoutineColor(colors, routines) {
+  const used = new Map(colors.map(c => [c.toLowerCase(), 0]));
+  for (const r of routines || []) {
+    const key = typeof r?.color === 'string' ? r.color.toLowerCase() : null;
+    if (key && used.has(key)) used.set(key, used.get(key) + 1);
+  }
+  let best = colors[0];
+  let bestCount = Infinity;
+  for (const c of colors) {
+    const n = used.get(c.toLowerCase());
+    if (n < bestCount) { best = c; bestCount = n; }   // 같으면 앞선 것을 지킨다(< 이지 <= 가 아니다)
+  }
+  return best;
+}
+
+/**
+ * 한 루틴의 색만 바꾼다(RM-34 「루틴 색 바꾸기」).
+ * ⚠ `{ ...r, color }` — color 키는 이미 있으므로 **키 순서가 그대로**다. 되돌리기 스냅샷의 문자열 비교가
+ *   키 순서까지 보므로(RM-07) 객체를 새로 짜 맞추지 않는다. color 키가 없던 루틴만 끝에 붙는다.
+ * ⚠ 팔레트 밖의 색은 받지 않는다 — 여덟 색은 검은 글자와 4.5:1 을 넘도록 잰 값이다(원칙 U-4).
+ * @param {Routine[]} routines
+ * @param {object[]} placements 메인 보드 배치(다시 그릴 행을 찾는 데만 쓴다)
+ * @param {string} routineId
+ * @param {string} color
+ * @param {string[]} [colors] 허용 팔레트
+ * @returns {{ ok: true, routines: Routine[], affectedRows: number[] } | { ok: false, reason: 'not-found'|'same'|'not-in-palette' }}
+ */
+export function recolorRoutine(routines, placements, routineId, color, colors = ROUTINE_COLORS) {
+  const routine = routines.find(r => r.id === routineId);
+  if (!routine) return { ok: false, reason: 'not-found' };
+  const picked = colors.find(c => c.toLowerCase() === String(color).toLowerCase());
+  if (!picked) return { ok: false, reason: 'not-in-palette' };
+  if (String(routine.color || '').toLowerCase() === picked.toLowerCase()) return { ok: false, reason: 'same' };
+  return {
+    ok: true,
+    routines: routines.map(r => (r.id === routineId ? { ...r, color: picked } : r)),
+    affectedRows: [...new Set(placements.filter(p => p.routineId === routineId).map(p => p.row))]
+  };
 }
 
 /**

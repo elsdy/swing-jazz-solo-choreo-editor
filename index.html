@@ -1482,6 +1482,10 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
     .routine-chip::before { content: "▶"; font-size:8px; }
+    /* 칩을 누르면 견본판이 열린다(RM-34). 끌기는 카드 전체가 하므로 칩은 커서만 바꾼다. */
+    .routine-chip[role="button"] { cursor: pointer; }
+    .routine-chip[role="button"]:hover,
+    .routine-chip[role="button"]:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
     .routine-name-text {
       font-size: 11px;
       font-weight: 700;
@@ -1554,6 +1558,17 @@
     }
     .routine-action-popup button:hover { background: rgba(99,102,241,0.25); }
     .routine-action-popup button.danger:hover { background: rgba(239,68,68,0.25); color: #f87171; }
+    /* 루틴 색 견본판(RM-34) — 틀과 테마는 위 루틴 팝업 것을 그대로 쓰고, 여덟 색을 4×2 격자로 놓는다.
+       색 자체는 domain/routines.js 의 ROUTINE_COLORS(데이터 색이라 토큰 밖 — RM-17)에서 온다. */
+    .routine-color-popup .rcp-swatches { display: grid; grid-template-columns: repeat(4, 28px); gap: 6px; padding: 4px; }
+    .routine-color-popup .rcp-swatches button {
+      width: 28px; height: 28px; padding: 0; border-radius: 7px;
+      border: 2px solid transparent; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    .routine-color-popup .rcp-swatches button:hover,
+    .routine-color-popup .rcp-swatches button:focus-visible { border-color: var(--text); background-clip: padding-box; }
+    .routine-color-popup .rcp-swatches button.is-current { border-color: var(--text); }
+    .routine-color-popup .rcp-swatches button.is-current::after { content: "✓"; color: #0b1220; font-weight: 800; font-size: 13px; }
 
     /* 링크바 — 2026-09-20 부터 **모든 폭에서** 기본으로 접혀 있다(전에는 좁은 화면에서만).
        비어 있는 안무표에서 YouTube·ClickUp 두 줄이 도구와 격자 사이를 갈라놓고 있었고, 처음

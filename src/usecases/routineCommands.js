@@ -10,7 +10,7 @@ import {
   NONE, mergeDirty, boardOf, BOARD_MAIN, BOARD_ROUTINE
 } from './store.js';
 import {
-  ROUTINE_COLORS, nextColor, defaultRoutineName, newRoutine,
+  ROUTINE_COLORS, pickRoutineColor, recolorRoutine, defaultRoutineName, newRoutine,
   buildFromSelection, redistributeBlocks,
   renameRoutine as renameRoutineDomain, removeRoutine
 } from '../domain/routines.js';
@@ -39,13 +39,11 @@ function commitBoardHistory(deps, boardId) {
 }
 
 /**
- * 다음 루틴 색을 뽑고 세션 카운터를 앞으로 민다(원본 nextRoutineColor 4498-4502).
- * ⚠ 카운터는 저장되지 않는다 — 새로고침하면 다시 0부터다(보존 대상 결함).
+ * 새 루틴의 색. 지금 루틴들에서 가장 적게 쓰인 색을 고른다(RM-34 — 원본 nextRoutineColor 4498-4502 의 세션 카운터를 대신한다).
+ * 상태를 바꾸지 않으므로 편성이 실패해도 「색을 소비」하는 일이 애초에 없다.
  */
 function takeRoutineColor(store) {
-  const [color, nextIdx] = nextColor(ROUTINE_COLORS, store.get().session.routineColorIdx);
-  store.patch('session', { routineColorIdx: nextIdx });
-  return color;
+  return pickRoutineColor(ROUTINE_COLORS, store.get().routines);
 }
 
 /**
@@ -72,9 +70,8 @@ export function createRoutine(deps) {
  * 안무표에서 선택한 그룹들을 루틴으로 편성한다(createRoutineFromSelection 4541-4615).
  *
  * ⚠ 색 소비 시점: 원본은 편성할 그룹이 하나도 없으면 4561 에서 되돌아가 nextRoutineColor(4605)에
- *   **닿지 않는다**. 그래서 여기서도 buildFromSelection 이 null 이 아닐 때만 색을 뽑는다 —
- *   먼저 뽑으면 실패한 편성이 색 순서를 한 칸 밀어 다음 루틴 색이 달라진다.
- *   색은 routine 객체의 마지막 키라 나중에 덮어써도 키 순서와 JSON 바이트가 같다.
+ *   **닿지 않는다**. RM-34 부터 색은 지금 루틴들에서 셈하므로 실패한 편성이 다음 색을 밀 수 없다 —
+ *   시험(routineColor.test.mjs)이 그것을 못박는다. 색은 routine 객체의 마지막 키라 나중에 덮어써도 키 순서와 JSON 바이트가 같다.
  * @see index.html:4541
  * @param {RoutineDeps} deps
  * @returns {import('./store.js').Dirty}
@@ -136,6 +133,31 @@ export function renameRoutine(deps, routineId, next) {
   }
   dirty = mergeDirty(dirty, { boards: { [BOARD_MAIN]: { rows: res.affectedRows } } }); // 4687
   return mergeDirty(dirty, commitBoardHistory(deps, BOARD_MAIN));  // 4688
+}
+
+/**
+ * 루틴 색 바꾸기(RM-34). 사이드바 칩의 견본판에서 부른다.
+ * 루틴 목록과 그 루틴 블록이 놓인 메인 보드 행을 다시 그리고, 메인 보드 히스토리에 한 단계를 남긴다 —
+ * routines 가 되돌리기 스냅샷 안에 있어 Undo 는 따로 배선하지 않는다.
+ * 같은 색 · 팔레트 밖의 색 · 없는 루틴은 무동작이다(히스토리도 쌓지 않는다).
+ * @param {RoutineDeps} deps
+ * @param {string} routineId
+ * @param {string} color ROUTINE_COLORS 중 하나
+ * @returns {import('./store.js').Dirty}
+ */
+export function setRoutineColor(deps, routineId, color) {
+  const { store } = deps;
+  const state = store.get();
+  const main = boardOf(state, BOARD_MAIN);
+  const res = recolorRoutine(state.routines, main.placements, routineId, color);
+  if (!res.ok) return NONE;
+  store.update({ routines: res.routines });
+
+  let dirty = { routineList: true };
+  if (res.affectedRows.length) {
+    dirty = mergeDirty(dirty, { boards: { [BOARD_MAIN]: { rows: res.affectedRows } } });
+  }
+  return mergeDirty(dirty, commitBoardHistory(deps, BOARD_MAIN));
 }
 
 /**
