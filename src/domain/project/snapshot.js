@@ -113,7 +113,7 @@ const KEEP = Symbol('keep');
  *   얕은 참조를 담는다 — docSignature 가 곧바로 JSON.stringify 하므로 서명 문자열은 어느 쪽이든 같지만, 반환값을
  *   그대로 들고 있는 호출부가 생기면 중첩 배열을 store 와 공유하게 되어 스냅샷이 조용히 "지금 값"으로 따라 변한다.
  * restore: restoreSnapshot(2845-2850)과 같은 기본값 사슬이다 — rows||8 · cols||8 · placements||[] · moveLibrary||[] ·
- *   categories 는 normalizeCategories 통과. ⚠ routines 는 **배열일 때만** 싣는다(KEEP) — 원본 2850 의
+ *   categories 는 normalizeCategories 통과(실제 배선은 **정렬하지 않는** categories.normalizeInOrder — RM-07). ⚠ routines 는 **배열일 때만** 싣는다(KEEP) — 원본 2850 의
  *   `if (Array.isArray(...))` 그대로, 보존 대상 결함이다. ⚠ links·media·phrasing·stepTodos 는 **언제나** 싣는다 —
  *   없는 옛 스냅샷에서 "지금 값을 남기면" 지운 상태를 Undo 로 되돌릴 수 없다(2026-09 에 고친 그 구멍).
  */
@@ -191,8 +191,10 @@ export function snapshotRoutine(reState) {
  * kind:'routine' — undoRe/redoRe 와 동일하게 **기본값 없이** rows/cols/placements 를 그대로 싣는다.
  *
  * normalizeCategories 와 defaultCategories 는 인자로 받는다(domain/categories.js 와 defaults.js 소유).
+ * ⚠ 넘기는 정규화는 키 순서를 지켜야 한다(categories.normalizeInOrder). 정렬하면 되살린 상태의 서명이
+ *   스냅샷과 달라져 Undo 직후의 커밋이 유령 단계를 쌓는다 — RM-07 이 고친 결함이다.
  * 기본값은 항등 함수와 빈 객체라 단독으로도 로드·테스트가 되지만,
- * ⚠ 실제 배선에서는 반드시 진짜 normalizeCategories 와 DEFAULT_CATEGORIES 를 넘겨야 원본과 같다.
+ * ⚠ 실제 배선에서는 반드시 진짜 normalizeInOrder 와 DEFAULT_CATEGORIES 를 넘긴다.
  *
  * @see index.html:2844
  * @param {string} snapshot

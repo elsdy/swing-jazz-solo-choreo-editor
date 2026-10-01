@@ -41,7 +41,7 @@ import {
 } from '../../src/ports/media.js';
 import {
   DEFAULT_ROUTINE_COLOR, MIN_CONTRAST, TEXT_DARK, TEXT_LIGHT, bestContrastOn,
-  categoryColor, contrastRatio, darken, normalize as normalizeCategories,
+  addCategory, categoryColor, contrastRatio, darken, normalize as normalizeCategories, normalizeInOrder,
   parseHexColor, resolvePlacementColor, textColorOn
 } from '../../src/domain/categories.js';
 import { DEFAULT_CATEGORIES } from '../../src/domain/defaults.js';
@@ -761,15 +761,10 @@ test('history: 루틴 편집기 undo 는 링크를 건드리지 않는다', () =
  * 복원된 links 의 **키 순서와 값**이 원래 상태와 같아야 한다. 스냅샷 중복 판정이 JSON 문자열
  * 비교라서, 복원이 링크의 키 순서를 흔들면 "undo 직후의 커밋"이 중복으로 걸러지지 않고
  * 유령 undo 단계가 쌓인다(Undo 를 눌렀는데 같은 화면이 두 번 나오고, redo 스택까지 날아간다).
- *
- * ⚠ categories 는 이 테스트에서 **미리 정렬해 둔다**. restoreMain 이 categories.normalize 를
- *   태우고 그 함수가 키를 정렬하기 때문에(categories.js:201-203, 원본 restoreSnapshot 2849 그대로),
- *   정렬되지 않은 카테고리로 시작하면 복원 후 스냅샷 문자열이 달라진다 — 링크와 무관한
- *   **이 변경 이전부터 있던 성질**이고, 바로 아래 테스트가 그것만 따로 못박는다.
+ * 카테고리는 **정렬되지 않은 기본값 그대로** 시작한다 — RM-07 전에는 여기서 미리 정렬해 결함을 피해 갔다.
  */
 test('history: undo 로 복원한 links 는 원래 스냅샷과 글자 단위로 같다(키 순서 안정성)', () => {
   const store = seededStore();
-  store.update({ categories: normalizeCategories(DEFAULT_CATEGORIES) });   // 정렬 차이를 미리 제거
   const hist = History.createHistory(store, { storage: fakeLinkStorage() });
   const stack = hist.stack(BOARD_MAIN);
 
@@ -789,33 +784,81 @@ test('history: undo 로 복원한 links 는 원래 스냅샷과 글자 단위로
 });
 
 /**
- * ⚠ **보존 대상 결함의 특성화 테스트**(이 PR 이 만든 것이 아니다 — HEAD 에도 있다).
- * restoreMain 은 categories 를 normalize 로 태우고 그 함수는 키를 정렬한다(원본 2849 그대로).
- * DEFAULT_CATEGORIES 는 정렬돼 있지 않으므로, undo 직후에 커밋하면 카테고리 키 순서만 다른
- * 스냅샷이 하나 더 쌓이고 **redo 스택이 날아간다**.
- * 고치려면 원본 동작을 바꿔야 하므로 여기서는 손대지 않고, 사실을 못박아 둔다 —
- * 이 단언이 깨졌다면 누군가 정렬 성질을 건드린 것이니 docs/deviations.md 를 함께 고쳐라.
+ * RM-07(2026-10-01) — 메인 Undo 직후의 커밋은 단계를 쌓지 않고 Redo 를 살려 둔다.
+ * 원인은 되살리기가 태우던 categories.normalize 의 키 정렬이었다. 기본 카테고리는 가나다순이 아니고,
+ * 사용자가 더한 카테고리는 끝에 붙으므로, 정렬하면 되살린 상태의 서명이 스냅샷과 달라졌다.
+ * 카테고리가 놓인 세 가지 처음 — 기본값 그대로 · 사용자가 끝에 더함 · 파일을 불러와 이미 가나다순 — 모두에서
+ * Undo → 커밋 → Redo 가 한 단계씩 맞아야 한다.
  */
-test('history: (보존) 카테고리 정렬 때문에 undo 직후 커밋이 유령 단계를 만든다', () => {
-  const store = seededStore();                             // categories = DEFAULT_CATEGORIES(정렬 안 됨)
-  assert.notDeepEqual(
-    Object.keys(store.get().categories),
-    [...Object.keys(store.get().categories)].sort((a, b) => a.localeCompare(b)),
-    '기본 카테고리가 이미 정렬돼 있다면 이 테스트의 전제가 사라졌다'
-  );
-  const hist = History.createHistory(store, { storage: fakeLinkStorage() });
-  History.commit(hist, BOARD_MAIN);
-  clearBoard(store, { storage: fakeLinkStorage() });
-  History.commit(hist, BOARD_MAIN);
-  History.undo(hist, BOARD_MAIN);
+const CATEGORY_STARTS = [
+  ['기본값 그대로(가나다순 아님)', store => store],
+  ['사용자가 끝에 더한 카테고리', store => {
+    store.update({ categories: addCategory(store.get().categories, 'aerial', '에어리얼', '#ff8800') });
+    return store;
+  }],
+  ['불러온 파일(이미 가나다순)', store => {
+    store.update({ categories: normalizeCategories(DEFAULT_CATEGORIES) });
+    return store;
+  }]
+];
+for (const [label, prepare] of CATEGORY_STARTS) {
+  test(`history: undo 직후의 커밋은 유령 단계를 만들지 않고 redo 가 산다 — ${label}`, () => {
+    const store = prepare(seededStore());
+    const orderBefore = Object.keys(store.get().categories);
+    const hist = History.createHistory(store, { storage: fakeLinkStorage() });
+    const stack = hist.stack(BOARD_MAIN);
 
-  assert.equal(History.canRedo(hist, BOARD_MAIN), true);
-  const depth = hist.stack(BOARD_MAIN).past.length;
-  History.commit(hist, BOARD_MAIN);
-  assert.equal(hist.stack(BOARD_MAIN).past.length, depth + 1, '유령 단계가 사라졌다면 정렬 성질이 바뀐 것이다');
-  assert.equal(History.canRedo(hist, BOARD_MAIN), false, '그 커밋이 redo 스택을 날린다');
-  // 링크는 그 와중에도 정확히 되돌아와 있다 — 이 PR 이 책임지는 부분은 멀쩡하다.
-  assert.deepEqual(store.get().links, LINKS_SAMPLE());
+    History.commit(hist, BOARD_MAIN);
+    clearBoard(store, { storage: fakeLinkStorage() });
+    History.commit(hist, BOARD_MAIN);
+    History.undo(hist, BOARD_MAIN);
+
+    assert.deepEqual(Object.keys(store.get().categories), orderBefore,
+      'Undo 한 번에 카테고리 순서가 바뀌었다 — 동작 목록 「카테고리별」 묶음 순서가 흔들린다');
+    const depth = stack.past.length;
+    History.commit(hist, BOARD_MAIN);
+    assert.equal(stack.past.length, depth, 'Undo 직후의 커밋이 유령 단계를 쌓았다');
+    assert.equal(History.canRedo(hist, BOARD_MAIN), true, 'Undo 직후의 커밋이 redo 스택을 날렸다');
+
+    History.redo(hist, BOARD_MAIN);
+    assert.equal(store.board(BOARD_MAIN).placements.length, 0, 'Redo 가 막 되돌린 그 자리(비운 보드)로 가야 한다');
+    History.undo(hist, BOARD_MAIN);
+    assert.equal(store.board(BOARD_MAIN).placements.length, 1);
+    assert.equal(History.canUndo(hist, BOARD_MAIN), false, 'Undo 한 번이 정확히 한 단계여야 한다');
+    assert.deepEqual(store.get().links, LINKS_SAMPLE());
+  });
+}
+
+/** 루틴 편집기 스택은 따로 논다 — 같은 규칙(Undo 직후 커밋은 단계를 쌓지 않는다)이 거기서도 지켜지는지 한 번 본다. */
+test('history: 루틴 편집기도 undo 직후의 커밋이 유령 단계를 만들지 않는다', () => {
+  const store = seededStore();
+  const hist = History.createHistory(store, { storage: fakeLinkStorage() });
+  const stack = hist.stack(BOARD_ROUTINE);
+
+  store.setBoard(BOARD_ROUTINE, { placements: [{ id: 'r1', groupId: 'rg1', name: 'Boogie', category: 'step', row: 0, startIndex: 0, length: 2 }] });
+  History.commit(hist, BOARD_ROUTINE);
+  store.setBoard(BOARD_ROUTINE, { placements: [] });
+  History.commit(hist, BOARD_ROUTINE);
+  History.undo(hist, BOARD_ROUTINE);
+
+  const depth = stack.past.length;
+  History.commit(hist, BOARD_ROUTINE);
+  assert.equal(stack.past.length, depth, '루틴 편집기에서 Undo 직후의 커밋이 유령 단계를 쌓았다');
+  assert.equal(History.canRedo(hist, BOARD_ROUTINE), true);
+});
+
+/** 정렬 규칙은 두 갈래다 — 되살리기는 순서를 지키고(normalizeInOrder), 파일 불러오기는 지금처럼 가나다순(normalize). */
+test('categories: normalizeInOrder 는 순서를 지키고 normalize 는 가나다순으로 정렬한다', () => {
+  const keys = Object.keys(DEFAULT_CATEGORIES);
+  assert.deepEqual(Object.keys(normalizeInOrder(DEFAULT_CATEGORIES)), keys);
+  assert.deepEqual(Object.keys(normalizeCategories(DEFAULT_CATEGORIES)), [...keys].sort((a, b) => a.localeCompare(b)));
+  // 채우기 규칙은 둘이 같다 — label 이 없으면 키, color 가 없으면 기본값 → 회색.
+  const raw = { zz: { color: '#000000' }, step: {}, bad: 'x' };
+  assert.deepEqual(normalizeInOrder(raw), { zz: { label: 'zz', color: '#000000' }, step: { label: 'step', color: DEFAULT_CATEGORIES.step.color } });
+  assert.deepEqual(normalizeCategories(raw), { step: { label: 'step', color: DEFAULT_CATEGORIES.step.color }, zz: { label: 'zz', color: '#000000' } });
+  // 빈 사전이면 둘 다 기본값의 **정렬하지 않은** 복제다(원본 그대로).
+  assert.deepEqual(Object.keys(normalizeInOrder({})), keys);
+  assert.deepEqual(Object.keys(normalizeCategories({})), keys);
 });
 
 /**

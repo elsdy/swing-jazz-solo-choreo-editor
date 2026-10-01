@@ -17,7 +17,9 @@
 
 import { UNDO_FIELDS, ROUTINE_UNDO_FIELDS } from '../domain/project/schema.js';
 import { snapshotMain, snapshotRoutine, applySnapshot } from '../domain/project/snapshot.js';
-import { normalize as normalizeCategories } from '../domain/categories.js';
+// ⚠ 정렬하는 normalize 가 아니라 순서를 지키는 normalizeInOrder 다(RM-07) — 정렬하면 되살린 상태의 서명이
+//   스냅샷과 달라져 Undo 직후의 커밋이 유령 단계를 쌓고 Redo 를 날린다.
+import { normalizeInOrder as normalizeCategories } from '../domain/categories.js';
 import { DEFAULT_CATEGORIES } from '../domain/defaults.js';
 import { serializeLinks } from '../domain/links.js';
 import { BOARD_MAIN, BOARD_ROUTINE, BOARD_IDS, boardOf, NONE } from './store.js';
@@ -78,7 +80,8 @@ function takeSnapshot(state, boardId) {
 
 /**
  * 메인 스냅샷을 store 에 되돌린다. restoreSnapshot(2845-2851) + 링크 복원(2026-09 신설).
- * ⚠ applySnapshot 에 categories.normalize 와 DEFAULT_CATEGORIES 를 반드시 넘긴다(1단계 요구).
+ * ⚠ applySnapshot 에 categories.normalizeInOrder 와 DEFAULT_CATEGORIES 를 반드시 넘긴다. 원본(2849)은 정렬하는
+ *   normalizeCategories 를 태웠고 그것이 유령 단계의 원인이었다 — RM-07(2026-10-01)에 순서를 지키는 쪽으로 바꿨다.
  * ⚠ 패치에 'routines' 키가 없으면 기존 routines 를 **건드리지 않는다**(2850, 보존 대상 결함).
  * ⚠ links 는 언제나 통째로 갈아끼운다(patch 가 아니라 update — 4필드 전부가 스냅샷에 있다).
  *   그리고 **localStorage 에도 되쓴다**: `전체 초기화`(clearLinks)가 saveLinks 로 즉시 썼기 때문에
