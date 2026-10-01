@@ -72,6 +72,7 @@ export function createClipServer(options = {}) {
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data && data.ok === true && typeof data.path === 'string') {
+          // 원칙-예외(D-5): 길이 0 인 클립은 없다 — 서버가 0 을 주면 「모름」이라 자른 구간으로 메운다
           return { ok: true, path: data.path, name: data.name, url: data.url, durationSec: Number(data.durationSec) || (outSec - inSec) };
         }
         return { ok: false, error: (data && data.error) || `HTTP ${res.status}` };
