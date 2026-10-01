@@ -244,6 +244,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `captureDrift.js` | 받아 적으며 격자에서 벗어난 거리를 모아 판정(2026-09-22). 치우침이 **고르면** 손(반응 지연), **커지면** 영상 속도가 BPM 과 다르다 — 기울기가 곧 상대 템포 오차라 추정 BPM 까지 낸다. 표본이 모자라거나 흩어지면 아무 말도 하지 않는다 |
 | `stepTodos.js` | 작업 차례 단계마다의 할 일 목록(2026-09-21). 아무 일도 안 한 경로는 **들어온 객체를 그대로** 돌려준다 — 호출부가 참조 비교 한 번으로 "바뀐 것 없음"을 안다 |
 | `flowStats.js` | 「어떤 버튼 다음에 어떤 버튼」 세기(2026-09-21). 같은 id 연속은 세지 않는다. **이 표로 화면을 움직이지 않는다** — 판정은 2026-10-05 로 미뤘다([로드맵](ROADMAP.md)) |
+| `practice.js` | 마디 반복 연습기의 규칙(2026-10-01, RM-22). 마디 · 고른 블록 → 카운트 구간(`rowsToCountRange` · `placementsToCountRange`), 그것을 지금 박자로 초 구간에(`countRangeToSpan` — 박자가 없으면 null), 배속 목록(`PRACTICE_RATES` — 유튜브와 파일이 둘 다 받는 값만), 카운트 소리의 예약 계획(`planClicks` — 표본 하나로 다음 0.35초 안의 카운트를 정하고, 되감기 · 탐색 · 배속 바꿈이면 버리라고 하고, 반복 구간의 끝에서 자른다) |
 | `flowTrack.js` | 작업 차례 줄의 스플라인·리본 기하(2026-09-21). 그리는 일은 `ui/videoPanel` 이 한다 |
 | `themes.js` | 테마 목록과 정규화(2026-09-21). 기본 테마는 속성을 아예 안 붙인다 |
 | `project/schema.js` | 저장 포맷 상수와 **필드 등록표**(`FIELD_TABLE`, 2026-09-28 · RM-01) — 안무표에 저장되는 필드 하나가 한 줄이다(10필드: `rows` `cols` `categories` `moveLibrary` `placements` `routines` `links` `media` `phrasing` `stepTodos`). `UNDO_FIELDS` · `DOC_FIELDS` 는 이 표에서 나온다. 함수가 없고 import 도 0개 — 필드마다의 규칙은 쓰는 파일이 필드 이름을 키로 한 표로 갖는다 |
@@ -279,6 +280,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `modelServer.js` | 자세 분석 모델의 보관 위치(`server.py`). **받아 두고 위치를 아는 것까지**가 전부다 — 모델을 로드하지 않는다(그건 추정기 어댑터의 몫이고, 한 파일에 두면 설정 화면이 20MB 를 로드하게 된다) |
 | `clipLibrary.js` | 영상 보관 폴더(브라우저 방식). File System Access API 의 폴더 핸들을 IndexedDB 에 남기고 `<subdir>/<프로젝트>/<파일>` 로 복사·재읽기한다. 경로 규칙은 `domain/clips.js` 가 정하고 여기서는 이름을 만들지 않는다. 지원하지 않는 브라우저에서는 "없음"으로 답한다 |
 | `media/filePlayer.js` | 로컬 영상 파일을 `<video>` 로 재생하는 `MediaPlayer`. blob URL 을 만들지 않는다 — 만든 쪽(`app/main`)이 revoke 까지 책임지므로 여기 들어오는 것은 이미 만들어진 `{kind:'file', url}` 뿐이다. 덕분에 node 에서 가짜 document 하나로 전 경로를 검사한다 |
+| `media/clockPlayer.js` | 영상 없이 박자로 도는 가상 재생기(2026-10-01, RM-22). 벽시계 × 배속으로 초를 내는 완전한 `MediaPlayer`(`kind:'clock'`)라 재생 헤드 · 구간 반복 · 카운트 소리가 가짜인지 모른다. 끝은 `app/main` 이 안무표 끝으로 알려 준다. 고르는 것은 `pickPlayer` 가 아니라 `app/main` 이다 — 소스가 아니라 「소스 없음 + 박자 있음」 으로 정해지기 때문이다 |
+| `audio/countClicks.js` | 카운트 소리(2026-10-01, RM-22). Web Audio 로 짧은 틱을 정해진 벽시계 시각에 **소리 장치의 시계로** 예약하고, 「버려라」 하면 아직 안 난 것을 끈다. 언제 칠지는 `domain/practice.planClicks` 가 정한다. ⚠ 누름 안에서 `unlock()` 해야 소리가 난다 |
 | `media/pickPlayer.js` | URL 또는 `MediaSource` → 재생기 종류(`youtube`/`file`/`null`). `domain/links.parseYoutubeUrl` 을 재사용하고 언제나 완전한 `MediaPlayer` 를 돌려준다(호출부에 `player?.` 가 생기지 않는다) |
 
 ### `src/usecases/` — 상태 전이
@@ -322,6 +325,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `quickPicker.js` | 빠른 배치 팝업 1벌. 노브 5개로 메인/루틴 차이를 표현 |
 | `routineActionPopup.js` | 메인 보드 루틴 블록의 편집/삭제 팝업 |
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
+| `practiceBar.js` | 영상 패널의 연습 조작 줄(2026-10-01, RM-22) — `▶ 재생` · 배속 · `🔁 반복` · `⇋ 미러` · `🔔 카운트 소리` · 마디 반복. 재생기 · 소리 장치는 `app/main` 이 감싸 넘긴 함수로만 닿는다. 미러는 `#videoFrame` 의 `data-mirror` 속성 하나다 |
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
 | `composeView.js` | 상단 `✨ 말로 채우기` 팝업. 음성 인식(webkitSpeechRecognition) → 다듬기 → 스키마 → 미리보기 → 채우기의 세 단. LLM 은 주입받은 어댑터로, 배치는 주입받은 유스케이스로 |
 | `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 절을 갈래(`data-cat`)로 묶어 옆단에서 고르고, 제목 옆 검색칸이 절의 글자와 `data-keywords` 를 함께 훑는다. **절의 `hidden` 을 정하는 자리는 `applyFilter` 하나다** — 쓸 수 있는가(`data-available`)와 갈래·검색에 걸리는가가 곱해진다 |
@@ -359,7 +363,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 
 `app/main.js` 가 이 계층의 나머지 절반이다. 명령 등록부의 **실행 표**(`COMMAND_RUNNERS` — 명령 id → 무엇을 하나)도 여기 하나뿐이다. 단축키 · `data-command` 버튼 · 명령 찾기가 모두 `runCommand(id, {board})` 로 이 표를 거치고, 부팅 때 `runnerGaps` 가 등록부와 어긋난 자리를 콘솔에 적는다. 저장소를 만들고, 어댑터를 포트 자리에 꽂고, 뷰와 컨트롤러에 협력자를 주입하고, presenter 를 그 모두에 넘긴다. 모든 뷰와 컨트롤러의 JSDoc 이 "`app/main` 이 넘긴다"고 적어 둔 대상이 이것이다. `index.html` 은 마크업과 CSS만 갖고 이 파일 하나를 `<script type="module">` 로 부른다.
 
-영상 재생기도 여기서만 산다. **재생기를 만드는 것은 패널이 실제로 화면에 보이는 순간**이고, 그 전에는 `pickPlayer('')` 가 준 널 재생기가 자리를 지킨다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가면 안 되기 때문이다. 소스가 바뀌어도 종류(`youtube`/`file`/`null`)가 같으면 재생기를 다시 만들지 않고 `load()` 만 부른다. iframe 을 다시 만들면 로딩이 눈에 보이게 끊긴다. 로컬 파일의 blob URL 도 여기서만 산다 — `URL.createObjectURL` 을 부르는 자리는 `app/main` 하나이고, store 에는 파일명만 들어간다(파일 객체는 직렬화할 수 없고 blob URL 은 이 실행에서만 산다).
+영상 재생기도 여기서만 산다. **재생기를 만드는 것은 패널이 실제로 화면에 보이는 순간**이고, 그 전에는 `pickPlayer('')` 가 준 널 재생기가 자리를 지킨다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가면 안 되기 때문이다. 소스가 바뀌어도 종류(`youtube`/`file`/`clock`/`null`)가 같으면 재생기를 다시 만들지 않고 `load()` 만 부른다. iframe 을 다시 만들면 로딩이 눈에 보이게 끊긴다. 로컬 파일의 blob URL 도 여기서만 산다 — `URL.createObjectURL` 을 부르는 자리는 `app/main` 하나이고, store 에는 파일명만 들어간다(파일 객체는 직렬화할 수 없고 blob URL 은 이 실행에서만 산다).
 
 ## 안전망 — 골든 150개
 

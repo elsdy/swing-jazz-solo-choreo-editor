@@ -45,6 +45,7 @@ import { phraseMark } from '../domain/phrasing.js';
  *   savedLists?: { render(kind: string, list?: unknown[]): void },
  *   linksBar?: { render(links?: object, titleFetch?: object): void },
  *   video?: { render(): void, renderStatus(): void, renderCut(): void, syncCapture(): void },
+ *   practice?: { render(): void, renderPlay(): void },
  *   pose?: { render(): void },
  *   start?: { sync(): void },
  *   thumb?: { render(): void },
@@ -134,6 +135,8 @@ export function createRenderer(store, views, options = {}) {
     //   그래서 편집기 개폐도 이 패널을 다시 그려야 한다 — 안 그리면 숨겨진 채 소리만 계속 난다.
     // ⚠ 재생 헤드는 이 경로를 타지 **않는다**. 초당 60회 재렌더가 된다(ui/playhead.js 채널 B).
     if (d.video || d.routineEditor) { views.video?.render(); views.pose?.render(); }
+    // 연습 조작 줄(RM-22)은 영상 패널의 상태와 **고른 블록**(`고른 블록 반복` 의 켜짐) · 보드 모양(마디 칸)을 따른다.
+    if (d.video || d.routineEditor || d.selection || d.boards?.[BOARD_MAIN]) views.practice?.render();
     // 엄지 바는 「지금 할 일」을 보이므로 영상 패널의 상태(열림·받는 중)를 따라간다(2026-09-20).
     // ⚠ 보드가 바뀌어도 부른다 — `+ 빠른 배치` 의 켜짐이 그쪽을 본다.
     if (d.video || d.boards?.[BOARD_MAIN] || d.toolbar) views.thumb?.render();

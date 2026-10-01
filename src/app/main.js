@@ -34,7 +34,8 @@ import * as PoseCmd from '../usecases/poseCommands.js';
 
 import * as Grid from '../domain/grid.js';
 import { normalizeLinks } from '../domain/links.js';
-import { groupToSpan, secondsPerCount } from '../domain/tempo.js';
+import { countToTime, groupToSpan, secondsPerCount } from '../domain/tempo.js';
+import { EMPTY_CLICK_PLAN, planClicks, ratesFor } from '../domain/practice.js';
 
 import { STORAGE_KEYS } from '../ports/storage.js';
 import { projectTime } from '../ports/media.js';
@@ -47,6 +48,8 @@ import { nudgeDelta } from '../domain/keyboardEdit.js';
 import { runnerGaps } from '../domain/commands.js';
 import { fetchTitle } from '../adapters/youtubeOembed.js';
 import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/media/pickPlayer.js';
+import { createClockPlayer } from '../adapters/media/clockPlayer.js';
+import { createCountClicks } from '../adapters/audio/countClicks.js';
 
 import { createBoardView } from '../ui/boardView.js';
 import { createOverlays, ensureOverlaySingletons } from '../ui/overlays.js';
@@ -92,6 +95,7 @@ import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from 
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
 import { clipDirParts, findStoredClip } from '../domain/clips.js';
 import { createVideoPanel } from '../ui/videoPanel.js';
+import { createPracticeBar } from '../ui/practiceBar.js';
 import { createPoseView } from '../ui/poseView.js';
 import { createPoseOverlay } from '../ui/poseOverlay.js';
 import { createMediapipePose } from '../adapters/pose/mediapipePose.js';
@@ -1109,16 +1113,78 @@ let unsubscribeVideoState = () => {};
 let unsubscribeVideoTime = () => {};
 
 /**
- * In~Out 구간 반복. 표본이 Out 을 넘으면 In 으로 되감는다 — 뜻(loop·inSec·outSec)은 store 의 화면 상태이고
+ * 구간 반복. 표본이 반복 구간의 끝을 넘으면 처음으로 되감는다 — 뜻(loop · 마디 반복 · In/Out)은 store 의 화면 상태이고
  * 실행은 어댑터를 아는 이 자리의 몫이다. 표본은 재생 중 100ms 마다 오므로 최대 0.1초 넘어간 뒤 돌아온다.
- * ⚠ seek 은 표본을 동기로 다시 쏘지만 그때는 sec 이 In 이라 이 조건에 다시 걸리지 않는다(재귀 없음).
+ * 구간은 VideoCmd.loopSpan 이 정한다: 마디 반복(RM-22)이 잡혀 있으면 **그 카운트 구간을 지금 박자로** 바꾼 것,
+ * 아니면 In~Out 이다. 초를 들고 있지 않으므로 보정점을 고치면 반복 구간도 그 자리에서 따라온다.
+ * ⚠ seek 은 표본을 동기로 다시 쏘지만 그때는 sec 이 처음이라 이 조건에 다시 걸리지 않는다(재귀 없음).
  * @param {import('../ports/media.js').TimeSample} sample
+ * @returns {boolean} 되감았으면 참 — 이 표본은 이제 낡았다(onVideoTime 이 소리 계획에 넘기지 않는다)
  */
 function enforceLoop(sample) {
-  if (!sample || !sample.playing) return;
+  if (!sample || !sample.playing) return false;
+  if (!VideoCmd.panelState(store).loop) return false;
+  const span = VideoCmd.loopSpan(store);
+  if (!span) return false;
+  if (sample.sec >= span.endSec) { player.seek(span.startSec); return true; }
+  return false;
+}
+
+/**
+ * 카운트 소리(RM-22). 표본마다 다음 0.35초 안의 카운트를 미리 예약한다 — 언제 칠지는 domain/practice.planClicks 가,
+ * 소리는 adapters/audio 가 낸다. 되감기 · 탐색 · 배속 바꿈 · 멈춤이면 걸어 둔 예약을 버리고 다시 건다.
+ * ⚠ 반복 구간의 끝에서 예약을 자른다(planClicks) — 되감기가 0.1초 늦게 일어나도 끝 박이 한 번 더 울리지 않는다.
+ */
+const countClicks = createCountClicks();
+let clickPlan = EMPTY_CLICK_PLAN;
+
+function resetClicks() {
+  countClicks.cancel();
+  clickPlan = EMPTY_CLICK_PLAN;
+}
+
+function tickClicks(sample) {
   const p = VideoCmd.panelState(store);
-  if (!p.loop || !Number.isFinite(p.inSec) || !Number.isFinite(p.outSec) || !(p.outSec > p.inSec)) return;
-  if (sample.sec >= p.outSec) player.seek(p.inSec);
+  if (!p.clicks) {
+    if (clickPlan !== EMPTY_CLICK_PLAN) resetClicks();
+    return;
+  }
+  const plan = planClicks(clickPlan, {
+    sample,
+    tempo: VideoCmd.mediaState(store).tempo,
+    cols: store.board(BOARD_MAIN).cols,
+    loop: p.loop ? VideoCmd.loopSpan(store) : null
+  });
+  if (plan.reset) countClicks.cancel();
+  clickPlan = plan.state;
+  countClicks.schedule(plan.events);
+}
+
+/** 재생기의 표본 하나. 되감았으면 그 표본은 낡은 것이라 소리 계획에 넘기지 않는다(되감은 자리의 표본이 이미 지나갔다). */
+function onVideoTime(sample) {
+  if (enforceLoop(sample)) return;
+  tickClicks(sample);
+}
+
+/** 조작 줄의 배속을 재생기에 건다. 재생기를 새로 만들었거나 준비가 끝났을 때도 다시 건다(준비 전 배속은 버려진다). */
+function applyRate() {
+  const rate = VideoCmd.panelState(store).rate;
+  if (Array.isArray(player.capabilities.rates) && player.capabilities.rates.includes(rate)) player.setRate(rate);
+}
+
+/**
+ * 영상이 없고 박자만 있을 때 박자 시계(가상 재생기)를 쓸까(RM-22). 주소를 넣었는데 못 알아본 것 · 파일을 다시
+ * 골라야 하는 것은 「영상 없음」이 아니다 — 그때는 널 재생기가 안내를 맡는다.
+ */
+function wantsClockPlayer() {
+  return !VideoCmd.mediaState(store).source && !videoSourceUrl() && VideoCmd.isTempoReady(store);
+}
+
+/** 박자 시계가 멈출 자리 — 안무표의 끝. */
+function boardEndSec() {
+  if (!VideoCmd.isTempoReady(store)) return null;
+  const b = store.board(BOARD_MAIN);
+  return countToTime(b.rows * b.cols, VideoCmd.mediaState(store).tempo);
 }
 
 /** 소스 하나를 "같은 것을 또 싣지 않기" 위한 문자열로 접는다. */
@@ -1130,9 +1196,10 @@ function mediaSourceKey(source) {
 /** 지금 소스에 맞는 재생기를 준비한다. 멱등이며, 바뀐 것이 없으면 아무 일도 하지 않는다. */
 function ensurePlayer() {
   const source = currentMediaSource();
-  const kind = pickPlayerKind(source);
+  const kind = source ? pickPlayerKind(source) : (wantsClockPlayer() ? 'clock' : 'null');
 
   if (kind !== playerKind) {
+    resetClicks();
     unsubscribeVideoState();
     unsubscribeVideoTime();
     player.destroy();
@@ -1152,17 +1219,25 @@ function ensurePlayer() {
     videoFrameEl.appendChild(host);
     // preload:'auto' — 로컬 파일·로컬 서버가 소스라 대역폭이 아깝지 않고, 끝까지 미리 받아 두어야 In/Out 탐색과
     // 구간 반복이 끊기지 않는다("영상을 통째로 불러온다"). 유튜브 어댑터는 이 옵션을 모른 채 무시한다.
-    player = pickPlayer(source, { container: host, preload: 'auto' });
+    player = kind === 'clock'
+      ? createClockPlayer({ container: host, getDurationSec: boardEndSec })
+      : pickPlayer(source, { container: host, preload: 'auto' });
     playerKind = kind;
+    applyRate();
     loadedVideoKey = '';
     // 재생 상태는 도메인이 아니라 store 를 거치지 않는다 — 문구만 직접 다시 그린다.
     unsubscribeVideoState = player.onState(() => {
       videoDurationSec = player.getDuration();
+      applyRate();
       views.video?.renderStatus();
+      views.practice?.renderPlay();
       // PiP 는 OS 쪽에서 닫히기도 한다 — 우리가 켠 것만 알고 있으면 버튼이 거짓말을 한다.
       views.video?.renderPip();
     });
-    unsubscribeVideoTime = player.onTime(enforceLoop);
+    unsubscribeVideoTime = player.onTime(onVideoTime);
+    // 박자 시계는 실을 것이 없어 load → onState 가 오지 않는다 — 문구(「영상 없이…」)를 여기서 맞춘다.
+    // ⚠ 이 자리는 패널 렌더의 끝(onSync)이라 상태 문구가 이미 옛 재생기로 그려진 뒤다.
+    views.video?.renderStatus();
   }
 
   const key = mediaSourceKey(source);
@@ -1468,7 +1543,8 @@ const playhead = createPlayhead({
   getCols: () => store.board(BOARD_MAIN).cols,
   getTempo: () => VideoCmd.mediaState(store).tempo,
   // ⚠ 템포가 준비되지 않았으면 **아예 그리지 않는다**. bpm 0 에서 그리면 거짓 위치가 선다.
-  isActive: () => VideoCmd.isTempoReady(store) && hasMediaSource(),
+  // 영상이 없어도 박자 시계(RM-22)가 돌고 있으면 그린다 — 그것이 「영상 없이 표만으로 연습」이다.
+  isActive: () => VideoCmd.isTempoReady(store) && (hasMediaSource() || playerKind === 'clock'),
   isFollowing: () => VideoCmd.panelState(store).follow,
   getCurrentSec: currentVideoSec,
   // 재생 위치가 지나가는 블록을 켠다. 칸이 바뀔 때만 불리므로 여기서 필터링해도 싸다.
@@ -1965,6 +2041,7 @@ views.video = createVideoPanel({
     setInOut: (args) => VideoCmd.setInOut(store, args),
     clearInOut: () => VideoCmd.clearInOut(store),
     setLoop: (args) => VideoCmd.setLoop(store, args),
+    toggleInOutLoop: () => VideoCmd.toggleInOutLoop(store),
     addMarker: (args) => VideoCmd.addMarker(store, args),
     removeMarker: (args) => VideoCmd.removeMarker(store, args),
     clearMarkers: () => VideoCmd.clearMarkers(store),
@@ -1996,6 +2073,49 @@ views.video = createVideoPanel({
     addStepTodo: (args) => TodoCmd.addStepTodo(store, args, { ids: browserEnv }),
     toggleStepTodo: (args) => TodoCmd.toggleStepTodo(store, args),
     removeStepTodo: (args) => TodoCmd.removeStepTodo(store, args)
+  }
+});
+
+// 연습 조작 줄(RM-22 · 2026-10-01) — 마디 반복 · 배속 · 미러 · 카운트 소리. 영상 패널 안에 있지만 따로 그린다:
+// 재생기 · 소리 장치에 닿는 손잡이라 여기서 감싸 넘긴다(뷰는 어댑터를 모른다).
+views.practice = createPracticeBar({
+  store,
+  render,
+  getPlayerKind: () => player.kind,
+  getPlayerState: () => player.getState(),
+  getRates: () => ratesFor(player.capabilities.rates),
+  getLoopSpan: () => VideoCmd.loopSpan(store),
+  clicksAvailable: () => countClicks.available(),
+  onTogglePlay: () => {
+    const st = player.getState();
+    if (st.play === 'playing') player.pause();
+    else player.play();
+  },
+  // 반복 구간을 잡고 → 그 시작으로 가서 → 재생한다. 「8x3만 다시」 가 한 번 누름이다.
+  onPractice: (range) => {
+    render(VideoCmd.setPracticeRange(store, range));
+    const span = VideoCmd.loopSpan(store);
+    if (!span) return;
+    resetClicks();
+    seekVideoTo(span.startSec, { play: true });
+  },
+  commands: {
+    setLoop: (args) => VideoCmd.setLoop(store, args),
+    clearPracticeRange: () => VideoCmd.clearPracticeRange(store),
+    setRate: (args) => {
+      const dirty = VideoCmd.setRate(store, args);
+      resetClicks();                                   // 옛 배속으로 계산한 예약은 틀린 박이다
+      applyRate();
+      return dirty;
+    },
+    setMirror: (args) => VideoCmd.setMirror(store, args),
+    // ⚠ 소리 장치는 **이 누름의 콜스택 안에서** 깨운다 — 브라우저는 누르기 전의 소리를 막는다.
+    setClicks: (args) => {
+      const dirty = VideoCmd.setClicks(store, args);
+      if (VideoCmd.panelState(store).clicks) countClicks.unlock();
+      else resetClicks();
+      return dirty;
+    }
   }
 });
 

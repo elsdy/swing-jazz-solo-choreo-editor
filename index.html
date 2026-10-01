@@ -1767,6 +1767,19 @@
     }
 
     .video-status { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    /* ── 연습 조작 줄 (RM-22 · 2026-10-01) ── */
+    .video-practice { display: grid; gap: 5px; padding: 6px 0; border-top: 1px solid rgba(148,163,184,0.16); border-bottom: 1px solid rgba(148,163,184,0.16); }
+    /* 미러 — 영상과 자세 오버레이만 뒤집는다. data-keep 이 붙은 우리 손잡이(띄우기 줄 · ⇄)의 글자는 그대로 둔다.
+       ⚠ 끌 때는 속성을 없앤다(U-11) — 이 선택자는 빈 문자열에도 걸린다.
+       ⚠ 유튜브 iframe 은 통째로 뒤집혀 그 안의 유튜브 글자도 거울 글자가 된다 — 바깥 문서가 iframe 안을 고를 수 없다. */
+    .video-frame[data-mirror] > :not([data-keep]),
+    .video-frame[data-mirror] > .video-pose { transform: scaleX(-1); }
+    /* 박자 시계(영상 없이 박자로 재생). 검은 칸이 비어 있으면 고장으로 보이므로 무엇이 도는지 적는다. */
+    .video-frame .video-clock {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; height: 100%; color: #94a3b8; font-size: 12px;
+    }
+    .video-frame .video-clock-time { font-size: 28px; font-variant-numeric: tabular-nums; color: #e2e8f0; }
     .video-status.is-error { color: #fca5a5; }
     .video-cut .helper.is-error { color: #fca5a5; }
     /* 로컬 파일 줄. 파일명 칩은 제목 칩과 같은 톤이다(둘 다 "지금 무엇이 소스인가"를 말한다). */
@@ -3662,6 +3675,28 @@
             <!-- 띄운 동안 패널에 남는 빈 자리. 영상이 어디로 갔는지 말해 준다. -->
             <div class="video-frame-slot" id="videoFrameSlot">영상은 큰 창으로 띄워 두었습니다 — 창의 <b>⤡ 제자리로</b> 로 되돌립니다</div>
             <div class="video-status" id="videoStatus"></div>
+            <!-- 연습 조작 줄(RM-22 · 2026-10-01) — 유튜브 · 내 영상 · 영상 없는 박자 시계가 함께 쓴다.
+                 반복 구간은 초가 아니라 마디·블록(카운트)으로 잡는다. 전부 화면 상태라 저장하지 않는다.
+                 그리는 것은 ui/practiceBar.js 다. -->
+            <div class="video-practice" id="videoPractice">
+              <div class="video-field">
+                <button id="practicePlayBtn" class="primary" type="button" title="재생과 멈춤을 번갈아 합니다. 영상이 없으면 박자 시계가 돕니다">▶ 재생</button>
+                <span class="video-label">배속</span>
+                <select id="practiceRate" class="video-pick" title="재생 빠르기. 카운트 소리도 함께 느려집니다"></select>
+                <button id="practiceLoopBtn" class="ghost" type="button" title="반복 구간의 끝에 닿으면 처음으로 되감습니다">🔁 반복</button>
+                <button id="practiceMirrorBtn" class="ghost" type="button" title="영상을 좌우로 뒤집어 거울 보듯 봅니다">⇋ 미러</button>
+                <button id="practiceClickBtn" class="ghost" type="button" title="박자에 맞춰 카운트마다 틱 소리를 냅니다. 마디의 1이 가장 높습니다">🔔 카운트 소리</button>
+              </div>
+              <div class="video-field">
+                <select id="practiceFromRow" class="video-pick" title="반복할 첫 마디"></select>
+                <span class="video-label">~</span>
+                <select id="practiceToRow" class="video-pick" title="반복할 마지막 마디"></select>
+                <button id="practiceRowsBtn" class="ghost accent" type="button" title="고른 마디들을 반복 구간으로 잡고 그 처음부터 재생합니다">마디 반복</button>
+                <button id="practiceSelBtn" class="ghost accent" type="button" title="안무표에서 고른 블록들이 덮는 구간을 반복합니다">고른 블록 반복</button>
+                <button id="practiceClearBtn" class="ghost" type="button" title="마디 반복 구간을 풉니다. In/Out 이 있으면 그 구간으로 돌아갑니다">구간 풀기</button>
+              </div>
+              <div class="helper" id="practiceHelp"></div>
+            </div>
             <!-- 작업 차례(2026-09-21). 눕힌 띠에서만 보인다 — ui/videoPanel 이 아래 `.vstep` 들을
                  **읽어서** 채우므로 이름과 순서의 주인은 여전히 그 `<summary>` 들이다.
                  ⚠ 여기에 버튼을 손으로 적지 마라. 단계를 하나 더하면 `<details>` 만 더하면 된다. -->

@@ -321,8 +321,10 @@ function createInitialState(ids) {
       //   captureSec 받아 적는 중인 구간의 시작(초, 아니면 null). 끝을 찍는 순간 블록이 되고 비워진다
       //   floating  영상을 큰 창으로 띄웠는가(2026-09-13). float* 는 그 창의 자리와 폭(px)이다.
       //             ⚠ **DOM 을 옮기지 않는다** — iframe 은 부모가 바뀌면 리로드된다. CSS 로만 띄운다.
+      //   practice  마디 반복 구간({fromCount, toCount}, 카운트, 아니면 null — RM-22). 있으면 In/Out 대신 이것이 반복된다
+      //   rate · mirror · clicks  배속 · 좌우 반전 · 카운트 소리(RM-22). 연습 도구의 손잡이라 저장하지 않는다
       // ⚠ 여기에도 재생 위치(currentSec)는 없다. 있으면 초당 60번 store 가 바뀐다.
-      video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null, floating: false, floatX: null, floatY: null, floatW: null },
+      video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null, floating: false, floatX: null, floatY: null, floatW: null, practice: null, rate: 1, mirror: false, clicks: false },
       // 자세 분석의 **요약만** 둔다(2026-09-12). 관절점 수만 개는 app/main.js 가 모듈 변수로 들고 있다 —
       // store 에 넣으면 undo 스냅샷이 그만큼 불어나고, 되돌릴 값도 아니다(usecases/poseCommands.js 경계 ①).
       pose: { state: 'idle', done: 0, total: 0, error: '', frames: 0, maxSubjects: 0,

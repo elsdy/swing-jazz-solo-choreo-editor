@@ -29,6 +29,7 @@ import {
 import {
   DEFAULT_TEMPO, bpmFromTaps, isTempoUsable, normalizeTempo, reanchor, tempoFromTwoPoints, addTempoPoint as addTempoPointOf, removeTempoPoint as removeTempoPointOf, clearTempoPointsOf, shiftTempo
 } from '../domain/tempo.js';
+import { countRangeToSpan, normalizeCountRange, normalizeRate } from '../domain/practice.js';
 import { addMarker as addMarkerOf, removeMarker as removeMarkerOf, markerTempoPoints, shiftMarkersForTrim } from '../domain/markers.js';
 
 /** 패널·템포 보정이 다시 그려져야 한다는 뜻. 재생 헤드와는 무관하다(위 경계 ①). */
@@ -53,7 +54,7 @@ export const TEMPO_POINTS_NEEDED = 2;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** session.video 의 기본값. store.js 의 초기 상태와 같은 값이다(옛 스냅샷 복원 뒤에도 안전하도록 여기서도 채운다). */
-const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null, floating: false, floatX: null, floatY: null, floatW: null });
+const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null, floating: false, floatX: null, floatY: null, floatW: null, practice: null, rate: 1, mirror: false, clicks: false });
 
 /**
  * 영상 패널의 휘발성 화면 상태. 없는 키는 기본값으로 채운다(In/Out·loop 은 나중에 생긴 키라 옛 세션에 없다).
@@ -731,7 +732,8 @@ export function setInPoint(store, args = {}) {
   if (!Number.isFinite(sec) || sec < 0) return NONE;
   const cur = panelState(store);
   const outSec = Number.isFinite(cur.outSec) && cur.outSec > sec ? cur.outSec : null;
-  return patchPanel(store, { inSec: sec, outSec });
+  // 초로 손수 찍었다 = 마디 반복(카운트 구간)에서 초 구간으로 갈아탔다. 둘이 동시에 반복의 주인일 수는 없다.
+  return patchPanel(store, { inSec: sec, outSec, practice: null });
 }
 
 /**
@@ -745,7 +747,7 @@ export function setOutPoint(store, args = {}) {
   if (!Number.isFinite(sec) || sec <= 0) return NONE;
   const cur = panelState(store);
   const inSec = Number.isFinite(cur.inSec) && cur.inSec < sec ? cur.inSec : null;
-  return patchPanel(store, { outSec: sec, inSec });
+  return patchPanel(store, { outSec: sec, inSec, practice: null });
 }
 
 /**
@@ -758,7 +760,7 @@ export function setInOut(store, args = {}) {
   const inSec = Number(args.inSec);
   const outSec = Number(args.outSec);
   if (!Number.isFinite(inSec) || !Number.isFinite(outSec) || !(outSec > inSec)) return NONE;
-  return patchPanel(store, { inSec, outSec });
+  return patchPanel(store, { inSec, outSec, practice: null });
 }
 
 /**
@@ -779,6 +781,94 @@ export function clearInOut(store) {
 export function setLoop(store, args = {}) {
   const next = typeof args.loop === 'boolean' ? args.loop : !panelState(store).loop;
   return patchPanel(store, { loop: next });
+}
+
+/**
+ * `④ 구간 잡고 잘라내기` 의 `구간 반복` — **In~Out 을** 반복한다. 마디 반복이 잡혀 있으면 그것을 풀고
+ * In~Out 으로 갈아타며 켠다(누른 버튼이 말하는 구간이 반복돼야 한다). 아니면 그냥 토글이다.
+ * @param {object} store
+ * @returns {import('./store.js').Dirty}
+ */
+export function toggleInOutLoop(store) {
+  const p = panelState(store);
+  if (p.practice) return patchPanel(store, { practice: null, loop: true });
+  return patchPanel(store, { loop: !p.loop });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 마디 반복 연습기 (RM-22 · 2026-10-01) — 반복 구간을 **카운트**로 잡는다. 전부 화면 상태다
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 마디·블록을 접은 카운트 구간을 반복 구간으로 잡고 반복을 켠다. In/Out 은 건드리지 않는다 —
+ * 반복의 주인이 카운트 구간으로 넘어갈 뿐이다(loopSpan). 초는 저장하지 않는다: 보정점을 고치면
+ * 반복 구간도 따라와야 하므로 쓸 때마다 박자로 다시 계산한다.
+ * @param {object} store
+ * @param {{fromCount?: number, toCount?: number}} args toCount 는 배타적
+ * @returns {import('./store.js').Dirty}
+ */
+export function setPracticeRange(store, args = {}) {
+  const range = normalizeCountRange(args);
+  if (!range) return NONE;
+  const cur = panelState(store).practice;
+  if (cur && cur.fromCount === range.fromCount && cur.toCount === range.toCount) return patchPanel(store, { loop: true });
+  return patchPanel(store, { practice: range, loop: true });
+}
+
+/**
+ * 마디 반복 구간을 푼다. 반복 토글은 그대로 둔다 — In/Out 이 있으면 그 구간으로 돌아간다.
+ * @param {object} store
+ * @returns {import('./store.js').Dirty}
+ */
+export function clearPracticeRange(store) {
+  return patchPanel(store, { practice: null });
+}
+
+/**
+ * 지금 반복의 주인이 덮는 초 구간. 마디 반복이 잡혀 있으면 **그 카운트 구간을 지금 박자로** 바꾼 것,
+ * 아니면 In~Out. 박자가 없는데 마디 반복이 잡혀 있으면 null 이다 — 거짓 구간을 반복하느니 안 한다.
+ * @param {object} store
+ * @returns {{startSec:number, endSec:number}|null}
+ */
+export function loopSpan(store) {
+  const p = panelState(store);
+  const practice = normalizeCountRange(p.practice);
+  if (practice) return countRangeToSpan(practice, mediaState(store).tempo);
+  const range = inOutRange(store);
+  return range ? { startSec: range.inSec, endSec: range.outSec } : null;
+}
+
+/**
+ * 배속. 고를 수 있는 값(domain/practice.PRACTICE_RATES) 밖이면 1배로 접는다. 재생기에 거는 것은 호출부다.
+ * @param {object} store
+ * @param {{rate?: number}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function setRate(store, args = {}) {
+  return patchPanel(store, { rate: normalizeRate(args.rate) });
+}
+
+/**
+ * 좌우 반전(미러). 강사 영상을 거울 보듯 본다.
+ * @param {object} store
+ * @param {{mirror?: boolean}} [args] 생략하면 토글
+ * @returns {import('./store.js').Dirty}
+ */
+export function setMirror(store, args = {}) {
+  const next = typeof args.mirror === 'boolean' ? args.mirror : !panelState(store).mirror;
+  return patchPanel(store, { mirror: next });
+}
+
+/**
+ * 카운트 소리. ⚠ 브라우저는 누르기 전에는 소리를 막으므로 소리 장치를 깨우는 것은 호출부가
+ * **이 누름의 콜스택 안에서** 한다(app/main).
+ * @param {object} store
+ * @param {{clicks?: boolean}} [args] 생략하면 토글
+ * @returns {import('./store.js').Dirty}
+ */
+export function setClicks(store, args = {}) {
+  const next = typeof args.clicks === 'boolean' ? args.clicks : !panelState(store).clicks;
+  return patchPanel(store, { clicks: next });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

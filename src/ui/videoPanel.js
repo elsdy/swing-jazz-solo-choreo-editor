@@ -46,7 +46,7 @@ const POINTS_NEEDED = 2;
 const SECOND_POINT_ROW_GAP = 4;
 
 /** session.video 가 없을 때의 기본값(옛 스냅샷 복원 뒤에도 안전하도록). */
-const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null });
+const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null, practice: null });
 
 /** 잘라내기가 안 되는 이유 → 안내 문구. 어댑터·서버는 코드/사실만 주고 문구는 여기서 만든다. */
 const TRIM_TEXT = Object.freeze({
@@ -74,6 +74,7 @@ const ERROR_TEXT = Object.freeze({
 });
 
 /** 소스가 없을 때의 안내. 링크바와 파일 버튼을 가리킨다 — 유튜브 주소 입력창은 여기 만들지 않기 때문이다. */
+const CLOCK_TEXT = '영상 없이 박자만으로 돕니다 — 아래 `▶ 재생` 으로 재생 헤드와 카운트 소리를 안무표 위에서 돌립니다. 영상을 고르면 그 영상으로 바뀝니다.';
 const NO_SOURCE_TEXT = '위 링크바의 `YouTube URL 입력...` 칸에 주소를 넣거나 `📁 영상 파일 열기` 로 내 컴퓨터의 영상을 고르면 여기에 뜹니다.';
 
 /**
@@ -178,7 +179,7 @@ export function formatRange(from, to, cols) {
  *     통째로 새고, 새 영상이 영영 실리지 않는다.
  *   ⚠ 거짓일 때 호출부는 **반드시 player.pause()** 를 불러야 한다 — display:none 인 iframe 도
  *     오디오는 계속 나온다. 어댑터를 아는 자리의 몫이라 여기서 하지 않는다
- * @property {() => string} [getPlayerKind] 지금 재생기의 kind('youtube' | 'file' | 'null').
+ * @property {() => string} [getPlayerKind] 지금 재생기의 kind('youtube' | 'file' | 'clock' | 'null'). 'clock' 은 영상 없이 박자로 도는 가상 재생기다(RM-22).
  *   URL 은 있는데 'null' 이면 **알아보지 못한 주소**라는 뜻이라 문구가 달라진다
  * @property {(sec: number, opts?: {play?: boolean}) => void} [onSeek] 영상을 그 시각으로 옮긴다(play 면 재생까지).
  *   `In 으로`·`Out 으로`·마커의 ▶ 가 쓴다. 어댑터를 아는 자리의 몫이라 여기서 player 를 만지지 않는다
@@ -213,6 +214,7 @@ export function formatRange(from, to, cols) {
  *   setInOut?: (args: {inSec:number, outSec:number}) => any,
  *   clearInOut?: () => any,
  *   setLoop?: (args?: {loop?: boolean}) => any,
+ *   toggleInOutLoop?: () => any,
  *   addMarker?: (args: {fromCount:number, toCount:number, label?:string}) => any,
  *   removeMarker?: (args: {id:string}) => any,
  *   clearMarkers?: () => any,
@@ -516,7 +518,8 @@ export function createVideoPanel(deps) {
     }
     const url = getSourceUrl();
     if (!url && !isFile) {
-      statusEl.textContent = NO_SOURCE_TEXT;
+      // 박자만 있으면 영상 없이 박자 시계로 돈다(RM-22) — 화면이 빈 것이 아니라 「영상 없이」 라고 말한다.
+      statusEl.textContent = getPlayerKind() === 'clock' ? CLOCK_TEXT : NO_SOURCE_TEXT;
       statusEl.classList.remove(CLS.isError);
       return;
     }
@@ -1340,7 +1343,8 @@ export function createVideoPanel(deps) {
     if (inOutClearBtn) inOutClearBtn.disabled = !hasIn && !hasOut;
     if (loopBtn) {
       // 켜져 있어도 구간이 없으면 켜진 것으로 보이지 않게 한다 — 잘라낸 뒤·In/Out 을 지운 뒤에 "반복 중"으로 보이면 거짓말이다.
-      loopBtn.className = p.loop && range ? CLS.quickBtnActive : CLS.ghost;
+      // 마디 반복(RM-22)이 잡혀 있으면 반복되는 것은 In~Out 이 아니다 — 이 버튼은 꺼진 모양이다.
+      loopBtn.className = p.loop && range && !p.practice ? CLS.quickBtnActive : CLS.ghost;
       loopBtn.disabled = !range;
     }
     if (inOutText) {
@@ -1348,7 +1352,7 @@ export function createVideoPanel(deps) {
         inOutText.textContent = '영상을 보다가 구간의 시작에서 `[ In 지금 여기`, 끝에서 `Out ] 지금 여기` 를 누르세요. 재생 중이든 멈춘 채든 지금 시각이 찍힙니다.';
       } else if (range) {
         inOutText.textContent = `In ${formatClock(range.inSec)} · Out ${formatClock(range.outSec)} · 길이 ${(range.outSec - range.inSec).toFixed(1)}초`
-          + (p.loop ? ' · 구간 반복 중' : '');
+          + (p.loop && !p.practice ? ' · 구간 반복 중' : '');
       } else {
         inOutText.textContent = hasIn ? `In ${formatClock(p.inSec)} — 이제 구간의 끝에서 Out 을 찍으세요.` : `Out ${formatClock(p.outSec)} — 이제 구간의 시작에서 In 을 찍으세요.`;
       }
@@ -1661,7 +1665,7 @@ export function createVideoPanel(deps) {
   if (outBtn && commands.setOutPoint) outBtn.onclick = () => render(commands.setOutPoint({ sec: getCurrentSec() }));
   if (inGoBtn) inGoBtn.onclick = () => { const p = panelState(); if (Number.isFinite(p.inSec)) onSeek(p.inSec); };
   if (outGoBtn) outGoBtn.onclick = () => { const p = panelState(); if (Number.isFinite(p.outSec)) onSeek(p.outSec); };
-  if (loopBtn && commands.setLoop) loopBtn.onclick = () => render(commands.setLoop());
+  if (loopBtn && commands.toggleInOutLoop) loopBtn.onclick = () => render(commands.toggleInOutLoop());
   if (inOutClearBtn && commands.clearInOut) inOutClearBtn.onclick = () => render(commands.clearInOut());
   if (trimBtn) {
     trimBtn.onclick = () => {
