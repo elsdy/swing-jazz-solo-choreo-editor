@@ -179,16 +179,8 @@ export function cloneCategories(categories) {
   return out;
 }
 
-/**
- * 불러온 사전을 정규화한다. ⚠ **키를 localeCompare 로 정렬**해서 돌려준다 —
- * 그래서 프로젝트를 불러오면 카테고리 순서가 가나다순으로 재배열되고,
- * 그 순서가 applySortToMoves('category') 의 그룹 순서를 바꾼다. 원본 동작이다.
- * @see index.html:4000
- * @param {unknown} input
- * @param {CategoryMap} [defaults] 색·빈 사전 폴백 (원본의 DEFAULT_CATEGORIES)
- * @returns {CategoryMap}
- */
-export function normalize(input, defaults = DEFAULT_CATEGORIES) {
+/** normalize · normalizeInOrder 의 공통부 — label·color 를 채우고 객체가 아닌 값을 거른다. 순서는 입력 그대로. */
+function fillEntries(input, defaults) {
   const source = input && typeof input === 'object' ? input : defaults;
   const out = {};
   Object.entries(source).forEach(([key, value]) => {
@@ -198,6 +190,34 @@ export function normalize(input, defaults = DEFAULT_CATEGORIES) {
       color: String(value.color || defaults[key]?.color || '#cbd5e1')
     };
   });
+  return out;
+}
+
+/**
+ * 사전을 정규화하되 **키 순서는 입력 그대로** 둔다 — label·color 를 채우고 객체가 아닌 값을 거른다.
+ * undo 되살리기가 이것을 쓴다(RM-07, 2026-10-01). 스냅샷은 이미 정규화된 상태에서 찍혔으므로
+ * 여기서 정렬하면 되살린 상태의 서명이 스냅샷과 달라져, 다음 커밋이 유령 단계를 쌓고 Redo 를 날렸다.
+ * @param {unknown} input
+ * @param {CategoryMap} [defaults] 색·빈 사전 폴백
+ * @returns {CategoryMap}
+ */
+export function normalizeInOrder(input, defaults = DEFAULT_CATEGORIES) {
+  const out = fillEntries(input, defaults);
+  return Object.keys(out).length ? out : cloneCategories(defaults);
+}
+
+/**
+ * 불러온 사전을 정규화한다. ⚠ **키를 localeCompare 로 정렬**해서 돌려준다 —
+ * 그래서 프로젝트를 불러오면 카테고리 순서가 가나다순으로 재배열되고,
+ * 그 순서가 applySortToMoves('category') 의 그룹 순서를 바꾼다. 원본 동작이다.
+ * ⚠ undo 되살리기에는 쓰지 않는다 — 그 자리는 normalizeInOrder 다(RM-07).
+ * @see index.html:4000
+ * @param {unknown} input
+ * @param {CategoryMap} [defaults] 색·빈 사전 폴백 (원본의 DEFAULT_CATEGORIES)
+ * @returns {CategoryMap}
+ */
+export function normalize(input, defaults = DEFAULT_CATEGORIES) {
+  const out = fillEntries(input, defaults);
   const sorted = {};
   Object.keys(out).sort((a, b) => a.localeCompare(b)).forEach(k => { sorted[k] = out[k]; });
   return Object.keys(sorted).length ? sorted : cloneCategories(defaults);

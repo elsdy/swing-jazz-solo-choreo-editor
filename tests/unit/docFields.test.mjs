@@ -6,6 +6,8 @@
 //   ① 저장 → 다시 열기          파일(작업 중 문서와 같은 모양)에 실리고, 열면 그대로 돌아오나
 //   ② 바꾸기 → 되돌리기         그 필드만 기본값으로 바꾸고 Undo 하면 견본이 돌아오나
 //   ③ 지운 값이 되살아나지 않나  비운 필드로 저장할 때 옛 파일의 그 키가 passthrough 로 끼어들지 않나
+//   ④ 되살린 상태의 서명         Undo · Redo 로 되살린 상태가 스냅샷과 글자 하나 다르지 않나 — 다르면 다음 커밋이
+//                                유령 단계를 쌓고 Redo 를 날린다(RM-07, 카테고리 정렬이 그랬다)
 //
 // ⚠ 등록표에 줄을 더하고 SAMPLES 를 빠뜨리면 맨 첫 시험이 붉어진다 — 견본 없이는 그 필드를 잴 수 없다.
 
@@ -95,6 +97,28 @@ for (const { key } of FIELD_TABLE) {
     assert.equal(History.canUndo(hist, BOARD_MAIN), true, `${key}: 바꿨는데 커밋이 무시됐다 — 스냅샷이 이 필드를 안 담는다`);
     History.undo(hist, BOARD_MAIN);
     assert.deepEqual(docView(store.get())[key], expected()[key], `${key}: Undo 로 돌아오지 않는다`);
+  });
+}
+
+for (const { key } of FIELD_TABLE) {
+  test(`④ 되살린 상태의 서명: ${key} 를 Undo · Redo 한 직후의 커밋은 단계를 쌓지 않는다`, () => {
+    const store = seeded();
+    const hist = History.createHistory(store);
+    const stack = hist.stack(BOARD_MAIN);
+    History.commit(hist, BOARD_MAIN);
+    writeDoc(store, { [key]: docView(createStore().get())[key] });   // 견본 → 기본값(기본 카테고리는 가나다순이 아니다)
+    History.commit(hist, BOARD_MAIN);
+
+    History.undo(hist, BOARD_MAIN);                                  // 견본을 되살렸다
+    let depth = stack.past.length;
+    History.commit(hist, BOARD_MAIN);
+    assert.equal(stack.past.length, depth, `${key}: Undo 로 되살린 상태의 서명이 스냅샷과 다르다 — 복원 규칙(snapshot.UNDO_OPS)이 값이나 키 순서를 바꾼다`);
+    assert.equal(History.canRedo(hist, BOARD_MAIN), true, `${key}: Undo 직후의 커밋이 Redo 를 날렸다`);
+
+    History.redo(hist, BOARD_MAIN);                                  // 기본값을 되살렸다
+    depth = stack.past.length;
+    History.commit(hist, BOARD_MAIN);
+    assert.equal(stack.past.length, depth, `${key}: Redo 로 되살린 상태의 서명이 스냅샷과 다르다`);
   });
 }
 
