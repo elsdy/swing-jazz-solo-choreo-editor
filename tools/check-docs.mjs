@@ -7,7 +7,7 @@
 //   ② 파일은 있는데 등록부에 없는 문서 — 사용자 눈에는 문서가 늘지 않은 것과 같다
 //   ③ 문서끼리 거는 링크의 앵커가 뷰어가 만드는 id 와 맞는지
 //   ④ 뷰어 렌더 결과의 제목·목록·표·코드블록 개수가 원문과 맞는지
-//   ⑤ 튜토리얼·기능 설명서가 백틱으로 인용한 화면 라벨이 지금 화면 코드에 있는지(tools/lib/doc-labels.mjs)
+//   ⑤ 튜토리얼·기능 설명서가 백틱으로 인용한 화면 라벨이 지금 화면 코드에 있는지(tools/docLabels.mjs)
 //      — 라벨을 바꾸고 두 문서를 빠뜨린 커밋이 여기서 붉어진다
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -15,7 +15,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderMarkdown, buildToc } from '../src/ui/docsHub.js';
 import { DOCS, DOC_GROUPS, idForFileName } from '../src/ui/docsRegistry.js';
-import { LABEL_DOCS, NOT_LABELS, checkDocLabels, loadScreenFiles } from './lib/doc-labels.mjs';
+import { LABEL_DOCS, NOT_LABELS, checkDocLabels, formatMiss } from './docLabels.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -109,19 +109,31 @@ for (const l of links) {
 }
 
 // ── ⑤ 라벨 인용 ─────────────────────────────────────────────────────────────
-const labelDocs = Object.fromEntries(LABEL_DOCS.filter(f => existsSync(join(ROOT, f))).map(f => [f, readFileSync(join(ROOT, f), 'utf8')]));
-const labels = checkDocLabels(labelDocs, loadScreenFiles(ROOT));
-for (const m of labels.misses) {
-  const near = m.near.length ? ` — 비슷한 화면 글자: ${m.near.map(n => `「${n}」`).join(' · ')}` : '';
-  problems.push(`${m.doc} ${m.line}줄: \`${m.quote}\` 가 화면 어디에도 없다${near}`);
+// 화면 쪽 원문: src/ 의 JS · index.html · admin.html · server.py. 읽기는 여기서 하고 대조 모듈은 글자만 받는다.
+function readScreenFiles() {
+  const files = {};
+  const walkJs = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) walkJs(p);
+      else if (p.endsWith('.js')) files[relative(ROOT, p).replaceAll('\\', '/')] = readFileSync(p, 'utf8');
+    }
+  };
+  walkJs(join(ROOT, 'src'));
+  for (const f of ['index.html', 'admin.html', 'server.py']) if (existsSync(join(ROOT, f))) files[f] = readFileSync(join(ROOT, f), 'utf8');
+  return files;
 }
-for (const q of labels.badExclusions) problems.push(`tools/lib/doc-labels.mjs NOT_LABELS: '${q}' 에 이유가 없다 — 왜 라벨이 아닌지 적는다`);
-for (const q of labels.unusedExclusions) problems.push(`tools/lib/doc-labels.mjs NOT_LABELS: '${q}' 를 인용한 곳이 이제 없다 — 목록에서 지운다`);
+const labelDocs = Object.fromEntries(LABEL_DOCS.filter(f => existsSync(join(ROOT, f))).map(f => [f, readFileSync(join(ROOT, f), 'utf8')]));
+const labels = checkDocLabels(labelDocs, readScreenFiles());
+for (const m of labels.misses) problems.push(formatMiss(m));
+for (const q of labels.badExclusions) problems.push(`tools/docLabels.mjs NOT_LABELS: '${q}' 에 이유가 없다 — 왜 라벨이 아닌지 적는다`);
+for (const q of labels.unusedExclusions) problems.push(`tools/docLabels.mjs NOT_LABELS: '${q}' 를 인용한 곳이 이제 없다 — 목록에서 지운다`);
+const filteredTotal = Object.values(labels.filtered).reduce((a, b) => a + b, 0);
 
 // ── 보고 ────────────────────────────────────────────────────────────────────
 console.log(stats.join('\n'));
 console.log(`\n등록 문서 ${DOCS.length}건 / 갈래 ${DOC_GROUPS.length}개 / 문서 간 링크 ${links.length}개`);
-console.log(`라벨 인용 ${labels.checked}개 대조(${LABEL_DOCS.join(' · ')}) / 라벨 아님으로 뺀 것 ${labels.skipped}개(목록 ${NOT_LABELS.length}줄)`);
+console.log(`라벨 인용 ${labels.checked}개 대조(${LABEL_DOCS.join(' · ')}) / 꼴로 거른 것 ${filteredTotal}개(${Object.entries(labels.filtered).map(([k, n]) => `${k} ${n}`).join(' · ')}) / 라벨 아님 목록 ${NOT_LABELS.length}개`);
 for (const n of notes) console.log('  · ' + n);
 
 if (problems.length) {
@@ -129,4 +141,4 @@ if (problems.length) {
   for (const p of problems) console.error('  ✗ ' + p);
   process.exit(1);
 }
-console.log('\n문서 검사 통과 — 등록 누락 0, 깨진 앵커 0, 렌더 누락 0, 없는 라벨 인용 0');
+console.log(`\n문서 검사 통과 — 등록 누락 0, 깨진 앵커 0, 렌더 누락 0, 라벨 인용 불일치 0 · 라벨 아님 ${NOT_LABELS.length}개`);
