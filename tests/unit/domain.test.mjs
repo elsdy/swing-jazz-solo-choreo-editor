@@ -4681,11 +4681,14 @@ test('commandForKey: 글쇠 → 명령, 글자를 치는 중에는 whileTyping �
   assert.equal(commandForKey(map, 'Cmd+Y').id, 'redo');
   assert.equal(commandForKey(map, 'Q'), null);
   assert.equal(commandForKey(map, ''), null);
-  // 입력칸 안 — 홑글쇠는 듣지 않고 Escape · Ctrl 조합은 듣는다(보존 결함 #11)
+  // 입력칸 안 — 홑글쇠는 듣지 않고 Escape 는 듣는다
   assert.equal(commandForKey(map, 'B', true), null);
   assert.equal(commandForKey(map, 'Space', true), null);
   assert.equal(commandForKey(map, 'Escape', true).id, 'stop');
-  assert.equal(commandForKey(map, 'Ctrl+Z', true).id, 'undo');
+  // 입력칸 안의 Ctrl+Z 는 글자를 되돌린다 — 안무표가 아니다(2026-10-01 RM-13, 옛 결함 #11)
+  assert.equal(commandForKey(map, 'Ctrl+Z', true), null, '이름칸의 Ctrl+Z 가 안무표를 되돌린다');
+  assert.equal(commandForKey(map, 'Cmd+Shift+Z', true), null);
+  assert.equal(commandForKey(map, 'Ctrl+Z', false).id, 'undo');
   // 팔레트는 이름칸에 글을 치다가도 열리고(조합 글쇠), 일람의 `?` 는 글자를 칠 때 먹지 않는다
   assert.equal(commandForKey(map, 'Ctrl+K', true).id, 'palette');
   assert.equal(commandForKey(map, 'Cmd+K').id, 'palette');

@@ -42,9 +42,10 @@ const def = (c) => Object.freeze({
  *   잘못 눌러 잃는 것이 가장 비싸다.
  * ⚠ `stop` 도 고정이다. 이 앱에서 `Escape` 한 글쇠에 두 뜻이 걸려 있고(받는 중이면 받아 적기를 끝내고,
  *   아니면 고른 동작을 푼다) 브라우저·OS 가 먼저 가져가는 경우도 있다.
- * ⚠ 글자를 치는 중에도 듣는 것(`whileTyping`)은 셋뿐이다 — `Escape` 와 Ctrl 조합 둘. 홑글쇠가 입력칸에서
- *   먹으면 동작 이름을 치는 동안 블록이 쌓인다. Ctrl+Z 가 입력칸에서도 안무표를 되돌리는 것은 일부러
- *   두고 온 결함이다(docs/deviations.md #11).
+ * ⚠ 글자를 치는 중에도 듣는 것(`whileTyping`)은 `Escape` 와 화면을 여는 조합 글쇠뿐이다. 홑글쇠가 입력칸에서
+ *   먹으면 동작 이름을 치는 동안 블록이 쌓인다. `undo` · `redo` 도 **입력칸에서는 듣지 않는다**(2026-10-01, RM-13) —
+ *   그전에는 이름칸에서 Ctrl+Z 를 누르면 글자 대신 안무표가 되돌아갔다(docs/deviations.md 「입력창 안의
+ *   Ctrl+Z 가 안무표를 되돌렸다」). 입력칸 안의 Ctrl+Z 는 브라우저의 글자 되돌리기다.
  * @type {readonly CommandDef[]}
  */
 export const COMMANDS = Object.freeze([
@@ -90,7 +91,6 @@ export const COMMANDS = Object.freeze([
     hint: '방금 한 일을 하나 되돌린다. 글쇠는 OS 관례라 바꾸지 않는다',
     keys: ['Ctrl+Z', 'Cmd+Z'],
     fixed: true,
-    whileTyping: true,
     button: 'Undo',
   }),
   def({
@@ -101,7 +101,6 @@ export const COMMANDS = Object.freeze([
     // 예전 글쇠 처리는 Ctrl·Cmd 어느 쪽이든 `Y` 와 `Shift+Z` 를 모두 들었다 — 화면에는 관례 둘만 적는다.
     alsoKeys: ['Ctrl+Shift+Z', 'Cmd+Y'],
     fixed: true,
-    whileTyping: true,
     button: 'Redo',
   }),
   // ── 명령을 찾는 두 화면 — 둘 다 이 표를 읽기만 한다 ─────────────────────────

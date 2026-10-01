@@ -761,6 +761,13 @@ function applyHotkeys(next) {
   views.thumb?.render();
 }
 
+/**
+ * 지금 편집 중인 보드(RM-13). 루틴 편집기가 열려 있으면 루틴, 아니면 메인.
+ * ⚠ 글쇠만 이것을 따른다 — 버튼은 자기가 놓인 보드를 `data-board` 로 안다.
+ * @returns {'main'|'routine'}
+ */
+const activeBoardId = () => (store.get().session.editingRoutineId ? BOARD_ROUTINE : BOARD_MAIN);
+
 /** 명령 하나의 지금 글쇠. 툴팁 · 일람이 읽는다. */
 const keysNow = (id) => hotkeyMap[id];
 
@@ -866,6 +873,8 @@ bindControls({
   confirmOnce,
   fileIO: browserFileIO,
   runCommand,
+  // 단축키가 먹는 보드(RM-13) — 루틴 편집기가 열려 있으면 루틴 보드다. 버튼은 `data-board` 로 따로 가른다.
+  activeBoardId,
   // ⚠ 게터다 — 설정에서 바꾸면 다음 입력부터 바로 들어야 한다(값으로 주면 묶은 시점에 갇힌다).
   hotkeys: () => hotkeyMap,
   commands: {
