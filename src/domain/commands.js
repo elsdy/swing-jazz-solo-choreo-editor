@@ -54,6 +54,8 @@ export const COMMANDS = Object.freeze([
     hint: '동작이 바뀌는 자리마다 한 번. 앞 구간이 놓이고 그 자리에서 다음이 열린다',
     keys: ['B', 'K'],
     fixed: false,
+    button: '▮ 끊기',
+    title: '처음 누른 자리가 안무표의 1카운트가 되고, 그 뒤로는 동작이 바뀌는 자리마다 한 번씩 누릅니다',
   }),
   def({
     id: 'skip',
@@ -61,6 +63,8 @@ export const COMMANDS = Object.freeze([
     hint: '여기까지는 안무가 아니다(설명·쉬는 시간). 앞 구간을 놓지 않고 경계만 옮긴다',
     keys: ['N'],
     fixed: false,
+    button: '건너뛰기',
+    title: '여기까지는 안무가 아닙니다(설명·쉬는 시간). 앞 구간을 놓지 않고 경계만 옮깁니다',
   }),
   def({
     id: 'play',
@@ -68,6 +72,7 @@ export const COMMANDS = Object.freeze([
     hint: '영상 패널이 열려 있을 때 듣는다',
     keys: ['Space'],
     fixed: false,
+    button: '⏯',
   }),
   def({
     id: 'stop',
@@ -76,6 +81,8 @@ export const COMMANDS = Object.freeze([
     keys: ['Escape'],
     fixed: true,
     whileTyping: true,
+    button: '■ 그만',
+    title: '받아 적기를 끝냅니다. 열려 있던 마지막 구간은 버립니다',
   }),
   def({
     id: 'undo',
@@ -96,6 +103,48 @@ export const COMMANDS = Object.freeze([
     fixed: true,
     whileTyping: true,
     button: 'Redo',
+  }),
+  // ── 글쇠 없이 버튼 · 팔레트로 부르는 명령 ──────────────────────────────────
+  // 같은 일의 입구가 여럿인 것들이다. 입구마다 글자 · 툴팁을 따로 적다가 서로 달라졌다
+  // (`▶ 영상으로 채우기` 의 툴팁이 채우기 줄과 엄지 바에서 달랐다).
+  def({
+    id: 'videoPanel',
+    label: '영상으로 채우기',
+    hint: '영상 패널을 열고 닫는다',
+    title: '영상을 보며 동작이 바뀌는 자리를 찍어 안무표를 채웁니다',
+    button: '▶ 영상으로 채우기',
+    fixed: false,
+  }),
+  def({
+    id: 'videoFile',
+    label: '영상 파일 열기',
+    hint: '내 컴퓨터의 영상 파일을 고른다',
+    title: '내 컴퓨터의 영상 파일을 안무표 옆에 띄웁니다',
+    button: '📁 영상 파일 열기',
+    fixed: false,
+  }),
+  def({
+    id: 'quickPlace',
+    label: '빠른 배치',
+    hint: '격자를 눌러 고르며 놓는다. 다시 누르면 끈다',
+    title: '격자를 눌러 고르며 놓습니다',
+    button: '+ 빠른 배치',
+    fixed: false,
+  }),
+  def({
+    id: 'saveProject',
+    label: '프로젝트 저장',
+    hint: '지금 안무표를 이름칸의 이름으로 저장한다',
+    title: '지금 안무표를 이름칸의 이름으로 저장합니다',
+    button: '프로젝트 저장',
+    fixed: false,
+  }),
+  def({
+    id: 'rename',
+    label: '이름 바꾸기',
+    hint: '파일 메뉴를 열고 이름칸에 커서를 둔다',
+    title: '안무표 이름을 바꿉니다',
+    fixed: false,
   }),
 ]);
 

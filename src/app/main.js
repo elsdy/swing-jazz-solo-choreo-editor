@@ -74,6 +74,7 @@ import { createTrashView } from '../ui/trashView.js';
 import { createSpeechInput } from '../adapters/speechInput.js';
 import * as VoiceCmd from '../usecases/voiceNameCommands.js';
 import { createFileMenu } from '../ui/fileMenu.js';
+import { commandFace, syncCommandTitles } from '../ui/commandButtons.js';
 import { createDraftStore, debounceSave, DRAFT_NAME } from '../adapters/draftStore.js';
 import { createThumbBar } from '../ui/thumbBar.js';
 import { flowTotal, nextAfter, noteTransition, topTransitions } from '../domain/flowStats.js';
@@ -645,10 +646,6 @@ views.routineEditor = createRoutineEditorView({
     clear: () => mergeDirty(BoardCmd.clearRoutineBoard(store), commitHistory(BOARD_ROUTINE)), // 4830-4835
     close: () => RoutineCmd.closeEditor(routineDeps),
     rename: (routineId, next) => RoutineCmd.renameRoutine(routineDeps, routineId, next),
-    // ⚠ 메인이 아니라 **루틴** 퀵피커의 close 다. 그대로 넘기면 첫 인자가 truthy 라 미리보기가 남는다.
-    toggleQuickPlace: () => BoardCmd.toggleQuickPlaceMode(store, { boardId: BOARD_ROUTINE }, {
-      closeQuickPicker: () => quickPickers[BOARD_ROUTINE].close()
-    }),
     setSize: (size) => RoutineCmd.setRoutineSize(routineDeps, size)
   }
 });
@@ -758,6 +755,36 @@ function applyHotkeys(next) {
   // 전부 기본값으로 돌아왔으면 키를 지운다 — 빈 객체를 남겨 두면 "손댔다"는 흔적만 남는다.
   if (Object.keys(saved).length === 0) localKv.remove(STORAGE_KEYS.hotkeys);
   else localKv.set(STORAGE_KEYS.hotkeys, saved);
+  // 툴팁이 글쇠를 싣는다 — 바꾼 즉시 고쳐 쓴다(RM-09).
+  syncCommandTitles(document, keysNow);
+  views.thumb?.render();
+}
+
+/** 명령 하나의 지금 글쇠. 툴팁 · 일람이 읽는다. */
+const keysNow = (id) => hotkeyMap[id];
+
+/**
+ * 프로젝트 저장 — `프로젝트 저장` 버튼과 명령 팔레트가 같은 이 함수를 부른다(RM-09).
+ * ⚠ 다운로드는 유스케이스가 그대로 한다(정적 호스팅에서도 저장이 되어야 한다). 보관 폴더 쓰기는
+ *   **여기서** 한다 — 비동기이고 어댑터를 아는 자리가 app/main 뿐이기 때문이다(clipServer 와 같은 규약).
+ * @param {{fileName: string}} options
+ */
+function saveProjectNow(options) {
+  const dirty = ProjectCmd.saveProject(projectDeps, options);
+  const fileName = (store.get().recents.projects[0] || {}).fileName;
+  const payload = (store.get().recents.projects[0] || {}).data;
+  if (fileName && payload) {
+    projectServer.save(fileName, payload).then((saved) => {
+      if (!saved) return;
+      // **여기서 묶는다**(2026-09-22). 이 순간부터 자동 담기가 `_작업중` 이 아니라 이 파일로 간다 —
+      // 「이름을 붙이고 며칠을 작업해도 저장본이 없다」가 이 한 줄로 끝난다.
+      // ⚠ 서버가 실제로 받아 줬을 때만 묶는다. 폴더에 없는 이름에 묶으면 다음 부팅의 되살리기가 빈손이다.
+      draftStore.bind(fileName);
+      syncSaveTargetNote();
+      refreshProjectFolder();
+    });
+  }
+  return dirty;
 }
 
 // ── 명령 등록부의 실행 (RM-09) ──────────────────────────────────────────────
@@ -783,7 +810,22 @@ const COMMAND_RUNNERS = Object.freeze({
     return false;
   },
   undo: ({ board }) => { render(undo(board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN)); return true; },
-  redo: ({ board }) => { render(redo(board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN)); return true; }
+  redo: ({ board }) => { render(redo(board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN)); return true; },
+  // ▶ 영상으로 채우기 — 채우기 줄의 버튼은 여닫고, 엄지 바의 버튼은 패널이 닫혀 있을 때만 보이므로 결국 연다.
+  videoPanel: () => { render(VideoCmd.togglePanel(store)); return true; },
+  // 📁 파일을 고르는 창은 영상 패널이 쥔 <input type=file> 이 띄운다. 닫혀 있으면 먼저 연다.
+  videoFile: () => {
+    if (!VideoCmd.panelState(store).open) render(VideoCmd.openPanel(store));
+    return Boolean(views.video && views.video.openFile());
+  },
+  // ⚠ 메인과 루틴은 **각자의** 퀵피커를 닫는다. 그대로 넘기면 첫 인자가 truthy 라 미리보기가 남는다(1692).
+  quickPlace: ({ board }) => {
+    const boardId = board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN;
+    render(BoardCmd.toggleQuickPlaceMode(store, { boardId }, { closeQuickPicker: () => quickPickers[boardId].close() }));
+    return true;
+  },
+  saveProject: () => { render(saveProjectNow({ fileName: byId('fileNameInput').value })); return true; },
+  rename: () => { views.fileMenu?.open(); return true; }
 });
 
 /**
@@ -805,6 +847,9 @@ function runCommand(id, ctx = {}) {
   if (unknown.length) console.warn('[명령] 실행만 있고 등록부에 없다 — 아무도 부르지 않는다:', unknown.join(' · '));
 }
 
+// 마크업의 `data-command` 버튼에 등록부의 툴팁을 단다(RM-09). 글쇠를 바꾸면 applyHotkeys 가 다시 단다.
+syncCommandTitles(document, keysNow);
+
 bindControls({
   els,
   store,
@@ -820,25 +865,6 @@ bindControls({
     setSortDir: (dir) => PaletteCmd.setSortDir(paletteCtx, dir),
     addMove: (rawName, category) => PaletteCmd.addMove(paletteCtx, rawName, category),
     commitHistory,
-    // ⚠ 다운로드는 유스케이스가 그대로 한다(정적 호스팅에서도 저장이 되어야 한다). 보관 폴더 쓰기는
-    //   **여기서** 한다 — 비동기이고 어댑터를 아는 자리가 app/main 뿐이기 때문이다(clipServer 와 같은 규약).
-    saveProject: (options) => {
-      const dirty = ProjectCmd.saveProject(projectDeps, options);
-      const fileName = (store.get().recents.projects[0] || {}).fileName;
-      const payload = (store.get().recents.projects[0] || {}).data;
-      if (fileName && payload) {
-        projectServer.save(fileName, payload).then((saved) => {
-          if (!saved) return;
-          // **여기서 묶는다**(2026-09-22). 이 순간부터 자동 담기가 `_작업중` 이 아니라 이 파일로 간다 —
-          // 「이름을 붙이고 며칠을 작업해도 저장본이 없다」가 이 한 줄로 끝난다.
-          // ⚠ 서버가 실제로 받아 줬을 때만 묶는다. 폴더에 없는 이름에 묶으면 다음 부팅의 되살리기가 빈손이다.
-          draftStore.bind(fileName);
-          syncSaveTargetNote();
-          refreshProjectFolder();
-        });
-      }
-      return dirty;
-    },
     saveMoveList: (options) => ProjectCmd.saveMoveList(projectDeps, options),
     saveCategories: (options) => ProjectCmd.saveCategories(projectDeps, options),
     loadProjectFromFile: (input) => openLinksIfAny(ProjectCmd.loadProjectFromFile(projectDeps, input)),
@@ -858,9 +884,6 @@ bindControls({
     clearPlacements: () => BoardCmd.clearPlacements(store),
     setBoardRows: (args) => BoardCmd.setBoardRows(store, { boardId: BOARD_MAIN, ...args }),
     setDefaultCount: (value) => BoardCmd.setDefaultCount(store, { value }),
-    toggleQuickPlace: (boardId) => BoardCmd.toggleQuickPlaceMode(store, { boardId }, {
-      closeQuickPicker: () => quickPickers[boardId].close()   // 1692
-    }),
     clearSelection: () => BoardCmd.clearSelection(store),
     createRoutine: () => RoutineCmd.createRoutine(routineDeps),
     createRoutineFromSelection: () => RoutineCmd.createFromSelection(routineDeps)
@@ -2127,7 +2150,8 @@ views.thumb = createThumbBar({
     sheetOpen: document.body.dataset.sheet === 'on'
   }),
   actions: {
-    openPanel: () => render(VideoCmd.openPanel(store)),
+    // 같은 명령의 입구다(RM-09) — 이 버튼은 패널이 닫혀 있을 때만 보이므로 여닫기가 곧 열기다.
+    openPanel: () => { runCommand('videoPanel'); },
     // ⚠ 뷰의 메서드를 거친다 — 지금 몇 초인지는 영상 패널만 알고(재생기는 뷰가 쥔다),
     //   그리기와 히스토리 커밋까지 그쪽에서 끝난다. 여기서 커맨드를 직접 부르면 그 둘이 빠진다.
     // ⚠ 조작 줄의 누름도 같은 표에 센다 — 사람의 차례는 단계와 조작을 오가며 이어진다.
@@ -2141,8 +2165,10 @@ views.thumb = createThumbBar({
     tap: () => { flowLog.note('tap'); views.video?.tap(); views.thumb?.render(); },
     voice: () => { flowLog.note('voice'); views.video?.voiceToggle(); views.thumb?.render(); },
     toggleSheet: () => { byId('sidebarSheetBtn')?.click(); },
-    quickPlace: () => { byId('quickPlaceBtn')?.click(); }
-  }
+    quickPlace: () => { runCommand('quickPlace'); }
+  },
+  // 글자 · 툴팁은 등록부의 것이다(RM-09). 툴팁에 지금 글쇠가 실린다.
+  face: (id) => commandFace(id, keysNow)
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

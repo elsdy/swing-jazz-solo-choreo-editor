@@ -22,7 +22,7 @@ export const UNTITLED = '제목 없는 안무';
  * }} [options]
  *   getSaveTarget: 지금 무엇에 담기고 있나 — 묶인 파일 이름(없으면 빈 문자열)과 담는 자리.
  *   ⚠ **게터다.** 묶임은 저장·열기로 세션 중에 바뀐다.
- * @returns {{ syncName(): void, close(): void }}
+ * @returns {{ syncName(): void, close(): void, open(): void }} open 은 `이름 바꾸기` 명령(RM-09)이 부른다
  */
 export function createFileMenu(options = {}) {
   const { getSaveTarget = null, elements = {} } = options;
@@ -118,5 +118,5 @@ export function createFileMenu(options = {}) {
   });
 
   syncName();
-  return { syncName, close };
+  return { syncName, close, open };
 }

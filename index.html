@@ -3333,7 +3333,7 @@
           <label class="file-menu-label" for="fileNameInput">안무표 이름</label>
           <div class="appbar-file">
             <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
-            <button id="saveBtn" class="primary">프로젝트 저장</button>
+            <button id="saveBtn" class="primary" data-command="saveProject">프로젝트 저장</button>
           </div>
           <div class="file-menu-row">
             <button id="loadFileBtn" class="ghost">전체 불러오기</button>
@@ -3379,8 +3379,8 @@
       <span class="mode-bar-label">채우기</span>
       <!-- app/main.js 가 여기에 `✨ 말로 채우기` 를 붙인다(전에는 앱바였다). -->
       <span class="mode-slot" id="modeComposeSlot"></span>
-      <button id="videoPanelBtn" class="ghost" type="button" title="영상을 보며 동작이 바뀌는 자리를 찍어 안무표를 채웁니다">▶ 영상으로 채우기</button>
-      <button id="quickPlaceBtn" class="ghost" type="button">+ 빠른 배치</button>
+      <button id="videoPanelBtn" class="ghost" type="button" data-command="videoPanel">▶ 영상으로 채우기</button>
+      <button id="quickPlaceBtn" class="ghost" type="button" data-command="quickPlace">+ 빠른 배치</button>
       <button id="modeManualBtn" class="ghost" type="button" title="왼쪽 동작 목록에서 끌어다 놓습니다">✋ 직접 놓기</button>
       <span class="mode-sep"></span>
       <!-- app/main.js 가 여기에 `🎵 프레이즈` 를 붙인다(전에는 캔버스 바였다). -->
@@ -3402,7 +3402,7 @@
            곧 "어떻게 좋아져 왔는가" 가 된다(ui/projectPanel.js). -->
       <section class="section project-panel" id="projectPanel">
         <div class="project-head">
-          <button class="project-name" id="projectName" type="button" title="이름을 바꾸려면 누르세요">제목 없는 안무</button>
+          <button class="project-name" id="projectName" type="button" data-command="rename">제목 없는 안무</button>
         </div>
         <div class="project-summary" id="projectSummary"></div>
         <div class="project-clips" id="projectClips"></div>
@@ -3555,7 +3555,7 @@
             <div class="top-actions" style="flex-wrap:wrap;">
               <span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><span class="size-pill-label">박자</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="reColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="reColsInput" type="number" min="1" max="64" value="8" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><span class="size-pill-label">행</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="reRowsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="reRowsInput" type="number" min="1" max="32" value="4" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reRowsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
-              <button id="reQuickPlaceBtn" class="ghost">+ 빠른 배치</button>
+              <button id="reQuickPlaceBtn" class="ghost" data-command="quickPlace" data-board="routine">+ 빠른 배치</button>
               <button id="reUndoBtn" class="ghost" data-command="undo" data-board="routine" disabled>Undo</button>
               <button id="reRedoBtn" class="ghost" data-command="redo" data-board="routine" disabled>Redo</button>
               <button id="reClearBtn" class="danger">초기화</button>
@@ -3604,7 +3604,7 @@
               <div class="vstep-body">
             <div class="video-field video-source">
               <input id="videoFileInput" type="file" accept="video/*" hidden />
-              <button id="videoFileBtn" class="ghost" type="button" title="내 컴퓨터의 영상 파일을 안무표 옆에 띄웁니다">📁 영상 파일 열기</button>
+              <button id="videoFileBtn" class="ghost" type="button" data-command="videoFile">📁 영상 파일 열기</button>
               <span class="video-file-name" id="videoFileName" hidden></span>
               <button id="videoFileLibBtn" class="ghost accent" type="button" title="설정에서 지정한 보관 폴더에서 이 안무표의 영상을 다시 읽어 옵니다" hidden>📂 보관 폴더에서 불러오기</button>
               <button id="videoFileClearBtn" class="ghost" type="button" title="영상 파일을 놓고 링크바의 유튜브 주소로 돌아갑니다" hidden>✕ 파일 놓기</button>
@@ -3683,9 +3683,9 @@
                       버튼만 둘이라 "지금은 어느 쪽인가"를 도로 읽게 만들었다. 하나로 되돌린다. -->
               <div class="video-field">
                 <button id="videoRewindBtn" class="ghost" type="button" title="영상을 맨 처음으로 되감고 바로 재생합니다. 받아 적기는 처음부터 훑는 일이라 여기서 시작합니다">⏮ 처음으로</button>
-                <button id="videoCaptureBtn" class="warn" type="button" data-command="capture" title="처음 누른 자리가 안무표의 1카운트가 되고, 그 뒤로는 동작이 바뀌는 자리마다 한 번씩 누릅니다 (단축키 K 또는 B)">▮ 끊기</button>
-                <button id="videoCaptureSkipBtn" class="ghost" type="button" data-command="skip" title="여기까지는 안무가 아닙니다(설명·쉬는 시간). 앞 구간을 놓지 않고 경계만 옮깁니다 (단축키 N)">건너뛰기</button>
-                <button id="videoCaptureCancelBtn" class="ghost" type="button" data-command="stop" title="받아 적기를 끝냅니다. 열려 있던 마지막 구간은 버립니다 (Esc)">■ 그만</button>
+                <button id="videoCaptureBtn" class="warn" type="button" data-command="capture">▮ 끊기</button>
+                <button id="videoCaptureSkipBtn" class="ghost" type="button" data-command="skip">건너뛰기</button>
+                <button id="videoCaptureCancelBtn" class="ghost" type="button" data-command="stop">■ 그만</button>
                 <button id="videoMarkerBlocksBtn" class="ghost accent" type="button" title="찍어 둔 마커를 전부 안무표의 블록으로 옮깁니다. 마커는 그대로 남습니다">마커를 블록으로</button>
                 <button id="videoNameSelBtn" class="ghost accent" type="button" title="안무표에서 고른 이름 없는 블록에 이름을 붙입니다">고른 블록에 이름 붙이기</button>
               </div>

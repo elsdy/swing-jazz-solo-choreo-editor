@@ -1536,20 +1536,17 @@ export function createVideoPanel(deps) {
 
   if (pipBtn) pipBtn.onclick = () => { onTogglePip(); };
 
-  if (openBtn) {
-    openBtn.onclick = () => {
-      // 2026-09-13 — 좁은 화면에서 처음 열 때 접던 것을 없앴다. 세로를 아끼려던 것인데,
-      // 접힌 패널은 헤더만 남아 `① 영상 고르기` 의 `📁 영상 파일 열기` 가 통째로 사라졌다 —
-      // 폰에서는 "파일을 여는 버튼이 아예 없는 앱"이 됐다. 접기는 손으로 누르면 된다.
-      render(commands.togglePanel());
-    };
-  }
+  // `▶ 영상으로 채우기`(#videoPanelBtn)의 누름은 여기서 걸지 않는다(RM-09) — `data-command="videoPanel"` 을
+  // input/controls 가 듣고 app/main 의 실행기가 패널을 여닫는다. 엄지 바의 같은 버튼도 같은 명령이다.
+  // 2026-09-13 — 좁은 화면에서 처음 열 때 접던 것을 없앴다. 세로를 아끼려던 것인데,
+  // 접힌 패널은 헤더만 남아 `① 영상 고르기` 의 `📁 영상 파일 열기` 가 통째로 사라졌다 —
+  // 폰에서는 "파일을 여는 버튼이 아예 없는 앱"이 됐다. 접기는 손으로 누르면 된다.
   if (closeBtn) closeBtn.onclick = () => render(commands.closePanel());
   if (collapseBtn) collapseBtn.onclick = () => render(commands.setCollapsed());
   if (followBtn) followBtn.onclick = () => render(commands.setFollow());
 
   // 파일 고르기. 버튼이 숨은 <input type=file> 을 대신 누른다 — 파일 입력은 스타일이 안 먹는다.
-  if (fileBtn && fileInput) fileBtn.onclick = () => fileInput.click();
+  // `📁 영상 파일 열기` 의 누름은 `data-command="videoFile"` 이 듣는다(RM-09) — 실행기가 아래 반환 객체의 openFile 을 부른다.
   if (fileInput) {
     fileInput.onchange = () => {
       const file = fileInput.files && fileInput.files[0];
@@ -1948,6 +1945,16 @@ export function createVideoPanel(deps) {
      *   할지, 지금 값이 맞는지 알 길이 없어서 결국 ② 를 펼쳐 봐야 했다(2026-09-21).
      */
     tapBpm: () => bpmFromTaps(panelState().taps || [], 1),
+    /**
+     * 파일 고르는 창을 띄운다(`📁 영상 파일 열기` · 명령 팔레트가 같은 것을 부른다).
+     * ⚠ 브라우저는 사람의 누름(클릭 · 글쇠) 안에서만 이 창을 연다 — 그 이벤트 안에서 곧바로 불러야 한다.
+     * @returns {boolean} 창을 띄웠는가
+     */
+    openFile: () => {
+      if (!fileInput) return false;
+      fileInput.click();
+      return true;
+    },
     /** ⏮ 영상을 맨 처음으로 되감고 재생한다. 조작 줄이 같은 것을 부른다(받아 적기의 첫 차례다). */
     rewind: () => {
       if (!panelState().open) return false;

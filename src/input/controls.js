@@ -50,13 +50,13 @@ export const CLEAR_BOARD_BTN_LABEL = '안무표만 비우기';
  * @param {Object} deps.els   DOM 요소 묶음(app/main 이 getElementById 로 모아 넘긴다)
  *   paletteSearch, sortAlphaBtn, sortAddedBtn, sortCategoryBtn, sortDirBtn,
  *   addMoveBtn, newMoveName, newMoveCategory,
- *   saveBtn, loadFileBtn, mergeFileBtn, saveMoveListBtn, loadMoveListBtn,
+ *   loadFileBtn, mergeFileBtn, saveMoveListBtn, loadMoveListBtn,
  *   saveCategoriesBtn, loadCategoriesBtn, clearBtn, clearBoardBtn,
  *   fileLoader, mergeFileLoader, moveListLoader, categoryLoader,
  *   fileNameInput, moveListFileNameInput, categoryFileNameInput,
  *   boardColsInput, boardColsDec, boardColsInc,
  *   defaultCountInput, defaultCountDec, defaultCountInc,
- *   quickPlaceBtn, addRoutineBtn, createRoutineFromSelectionBtn,
+ *   addRoutineBtn, createRoutineFromSelectionBtn,
  *   mainBoardEl
  * @param {Object} deps.commands  커맨드 파사드(아래 본문의 호출부가 계약이다)
  * @param {(id: string, ctx?: {board?: string, source?: string}) => boolean} deps.runCommand  명령 등록부의 실행기(app/main) —
@@ -97,9 +97,7 @@ export function bindControls(deps) {
   });
 
   // ── 프로젝트 저장/불러오기 (2337-2339) ─────────────────────────────────────
-  els.saveBtn.addEventListener('click', () => {
-    apply(commands.saveProject({ fileName: els.fileNameInput.value }));
-  });
+  // ⚠ `프로젝트 저장` 은 여기서 걸지 않는다(RM-09) — `data-command="saveProject"` 를 bindCommandButtons 가 듣는다.
   els.loadFileBtn.addEventListener('click', () => els.fileLoader.click());
   els.mergeFileBtn.addEventListener('click', () => els.mergeFileLoader.click());
 
@@ -209,9 +207,8 @@ export function bindControls(deps) {
   //   돌려주고 ui/toolbarView 가 store.session.quickPlaceMode.main 에서 재도출한다(1683-1690).
   // ⚠ 켤 때의 renderPalette(1687)도 커맨드가 Dirty.palette 로 알린다.
   // ⚠ 끌 때의 closeQuickPicker(1692)는 DOM 이라 app/main 이 커맨드에 주입한다.
-  if (els.quickPlaceBtn) {
-    els.quickPlaceBtn.addEventListener('click', () => apply(commands.toggleQuickPlace('main')));
-  }
+  // ⚠ 누름은 여기서 걸지 않는다(RM-09) — `data-command="quickPlace"` 를 bindCommandButtons 가 듣는다.
+  //   루틴판 짝(#reQuickPlaceBtn)도 `data-board="routine"` 으로 같은 명령이다.
 
   // ── Undo / Redo 버튼 (2378-2379) ───────────────────────────────────────────
   // ⚠ 여기서 걸지 않는다(RM-09). 마크업의 `data-command="undo"` 를 아래 bindCommandButtons 가 듣는다 —
