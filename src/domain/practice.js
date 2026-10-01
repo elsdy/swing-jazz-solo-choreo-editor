@@ -135,6 +135,8 @@ export function countRangeLabel(range, cols) {
   if (a.index === 0 && b.index === cols - 1) {
     return a.row === b.row ? row(a.row) : `${row(a.row)} ~ ${row(b.row)}`;
   }
+  // 한 칸이면 `8x3의 1카운트` — `1~1카운트` 로 적지 않는다(RM-31 의 클립 이름에서 드러났다).
+  if (a.row === b.row && a.index === b.index) return `${row(a.row)}의 ${a.index + 1}카운트`;
   if (a.row === b.row) return `${row(a.row)}의 ${a.index + 1}~${b.index + 1}카운트`;
   return `${row(a.row)}의 ${a.index + 1}카운트 ~ ${row(b.row)}의 ${b.index + 1}카운트`;
 }

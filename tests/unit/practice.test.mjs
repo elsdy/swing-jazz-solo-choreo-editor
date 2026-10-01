@@ -66,6 +66,7 @@ test('practice: 구간의 이름은 안무표의 말 — 마디로 떨어지면 
   assert.equal(countRangeLabel({ fromCount: 18, toCount: 22 }, 8), '8x3의 3~6카운트');
   assert.equal(countRangeLabel({ fromCount: 20, toCount: 26 }, 8), '8x3의 5카운트 ~ 8x4의 2카운트');
   assert.equal(countRangeLabel({ fromCount: -8, toCount: 0 }, 8), 'intro');
+  assert.equal(countRangeLabel({ fromCount: 16, toCount: 17 }, 8), '8x3의 1카운트', '한 칸은 `1~1카운트` 가 아니다');
   assert.equal(normalizeCountRange({ fromCount: 1.5, toCount: 3 }), null);
 });
 
