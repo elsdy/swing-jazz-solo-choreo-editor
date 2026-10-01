@@ -1325,6 +1325,7 @@ function chooseLocalFile(file) {
   attachLocalFile(file);
   libraryState = 'idle';
   trimError = '';
+  exportError = '';
   // 같은 이름을 다시 골라도(다시 열었을 때가 그렇다) 소스는 그대로라 NONE 이 온다 — 그래도 재생기는 새 blob 을 실어야 한다.
   render(VideoCmd.setFileSource(store, { name: file.name }));
   views.video?.render();
@@ -1463,6 +1464,37 @@ async function trimCurrentClip(range) {
   serverClipMissing = '';
   libraryState = 'idle';
   render(VideoCmd.applyTrim(store, { name: res.name, path: res.path, inSec: range.inSec, outSec: range.outSec }));
+  commitHistoryAndRender();
+}
+
+/** 마지막 내보내기(RM-31) 실패 이유(서버 문구). 다음 시도나 소스 변경이 지운다. */
+let exportError = '';
+
+/**
+ * 안무표에서 고른 대목을 잘라 낸 새 클립을 서버에 만들게 하고, 끝나면 **영상 목록에 더하기만** 한다(RM-31).
+ * 지금 영상·박자·마커·In/Out 은 그대로다 — applyTrim 을 부르지 않는다. 초 구간은 패널이 박자로 계산해 준다.
+ * 한 번에 하나만 자른다(trimBusy 를 함께 쓴다 — 자르기와 내보내기가 같은 ffmpeg 을 돌린다).
+ * ⚠ 기다리는 동안 다른 영상으로 갈아탔으면 결과를 버린다 — 그 영상의 박자로 계산한 구간이라 새 클립의 박자가
+ *   거짓말이 된다. 파일은 이미 만들어졌으니 보관 폴더에는 남는다.
+ * @param {{startSec:number, endSec:number, label:string}} req
+ */
+async function exportExcerpt(req) {
+  const source = VideoCmd.mediaState(store).source;
+  if (trimState() !== 'ready' || !source || !source.path) return;
+  trimBusy = true;
+  exportError = '';
+  views.video?.renderCut();
+  const res = await clipServer.trim(source.path, req.startSec, req.endSec, req.label);
+  trimBusy = false;
+  const now = VideoCmd.mediaState(store).source;
+  if (!now || now.kind !== 'file' || now.path !== source.path) { views.video?.renderCut(); return; }
+  if (!res.ok) {
+    exportError = res.error || '알 수 없는 오류';
+    views.video?.renderCut();
+    return;
+  }
+  const dirty = VideoCmd.addExcerptClip(store, { name: res.name, path: res.path, label: req.label, startSec: req.startSec, endSec: req.endSec });
+  render({ ...dirty, notify: notice('toast', `「${req.label}」 클립을 영상 목록에 더했습니다.`) });
   commitHistoryAndRender();
 }
 
@@ -1993,6 +2025,8 @@ views.video = createVideoPanel({
   getTrimState: trimState,
   getTrimError: () => trimError,
   onTrim: trimCurrentClip,
+  getExportError: () => exportError,
+  onExportExcerpt: exportExcerpt,
   // ⚠ 매 렌더 불린다(패널이 열린 채 URL 만 바뀌는 경로가 있다). 아래 셋은 전부 멱등이다.
   onSync: (shown) => {
     if (shown) {
