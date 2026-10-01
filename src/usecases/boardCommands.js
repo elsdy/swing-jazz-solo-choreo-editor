@@ -316,6 +316,7 @@ export function clearPlacements(store) {
   // ⚠ `rows` 는 중복을 남긴 채 넘긴다 — clearBoard(원본 4482)와 같은 모양이라 렌더 경로가 같다.
   const rows = board.placements.map(p => p.row);
   store.setBoard(BOARD_MAIN, { placements: [] });
+  store.update({ selection: new Set() });                    // RM-03 — 알리기만 하고 비우지 않아 (2) 가 남았다
   return { boards: { [BOARD_MAIN]: { rows } }, selection: true, toolbar: true };
 }
 
@@ -336,7 +337,8 @@ export function clearPlacements(store) {
  *   `storage.saveLinks(serializeLinks(links))` 로 부르므로 여기도 같은 자리를 쓴다.
  *   예전 시그니처(deps.saveLinks)도 계속 받아 app/main 배선이 어느 쪽이든 동작한다.
  * ⚠ renderRows 에 넘기는 행 목록은 **중복을 제거하지 않은** placements.map(p => p.row) 그대로다(4482).
- * ⚠ selectedGroupIds 는 건드리지 않는다 — 원본도 그렇다(아래 deviations 기록 참조).
+ * ⚠ 선택 집합도 비운다(RM-03, 2026-10-01). 원본은 손대지 않아 지워진 블록을 가리키는 선택이 남고
+ *   툴바가 눌러도 아무 일 없는 `루틴으로 편성 (2)` 를 계속 보였다(deviations 「이어서 고칠 것 2번」).
  * ⚠ saveHistory(4491)는 여기서 부르지 않는다 — 이 파일의 공통 규약대로 호출부가
  *   historyCommands.commit(hist, 'main') 을 부른 뒤 두 Dirty 를 mergeDirty 로 합친다.
  *
@@ -348,11 +350,12 @@ export function clearBoard(store, deps = {}) {
   const board = boardOf(store.get(), BOARD_MAIN);
   const rows = board.placements.map(p => p.row);            // 4482 ⚠ Set 없음
   store.setBoard(BOARD_MAIN, { placements: [] });           // 4483
+  store.update({ selection: new Set() });                   // RM-03 — 원본에 없다
   const saveLinks = deps.storage?.saveLinks ?? deps.saveLinks;
   const linksDirty = clearLinks({ store, storage: { saveLinks } });  // 4484-4489
   return mergeDirty(
     mergeDirty(
-      { boards: { [BOARD_MAIN]: { rows } } },               // 4490
+      { boards: { [BOARD_MAIN]: { rows } }, selection: true, toolbar: true }, // 4490 + RM-03
       linksDirty                                            // 4488 renderLinksBar()
     ),
     clearMedia(store)                                       // 2026-09 — 링크를 비우면 영상도 비운다
