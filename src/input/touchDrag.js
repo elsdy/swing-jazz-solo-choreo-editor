@@ -12,6 +12,7 @@
 
 import { CLS } from '../ui/domContract.js';
 import { getGroup, groupCount } from '../domain/placements.js';
+import { dragPreviewCount } from '../domain/gestureMath.js';
 import { resolvePlacementColor } from '../domain/categories.js';
 
 /**
@@ -46,15 +47,12 @@ export function createPlacementTouchDrag(deps) {
 
   /**
    * 원본 updatePreview(row, startIndex, undefined, ctx)(3900-3906)의 카운트 결정부.
-   * ⚠ boardController 에도 같은 5줄이 있다 — 원본은 updatePreview 하나를 공유했지만
-   *   input/** 끼리는 서로 import 하지 않는 것이 이 PR 의 계층 규칙이라 각자 갖는다.
+   * 카운트 산술은 domain/gestureMath.dragPreviewCount 한 자리에 있다 — boardController 와 같은 것을 부른다
+   * (input/** 끼리는 import 하지 않으므로 두 벌이던 것을 도메인으로 내렸다, RM-08).
    */
   function updatePreviewFromDrag(row, startIndex) {
-    const drag = dragSession.current(boardId);
-    if (!drag) { overlays.clearPreview(boardId); return; }
-    const count = drag.type === 'palette'
-      ? store.get().session.defaultCount
-      : groupCount(board().placements, drag.groupId);
+    const count = dragPreviewCount(dragSession.current(boardId), store.get().session.defaultCount, board().placements);
+    if (count == null) { overlays.clearPreview(boardId); return; }
     overlays.updatePreview(boardId, row, startIndex, count);
   }
 

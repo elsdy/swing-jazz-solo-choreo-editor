@@ -20,14 +20,10 @@
 
 import { CLS } from './domContract.js';
 import { bindOutsideClose } from './popup.js';
+import { placeRoutineActionPopup } from '../domain/popupPlacement.js';
 
-/** 팝업 배치에 쓰는 가정 크기. 실제로 재지 않는다(원본 1759). */
-const POPUP_W = 140;
-const POPUP_H = 100;
-/** 화면 가장자리 여백(원본 1760-1761). */
-const EDGE_GAP = 8;
-/** 커서 아래로 내리는 양(원본 1761). */
-const CURSOR_DROP = 6;
+// 팝업 배치의 가정 크기 140×100 · 여백 8 · 커서 아래 6(원본 1759-1761)은
+// domain/popupPlacement.placeRoutineActionPopup 에 있다(RM-08). 실제로 재지 않는다.
 
 /**
  * @typedef {object} RoutineActionPopupDeps
@@ -101,10 +97,12 @@ export function createRoutineActionPopup(deps) {
     document.body.appendChild(popup);                                // 1756
 
     // 팝업 위치 계산 — 크기를 재지 않고 상수 140×100 으로 화면 안쪽으로만 민다(1758-1763).
-    const x = Math.min(clientX, window.innerWidth - POPUP_W - EDGE_GAP);
-    const y = Math.min(clientY + CURSOR_DROP, window.innerHeight - POPUP_H - EDGE_GAP);
-    popup.style.left = `${x}px`;
-    popup.style.top = `${y}px`;
+    // ⚠ 왼쪽·위는 막지 않는다(형제 팝업과 다르다) — placeRoutineActionPopup 의 주석.
+    const { left, top } = placeRoutineActionPopup({
+      clientX, clientY, viewW: window.innerWidth, viewH: window.innerHeight,
+    });
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
 
     // 1766-1773. 게터를 넘겨야 한다 — 원본이 모듈 변수 routineActionPopupEl 을 매번 다시 읽는다.
     bindOutsideClose(() => popupEl, close);

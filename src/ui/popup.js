@@ -7,15 +7,17 @@
 //   rAF 없이 동기로 `min(clientX, W-148)` / `min(clientY+6, H-108)` 에 놓고 모바일 분기가 아예 없다.
 //   positionPopup 으로 통합하면 폰에서 탭한 블록 옆에 뜨던 팝업이 화면 꼭대기로 날아가고 한 프레임 깜빡인다.
 //
-// ⚠ 이 파일은 아무것도 import 하지 않는다(매니페스트는 ./widgets.js 의존을 적었지만 실제로 쓸 일이 없다 —
-//   qLabel 은 textContent 라 escapeHtml 이 필요 없다).
+// ⚠ 이 파일이 import 하는 것은 자리 산술(domain/popupPlacement) 하나뿐이다(RM-08). qLabel 은 textContent 라
+//   escapeHtml 이 필요 없다.
+
+import { placeCursorPopup, POPUP_MOBILE_MAX_WIDTH } from '../domain/popupPlacement.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 배치
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 모바일(=사이드바가 위로 접히는) 분기의 기준 너비. 원본 1788 의 `W <= 1040`. */
-export const POPUP_MOBILE_MAX_WIDTH = 1040;
+/** 모바일(=사이드바가 위로 접히는) 분기의 기준 너비. 원본 1788 의 `W <= 1040`. 값은 domain/popupPlacement 에 있다. */
+export { POPUP_MOBILE_MAX_WIDTH };
 
 /**
  * 팝업을 커서 옆(데스크톱) 또는 화면 상단 중앙(모바일)에 놓는다.
@@ -42,24 +44,14 @@ export function positionPopup(popup, clientX, clientY) {
   // allow layout so getBoundingClientRect has dimensions
   requestAnimationFrame(() => {
     const rect = popup.getBoundingClientRect();
-    const W = window.innerWidth, H = window.innerHeight;
-    const isMobile = W <= POPUP_MOBILE_MAX_WIDTH;
-
-    if (isMobile) {
-      // 모바일: 사이드바 영역(상단) 중앙에 표시
-      const popW = Math.min(rect.width, W - 24);
-      const left = Math.max(12, (W - popW) / 2);
-      popup.style.left = `${left}px`;
-      popup.style.top = '12px';
-      popup.style.maxHeight = `${Math.min(H * 0.55, 420)}px`;
-    } else {
-      let left = clientX + 12;
-      let top  = clientY + 12;
-      if (left + rect.width  > W - 12) left = clientX - rect.width  - 12;
-      if (top  + rect.height > H - 12) top  = clientY - rect.height - 12;
-      popup.style.left = `${Math.max(8, left)}px`;
-      popup.style.top  = `${Math.max(8, top)}px`;
-    }
+    // 산술은 domain/popupPlacement.placeCursorPopup 이 한다. 모바일이면 maxHeight 가 오고 데스크톱이면 null 이다.
+    const { left, top, maxHeight } = placeCursorPopup({
+      clientX, clientY, width: rect.width, height: rect.height,
+      viewW: window.innerWidth, viewH: window.innerHeight,
+    });
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+    if (maxHeight != null) popup.style.maxHeight = `${maxHeight}px`;
   });
 }
 

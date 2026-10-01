@@ -20,7 +20,7 @@
 
 import { SEL, CLS } from '../ui/domContract.js';
 import { hitTest, cellIndexAt } from './hitTest.js';
-import { resolveResizeCount } from '../domain/gestureMath.js';
+import { resolveResizeCount, resizeHitKind } from '../domain/gestureMath.js';
 import { getGroup, groupCount } from '../domain/placements.js';
 import { buildSegments } from '../domain/grid.js';
 
@@ -164,14 +164,11 @@ export function createPointerSession(deps) {
       fallbackRow: r.originRow,
     });
 
-    let spec;
-    if (hit.inBoard) {
-      spec = { kind: 'cross', endRow: hit.row, endCol: hit.col };
-    } else if (r.originTrack) {
-      spec = { kind: 'sameRow', endCol: hit.col };
-    } else {
-      spec = { kind: 'step', clientX, stepWidth: readCellW() };
-    }
+    // 세 갈래의 우선순위는 domain/gestureMath.resizeHitKind 가 정한다. ⚠ --cellW 는 'step' 일 때만 잰다.
+    const kind = resizeHitKind(hit.inBoard, !!r.originTrack);
+    const spec = kind === 'cross' ? { kind, endRow: hit.row, endCol: hit.col }
+      : kind === 'sameRow' ? { kind, endCol: hit.col }
+      : { kind, clientX, stepWidth: readCellW() };
     const previewCount = resolveResizeCount(r, spec, board);
     r.previewCount = previewCount;
 

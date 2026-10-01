@@ -19,14 +19,10 @@
 
 import { CLS } from './domContract.js';
 import { bindOutsideClose } from './popup.js';
+import { placePlacementActionPopup } from '../domain/popupPlacement.js';
 
-/** 자리 잡기에 쓰는 가정 크기. 형제 팝업과 같은 방식이라 실제로 재지 않는다. */
-const POPUP_W = 160;
-const POPUP_H = 132;
-/** 화면 가장자리 여백. */
-const EDGE_GAP = 8;
-/** 누른 자리보다 조금 아래에 띄운다 — 손가락이 팝업의 첫 줄을 덮지 않게. */
-const CURSOR_DROP = 10;
+// 자리 잡기(가정 크기 160×132 · 가장자리 8 · 누른 자리보다 10 아래 — 손가락이 첫 줄을 덮지 않게)는
+// domain/popupPlacement.placePlacementActionPopup 에 있다(RM-08). 형제 팝업과 같은 방식이라 실제로 재지 않는다.
 
 /**
  * @typedef {object} PlacementActionPopupDeps
@@ -94,10 +90,11 @@ export function createPlacementActionPopup(deps) {
 
     document.body.appendChild(popup);
 
-    const x = Math.max(EDGE_GAP, Math.min(clientX, window.innerWidth - POPUP_W - EDGE_GAP));
-    const y = Math.max(EDGE_GAP, Math.min(clientY + CURSOR_DROP, window.innerHeight - POPUP_H - EDGE_GAP));
-    popup.style.left = `${x}px`;
-    popup.style.top = `${y}px`;
+    const { left, top } = placePlacementActionPopup({
+      clientX, clientY, viewW: window.innerWidth, viewH: window.innerHeight,
+    });
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
 
     // ⚠ 게터를 넘긴다 — 팝업이 갈릴 수 있으므로 매번 최신 것을 봐야 한다(형제 팝업과 같다).
     bindOutsideClose(() => popupEl, close);

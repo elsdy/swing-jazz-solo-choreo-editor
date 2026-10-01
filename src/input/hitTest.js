@@ -15,6 +15,7 @@
 
 import { SEL, DATA } from '../ui/domContract.js';
 import { cellIndexFromRatio } from '../domain/grid.js';
+import { resolveHitCell } from '../domain/gestureMath.js';
 
 /**
  * 트랙의 화면 사각형. `getBoundingClientRect` 를 부르는 곳을 이 한 줄로 좁힌다.
@@ -91,9 +92,12 @@ export function hitTest(clientX, clientY, options = {}) {
   const inBoard = !!(track && boardEl && boardEl.contains(track));
   // 원본 `(inBoard ? endTrack : null) || drawState.track` — 보드 밖이면 앵커로 되돌아간다.
   const measuredTrack = (inBoard ? track : null) || fallbackTrack || null;
-  // ⚠ track.dataset.row 는 문자열이라 Number() 가 필요하다(원본 2633 등).
-  const row = inBoard ? Number(track.dataset[DATA.row]) : fallbackRow;
-  const col = measuredTrack && board ? cellIndexAt(measuredTrack, clientX, board) : null;
+  // 행·칸 산술(보드 밖이면 앵커 행, dataset 문자열의 Number())은 domain/gestureMath.resolveHitCell 이 한다.
+  // ⚠ 사각형은 잴 트랙이 있고 보드 값이 있을 때만 잰다 — 원본도 그때만 getBoundingClientRect 를 불렀다.
+  const rect = measuredTrack && board ? measureTrack(measuredTrack) : null;
+  const { row, col } = resolveHitCell({
+    inBoard, trackRow: inBoard ? track.dataset[DATA.row] : null, fallbackRow, rect, clientX, board,
+  });
 
   return { boardId, track, inBoard, measuredTrack, row, col };
 }
