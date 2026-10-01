@@ -227,7 +227,9 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `categories.js` | 카테고리 사전 트랜잭션과 색 판정. `deriveKey` `resolvePlacementColor` `textColorOn` `contrastRatio` `darken` |
 | `moves.js` | 동작 라이브러리 트랜잭션과 팔레트 검색·정렬 파이프라인 |
 | `routines.js` | 루틴 값 객체와 변환. `buildFromSelection` `redistributeBlocks` |
-| `gestureMath.js` | 제스처 판정의 순수 부분. `resolveDragCount` 의 `lowerBound` 가 곳마다 다른 하한을 담는다 |
+| `gestureMath.js` | 제스처 판정의 순수 부분. `resolveDragCount` 의 `lowerBound` 가 곳마다 다른 하한을 담는다. 히트 판정의 행·칸 산술(`resolveHitCell`), 드래그 프리뷰 카운트(`dragPreviewCount` — 두 입력 파일에 두 벌이던 것), 늘이기 세 갈래의 우선순위(`resizeHitKind`)도 여기 있다(RM-08) |
+| `boardGesture.js` | 보드 위 그리기·빠른 배치·더블탭의 **전이 함수**(2026-10-01, RM-08). `(상태, 이벤트, env) → (다음 상태, 할 일 목록)` 꼴이고 `input/boardController` 는 이벤트를 값으로 바꿔 넘긴 뒤 할 일을 차례대로 실행할 뿐이다. 측정(사각형 재기·포인터 밑 찾기)은 env 의 함수로 받아 원본이 부르던 그 자리에서만 부른다. 마우스와 터치의 다른 규칙이 그대로 들어 있다 — 시험은 `tests/unit/boardGesture.test.mjs` |
+| `popupPlacement.js` | 떠 있는 창 넷(빠른 배치 팝업 · 블록 동작 팝업 · 루틴 블록 팝업 · 동작 메뉴)의 자리 산술(2026-10-01, RM-08). 넷은 일부러 다르다 — **합치지 않고** 따로 떼어 지금 값을 시험에 굳혔다. 크기를 재는 일과 한 프레임 기다리는 순서는 화면 쪽에 남는다 |
 | `links.js` | YouTube URL 정규화와 커스텀 링크 목록 규칙 |
 | `defaults.js` | 초기값만. `makeDefaultMoves(ids)` 가 uid 소비 순서를 결정적으로 만든다 |
 | `tempo.js` | 카운트 ↔ 초 변환. 카운트 축에 얹는 곱셈 한 겹. 2026-09-09 부터 영상 패널이 실제로 쓴다. `shiftTempo` 는 잘라내기 뒤 시간축을 통째로 민다 |
@@ -390,7 +392,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 화면이 안 다시 그려진다 | 그 조작의 커맨드가 돌려주는 `Dirty` | `dev: true` 로 `assertDirtyCovers` 를 켜 본다 |
 | 저장 파일 포맷을 바꾼다 | `src/domain/project/schema.js` | `serialize` `normalize` `merge` `migrations` 넷을 함께([개발 원칙 D-4](PRINCIPLES.md#d-4)) |
 | 저장 위치·최근 목록을 바꾼다 | `src/ports/storage.js` + `src/adapters/localStore.js` | 용량 상한을 먼저 확인한다 |
-| 드래그·터치 판정을 바꾼다 | `src/input/*` + `src/domain/gestureMath.js` | 마우스와 터치는 하한도 알고리즘도 다르다. 통일하려면 동작 변경 커밋으로 |
+| 드래그·터치 판정을 바꾼다 | `src/domain/boardGesture.js` · `src/domain/gestureMath.js` + `src/input/*` | 마우스와 터치는 하한도 알고리즘도 다르다. 통일하려면 동작 변경 커밋으로 |
 | 두 보드의 차이를 바꾼다 | `src/usecases/store.js` 의 `BOARD_POLICY` | 새 `if (boardId === 'main')` 를 쓰지 말고 정책 키를 추가한다 |
 | 영상 패널의 화면·문구를 바꾼다 | `src/ui/videoPanel.js` + `index.html` 의 `.video-*` 블록 | 오류 코드 5종의 한국어 문구는 뷰가 소유한다. 라벨을 바꿨으면 [기능 설명서](FEATURES.md) |
 | 재생 헤드의 움직임을 바꾼다 | `src/ui/playhead.js` | Dirty 를 쓰지 마라 — 초당 60회 재렌더가 된다([휘발성 렌더 채널](#휘발성-렌더-채널-재생-헤드는-dirty-를-타지-않는다)) |

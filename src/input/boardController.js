@@ -13,13 +13,16 @@
 //        - 터치 그리기(2709): 행 넘김 X, 클램프 X, drawState.track 한 행 안에서만 센다
 //   3. 드래그 카운트의 **하한**이 곳마다 다르다. 프리뷰는 1, 커밋은 DEFAULT_COUNT 다.
 //      → domain/gestureMath.resolveDragCount 에 lowerBound 로 넘긴다.
+//   6. 그리기·빠른 배치·더블탭의 **판단**은 domain/boardGesture 의 전이 함수가 한다(RM-08, 2026-10-01).
+//      여기 남은 것은 이벤트를 값으로 바꾸기와 할 일 실행뿐이다 — 시험은 tests/unit/boardGesture.test.mjs.
 //   4. `ctx === mainCtx` 4곳(2429 drop · 2470 dblclick · 2503 mousedown(리사이즈) · 2539 touchstart(더블탭))은
 //      생성 시 policy 로 사라진다. 2446(click)의 `ctx !== mainCtx` 는 policy.allowsSelection 이다.
 //   5. 커맨드·협력자는 전부 **주입**받는다 — usecases 도, 형제 input 모듈도 import 하지 않는다.
 //      import 하는 것은 domContract(같은 rank 3 의 유일한 예외)와 domain 순수 함수뿐이다.
 
 import { SEL, CLS, DATA } from '../ui/domContract.js';
-import { resolveDragCount, isDoubleTap, QUICK_DRAG_THRESHOLD_PX } from '../domain/gestureMath.js';
+import { dragPreviewCount } from '../domain/gestureMath.js';
+import * as gesture from '../domain/boardGesture.js';
 import { groupCount } from '../domain/placements.js';
 
 /**
@@ -105,12 +108,62 @@ export function createBoardController(deps) {
    * ⚠ drag 가 없으면 원본은 clearPreview() 를 부른 **뒤** 조기 반환한다(3901-3902).
    */
   function updatePreviewFromDrag(row, startIndex) {
-    const drag = currentDrag();
-    if (!drag) { overlays.clearPreview(boardId); return; }
-    const count = drag.type === 'palette'
-      ? defaultCount()
-      : groupCount(board().placements, drag.groupId);
+    const count = dragPreviewCount(currentDrag(), defaultCount(), board().placements);
+    if (count == null) { overlays.clearPreview(boardId); return; }
     overlays.updatePreview(boardId, row, startIndex, count);
+  }
+
+  // ── 그리기·빠른 배치·더블탭의 상태 (RM-08) ──────────────────────────────────
+  // 원본의 drawState / quickDrawState / quickTouchAnchor / lastTapTime·lastTapGroupId 넷이 한 벌이 됐다.
+  // 판단은 domain/boardGesture 의 전이 함수가 하고, 리스너는 이벤트를 값으로 바꿔 넘긴 뒤
+  // 돌려받은 할 일을 **차례대로** 실행할 뿐이다.
+  // ⚠ 같은 touchstart 에 리스너가 셋 걸려 있다(⑨ → ⑱ → ㉒). 앞 리스너가 바꾼 상태를 뒤 리스너가 본다 —
+  //   그래서 상태는 리스너마다가 아니라 이 한 변수에 둔다.
+  let gestureState = gesture.initialGestureState();
+
+  /** 전이 함수가 이벤트마다 읽는 세션 값과 측정 함수. 측정은 전이 함수가 부를 때만 일어난다. */
+  const gestureEnv = () => ({
+    quickPlaceMode: !!quickPlaceMode(),
+    activeMove: activePaletteMove() || null,
+    defaultCount: defaultCount(),
+    board: board(),
+    colAt: cellIndex,
+    endAt: resolveEnd,
+    hitAt: (x, y) => hitAt(x, y),
+  });
+
+  /**
+   * 전이 함수 하나를 돌리고 할 일을 실행한다.
+   * ⚠ 상태를 먼저 바꾸고 할 일을 실행한다. 할 일 중 무엇도 이 상태를 다시 읽지 않는다(커맨드·오버레이·팝업뿐).
+   */
+  function step(transition, e, ev) {
+    const { state, effects } = transition(gestureState, ev, gestureEnv());
+    gestureState = state;
+    for (const fx of effects) {
+      switch (fx.kind) {
+        case 'preventDefault': e.preventDefault(); break;
+        case 'stopPropagation': e.stopPropagation(); break;
+        case 'preview': overlays.updatePreview(boardId, fx.row, fx.startIndex, fx.count); break;
+        case 'clearPreview': overlays.clearPreview(boardId); break;
+        case 'place':
+          apply(commands.placeMove({ moveId: fx.moveId, startRow: fx.startRow, startIndex: fx.startIndex, totalCount: fx.totalCount }));
+          break;
+        case 'remove': apply(commands.removeGroup({ groupId: fx.groupId })); break;
+        case 'commit': commit(); break;
+        case 'openPicker': quickPicker.open(fx.row, fx.startIndex, fx.clientX, fx.clientY, fx.count); break;
+        default: throw new Error(`boardController: 모르는 할 일 ${fx.kind}`);
+      }
+    }
+  }
+
+  /**
+   * 마우스 그리기·빠른 배치 끌기의 끝점 해석(원본 2631-2635 · 2647-2651 · 2668-2672 · 2744-2747).
+   * ⚠ 보드 밖으로 끌면 앵커 트랙으로 되돌아간다 — "보드 밖에서도 카운트가 시작 행 기준"이라는
+   *   관찰 동작이다. hitTest 의 fallbackTrack/fallbackRow 가 그 세 줄을 그대로 낸다.
+   */
+  function resolveEnd(anchor, clientX, clientY) {
+    const hit = hitAt(clientX, clientY, { fallbackTrack: anchor.track, fallbackRow: anchor.row });
+    return { endRow: hit.row, endCol: hit.col };
   }
 
   // ── ① dragover (2394-2401) ─────────────────────────────────────────────────
@@ -275,10 +328,6 @@ export function createBoardController(deps) {
     }
   });
 
-  // 모바일 더블탭 삭제를 위한 상태 (2509-2511)
-  let lastTapTime = 0;
-  let lastTapGroupId = null;
-
   // ── ⑨ touchstart — 핸들 + 더블탭 삭제 (2513-2549, passive:false) ───────────
   el.addEventListener('touchstart', (e) => {
     const resizeHandle = e.target.closest(SEL.resizeHandle);
@@ -307,21 +356,12 @@ export function createBoardController(deps) {
     if (placementActionPopup && isTouchLayout()) return;
     const placementEl = e.target.closest(SEL.placement);
     if (placementEl) {
-      const groupId = placementEl.dataset[DATA.groupId];
-      const now = Date.now();
-      if (isDoubleTap(now, lastTapTime, groupId, lastTapGroupId)) {
-        e.preventDefault();
-        // ⚠ preventDefault 뒤에 루틴 가드가 온다(2539). 이 조기 반환은 lastTapTime 을
-        //   되돌리지 않아 다음 탭이 다시 더블탭으로 잡힌다 — 원본 동작이다.
-        if (placementEl.classList.contains(CLS.isRoutine) && policy.allowsRoutineBlocks) return;
-        apply(commands.removeGroup({ groupId }));
-        commit();
-        lastTapTime = 0;
-        lastTapGroupId = null;
-      } else {
-        lastTapTime = now;
-        lastTapGroupId = groupId;
-      }
+      // ⚠ 루틴 가드는 preventDefault 뒤에 온다(2539) — 그 차례는 gesture.placementTap 이 지킨다.
+      step(gesture.placementTap, e, {
+        now: Date.now(),
+        groupId: placementEl.dataset[DATA.groupId],
+        routineGuarded: placementEl.classList.contains(CLS.isRoutine) && !!policy.allowsRoutineBlocks,
+      });
     }
   }, { passive: false });
 
@@ -379,203 +419,46 @@ export function createBoardController(deps) {
     overlays.hideFloatingTooltip();
   }, true);
 
-  // ── Click-to-activate + draw-to-place (2598-2605) ──────────────────────────
-  let drawState = null;
-  let quickDrawState = null;
+  // ── Click-to-activate + draw-to-place (2598-2627) ──────────────────────────
+  // 판단은 전부 domain/boardGesture 에 있다. 여기는 리스너의 **등록 순서·대상·passive** 만 원본 그대로 지킨다.
 
-  /**
-   * 원본 drawPreview(2601-2605). **터치 그리기 경로에서만** 쓰인다 —
-   * 마우스 경로는 calcCrossRowCount 를 직접 쓴다(하한·행 넘김 규칙이 다르다).
-   */
-  function drawPreview(row, startIndex, endIndex) {
-    const count = Math.max(1, endIndex - startIndex + 1);
-    overlays.updatePreview(boardId, row, startIndex, count);
-  }
+  /** 마우스 이벤트 → 전이 함수가 읽는 값. 트랙과 블록 위인지는 e.target 으로 본다(elementFromPoint 아님). */
+  const mouseEv = (e) => {
+    const track = e.target.closest(SEL.track);
+    return {
+      x: e.clientX, y: e.clientY, track,
+      row: track ? Number(track.dataset[DATA.row]) : null,
+      onPlacement: !!e.target.closest(SEL.placementOrHandles),
+    };
+  };
+  /** 터치 이벤트 → 좌표와 블록 위인지. ⚠ 뗌은 changedTouches 를 먼저 본다(원본 2707 · 2762). */
+  const touchEv = (e, ended = false) => {
+    const t = (ended ? (e.changedTouches || e.touches) : e.touches)[0];
+    return { x: t.clientX, y: t.clientY, onPlacement: !!e.target.closest(SEL.placementOrHandles) };
+  };
 
   // ── ⑮ mousedown — 그리기 / 빠른 배치 시작 (2606-2627) ──────────────────────
-  el.addEventListener('mousedown', (e) => {
-    if (quickPlaceMode() && !activePaletteMove() && !drawState) {
-      if (e.target.closest(SEL.placementOrHandles)) return;
-      const track = e.target.closest(SEL.track);
-      if (!track) return;
-      e.preventDefault();
-      const row = Number(track.dataset[DATA.row]);
-      const startIndex = cellIndex(track, e.clientX);
-      quickDrawState = { row, startIndex, track, count: defaultCount(), clientX: e.clientX, clientY: e.clientY };
-      overlays.updatePreview(boardId, row, startIndex, defaultCount());
-      return;
-    }
-    if (!activePaletteMove()) return;
-    const track = e.target.closest(SEL.track);
-    if (!track) return;
-    if (e.target.closest(SEL.placementOrHandles)) return;
-    e.preventDefault();
-    const row = Number(track.dataset[DATA.row]);
-    const startIndex = cellIndex(track, e.clientX);
-    drawState = { row, startIndex, track };
-    drawPreview(row, startIndex, startIndex);
-  });
-
-  /**
-   * 마우스 그리기 3곳(2631-2635 · 2647-2651 · 2668-2672)이 공유하는 끝점 해석.
-   * ⚠ 보드 밖으로 끌면 앵커 트랙으로 되돌아간다 — "보드 밖에서도 카운트가 시작 행 기준"이라는
-   *   관찰 동작이다. hitTest 의 fallbackTrack/fallbackRow 가 그 세 줄을 그대로 낸다.
-   */
-  function resolveEnd(anchor, clientX, clientY) {
-    const hit = hitAt(clientX, clientY, { fallbackTrack: anchor.track, fallbackRow: anchor.row });
-    return { endRow: hit.row, endCol: hit.col };
-  }
+  el.addEventListener('mousedown', (e) => step(gesture.mouseDown, e, mouseEv(e)));
 
   // ── ⑯ mousemove — 그리기 카운트 추적 (2629-2656) ───────────────────────────
-  el.addEventListener('mousemove', (e) => {
-    if (quickDrawState) {
-      const { endRow, endCol } = resolveEnd(quickDrawState, e.clientX, e.clientY);
-      const count = resolveDragCount({
-        startRow: quickDrawState.row, startIndex: quickDrawState.startIndex,
-        endRow, endCol, board: board(), lowerBound: 1            // 2636: 프리뷰 하한 1
-      });
-      quickDrawState.count = count;
-      quickDrawState.clientX = e.clientX;
-      quickDrawState.clientY = e.clientY;
-      overlays.updatePreview(boardId, quickDrawState.row, quickDrawState.startIndex, count);
-      return;
-    }
-    if (!drawState || !activePaletteMove()) return;
-    const { endRow, endCol } = resolveEnd(drawState, e.clientX, e.clientY);
-    const count = resolveDragCount({
-      startRow: drawState.row, startIndex: drawState.startIndex,
-      endRow, endCol, board: board(), lowerBound: 1              // 2653: 프리뷰 하한 1
-    });
-    overlays.updatePreview(boardId, drawState.row, drawState.startIndex, count);
-  });
+  el.addEventListener('mousemove', (e) => step(gesture.mouseMove, e, { x: e.clientX, y: e.clientY }));
 
   // ── ⑰ document mouseup — 그리기 확정 (2658-2683) ───────────────────────────
   // ⚠ el 이 아니라 document 에 붙는다. 보드마다 1개씩 총 2개가 등록되는 것이 원본이다.
-  doc.addEventListener('mouseup', (e) => {
-    if (quickDrawState && quickPlaceMode()) {
-      const { row, startIndex, count, clientX, clientY } = quickDrawState;
-      quickDrawState = null;
-      // ⚠ 프리뷰를 **지우지 않는다** — 팝업이 뜬 동안 어디에 놓일지 보여 주는 것이 원본이다.
-      quickPicker.open(row, startIndex, clientX, clientY, count);
-      return;
-    }
-    if (quickDrawState) { quickDrawState = null; overlays.clearPreview(boardId); return; }
-    if (drawState && activePaletteMove()) {
-      const { endRow, endCol } = resolveEnd(drawState, e.clientX, e.clientY);
-      const count = resolveDragCount({
-        startRow: drawState.row, startIndex: drawState.startIndex,
-        endRow, endCol, board: board(), lowerBound: defaultCount()  // 2673: 커밋 하한 DEFAULT_COUNT
-      });
-      apply(commands.placeMove({
-        moveId: activePaletteMove().moveId,
-        startRow: drawState.row, startIndex: drawState.startIndex, totalCount: count
-      }));
-      commit();
-      overlays.clearPreview(boardId);
-      drawState = null;
-    }
-  });
+  doc.addEventListener('mouseup', (e) => step(gesture.mouseUp, e, { x: e.clientX, y: e.clientY }));
 
   // ── ⑱⑲⑳㉑ 터치 그리기 (2685-2721) ⚠ touchstart·touchmove 만 passive:true ──
-  el.addEventListener('touchstart', (e) => {
-    if (!activePaletteMove()) return;
-    const touch = e.touches[0];
-    const hit = hitAt(touch.clientX, touch.clientY);
-    if (!hit.inBoard) return;                       // 2689 `!track || !el.contains(track)`
-    if (e.target.closest(SEL.placementOrHandles)) return;
-    e.stopPropagation();
-    drawState = { row: hit.row, startIndex: hit.col, track: hit.track };
-    drawPreview(hit.row, hit.col, hit.col);
-  }, { passive: true });
-
-  el.addEventListener('touchmove', (e) => {
-    if (!drawState || !activePaletteMove()) return;
-    const touch = e.touches[0];
-    // ⚠ drawState.track **한 행 안에서만** 센다. 행 넘김 없음(마우스 경로와 다르다).
-    const endIndex = cellIndex(drawState.track, touch.clientX);
-    drawPreview(drawState.row, drawState.startIndex, endIndex);
-  }, { passive: true });
-
-  el.addEventListener('touchend', (e) => {
-    if (!drawState || !activePaletteMove()) return;
-    const touch = (e.changedTouches || e.touches)[0];
-    const endIndex = cellIndex(drawState.track, touch.clientX);
-    // 2709: crossRow:false — calcCrossRowCount 도 totalCellsFrom 클램프도 쓰지 않는다.
-    const count = resolveDragCount({
-      startRow: drawState.row, startIndex: drawState.startIndex,
-      endRow: drawState.row, endCol: endIndex,
-      board: board(), lowerBound: defaultCount(), crossRow: false
-    });
-    apply(commands.placeMove({
-      moveId: activePaletteMove().moveId,
-      startRow: drawState.row, startIndex: drawState.startIndex, totalCount: count
-    }));
-    commit();
-    overlays.clearPreview(boardId);
-    drawState = null;
-  });
-
-  el.addEventListener('touchcancel', () => {
-    if (!drawState) return;
-    overlays.clearPreview(boardId);
-    drawState = null;
-  });
+  el.addEventListener('touchstart', (e) => step(gesture.touchDrawStart, e, touchEv(e)), { passive: true });
+  el.addEventListener('touchmove', (e) => step(gesture.touchDrawMove, e, touchEv(e)), { passive: true });
+  el.addEventListener('touchend', (e) => step(gesture.touchDrawEnd, e, touchEv(e, true)));
+  el.addEventListener('touchcancel', (e) => step(gesture.touchDrawCancel, e, null));
 
   // ── ㉒㉓㉔㉕ 빠른 배치 모드 터치 드래그 (2723-2772) ────────────────────────
   // 빈 트랙 터치 드래그 → quickPicker (드래그로 카운트 선택)
-  let quickTouchAnchor = null;
-
-  el.addEventListener('touchstart', (e) => {
-    if (!quickPlaceMode() || activePaletteMove() || drawState) return;
-    if (e.target.closest(SEL.placementOrHandles)) return;
-    const touch = e.touches[0];
-    const hit = hitAt(touch.clientX, touch.clientY);
-    if (!hit.inBoard) return;
-    quickTouchAnchor = {
-      x: touch.clientX, y: touch.clientY, track: hit.track, row: hit.row, startIndex: hit.col,
-      count: defaultCount(), isDrag: false
-    };
-    overlays.updatePreview(boardId, hit.row, hit.col, defaultCount());
-  }, { passive: true });
-
-  el.addEventListener('touchmove', (e) => {
-    if (!quickPlaceMode() || !quickTouchAnchor) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - quickTouchAnchor.x;
-    const dy = touch.clientY - quickTouchAnchor.y;
-    // 2740-2742: 12px 이동 임계로 탭/드래그 구분
-    if (Math.abs(dx) > QUICK_DRAG_THRESHOLD_PX || Math.abs(dy) > QUICK_DRAG_THRESHOLD_PX) {
-      quickTouchAnchor.isDrag = true;
-    }
-    if (!quickTouchAnchor.isDrag) return;
-    const { endRow, endCol } = resolveEnd(quickTouchAnchor, touch.clientX, touch.clientY);
-    const count = resolveDragCount({
-      startRow: quickTouchAnchor.row, startIndex: quickTouchAnchor.startIndex,
-      endRow, endCol, board: board(), lowerBound: 1              // 2753: 프리뷰 하한 1
-    });
-    quickTouchAnchor.count = count;
-    quickTouchAnchor.clientX = touch.clientX;
-    quickTouchAnchor.clientY = touch.clientY;
-    overlays.updatePreview(boardId, quickTouchAnchor.row, quickTouchAnchor.startIndex, count);
-  }, { passive: true });
-
-  el.addEventListener('touchend', (e) => {
-    if (!quickPlaceMode() || !quickTouchAnchor) return;
-    const touch = (e.changedTouches || e.touches)[0];
-    const { row, startIndex, isDrag } = quickTouchAnchor;
-    const count = isDrag ? quickTouchAnchor.count : defaultCount();
-    const cx = isDrag ? (quickTouchAnchor.clientX || touch.clientX) : touch.clientX;
-    const cy = isDrag ? (quickTouchAnchor.clientY || touch.clientY) : touch.clientY;
-    const cellIdx = isDrag ? startIndex : cellIndex(quickTouchAnchor.track, touch.clientX);
-    quickTouchAnchor = null;
-    // ⚠ 마우스 경로(2661-2665)와 달리 여기서는 프리뷰를 **지운 뒤** 팝업을 연다(2770).
-    overlays.clearPreview(boardId);
-    quickPicker.open(row, cellIdx, cx, cy, count);
-  });
-
-  el.addEventListener('touchcancel', () => {
-    if (quickTouchAnchor) { quickTouchAnchor = null; overlays.clearPreview(boardId); }
-  });
+  el.addEventListener('touchstart', (e) => step(gesture.quickTouchStart, e, touchEv(e)), { passive: true });
+  el.addEventListener('touchmove', (e) => step(gesture.quickTouchMove, e, touchEv(e)), { passive: true });
+  el.addEventListener('touchend', (e) => step(gesture.quickTouchEnd, e, touchEv(e, true)));
+  el.addEventListener('touchcancel', (e) => step(gesture.quickTouchCancel, e, null));
 
   return { boardId, el };
 }

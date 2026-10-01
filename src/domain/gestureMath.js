@@ -4,7 +4,8 @@
 // 리사이즈 카운트 3단 폴백(3785-3801), 더블탭 300ms(2523·2540), 이동 임계 8px/12px(2726·3241)을 모았다.
 // elementFromPoint · getBoundingClientRect · 현재 시각 조회는 여기 들어오지 않는다 — 호출부(input/*)의 몫이다.
 
-import { calcCrossRowCount, totalCellsFrom, clamp } from './grid.js';
+import { calcCrossRowCount, totalCellsFrom, clamp, cellIndexFromRatio } from './grid.js';
+import { groupCount } from './placements.js';
 
 /** 더블탭 판정 간격(ms). @see index.html:2523 */
 export const DOUBLE_TAP_MS = 300;
@@ -111,4 +112,57 @@ export function isDoubleTap(now, lastTapTime, groupId, lastTapGroupId, threshold
  */
 export function exceedsThreshold(dx, dy, threshold) {
   return Math.abs(dx) > threshold || Math.abs(dy) > threshold;
+}
+
+/**
+ * 포인터 밑의 트랙을 행·칸으로 바꾸는 산술. input/hitTest 가 요소를 찾고 사각형을 잰 **뒤에** 부른다(RM-08).
+ *
+ * ⚠ 보드 밖(inBoard=false)이면 행은 fallbackRow(앵커 행)이고, 칸은 호출부가 앵커 트랙을 잰 rect 로 센다.
+ *   "보드 밖으로 끌어도 카운트가 시작 행 기준"이라는 관찰 동작이 이 두 줄이다.
+ * ⚠ trackRow 는 dataset 의 **문자열**이라 Number() 를 거친다(원본 2633 등).
+ * ⚠ 잴 트랙이 없거나(rect=null) 보드 값이 없으면 칸은 null 이다. 0 이 아니다.
+ *
+ * @param {object} a
+ * @param {boolean} a.inBoard        포인터 밑 트랙이 이 보드 안인가
+ * @param {string|number|null} a.trackRow  포인터 밑 트랙의 행(보드 안일 때만 읽는다)
+ * @param {number|null} a.fallbackRow 보드 밖일 때 쓸 행
+ * @param {{left:number, width:number}|null} a.rect  잰 트랙의 사각형(보드 안이면 그 트랙, 밖이면 앵커)
+ * @param {number} a.clientX
+ * @param {{cols:number}|null} a.board
+ * @returns {{row:number|null, col:number|null}}
+ */
+export function resolveHitCell({ inBoard, trackRow, fallbackRow, rect, clientX, board }) {
+  const row = inBoard ? Number(trackRow) : fallbackRow;
+  const col = rect && board ? cellIndexFromRatio(clientX, rect, board.cols) : null;
+  return { row, col };
+}
+
+/**
+ * 끌고 있는 것을 놓으면 몇 칸이 되는지 — 드래그 프리뷰의 카운트. 원본 updatePreview(3900-3906)의 결정부.
+ * input/boardController 와 input/touchDrag 에 같은 다섯 줄이 두 벌 있던 것을 한 자리로 모았다(RM-08).
+ *
+ * ⚠ 드래그가 없으면 null — 호출부는 그때 프리뷰를 **지운다**(원본이 clearPreview 뒤 조기 반환한다).
+ * ⚠ 팔레트 드래그는 끌기 시작한 때의 previewCount 가 아니라 **지금의** 기본 카운트를 쓴다(원본 그대로).
+ *
+ * @param {{type:string, groupId?:string}|null} drag
+ * @param {number} defaultCount
+ * @param {object[]} placements  이 보드의 배치
+ * @returns {number|null}
+ */
+export function dragPreviewCount(drag, defaultCount, placements) {
+  if (!drag) return null;
+  return drag.type === 'palette' ? defaultCount : groupCount(placements, drag.groupId);
+}
+
+/**
+ * 리사이즈 프리뷰가 세 갈래 중 어디로 가는지(resolveResizeCount 의 hit.kind). 원본 3785-3801 의 if 순서다.
+ * 보드 안이 먼저 이기고, 그다음이 시작 트랙, 둘 다 없을 때만 이동거리로 센다.
+ * @param {boolean} inBoard
+ * @param {boolean} hasOriginTrack
+ * @returns {'cross'|'sameRow'|'step'}
+ */
+export function resizeHitKind(inBoard, hasOriginTrack) {
+  if (inBoard) return 'cross';
+  if (hasOriginTrack) return 'sameRow';
+  return 'step';
 }

@@ -23,6 +23,7 @@ import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
 import { askText, anchorOf } from './inlinePrompt.js';
 import { categoryNames, categoryColor } from '../domain/categories.js';
 import { selectPaletteMoves } from '../domain/moves.js';
+import { placeContextMenu } from '../domain/popupPlacement.js';
 
 /** 동작 CRUD 는 전부 메인 보드 스냅샷에 커밋된다(원본 saveHistory). */
 const MAIN = 'main';
@@ -153,8 +154,12 @@ export function createPaletteView(deps) {
     menu.append(renameBtn, categoryBtn, deleteBtn);
     document.body.appendChild(menu);
     const rect = menu.getBoundingClientRect();
-    menu.style.left = `${Math.max(12, Math.min(x, window.innerWidth - rect.width - 12))}px`;
-    menu.style.top = `${Math.max(12, Math.min(y, window.innerHeight - rect.height - 12))}px`;
+    // 산술은 domain/popupPlacement.placeContextMenu(RM-08). 붙인 뒤 동기로 잰다 — rAF 를 기다리지 않는다.
+    const pos = placeContextMenu({
+      x, y, width: rect.width, height: rect.height, viewW: window.innerWidth, viewH: window.innerHeight,
+    });
+    menu.style.left = `${pos.left}px`;
+    menu.style.top = `${pos.top}px`;
     moveContextMenu = menu;
   }
 
