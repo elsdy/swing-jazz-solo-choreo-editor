@@ -282,7 +282,10 @@ function applyProjectData(deps, data) {
   // ⚠ 손으로 적던 때 phrasing 이 여기서 빠져 **열어도 돌아오지 않았다**(2026-09-28 에 RM-01 의 왕복 시험이 찾았다).
   const fields = {};
   for (const key of DOC_FIELDS) if (key !== 'links') fields[key] = normalized[key];
-  writeDoc(store, fields);
+  // ⚠ 선택도 함께 비운다(RM-03) — Undo 복원(historyCommands.restoreMain)과 같은 자리·같은 방식이다.
+  //   원본은 비우지 않아, 열기 전에 고른 블록을 가리키는 선택이 남고 `루틴으로 편성 (2)` 가 떠 있었다.
+  //   부분 채우기(mergeProjectData)는 기존 블록이 남으므로 선택을 건드리지 않는다.
+  writeDoc(store, fields, { selection: new Set() });
   store.patch('favorites', { routineIds: normalized.favoriteRoutineIds }); // 4372·4376
   storage.saveRoutineFavorites([...normalized.favoriteRoutineIds]);  // 4373·4377 (두 갈래 모두)
 
@@ -298,7 +301,7 @@ function applyProjectData(deps, data) {
   // 다시 그릴 것 — 필드마다의 dirty(docFields)를 합친 것 + 툴바(4381 syncBoardSizeUI → boardColsInput.value / boardTitle).
   // 원본 대응: categorySelect 4346 · links 5126 · layout 4381 · legend 4382 · palette 4383 · boards 4384 · routineList 4385.
   // ⚠ 손으로 적던 때 phrasing 이 빠져, 불러온 프레이즈 표시가 행에 다시 입혀지지 않았다(boards.skeleton 이 dataset 을 날린다).
-  const dirty = { ...docDirty(), toolbar: true };
+  const dirty = { ...docDirty(), selection: true, toolbar: true };
   return mergeDirty(dirty, commitMainHistory(deps));                 // 4386
 }
 
