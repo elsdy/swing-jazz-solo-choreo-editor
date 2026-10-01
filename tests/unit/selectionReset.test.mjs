@@ -72,10 +72,9 @@ test('최근 목록에서 전체 불러오기 뒤 고른 목록이 빈다', () =
 
 test('형식이 틀린 불러오기는 아무것도 바꾸지 않는다 — 선택도 남는다', () => {
   const store = twoSelected();
-  const alerts = [];
-  const d = { ...deps(store), dialogs: { alert: m => alerts.push(m) } };
-  Project.loadProjectFromRecent(d, { placements: [] });              // moveLibrary 가 없다 → normalizeProject 가 거절
-  assert.deepEqual(alerts, ['잘못된 프로젝트 파일 형식입니다.'], '준비: 형식 거절 길을 탔다');
+  const dirty = Project.loadProjectFromRecent(deps(store), { placements: [] });   // moveLibrary 가 없다 → normalizeProject 가 거절
+  // RM-04 부터 즉시 alert 가 아니라 막는(block) 급의 알림을 돌려준다
+  assert.deepEqual(dirty, { notify: { kind: 'block', message: '잘못된 프로젝트 파일 형식입니다.' } }, '준비: 형식 거절 길을 탔다');
   assert.equal(store.get().selection.size, 2);
 });
 

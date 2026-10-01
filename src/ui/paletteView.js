@@ -20,15 +20,19 @@
 
 import { SEL, CLS } from './domContract.js';
 import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
+import { askText, anchorOf } from './inlinePrompt.js';
 import { categoryNames, categoryColor } from '../domain/categories.js';
 import { selectPaletteMoves } from '../domain/moves.js';
 
 /** 동작 CRUD 는 전부 메인 보드 스냅샷에 커밋된다(원본 saveHistory). */
 const MAIN = 'main';
 
-/** Dirty 가 '아무 일도 없었다'(store.NONE)인지. ui 는 usecases 를 import 할 수 없어 키 개수로 본다. */
+/**
+ * Dirty 가 '아무 일도 없었다'(store.NONE)가 아닌지. ui 는 usecases 를 import 할 수 없어 키로 본다.
+ * ⚠ notify 는 세지 않는다(RM-04) — 「이름을 비워둘 수 없습니다」처럼 알림만 싣고 돌아온 것은 바꾼 것이 아니다.
+ */
 function changed(dirty) {
-  return !!dirty && Object.keys(dirty).length > 0;
+  return !!dirty && Object.keys(dirty).some(k => k !== 'notify');
 }
 
 /**
@@ -51,8 +55,8 @@ function changed(dirty) {
  * @property {(moveId:string, nextCategory:string)=>any} setMoveCategory 카드의 카테고리 select
  * @property {(moveId:string)=>any} deleteMove 카드 × / 메뉴 '삭제'
  * @property {(moveName:string)=>any} toggleMoveFavorite ★ (⚠ id 가 아니라 이름)
- * @property {(moveId:string)=>any} renameMove 메뉴 '이름 변경'(prompt 는 커맨드 안에서)
- * @property {(moveId:string)=>any} promptMoveCategory 메뉴 '카테고리: …'(prompt 는 커맨드 안에서)
+ * @property {(moveId:string, next:string|null)=>any} renameMove 메뉴 '이름 변경'(이름은 인라인 입력이 묻는다)
+ * @property {(moveId:string, next:string|null)=>any} setMoveCategoryKey 메뉴 '카테고리: …'(키는 인라인 입력이 묻는다)
  */
 
 /**
@@ -110,21 +114,27 @@ export function createPaletteView(deps) {
     renameBtn.type = 'button';
     renameBtn.textContent = '이름 변경';
     renameBtn.addEventListener('click', () => {
-      closeContextMenu();                       // 3257: 메뉴를 먼저 닫고 prompt 를 띄운다
-      const dirty = commands.renameMove(moveId);
-      render(dirty);
-      // 3187·3189 의 취소/빈 이름 조기 반환에서는 saveHistory 가 없다.
-      if (changed(dirty)) render(commit(MAIN));
+      const anchor = anchorOf(menu);            // 메뉴가 있던 자리에 입력이 뜬다
+      closeContextMenu();                       // 3257: 메뉴를 먼저 닫고 묻는다
+      askText({ anchor, title: '동작 이름 변경', value: move.name }).then((next) => {
+        const dirty = commands.renameMove(moveId, next);
+        render(dirty);
+        // 3187·3189 의 취소/빈 이름 조기 반환에서는 saveHistory 가 없다.
+        if (changed(dirty)) render(commit(MAIN));
+      });
     });
 
     const categoryBtn = document.createElement('button');
     categoryBtn.type = 'button';
     categoryBtn.textContent = `카테고리: ${store.categories[move.category]?.label || move.category}`;
     categoryBtn.addEventListener('click', () => {
+      const anchor = anchorOf(menu);
       closeContextMenu();                       // 3264
-      const dirty = commands.promptMoveCategory(moveId);
-      render(dirty);
-      if (changed(dirty)) render(commit(MAIN));  // 3267·3269 의 조기 반환에서는 커밋하지 않는다
+      askText({ anchor, title: '카테고리 키 변경', value: move.category }).then((next) => {
+        const dirty = commands.setMoveCategoryKey(moveId, next);
+        render(dirty);
+        if (changed(dirty)) render(commit(MAIN));  // 3267·3269 의 조기 반환에서는 커밋하지 않는다
+      });
     });
 
     const deleteBtn = document.createElement('button');

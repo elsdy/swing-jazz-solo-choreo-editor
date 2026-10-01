@@ -31,7 +31,6 @@ const MAIN = 'main';
  * @property {CategoryViewCommands} commands  app/main 이 ctx 를 미리 묶어 넘긴 커맨드들
  * @property {(dirty: any) => void} render     app/render 의 presenter
  * @property {(boardId: string) => any} commit historyCommands.commit 을 감싼 것. Dirty 를 돌려준다
- * @property {{ alert: (message: string) => void }} dialogs
  */
 
 /**
@@ -56,7 +55,6 @@ export function createCategoryView(deps) {
     commands,
     render,
     commit,
-    dialogs,
   } = deps;
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -152,7 +150,7 @@ export function createCategoryView(deps) {
       del.addEventListener('click', () => {
         // ⚠ 가드가 confirmOnce **밖**이다(3012). 마지막 하나는 '정말요?' 없이 즉시 막힌다.
         if (categoryNames(store.categories).length <= 1) {
-          dialogs.alert('카테고리는 최소 1개 이상 있어야 합니다.');
+          render({ notify: { kind: 'toast', message: '카테고리는 최소 1개 이상 있어야 합니다.' } });
           return;
         }
         confirmOnce(del, '×', () => {

@@ -43,19 +43,14 @@ export const browserEnv = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 대화상자의 얇은 껍데기. 문구는 전부 호출부(유스케이스)가 만든다.
- * ⚠ confirm 은 계약을 채우려고 붙였을 뿐 오늘 호출부가 0곳이다. 확인 UX 는 ui/widgets 의
- *   confirmOnce(원본 1700-1714, 버튼 라벨을 2초간 '정말요?'로 바꾸는 위젯)가 맡는다 —
- *   confirmOnce 를 이걸로 바꾸면 동작이 바뀐다.
- * @see index.html:3186 prompt('동작 이름 변경', move.name)
- * @see index.html:3266 prompt('카테고리 키 변경', move.category)
- * @see index.html:4678 prompt('루틴 이름', routine.name)
+ * 대화상자의 얇은 껍데기.
+ * ⚠ 2026-10-01(RM-04)부터 **앱의 어느 자리도 이것을 부르지 않는다.** 실패·소식은 Dirty.notify → ui/toastView
+ *   (앱 안 모달·토스트), 이름 입력은 ui/inlinePrompt 다. 브라우저 alert·prompt 창은 누르기 전까지 앱 전체를
+ *   멈춰서, 영상을 틀어 놓고 받아 적는 흐름을 끊었다. 다시 이리로 배선하지 마라.
+ * ⚠ confirm 도 호출부가 0곳이다. 확인 UX 는 ui/widgets 의 confirmOnce(버튼 라벨을 2초간 '정말요?')가 맡는다.
  * @type {Dialogs}
  */
 export const browserDialogs = {
-  promptText(message, defaultValue = '') {
-    return window.prompt(message, defaultValue);
-  },
   alert(message) {
     window.alert(message);
   },

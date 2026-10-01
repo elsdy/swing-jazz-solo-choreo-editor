@@ -11,6 +11,7 @@
 //   ui/overlays 가 하는 일이므로 app/main 이 onDragEnd 로 감싸 넘긴다.
 
 import { CLS } from './domContract.js';
+import { askText } from './inlinePrompt.js';
 import { DEFAULT_ROUTINE_COLOR } from '../domain/categories.js';
 import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
 
@@ -30,7 +31,7 @@ const EMPTY_HTML = '<div class="helper" style="padding:4px 2px;">아직 루틴�
  *   session.editingRoutineId 세 곳을 읽는다.
  * @property {{
  *   toggleFavorite: (routineId: string) => any,
- *   renameRoutine: (routineId: string) => any,
+ *   renameRoutine: (routineId: string, next: string|null) => any,
  *   openRoutineEditor: (routineId: string) => any,
  *   deleteRoutine: (routineId: string) => any
  * }} commands app/main 이 routineCommands 를 묶어 넘긴다.
@@ -90,7 +91,10 @@ export function createRoutineListView(deps) {
     // 4719 — innerHTML 이라 이름은 escapeHtml 을 거친다. `박자 × `의 곱셈기호(×)는 원문 그대로.
     info.innerHTML = `<div class="${CLS.routineNameText}">${escapeHtml(routine.name)}</div><div class="${CLS.routineMetaText}">${routine.cols}박자 × ${routine.rows}행</div>`;
     info.style.minWidth = '0';                                      // 4720
-    info.addEventListener('dblclick', () => render(commands.renameRoutine(routine.id)));  // 4721
+    info.addEventListener('dblclick', (e) => {                      // 4721 — 이름은 그 카드 위에서 적는다(RM-04)
+      askText({ anchor: info, at: { x: e.clientX, y: e.clientY }, title: '루틴 이름', value: routine.name })
+        .then((next) => render(commands.renameRoutine(routine.id, next)));
+    });
 
     const actions = document.createElement('div');
     actions.className = CLS.routineActions;                         // 4724

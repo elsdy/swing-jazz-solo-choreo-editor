@@ -1,7 +1,7 @@
 // src/ports/env.js — 바깥세상(난수·시계·대화상자)의 계약. import 0개.
 //
-// 원본 index.html 의 uid(1696-1698, Math.random+Date.now)와 prompt 3곳(3186·3266·4678)·
-// alert 11곳의 반대편이다. domain/usecases 는 Date·Math.random 을 쓸 수 없으므로
+// 원본 index.html 의 uid(1696-1698, Math.random+Date.now)와 alert 11곳의 반대편이다
+// (prompt 3곳은 RM-04 에서 인라인 입력으로 옮겨 이 포트에서 빠졌다). domain/usecases 는 Date·Math.random 을 쓸 수 없으므로
 // 이 포트를 통하지 않고는 id 도 시각도 만들 수 없고, 그 덕에 골든이 결정적이 된다.
 
 /**
@@ -12,9 +12,10 @@
 
 /**
  * @typedef {Object} Dialogs
- * @property {(message: string, defaultValue?: string) => string|null} promptText
- *   취소하면 null. 원본 `prompt('동작 이름 변경', move.name)`(3186) 등 3곳의 계약면
- * @property {(message: string) => void} alert  원본 alert 11곳(3012·3189·3269·3993·4069·4179·4342·4402·4421·4447·4475)
+ * ⚠ 2026-10-01(RM-04)부터 앱은 이 포트로 아무것도 띄우지 않는다. 실패와 소식은 Dirty.notify(막음·토스트·상태)로
+ *   돌려주고 ui/toastView 가 띄우며, 이름은 ui/inlinePrompt 가 그 칸 위에서 묻는다. prompt 계약면(promptText)은
+ *   그래서 걷었다. 남은 둘은 골든 어댑터가 「누가 다시 즉시 alert 를 부르나」를 잡는 그물로만 쓴다.
+ * @property {(message: string) => void} alert  원본 alert 11곳(3012·3189·3269·3993·4069·4179·4342·4402·4421·4447·4475)의 옛 계약면
  * @property {(message: string) => boolean} confirm
  *   ⚠ 오늘 index.html 에는 window.confirm 호출이 하나도 없다. 확인 UX 는 전부 confirmOnce(1700,
  *   버튼 라벨을 '정말요?'로 2초 바꾸는 UI 위젯)가 맡는다. 이 멤버는 앞으로를 위한 자리이며
@@ -45,20 +46,16 @@ function answer(source, fallback, args) {
 }
 
 /**
- * 아무것도 띄우지 않는 Dialogs. 기본 답은 "취소"(prompt→null, confirm→false)라
+ * 아무것도 띄우지 않는 Dialogs. 기본 답은 "취소"(confirm→false)라
  * 테스트에서 실수로 대화상자를 타면 아무 일도 일어나지 않는다.
  * 주고받은 문구는 `calls` 에 순서대로 쌓이므로 단정에 쓸 수 있다.
- * @param {{promptValue?: any, confirmValue?: any}} [options] 값 또는 (message, defaultValue)=>값
- * @returns {Dialogs & { calls: {kind:'prompt'|'alert'|'confirm', message:string, defaultValue?:string}[] }}
+ * @param {{confirmValue?: any}} [options] 값 또는 (message)=>값
+ * @returns {Dialogs & { calls: {kind:'alert'|'confirm', message:string}[] }}
  */
 export function silentDialogs(options = {}) {
   const calls = [];
   return {
     calls,
-    promptText(message, defaultValue = '') {
-      calls.push({ kind: 'prompt', message, defaultValue });
-      return answer(options.promptValue, null, [message, defaultValue]);
-    },
     alert(message) {
       calls.push({ kind: 'alert', message });
     },

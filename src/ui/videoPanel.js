@@ -26,6 +26,7 @@
 
 import { CLS, DATA } from './domContract.js';
 import { confirmOnce } from './widgets.js';
+import { askText } from './inlinePrompt.js';
 import { cellOf, clamp, linearOf, rowIndices } from '../domain/grid.js';
 import { bpmFromTaps, driftCounts, isTempoUsable, normalizeTempo, tapSpread } from '../domain/tempo.js';
 import { driftReport } from '../domain/captureDrift.js';
@@ -264,8 +265,6 @@ export function createVideoPanel(deps) {
     getTrimError = () => '',
     onTrim = () => {},
     onSync = () => {},
-    // 영상 이름 바꾸기에 쓴다(원본 renameMove 와 같은 idiom). 넓히지 않으려고 promptText 하나만 받는다.
-    dialogs = { promptText: (title, value) => window.prompt(title, value) },
     commands,
     elements = {}
   } = deps;
@@ -845,10 +844,12 @@ export function createVideoPanel(deps) {
       ren.textContent = '✎'; ren.title = '이름 바꾸기';
       ren.onclick = () => {
         if (!commands.renameClip) return;
-        const next = dialogs.promptText('이 영상의 이름', c.name);
-        if (next == null) return;
-        render(commands.renameClip({ id: c.id, name: next }));
-        commitHistory();
+        // 그 줄 위에서 바로 적는다(RM-04 — 전에는 prompt 창이 재생을 가렸다)
+        askText({ anchor: main, title: '이 영상의 이름', value: c.name }).then((next) => {
+          if (next == null) return;
+          render(commands.renameClip({ id: c.id, name: next }));
+          commitHistory();
+        });
       };
       const del = document.createElement('button');
       del.type = 'button'; del.className = CLS.ghost;
@@ -1868,10 +1869,13 @@ export function createVideoPanel(deps) {
   if (shiftFwdBtn) shiftFwdBtn.onclick = () => shiftAll(1);
   if (nameSelBtn && commands.nameSelected) {
     nameSelBtn.onclick = () => {
-      const { named, ...dirty } = commands.nameSelected() || {};
-      render(dirty);
-      renderCapture();
-      if (named) commitHistory();
+      // 이름은 버튼 위에서 바로 적는다(RM-04). 받아 적는 중에도 재생이 멈추지 않는다 — prompt 창은 멈췄다.
+      askText({ anchor: nameSelBtn, title: '이 블록의 이름', value: '' }).then((label) => {
+        const { named, ...dirty } = commands.nameSelected(label) || {};
+        render(dirty);
+        renderCapture();
+        if (named) commitHistory();
+      });
     };
   }
   if (captureCancelBtn && commands.stopCapture) {

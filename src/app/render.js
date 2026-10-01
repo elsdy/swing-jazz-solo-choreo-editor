@@ -15,8 +15,8 @@
 //      (매 input 마다 다시 그리면 <input type="color"> 가 파괴돼 네이티브 피커가 첫 드래그에서 닫힌다).
 //   ③ selection 은 행을 다시 그리지 않는다. 클래스만 토글하고(boardView.setSelected),
 //      재렌더 시 복원은 placementView 가 store.selection 을 읽어 따로 한다 — 오늘의 두 경로다.
-//   ④ notify(alert)는 **맨 마지막**이다. 부분 불러오기의 '병합 완료…' 가 렌더 뒤에 떠야
-//      원본 mergeProjectData(4174-4179)와 같은 순서가 된다.
+//   ④ notify(알림 — block·toast·status 세 급, RM-04)는 **맨 마지막**이다. 부분 불러오기의 '병합 완료…' 가
+//      렌더 뒤에 떠야 원본 mergeProjectData(4174-4179)와 같은 순서가 된다. 어디에 띄울지는 views.notify(조립부)가 정한다.
 //
 // ⚠ 이 파일은 커맨드를 부르지 않는다. store 는 **읽기만** 한다.
 
@@ -50,7 +50,7 @@ import { phraseMark } from '../domain/phrasing.js';
  *   thumb?: { render(): void },
  *   project?: { render(): void },
  *   bpm?: { render(): void },
- *   notify?: (n: { kind: 'alert', message: string }) => void
+ *   notify?: (n: import('../usecases/store.js').Notice) => void
  * }} views
  * @param {{ dev?: boolean, paranoid?: boolean }} [options]
  *   dev: assertDirty + assertDirtyCovers 를 켠다. **운영 경로에서 켜지 마라**(던진다).

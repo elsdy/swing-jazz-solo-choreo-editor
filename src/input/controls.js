@@ -50,8 +50,11 @@ function warnMissingHotkeyCommands(commands, log = console) {
   }
 }
 
-/** 커맨드가 실제로 무언가를 바꿨는가. store.NONE 은 얼어붙은 빈 객체다. */
-const changed = (dirty) => !!dirty && Object.keys(dirty).length > 0;
+/**
+ * 커맨드가 실제로 무언가를 바꿨는가. store.NONE 은 얼어붙은 빈 객체다.
+ * ⚠ notify 는 세지 않는다(RM-04) — 「동작 이름을 입력해 주세요」만 싣고 돌아온 것은 바꾼 것이 아니다.
+ */
+const changed = (dirty) => !!dirty && Object.keys(dirty).some(k => k !== 'notify');
 
 /**
  * `전체 초기화` 버튼의 라벨. index.html 의 `#clearBtn` 글자와 **한 글자도 다르면 안 된다** —
@@ -90,11 +93,10 @@ export const CLEAR_BOARD_BTN_LABEL = '안무표만 비우기';
  * @param {(dirty: object) => void} deps.render
  * @param {(btn: HTMLElement, label: string, fn: () => void) => void} deps.confirmOnce  ui/widgets 주입
  * @param {{ readJsonFromInput(input, onData, onError): void }} deps.fileIO   adapters/browserFileIO 주입
- * @param {{ alert(message: string): void }} deps.dialogs                     adapters/browserDialogs 주입
  * @returns {void}
  */
 export function bindControls(deps) {
-  const { els, store, commands, render, confirmOnce, fileIO, dialogs } = deps;
+  const { els, store, commands, render, confirmOnce, fileIO } = deps;
   const apply = (dirty) => { if (dirty) render(dirty); };
 
   // ── 팔레트 검색 (2305) ─────────────────────────────────────────────────────
@@ -167,26 +169,28 @@ export function bindControls(deps) {
 
   // ── 파일 인풋 4개 (2363-2366) ──────────────────────────────────────────────
   // ⚠ 껍데기(files[0] 없으면 즉시 반환 / JSON.parse 와 onData 가 같은 try / value='' 는 동기)는
-  //   어댑터가 소유한다. 여기서는 alert 문구만 경로별로 다르게 넘긴다.
+  //   어댑터가 소유한다. 여기서는 알림의 급과 문구만 경로별로 다르게 넘긴다(RM-04 — 띄우는 것은 render 의 마지막 단계).
+  //   프로젝트 파일은 열지 못하면 작업을 멈춰야 하므로 막는(block) 급, 동작·카테고리 파일은 토스트다.
+  const fail = (kind, message) => () => apply({ notify: { kind, message } });
   els.fileLoader.addEventListener('change', (e) => {
     fileIO.readJsonFromInput(e.target,
       (data, file) => apply(commands.loadProjectFromFile({ data, fileName: file.name })),
-      () => dialogs.alert('올바른 프로젝트 파일이 아닙니다.'));
+      fail('block', '올바른 프로젝트 파일이 아닙니다.'));
   });
   els.mergeFileLoader.addEventListener('change', (e) => {
     fileIO.readJsonFromInput(e.target,
       (data, file) => apply(commands.mergeProjectFromFile({ data, fileName: file.name })),
-      () => dialogs.alert('올바른 프로젝트 파일이 아닙니다.'));
+      fail('block', '올바른 프로젝트 파일이 아닙니다.'));
   });
   els.moveListLoader.addEventListener('change', (e) => {
     fileIO.readJsonFromInput(e.target,
       (data, file) => apply(commands.loadMoveListFromFile({ data, fileName: file.name })),
-      () => dialogs.alert('동작 파일을 읽을 수 없습니다.'));
+      fail('toast', '동작 파일을 읽을 수 없습니다.'));
   });
   els.categoryLoader.addEventListener('change', (e) => {
     fileIO.readJsonFromInput(e.target,
       (data, file) => apply(commands.loadCategoriesFromFile({ data, fileName: file.name })),
-      () => dialogs.alert('카테고리 파일을 읽을 수 없습니다.'));
+      fail('toast', '카테고리 파일을 읽을 수 없습니다.'));
   });
 
   // ── 안무표 크기 알약 (2367-2370) ───────────────────────────────────────────

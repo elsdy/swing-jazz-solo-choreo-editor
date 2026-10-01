@@ -7,7 +7,7 @@
 // savedSortMode 전환(2344-2355)에서 상태 전이 부분만 옮겼다.
 // 파일 선택 껍데기(files[0] → text() → JSON.parse)와 localStorage 접근은 adapters 의 몫이다.
 
-import { NONE, mergeDirty, boardOf, BOARD_MAIN } from './store.js';
+import { NONE, mergeDirty, boardOf, BOARD_MAIN, notice } from './store.js';
 import { StorageError } from '../ports/storage.js';
 import { DEFAULT_CATEGORIES } from '../domain/defaults.js';
 import { normalize as normalizeCategories, categoryNames } from '../domain/categories.js';
@@ -28,13 +28,13 @@ import { mergeProject } from '../domain/project/merge.js';
  * @property {{ uid: () => string, now: () => number, nowIso: () => string }} env
  *   ⚠ nowIso() 는 `new Date().toISOString()` 의 포트면이다. ports/env.js 의 counterEnv 에는 없으므로
  *     테스트는 `{ ...counterEnv(), nowIso: () => '2024-01-01T00:00:00.000Z' }` 로 감싸 넘겨라.
- * @property {{ alert: (message: string) => void }} dialogs
+ * @property {object} [dialogs]  ⚠ 2026-10-01(RM-04)부터 쓰지 않는다 — 실패는 Dirty.notify 로 돌려준다
  * @property {{ downloadJson: (payload: unknown, fileName: string) => unknown }} files
  * @property {{ saveRecents: (kind: RecentKind, list: unknown[]) => unknown,
  *              saveRoutineFavorites: (ids: Iterable<string>) => unknown,
  *              saveLinks: (links: object) => unknown }} storage
  *   ⚠ 셋 다 동기다(오늘 localStorage.setItem 그대로). 실패는 던지거나 `{ ok:false }` 로 알린다 —
- *     임포트 경로는 둘 다 오늘의 catch 와 같은 alert 로 흡수한다.
+ *     임포트 경로는 둘 다 오늘의 catch 와 같은 문구의 알림(Dirty.notify)으로 흡수한다.
  * @property {(fileName: string) => void} [setProjectFileName]  원본 4379 `fileNameInput.value = …`
  * @property {(boardId: 'main'|'routine') => import('./store.js').Dirty|void} [commitHistory] 원본 saveHistory()
  */
@@ -120,7 +120,7 @@ export function draftSnapshot(deps, options = {}) {
 export function restoreDraft(deps, data) {
   if (!data || typeof data !== 'object' || !Array.isArray(data.placements)) return NONE;
   const read = readProjectData(data, deps.env);
-  if (!read.ok) return { ...NONE, blocked: true, notify: { kind: 'alert', message: read.message } };
+  if (!read.ok) return { ...NONE, blocked: true, notify: notice('block', read.message) };
   return applyProjectData(deps, read.data);
 }
 
@@ -258,7 +258,7 @@ export function saveCategories(deps, options = {}) {
  * applyProjectData(4341-4387)의 절차부. 마이그레이션은 이미 끝난 데이터를 받는다.
  *
  * 순서가 곧 계약이다(4342 → 4386):
- *   ① normalizeProject 가 null → alert('잘못된 프로젝트 파일 형식입니다.') 하고 아무것도 안 한다
+ *   ① normalizeProject 가 null → '잘못된 프로젝트 파일 형식입니다.'(block) 만 돌려주고 아무것도 안 한다
  *   ② rows·cols·categories·moveLibrary·placements·routines·favoriteRoutineIds 일곱을 대입
  *   ③ ⚠ routines 유무 **두 갈래 모두에서** saveRoutineFavorites() (4373·4377)
  *   ④ fileNameInput.value = fileName (4379)
@@ -268,11 +268,10 @@ export function saveCategories(deps, options = {}) {
  * ⚠ renderCategoryOptions 는 categories 대입 **직후**(4346)라 항상 함께 더러워진다.
  */
 function applyProjectData(deps, data) {
-  const { store, env, dialogs, storage } = deps;
+  const { store, env, storage } = deps;
   const normalized = normalizeProject(data, { ids: env, defaultCategories: DEFAULT_CATEGORIES });
   if (!normalized) {
-    dialogs.alert('잘못된 프로젝트 파일 형식입니다.');               // 4342
-    return NONE;
+    return { notify: notice('block', '잘못된 프로젝트 파일 형식입니다.') };   // 4342
   }
 
   // 등록표의 필드를 한 번에 쓴다(docFields.writeDoc — 보드 칸은 setBoard, 나머지는 update). 원본 대응 줄:
@@ -321,14 +320,14 @@ export function loadProjectFromFile(deps, input) {
   let dirty = NONE;
   try {
     const read = readProjectData(input.data, deps.env);              // 4394 (+ 마이그레이션)
-    if (!read.ok) return { ...NONE, notify: { kind: 'alert', message: read.message } };
+    if (!read.ok) return { ...NONE, notify: notice('block', read.message) };
     const data = read.data;
     dirty = mergeDirty(dirty, applyProjectData(deps, data));         // 4395
     const fileName = baseName(input.fileName);                       // 4396
     const savedAt = data && data.savedAt ? data.savedAt : nowIso(deps.env); // 4397
     dirty = mergeDirty(dirty, pushRecent(deps, 'projects', { fileName, savedAt, data })); // 4398-4400
   } catch {
-    deps.dialogs.alert('올바른 프로젝트 파일이 아닙니다.');            // 4402
+    dirty = mergeDirty(dirty, { notify: notice('block', '올바른 프로젝트 파일이 아닙니다.') });            // 4402
   }
   return dirty;
 }
@@ -343,7 +342,7 @@ export function loadProjectFromFile(deps, input) {
  */
 export function loadProjectFromRecent(deps, data) {
   const read = readProjectData(data, deps.env);
-  if (!read.ok) return { ...NONE, notify: { kind: 'alert', message: read.message } };
+  if (!read.ok) return { ...NONE, notify: notice('block', read.message) };
   return applyProjectData(deps, read.data);
 }
 
@@ -356,12 +355,13 @@ export function loadProjectFromRecent(deps, data) {
  *
  * ⚠ 진입 엄격도가 전체 불러오기와 다르다: placements 가 배열이기만 하면 통과한다(4069).
  * ⚠ 도메인이 돌려준 categories·moveLibrary·routines·placements **넷 다** 대입해야 원본과 같다.
- * ⚠ alert 가 **맨 마지막**이다(4174-4179: 렌더 5종 → saveHistory → alert). 그래서 이 문구만
- *   Dirty.notify 로 싣는다 — presenter 가 notify 를 마지막에 적용하기 때문이다.
- *   반대로 '잘못된 프로젝트 파일 형식입니다.'(4069)는 즉시 떠야 해서 dialogs.alert 를 직접 부른다.
+ * ⚠ 알림이 **맨 마지막**이다(4174-4179: 렌더 5종 → saveHistory → alert). presenter 가 notify 를
+ *   마지막에 적용하므로 Dirty.notify 로 실으면 이 순서가 지켜진다. 「병합 완료」는 참고(status) 급이다.
+ * ⚠ '잘못된 프로젝트 파일 형식입니다.'(4069)는 원본이 즉시 alert 했다. 실패하면 다른 것을 아무것도
+ *   그리지 않으므로 Dirty.notify 로 옮겨도 뜨는 순서가 같다(RM-04) — 막는(block) 급이다.
  */
 function mergeProjectData(deps, data) {
-  const { store, env, dialogs } = deps;
+  const { store, env } = deps;
   const state = store.get();
   const main = boardOf(state, BOARD_MAIN);
   const res = mergeProject({
@@ -374,8 +374,7 @@ function mergeProjectData(deps, data) {
   }, data, { ids: env });
 
   if (!res.ok) {
-    dialogs.alert('잘못된 프로젝트 파일 형식입니다.');                // 4069
-    return NONE;
+    return { notify: notice('block', '잘못된 프로젝트 파일 형식입니다.') };   // 4069
   }
 
   store.setBoard(BOARD_MAIN, { placements: res.placements });        // 4169
@@ -398,7 +397,7 @@ function mergeProjectData(deps, data) {
   };
   return mergeDirty(
     mergeDirty(dirty, commitMainHistory(deps)),                      // 4175 saveHistory
-    { notify: { kind: 'alert', message } }                           // 4179 (반드시 마지막)
+    { notify: notice('status', message) }                            // 4179 (반드시 마지막)
   );
 }
 
@@ -413,14 +412,14 @@ export function mergeProjectFromFile(deps, input) {
   let dirty = NONE;
   try {
     const read = readProjectData(input.data, deps.env);              // 4413 (+ 마이그레이션)
-    if (!read.ok) return { ...NONE, notify: { kind: 'alert', message: read.message } };
+    if (!read.ok) return { ...NONE, notify: notice('block', read.message) };
     const data = read.data;
     dirty = mergeDirty(dirty, mergeProjectData(deps, data));         // 4414
     const fileName = baseName(input.fileName);                       // 4415
     const savedAt = data && data.savedAt ? data.savedAt : nowIso(deps.env); // 4416
     dirty = mergeDirty(dirty, pushRecent(deps, 'projects', { fileName, savedAt, data })); // 4417-4419
   } catch {
-    deps.dialogs.alert('올바른 프로젝트 파일이 아닙니다.');            // 4421
+    dirty = mergeDirty(dirty, { notify: notice('block', '올바른 프로젝트 파일이 아닙니다.') });            // 4421
   }
   return dirty;
 }
@@ -435,7 +434,7 @@ export function mergeProjectFromFile(deps, input) {
  */
 export function mergeProjectFromRecent(deps, data) {
   const read = readProjectData(data, deps.env);
-  if (!read.ok) return { ...NONE, notify: { kind: 'alert', message: read.message } };
+  if (!read.ok) return { ...NONE, notify: notice('block', read.message) };
   return mergeProjectData(deps, read.data);
 }
 
@@ -497,7 +496,7 @@ export function loadMoveListFromFile(deps, input) {
     };
     dirty = mergeDirty(dirty, pushRecent(deps, 'moves', { fileName, savedAt, data: snapshot })); // 4443-4445
   } catch {
-    deps.dialogs.alert('동작 파일을 읽을 수 없습니다.');               // 4447
+    dirty = mergeDirty(dirty, { notify: notice('toast', '동작 파일을 읽을 수 없습니다.') });               // 4447
   }
   return dirty;
 }
@@ -569,7 +568,7 @@ export function loadCategoriesFromFile(deps, input) {
     };
     dirty = mergeDirty(dirty, pushRecent(deps, 'categories', { fileName, savedAt, data: snapshot })); // 4471-4473
   } catch {
-    deps.dialogs.alert('카테고리 파일을 읽을 수 없습니다.');           // 4475
+    dirty = mergeDirty(dirty, { notify: notice('toast', '카테고리 파일을 읽을 수 없습니다.') });           // 4475
   }
   return dirty;
 }

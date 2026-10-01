@@ -43,7 +43,7 @@ node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커
 |---|---|---|---|
 | `src/domain/` (0) | 격자·레인·배치 전이·카테고리·루틴·저장 포맷·템포. 전부 순수 함수이고 값을 돌려준다 | 브라우저 전역 전부, `Date`, `Math.random`, 타이머, `structuredClone`. 도메인 밖 import | `grid.js` `lanes.js` `boardOps.js` |
 | `src/ports/` (1) | 바깥 세계와의 계약(JSDoc typedef)과 상수, 결정적 널 구현 | import 가 0개다. 구현을 참조하지 않는다 | `env.js` `storage.js` `media.js` |
-| `src/adapters/` (1) | 브라우저 전역을 만지는 유일한 계층. `localStorage`·파일·`fetch`·`prompt` | `usecases`·`ui`·`input`·`app` import | `browser.js` `localStore.js` |
+| `src/adapters/` (1) | 브라우저 전역을 만지는 유일한 계층. `localStorage`·파일·`fetch` | `usecases`·`ui`·`input`·`app` import | `browser.js` `localStore.js` |
 | `src/usecases/` (2) | 저장소를 갱신하고 `Dirty`(무엇을 다시 그릴지)를 돌려준다. 포트는 주입받는다 | DOM 접근, 렌더 함수 호출, 어댑터 import | `store.js` `boardCommands.js` |
 | `src/ui/` (3) | DOM 렌더. 상태를 읽어 엘리먼트를 만든다 | `input/**` import(`domContract.js` 제외), 커맨드 직접 import | `boardView.js` `paletteView.js` |
 | `src/input/` (3) | 포인터·터치·키보드 제스처와 이벤트 위임 | `ui/**` import(`domContract.js` 제외), 커맨드 직접 import | `boardController.js` `hitTest.js` |
@@ -83,7 +83,8 @@ Dirty = {
   routineList?: true, routineEditor?: true,
   savedLists?: ('projects' or 'moves' or 'categories')[],
   links?: true, toolbar?: true, history?: true,
-  notify?: { kind: 'alert', message: string }
+  notify?: { kind: 'block' | 'toast' | 'status', message: string,
+            action?: { label: string, command: 'undo', boardId: 'main' | 'routine' } }
 }
 ```
 
@@ -95,7 +96,7 @@ Dirty = {
 
 - **`layout` 이 가장 먼저다.** 원본 `applyBoardSizeFromInput` 은 CSS 변수를 쓰는 `updateMobileCellSize()` 를 부른 **다음에** `renderBoard(true)` 를 부른다. 순서를 뒤집으면 낡은 `--cellW` 로 보드 골격이 서고, `--noteW` 를 `scrollWidth` 로 재는 계산이 한 프레임 어긋난다.
 - **`boards` 는 `BOARD_IDS` 고정 순서로 순회한다.** `skeleton` 이 있으면 골격을 다시 세운 뒤 행을 그린다.
-- **`notify` 는 언제나 마지막이다.** `부분 불러오기` 가 끝나고 뜨는 `병합 완료:` 로 시작하는 알림은 렌더가 끝난 뒤에 떠야 원본과 같은 순서가 된다. 그래서 이 문구만 `Dirty.notify` 에 실린다. 반대로 `잘못된 프로젝트 파일 형식입니다.` 는 즉시 떠야 하므로 `usecases/projectCommands.js` 가 `dialogs.alert` 를 직접 부른다.
+- **`notify` 는 언제나 마지막이다.** `부분 불러오기` 가 끝나고 뜨는 `병합 완료:` 로 시작하는 알림은 렌더가 끝난 뒤에 떠야 원본과 같은 순서가 된다. 2026-10-01(RM-04)부터는 **모든 알림이 `Dirty.notify` 로 온다** — 유스케이스는 급(`block` 막는 오류 · `toast` 알아야 할 실패 · `status` 참고)과 문구만 돌려주고, 어디에 띄울지는 `app/main` 의 `views.notify` 가 정한다(`ui/toastView` 의 앱 안 모달과 토스트). 실패하면 다른 것을 그리지 않으므로 즉시 alert 하던 `잘못된 프로젝트 파일 형식입니다.` 도 같은 순서로 뜬다. `action` 은 지우기 뒤의 `되돌리기` 버튼 하나다 — 값만 싣고, 누를 때 그 보드의 히스토리 깊이가 띄울 때와 같을 때만 Undo 를 부른다. 이름 입력은 `Dialogs` 포트가 아니라 `ui/inlinePrompt` 가 그 칸 위에서 묻고, 유스케이스는 적은 값을 인자로 받는다.
 
 #### `selection` 이 왜 보드 rows 가 아닌가
 

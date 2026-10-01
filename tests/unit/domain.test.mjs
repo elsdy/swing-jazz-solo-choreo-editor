@@ -317,8 +317,9 @@ const DIRTY_SAMPLES = [
   { boards: { main: { rows: 'all' }, routine: { skeleton: true } } },
   { boards: { routine: { rows: [3] } }, savedLists: ['moves'] },
   { savedLists: ['projects', 'moves'], history: true },
-  { notify: { kind: 'alert', message: '첫 번째' } },
-  { notify: { kind: 'alert', message: '두 번째' }, toolbar: true }
+  { notify: { kind: 'toast', message: '첫 번째' } },
+  { notify: { kind: 'status', message: '두 번째' }, toolbar: true },
+  { notify: { kind: 'toast', message: '지웠습니다', action: { label: '되돌리기', command: 'undo', boardId: 'main' } } }
 ];
 
 test('store: mergeDirty 는 결합법칙을 지킨다', () => {
@@ -368,8 +369,8 @@ test('store: mergeDirty 의 savedLists 는 합집합, notify 는 나중 것이 �
     ['projects', 'moves', 'categories']
   );
   const merged = mergeDirty(
-    { notify: { kind: 'alert', message: '첫 번째' } },
-    { notify: { kind: 'alert', message: '두 번째' } }
+    { notify: { kind: 'block', message: '첫 번째' } },
+    { notify: { kind: 'toast', message: '두 번째' } }
   );
   assert.equal(merged.notify.message, '두 번째');
   assert.deepEqual(mergeDirty(NONE, NONE), {});
@@ -3580,8 +3581,8 @@ test('받아 적기: 고른 블록에 이름을 붙이면 이름 있는 블록�
   store.update({ selection: new Set(groups) });
 
   assert.equal(CaptureCmd.pendingCount(store), 1);
-  const dialogs = { promptText: () => '찰스턴' };
-  const out = CaptureCmd.nameSelected(store, {}, { dialogs });
+  // 이름은 화면 층의 인라인 입력이 묻고 label 로 넘긴다(RM-04 — 전에는 prompt 창이었다)
+  const out = CaptureCmd.nameSelected(store, { label: '찰스턴' });
   assert.equal(out.named, 1, '이름 없는 블록만 바뀐다');
   const after = store.board(BOARD_MAIN).placements;
   assert.equal(CaptureCmd.pendingCount(store), 0);
@@ -3590,8 +3591,8 @@ test('받아 적기: 고른 블록에 이름을 붙이면 이름 있는 블록�
 
   // 취소와 빈 이름은 아무것도 바꾸지 않는다.
   store.update({ selection: new Set(groups) });
-  assert.deepEqual(CaptureCmd.nameSelected(store, {}, { dialogs: { promptText: () => null } }), NONE);
-  assert.deepEqual(CaptureCmd.nameSelected(store, {}, { dialogs: { promptText: () => '  ' } }), NONE);
+  assert.deepEqual(CaptureCmd.nameSelected(store, { label: null }), NONE);
+  assert.deepEqual(CaptureCmd.nameSelected(store, { label: '  ' }), NONE);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5320,7 +5321,7 @@ test('미래 스키마 파일은 열지 않고 왜인지 말한다', () => {
 
   for (const run of [ProjectCmd.loadProjectFromRecent, ProjectCmd.mergeProjectFromRecent]) {
     const dirty = run(deps, future);
-    assert.equal(dirty.notify.kind, 'alert');
+    assert.equal(dirty.notify.kind, 'block', '못 여는 파일은 막는 급이다(RM-04)');
     assert.match(dirty.notify.message, /더 새 판/, run.name);
     assert.equal(dirty.boards, undefined, `${run.name}: 열지 않아야 한다`);
   }
