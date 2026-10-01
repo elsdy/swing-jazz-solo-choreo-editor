@@ -42,7 +42,7 @@
 
 /**
  * @typedef {Object} MediaPlayer
- * @property {'youtube'|'file'|'null'|'engine'} kind
+ * @property {'youtube'|'file'|'clock'|'null'|'engine'} kind  'clock' 은 영상 없이 박자로 도는 가상 재생기(adapters/media/clockPlayer, RM-22)
  * @property {MediaCapabilities} capabilities 불변(Object.freeze)
  * @property {() => {load:LoadState, play:PlayState, error:{code:MediaErrorCode,message:string}|null}} getState
  * @property {() => number|null} getDuration 모르면 null(0 이 아니다 — 라이브는 길이가 없다)
