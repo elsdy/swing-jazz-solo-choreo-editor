@@ -566,8 +566,13 @@ export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
       return v && resolveDoc(v) ? v : null;
     } catch { return null; }
   }
+  // ⚠ location.hash 는 퍼센트 인코딩된 채로 온다(`#%EC%84%9C…`). 제목 id 는 한글 그대로이므로 풀어서 비교한다 —
+  //   안 풀면 ASCII 앵커(`#u-12`)만 열리고 한글 앵커는 문서 맨 위에서 멈춘다(2026-10-01).
   function pickAnchorFromUrl() {
-    try { return (doc.defaultView.location.hash || '').replace(/^#/, ''); } catch { return ''; }
+    try {
+      const raw = (doc.defaultView.location.hash || '').replace(/^#/, '');
+      try { return decodeURIComponent(raw); } catch { return raw; }
+    } catch { return ''; }
   }
 
   openBtn.addEventListener('click', () => open());
