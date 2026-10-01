@@ -1,7 +1,7 @@
 // src/usecases/store.js — 단일 저장소 + Dirty 기술자 + mergeDirty (usecases 계층)
 //
 // 원본 index.html 의 state(1394-1423) · reState(1426-1440) · savedSortMode(1518) ·
-// 가변 DEFAULT_COUNT(1384) · _routineColorIdx(4497)을 한 값 객체로 모았다.
+// 가변 DEFAULT_COUNT(1384)를 한 값 객체로 모았다(_routineColorIdx(4497)는 RM-34 에서 없앴다 — 루틴 색은 루틴들에서 셈한다).
 // DOM 캐시(rowRefs 1408·1431, moveContextMenu 1411, quickPickerEl 1440, boardSig 1407·1435)와
 // 제스처 상태(drag 1400·1432, resize 1402·1433)는 여기 없다 — ui/input 계층 소유다.
 
@@ -308,7 +308,6 @@ function createInitialState(ids) {
       quickPlaceMode: { [BOARD_MAIN]: false, [BOARD_ROUTINE]: false },
       defaultCount: DEFAULT_COUNT_INITIAL,  // 1384 의 가변 모듈 전역
       editingRoutineId: null,               // reState.routineId (1427)
-      routineColorIdx: 0,                   // _routineColorIdx (4497). ⚠ 저장하지 않는다(보존 대상 결함)
       recentSortMode: 'recent',             // savedSortMode (1518) 'recent' | 'alpha'
       // 영상 패널의 **휘발성** 상태(2026-09). 저장하지도 Undo 하지도 않는다.
       //   open      패널이 열려 있는가 (닫힌 상태가 기본 — 켜야 보이는 기능이다)

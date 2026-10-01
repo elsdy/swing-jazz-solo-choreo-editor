@@ -13,6 +13,8 @@
 import { CLS } from './domContract.js';
 import { askText } from './inlinePrompt.js';
 import { DEFAULT_ROUTINE_COLOR } from '../domain/categories.js';
+import { ROUTINE_COLORS } from '../domain/routines.js';
+import { positionPopup } from './popup.js';
 import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
 
 // 루틴 칩의 기본색은 domain/categories 가 갖는다 — 안무표 블록과 같은 값을 써야
@@ -33,7 +35,8 @@ const EMPTY_HTML = '<div class="helper" style="padding:4px 2px;">아직 루틴�
  *   toggleFavorite: (routineId: string) => any,
  *   renameRoutine: (routineId: string, next: string|null) => any,
  *   openRoutineEditor: (routineId: string) => any,
- *   deleteRoutine: (routineId: string) => any
+ *   deleteRoutine: (routineId: string) => any,
+ *   setRoutineColor: (routineId: string, color: string) => any
  * }} commands app/main 이 routineCommands 를 묶어 넘긴다.
  * @property {(dirty: any) => void} render presenter 의 apply
  * @property {{ begin: (kind: string, payload?: object, options?: { boards?: string[] }) => any, end: () => void }} dragSession
@@ -47,7 +50,7 @@ const EMPTY_HTML = '<div class="helper" style="padding:4px 2px;">아직 루틴�
  * 루틴 카드 목록 뷰를 만든다.
  *
  * @param {RoutineListDeps} deps
- * @returns {{ render(): void }}
+ * @returns {{ render(): void, closeColorPicker(): void }}
  */
 export function createRoutineListView(deps) {
   const {
@@ -58,6 +61,81 @@ export function createRoutineListView(deps) {
     onDragEnd = () => {},
     root = document.getElementById('routineList')
   } = deps;
+
+  // ── 루틴 색 견본판(RM-34) ──
+  // 칩을 누르면 여덟 색 견본이 칩 옆에 뜬다. 고르면 setRoutineColor 를 부르고 닫는다.
+  // ⚠ ui/popup.js 의 bindOutsideClose 를 쓰지 않는다 — 그 함수는 자기가 닫았을 때만 리스너를 떼는 원본의 누수를
+  //   일부러 보존한 것이다. 여기서는 닫을 때마다 떼고(phrasingView 와 같은 방식), 여는 칩은 「안쪽」으로 친다 —
+  //   그러지 않으면 pointerdown 이 먼저 닫고 click 이 다시 열어 칩으로는 닫을 수 없다.
+  /** @type {HTMLElement|null} */
+  let colorPopup = null;
+  /** @type {HTMLElement|null} */
+  let colorAnchor = null;
+  function onOutsideDown(e) {
+    if (!colorPopup) return;
+    if (colorPopup.contains(e.target) || (colorAnchor && colorAnchor.contains(e.target))) return;
+    closeColorPicker();
+  }
+  function onKey(e) {
+    if (e.key === 'Escape' && colorPopup) { e.stopPropagation(); closeColorPicker(); }
+  }
+  function closeColorPicker() {
+    if (!colorPopup) return;
+    colorPopup.remove();
+    colorPopup = null;
+    colorAnchor = null;
+    document.removeEventListener('pointerdown', onOutsideDown);
+    document.removeEventListener('keydown', onKey, true);
+  }
+  /**
+   * @param {any} routine
+   * @param {HTMLElement} chip
+   */
+  function openColorPicker(routine, chip) {
+    const reopenSame = colorPopup && colorAnchor === chip;
+    closeColorPicker();
+    if (reopenSame) return;                                         // 같은 칩을 다시 누르면 닫기만 한다
+
+    const popup = document.createElement('div');
+    popup.className = `${CLS.routineActionPopup} routine-color-popup`;
+    popup.setAttribute('role', 'dialog');
+    popup.setAttribute('aria-label', '루틴 색');
+    const title = document.createElement('div');
+    title.className = CLS.rapTitle;
+    title.textContent = `${routine.name} — 루틴 색`;
+    popup.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.className = 'rcp-swatches';
+    const current = String(routine.color || DEFAULT_ROUTINE_COLOR).toLowerCase();
+    ROUTINE_COLORS.forEach((color, i) => {
+      const sw = document.createElement('button');
+      sw.type = 'button';
+      sw.style.background = color;
+      sw.title = `색 ${i + 1}`;
+      sw.setAttribute('aria-label', `색 ${i + 1}`);
+      const isCurrent = color.toLowerCase() === current;
+      sw.setAttribute('aria-pressed', String(isCurrent));
+      if (isCurrent) sw.classList.add('is-current');
+      sw.addEventListener('click', () => {
+        closeColorPicker();
+        render(commands.setRoutineColor(routine.id, color));
+      });
+      grid.appendChild(sw);
+    });
+    popup.appendChild(grid);
+
+    document.body.appendChild(popup);
+    colorPopup = popup;
+    colorAnchor = chip;
+    const rect = chip.getBoundingClientRect();
+    positionPopup(popup, rect.right, rect.top);
+    // 지금 처리 중인 클릭이 곧바로 자기를 닫지 않도록 다음 틱에 붙인다(popup.js 와 같은 이유).
+    setTimeout(() => { if (colorPopup === popup) document.addEventListener('pointerdown', onOutsideDown); }, 0);
+    document.addEventListener('keydown', onKey, true);
+    const first = popup.querySelector('button.is-current') || popup.querySelector('button');
+    if (first) first.focus();
+  }
 
   /**
    * 카드 하나(원본 4700-4751). 만드는 순서·붙이는 순서가 전부 원문 그대로다.
@@ -86,6 +164,23 @@ export function createRoutineListView(deps) {
     const chip = document.createElement('div');
     chip.className = CLS.routineChip;                               // 4715
     chip.style.background = routine.color || DEFAULT_ROUTINE_COLOR; // 4716
+    // RM-34 — 칩을 누르면 색 견본판. 칩 영역에만 둔다(이름의 두 번 누르기 · 카드 끌기와 겹치지 않게).
+    chip.setAttribute('role', 'button');
+    chip.tabIndex = 0;
+    chip.title = '루틴 색 바꾸기';
+    chip.setAttribute('aria-label', '루틴 색 바꾸기');
+    chip.draggable = false;
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openColorPicker(routine, chip);
+    });
+    chip.addEventListener('dblclick', (e) => e.stopPropagation());
+    chip.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openColorPicker(routine, chip);
+      }
+    });
 
     const info = document.createElement('div');
     // 4719 — innerHTML 이라 이름은 escapeHtml 을 거친다. `박자 × `의 곱셈기호(×)는 원문 그대로.
@@ -135,6 +230,7 @@ export function createRoutineListView(deps) {
 
   /** 목록 전체를 다시 그린다(원본 renderRoutineList 4691-4770). */
   function renderList() {
+    closeColorPicker();     // 칩이 새로 그려지면 견본판이 옛 칩에 매달린 채 남지 않게(RM-34)
     root.innerHTML = '';                                            // 4692
     const routines = store.routines;
     if (!routines.length) {                                         // 4693
@@ -160,5 +256,5 @@ export function createRoutineListView(deps) {
     others.forEach(r => root.appendChild(buildCard(r)));            // 4766
   }
 
-  return { render: renderList };
+  return { render: renderList, closeColorPicker };
 }

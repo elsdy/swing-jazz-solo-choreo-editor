@@ -638,7 +638,8 @@ views.routineList = createRoutineListView({
     toggleFavorite: (routineId) => RoutineCmd.toggleFavorite(routineDeps, routineId),
     renameRoutine: (routineId, next) => RoutineCmd.renameRoutine(routineDeps, routineId, next),
     openRoutineEditor: (routineId) => RoutineCmd.openEditor(routineDeps, routineId),
-    deleteRoutine: (routineId) => withUndoToast(RoutineCmd.deleteRoutine(routineDeps, routineId), '루틴을 지웠습니다.')
+    deleteRoutine: (routineId) => withUndoToast(RoutineCmd.deleteRoutine(routineDeps, routineId), '루틴을 지웠습니다.'),
+    setRoutineColor: (routineId, color) => RoutineCmd.setRoutineColor(routineDeps, routineId, color)
   }
 });
 
