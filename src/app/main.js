@@ -43,6 +43,7 @@ import {
   createRecentList, createFavoritesRepo, loadLocalMeta, loadLinksRaw, saveLinksRaw, localKv
 } from '../adapters/localStore.js';
 import { normalizeHotkeys, toSaved as savedHotkeys } from '../domain/hotkeys.js';
+import { runnerGaps } from '../domain/commands.js';
 import { fetchTitle } from '../adapters/youtubeOembed.js';
 import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/media/pickPlayer.js';
 
@@ -641,8 +642,6 @@ views.routineEditor = createRoutineEditorView({
   canRedo,
   closeQuickPicker: () => quickPickers[BOARD_ROUTINE].close(),   // 4881
   commands: {
-    undo: () => undo(BOARD_ROUTINE),                             // 2916-2924 (syncCurrentRoutine 포함)
-    redo: () => redo(BOARD_ROUTINE),                             // 2927-2936
     clear: () => mergeDirty(BoardCmd.clearRoutineBoard(store), commitHistory(BOARD_ROUTINE)), // 4830-4835
     close: () => RoutineCmd.closeEditor(routineDeps),
     rename: (routineId, next) => RoutineCmd.renameRoutine(routineDeps, routineId, next),
@@ -740,7 +739,7 @@ const CONTROL_IDS = [
   'fileNameInput', 'moveListFileNameInput', 'categoryFileNameInput',
   'boardColsInput', 'boardColsDec', 'boardColsInc',
   'defaultCountInput', 'defaultCountDec', 'defaultCountInc',
-  'quickPlaceBtn', 'undoBtn', 'redoBtn', 'addRoutineBtn', 'createRoutineFromSelectionBtn'
+  'quickPlaceBtn', 'addRoutineBtn', 'createRoutineFromSelectionBtn'
 ];
 const els = Object.fromEntries(CONTROL_IDS.map(id => [id, byId(id)]));
 els.mainBoardEl = boardEl;   // 빈 영역 클릭 선택 해제(1527-1529)
@@ -761,12 +760,58 @@ function applyHotkeys(next) {
   else localKv.set(STORAGE_KEYS.hotkeys, saved);
 }
 
+// ── 명령 등록부의 실행 (RM-09) ──────────────────────────────────────────────
+//
+// 무엇이 있는지(id · 라벨 · 글쇠)는 domain/commands 가 정하고, **무엇을 하는지는 여기 한 표**가 정한다.
+// 글쇠(input/controls 의 bindHotkeys)도 `data-command` 버튼(bindCommandButtons)도 이 표 하나를 거친다.
+// ⚠ 줄은 등록부의 id 와 **하나씩 맞아야 한다.** 빠지면 부팅 때 콘솔에 적고(warnMissingRunners),
+//   `node tools/check-principles.mjs`(D-14)가 글자로 맞춰 세어 붉어진다 — 이름으로 잇는 배선은 빠져도 조용하다.
+// ⚠ 반환값은 「기본 동작을 막을까」다(글쇠일 때만 쓴다). 그리기는 각 줄이 스스로 한다.
+// ⚠ 영상 쪽 줄은 **늦게 묶는다** — 이 표가 views.video 보다 먼저 만들어지므로 누르는 시점에 읽는다.
+/** @type {Readonly<Record<string, (ctx: {board: string, source: string}) => boolean>>} */
+const COMMAND_RUNNERS = Object.freeze({
+  capture: () => Boolean(views.video && views.video.captureToggle()),
+  skip: () => Boolean(views.video && views.video.captureSkip()),
+  // ⚠⚠ **`스페이스`(재생·일시정지)가 파사드에서 빠져 2026-09-20~22 내내 안 먹었다.** 그때는 표가 셋이었다.
+  play: () => Boolean(views.video && views.video.togglePlay()),
+  // ⚠ Escape 는 **받아 적는 중이면 그것부터 닫는다**(2026-09-13). 아니면 예전대로 팔레트의 고른 동작을 푼다.
+  //   언제나 거짓 — 예전에도 Escape 의 기본 동작을 막지 않았다(열린 메뉴들이 같은 글쇠를 따로 듣는다).
+  stop: () => {
+    if (views.video && views.video.stopCapture()) return false;
+    const dirty = PaletteCmd.cancelActivePaletteMove(paletteCtx);
+    if (dirty) render(dirty);
+    return false;
+  },
+  undo: ({ board }) => { render(undo(board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN)); return true; },
+  redo: ({ board }) => { render(redo(board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN)); return true; }
+});
+
+/**
+ * 등록부의 명령 하나를 실행한다. 모르는 id 는 아무 일도 하지 않고 거짓.
+ * @param {string} id
+ * @param {{board?: string, source?: string}} [ctx]
+ * @returns {boolean} 기본 동작을 막을까
+ */
+function runCommand(id, ctx = {}) {
+  const run = COMMAND_RUNNERS[id];
+  if (typeof run !== 'function') return false;
+  return Boolean(run({ board: ctx.board || BOARD_MAIN, source: ctx.source || '' }));
+}
+
+// 등록부와 실행 표가 어긋났는지 부팅 때 한 번 본다. ⚠ 던지지 않는다 — 명령 하나가 빠졌다고 앱이 안 뜨면 그게 더 나쁘다.
+{
+  const { missing, unknown } = runnerGaps(COMMAND_RUNNERS);
+  if (missing.length) console.warn('[명령] 등록부에 있는데 실행이 없다 — 그 글쇠와 버튼은 아무 일도 하지 않는다:', missing.join(' · '));
+  if (unknown.length) console.warn('[명령] 실행만 있고 등록부에 없다 — 아무도 부르지 않는다:', unknown.join(' · '));
+}
+
 bindControls({
   els,
   store,
   render,
   confirmOnce,
   fileIO: browserFileIO,
+  runCommand,
   // ⚠ 게터다 — 설정에서 바꾸면 다음 입력부터 바로 들어야 한다(값으로 주면 묶은 시점에 갇힌다).
   hotkeys: () => hotkeyMap,
   commands: {
@@ -774,23 +819,7 @@ bindControls({
     setSortMode: (mode) => PaletteCmd.setSortMode(paletteCtx, mode),
     setSortDir: (dir) => PaletteCmd.setSortDir(paletteCtx, dir),
     addMove: (rawName, category) => PaletteCmd.addMove(paletteCtx, rawName, category),
-    cancelActivePaletteMove: () => PaletteCmd.cancelActivePaletteMove(paletteCtx),
-    // 받아 적기 단축키 `B`. ⚠ 늦게 묶는다 — bindControls 가 views.video 보다 먼저 돌기 때문에
-    //   여기서 views.video 를 바로 읽으면 undefined 다. 키를 누르는 시점에는 이미 만들어져 있다.
-    captureToggle: () => Boolean(views.video && views.video.captureToggle()),
-    captureSkip: () => Boolean(views.video && views.video.captureSkip()),
-    stopCapture: () => Boolean(views.video && views.video.stopCapture()),
-    // ⚠⚠ **`스페이스`(재생·일시정지)가 여기 없어서 2026-09-20~22 내내 안 먹었다.**
-    //   domain/hotkeys 의 표에는 `play` 가 있고 input/controls 는 `HOTKEY_COMMANDS.play` 가
-    //   가리키는 이름을 이 파사드에서 찾는데, 그 이름이 없으면 **조용히 아무 일도 하지 않는다**
-    //   (`typeof commands[name] === 'function'` 이 false 다). 게다가 Space 는 결과와 무관하게
-    //   preventDefault 되므로 화면이 스크롤되지도 않아, 겉으로는 "키가 죽었다"로만 보인다.
-    //   ⚠ 글쇠를 하나 더할 때는 **세 곳**을 함께 본다 — domain/hotkeys 의 표 · controls 의
-    //     HOTKEY_COMMANDS · 여기 파사드. 하나만 빠져도 증상이 없다.
-    togglePlay: () => Boolean(views.video && views.video.togglePlay()),
     commitHistory,
-    undo,
-    redo,
     // ⚠ 다운로드는 유스케이스가 그대로 한다(정적 호스팅에서도 저장이 되어야 한다). 보관 폴더 쓰기는
     //   **여기서** 한다 — 비동기이고 어댑터를 아는 자리가 app/main 뿐이기 때문이다(clipServer 와 같은 규약).
     saveProject: (options) => {

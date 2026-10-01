@@ -17,40 +17,7 @@
 //    전부 app/main 이 주입한다(유일한 예외는 rank 3 공유 리프인 ui/domContract).
 
 import { SEL } from '../ui/domContract.js';
-import { DEFAULT_HOTKEYS, EDITABLE_ACTIONS, eventKey } from '../domain/hotkeys.js';
-
-/**
- * 동작 id → 이 파일이 부를 커맨드 이름. domain/hotkeys 는 **무엇을 할 수 있는지**만 알고
- * 그것이 어떤 커맨드인지는 모른다(도메인은 커맨드를 모른다) — 그 다리를 여기 한 줄로 둔다.
- * 내보내는 것은 시험이 읽기 위해서다 — `tools/check-principles.mjs`(D-14)는 이 표를 글자로 읽고,
- * 시험이 그 글자 읽기가 이 값과 같은지 맞춰 본다(RM-05).
- * @type {Readonly<Record<string, string>>}
- */
-export const HOTKEY_COMMANDS = Object.freeze({
-  capture: 'captureToggle',
-  skip: 'captureSkip',
-  play: 'togglePlay'
-});
-
-/**
- * 표에 적힌 커맨드가 파사드에 실제로 있는지 **묶을 때 한 번** 본다.
- *
- * ⚠⚠ 없으면 **증상이 없다.** 아래 dispatch 는 `typeof commands[name] === 'function'` 으로
- *   조용히 걸러 내고, `Space` 는 결과와 무관하게 preventDefault 되므로 스크롤조차 안 된다 —
- *   겉으로는 "그 키만 죽었다"로 보이고 콘솔에도 아무것도 안 남는다. 2026-09-20 에 `togglePlay` 가
- *   app/main 의 파사드에서 빠진 채 사흘을 갔다.
- * ⚠ 던지지 않는다. 키 하나가 빠졌다고 앱이 안 뜨면 그게 더 나쁘다 — 개발자 콘솔에만 적는다.
- * @param {Record<string, unknown>} commands
- * @param {Console} [log]
- */
-function warnMissingHotkeyCommands(commands, log = console) {
-  const missing = Object.entries(HOTKEY_COMMANDS)
-    .filter(([, name]) => typeof commands[name] !== 'function')
-    .map(([id, name]) => `${id} → commands.${name}`);
-  if (missing.length && log && typeof log.warn === 'function') {
-    log.warn('[단축키] 표에 있는데 커맨드가 없다 — 그 글쇠는 아무 일도 하지 않는다:', missing.join(' · '));
-  }
-}
+import { DEFAULT_HOTKEYS, commandForKey, eventKey } from '../domain/hotkeys.js';
 
 /**
  * 커맨드가 실제로 무언가를 바꿨는가. store.NONE 은 얼어붙은 빈 객체다.
@@ -75,8 +42,8 @@ export const CLEAR_BOARD_BTN_LABEL = '안무표만 비우기';
 /**
  * 사이드바·툴바 바인딩 일체.
  *
- * ⚠ 이 함수가 마지막에 bindHotkeys(deps) 를 부른다(원본 2380). app/main 은 bindHotkeys 를
- *   **따로 또 부르지 마라** — document keydown 리스너가 두 겹이 되어 undo 가 두 번 돈다.
+ * ⚠ 이 함수가 마지막에 bindHotkeys(deps) · bindCommandButtons(deps) 를 부른다(원본 2380). app/main 은 둘을
+ *   **따로 또 부르지 마라** — document 리스너가 두 겹이 되어 undo 가 두 번 돈다.
  *
  * @param {Object} deps
  * @param {Object} deps.store   store 인스턴스(정렬 방향 토글의 현재 값을 읽는 데만 쓴다)
@@ -89,9 +56,11 @@ export const CLEAR_BOARD_BTN_LABEL = '안무표만 비우기';
  *   fileNameInput, moveListFileNameInput, categoryFileNameInput,
  *   boardColsInput, boardColsDec, boardColsInc,
  *   defaultCountInput, defaultCountDec, defaultCountInc,
- *   quickPlaceBtn, undoBtn, redoBtn, addRoutineBtn, createRoutineFromSelectionBtn,
+ *   quickPlaceBtn, addRoutineBtn, createRoutineFromSelectionBtn,
  *   mainBoardEl
  * @param {Object} deps.commands  커맨드 파사드(아래 본문의 호출부가 계약이다)
+ * @param {(id: string, ctx?: {board?: string, source?: string}) => boolean} deps.runCommand  명령 등록부의 실행기(app/main) —
+ *   단축키와 `data-command` 버튼이 함께 쓴다
  * @param {(dirty: object) => void} deps.render
  * @param {(btn: HTMLElement, label: string, fn: () => void) => void} deps.confirmOnce  ui/widgets 주입
  * @param {{ readJsonFromInput(input, onData, onError): void }} deps.fileIO   adapters/browserFileIO 주입
@@ -245,11 +214,12 @@ export function bindControls(deps) {
   }
 
   // ── Undo / Redo 버튼 (2378-2379) ───────────────────────────────────────────
-  els.undoBtn.addEventListener('click', () => apply(commands.undo('main')));
-  els.redoBtn.addEventListener('click', () => apply(commands.redo('main')));
+  // ⚠ 여기서 걸지 않는다(RM-09). 마크업의 `data-command="undo"` 를 아래 bindCommandButtons 가 듣는다 —
+  //   루틴 편집기의 짝(`data-board="routine"`)도 같은 길이다. 여기서 또 걸면 한 번 누름에 두 번 돈다.
 
-  // ── 단축키 (2380) ──────────────────────────────────────────────────────────
+  // ── 단축키 (2380) · 명령 버튼 ───────────────────────────────────────────────
   bindHotkeys(deps);
+  bindCommandButtons(deps);
 
   // ── 2381: updateHistoryButtons() ───────────────────────────────────────────
   render({ history: true });
@@ -277,42 +247,58 @@ export function bindControls(deps) {
 }
 
 /**
+ * `data-command="<id>"` 를 단 버튼의 누름을 명령 등록부의 실행기로 보낸다(RM-09).
+ *
+ * 버튼마다 따로 걸던 것을 문서 하나에 한 번 건다 — 버튼이 나중에 그려지거나 다시 그려져도 걸 것이 없다.
+ * `data-board` 가 있으면 그 보드에서 실행한다(루틴 편집기의 Undo 는 `routine`). 없으면 `main`.
+ * ⚠ 꺼진 버튼은 누름 자체가 오지 않지만(브라우저가 막는다) 안쪽 글자를 눌러 올라온 경우를 위해 한 번 더 본다.
+ * @param {Object} deps
+ * @param {(id: string, ctx?: {board?: string, source?: string}) => boolean} deps.runCommand
+ * @param {Document} [deps.doc]
+ */
+export function bindCommandButtons(deps) {
+  const { runCommand, doc = document } = deps;
+  if (typeof runCommand !== 'function') return;
+  doc.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-command]') : null;
+    if (!btn || btn.disabled) return;
+    runCommand(btn.dataset.command, { board: btn.dataset.board || 'main', source: 'button' });
+  });
+}
+
+/**
  * 전역 단축키. 원본 onHotkey(2820-2831) + bindControls 의 등록(2380).
  *
+ * 2026-10-01(RM-09)부터 이 함수는 **무엇을 할지 모른다.** 눌린 글쇠를 이름으로 바꿔 명령 등록부에서 명령을
+ * 찾고(`hotkeys.commandForKey`), 그 id 를 조립 층의 실행기(`runCommand`)에 넘길 뿐이다. 그전에는 Escape 와
+ * Undo/Redo 가 여기 박혀 있었고, 바꿀 수 있는 글쇠는 `HOTKEY_COMMANDS` 라는 셋째 표를 거쳐 파사드의 이름을
+ * 찾았다 — 이름 하나가 빠지면 그 글쇠가 말없이 죽었다(원칙 D-14).
+ *
  * ⚠ 보존 대상 결함 #11 두 가지를 그대로 둔다:
- *   1) 입력 필드 가드가 없다 — <input> 안에서 Ctrl+Z 를 눌러도 보드가 undo 된다(HOTKEY_INPUT_GUARD).
+ *   1) 입력 필드 가드가 없다 — <input> 안에서 Ctrl+Z 를 눌러도 보드가 undo 된다. 등록부의 `whileTyping` 이
+ *      그 자리다(undo · redo · stop 만 참).
  *   2) 언제나 메인 보드다 — 루틴 편집기가 열려 있어도 단축키가 루틴 히스토리에 가지 않는다.
  *      activeBoardId 를 인자로 받되 **기본값이 () => 'main'** 이라 오늘 동작이 유지된다
  *      (HOTKEY_ACTIVE_BOARD 플래그를 켜는 날 이 함수만 바꾸면 된다).
- * ⚠ Escape 의 cancelActivePaletteMove 는 dragstart 경로와 달리 **Dirty 를 그린다**(2802 renderPalette).
- *
- * ⚠ `B`·`K`(경계 찍기)·`N`(건너뛰기)·`P`(재생/일시정지)는 위 결함 1)의 예외다 —
- *   **입력 필드 안에서는 듣지 않는다.**
- *   조합 없는 홑글쇠라 가드가 없으면 동작 이름을 타이핑하는 동안 블록이 쌓인다. 오래된 Ctrl 조합
- *   단축키의 가드 없음은 보존 대상이라 그대로 두고, 새 글쇠에만 가드를 둔다.
- * ⚠ `Escape` 는 **받아 적는 중이면 그것을 먼저 닫는다**(2026-09-13). 받는 쪽이 참을 돌려주면 거기서
- *   끝내고, 아니면 예전대로 팔레트의 고른 동작을 푼다 — 한 키에 두 뜻이지만 동시에 참인 적이 없다.
- * ⚠ `B` 는 Dirty 를 여기서 그리지 않는다. 지금 몇 초인지는 영상 패널만 알아서(재생기는 뷰가 쥔다)
- *   commands.captureToggle 이 패널의 메서드이고, 그리기와 히스토리 커밋까지 그쪽에서 끝낸다.
+ * ⚠ 홑글쇠(`B`·`K`·`N`·`Space`)는 **입력 필드 안에서는 듣지 않는다** — 가드가 없으면 동작 이름을 타이핑하는
+ *   동안 블록이 쌓인다.
+ * ⚠ 실행기가 참을 돌려주면 기본 동작을 막는다. `Escape`(stop)는 언제나 거짓이다 — 예전에도 막지 않았다.
  *
  * @param {Object} deps
- * @param {Object} deps.commands
- * @param {(dirty: object) => void} deps.render
+ * @param {(id: string, ctx?: {board?: string, source?: string}) => boolean} deps.runCommand  app/main 이 주입
  * @param {() => 'main'|'routine'} [deps.activeBoardId]
+ * @param {() => Record<string, string[]>} [deps.hotkeys]
  * @param {Document} [deps.doc]
  * @returns {void}
  */
 export function bindHotkeys(deps) {
   const {
-    commands, render, activeBoardId = () => 'main', doc = document,
+    runCommand, activeBoardId = () => 'main', doc = document,
     // ⚠ **게터다.** 설정에서 글쇠를 바꾸면 다음 입력부터 바로 들어야 한다 — 값으로 받으면 묶은
     //   시점의 표에 갇혀서, 바꾼 것이 새로고침 전까지 안 먹는다.
     hotkeys = () => DEFAULT_HOTKEYS
   } = deps;
-  const apply = (dirty) => { if (dirty) render(dirty); };
-
-  // 표와 파사드가 어긋났는지 여기서 한 번 본다(위 ⚠⚠). 묶는 시점이라 값이 다 갖춰져 있다.
-  warnMissingHotkeyCommands(commands);
+  if (typeof runCommand !== 'function') return;
 
   /**
    * 재생기 자신이 이미 그 글쇠를 처리했는가.
@@ -344,42 +330,15 @@ export function bindHotkeys(deps) {
   };
 
   doc.addEventListener('keydown', (e) => {
-    const key = e.key.toLowerCase();
-    // ⚠ Escape 는 **받아 적는 중이면 그것부터 닫는다**(2026-09-13). 연속으로 찍다가 끝내는 길이
-    //   `그만` 버튼 하나뿐이면 손이 영상에서 떨어진다. 받아 적는 중이 아니면 예전대로 팔레트를 푼다.
-    if (e.key === 'Escape') {
-      if (typeof commands.stopCapture === 'function' && commands.stopCapture()) return;
-      apply(commands.cancelActivePaletteMove());
-      return;
-    }
-
-    // ── 사용자가 정한 글쇠 (2026-09-20) ─────────────────────────────────
-    // 그전에는 `key === 'b'` 처럼 이 파일에 박혀 있었다. 이제 표를 주입받아 읽는다 — 무엇을
-    // 듣는지의 주인은 domain/hotkeys.js 이고, 고르는 화면은 `⚙ 설정` 의 `단축키` 갈래다.
-    // ⚠ 글자를 치는 중에는 듣지 않는다(홑글쇠라 가드가 없으면 이름 치는 동안 블록이 쌓인다).
-    if (!typing(e.target)) {
-      const pressed = eventKey(e);
-      const map = hotkeys();
-      // 재생기가 쥔 글쇠면 우리는 비킨다(위 ⚠⚠). 막지도 않는다.
-      if (playerOwnsKey(e.target, pressed)) return;
-      for (const action of EDITABLE_ACTIONS) {
-        if (!(map[action.id] || []).includes(pressed)) continue;
-        // ⚠ **결과와 무관하게 먼저 막는다.** `Space` 는 포커스가 버튼에 있으면 그 버튼을 다시
-        //   누르고(`▮ 여기서 끊기` 를 손으로 누른 직후가 그렇다) 페이지를 한 화면 내린다.
-        //   커맨드가 아무 일도 안 했더라도 그 둘은 일어나면 안 된다.
-        if (pressed === 'Space') e.preventDefault();
-        const name = HOTKEY_COMMANDS[action.id];
-        if (typeof commands[name] === 'function' && commands[name]()) e.preventDefault();
-        return;
-      }
-    }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'z') {
-      e.preventDefault();
-      apply(commands.undo(activeBoardId()));
-    }
-    if (((e.ctrlKey || e.metaKey) && key === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && key === 'z')) {
-      e.preventDefault();
-      apply(commands.redo(activeBoardId()));
-    }
+    const pressed = eventKey(e);
+    // 재생기가 쥔 글쇠면 우리는 비킨다(위 ⚠⚠). 막지도 않는다.
+    if (playerOwnsKey(e.target, pressed)) return;
+    const cmd = commandForKey(hotkeys(), pressed, typing(e.target));
+    if (!cmd) return;
+    // ⚠ **결과와 무관하게 먼저 막는다.** `Space` 는 포커스가 버튼에 있으면 그 버튼을 다시
+    //   누르고(`▮ 끊기` 를 손으로 누른 직후가 그렇다) 페이지를 한 화면 내린다.
+    //   명령이 아무 일도 안 했더라도 그 둘은 일어나면 안 된다.
+    if (pressed === 'Space') e.preventDefault();
+    if (runCommand(cmd.id, { board: activeBoardId(), source: 'key' })) e.preventDefault();
   });
 }

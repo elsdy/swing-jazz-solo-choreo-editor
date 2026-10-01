@@ -37,14 +37,12 @@ const COLS_FALLBACK = '8', ROWS_FALLBACK = '4';
  * @property {any} store createStore 인스턴스. session.editingRoutineId · session.quickPlaceMode.routine ·
  *   board('routine') · routines 를 읽는다.
  * @property {{
- *   undo: () => any,
- *   redo: () => any,
  *   clear: () => any,
  *   close: () => any,
  *   rename: (routineId: string, next: string|null) => any,
  *   toggleQuickPlace: () => any,
  *   setSize: (size: { rows: number, cols: number }) => any
- * }} commands app/main 이 묶어 넘긴다. ⚠ undo/redo/clear 는 **이미 합성돼 있어야 한다**(아래 계약 참조).
+ * }} commands app/main 이 묶어 넘긴다. ⚠ clear 는 **이미 합성돼 있어야 한다**(아래 계약 참조).
  * @property {(dirty: any) => void} render presenter 의 apply
  * @property {(boardId: string) => boolean} canUndo historyCommands.canUndo 를 감싼 것
  * @property {(boardId: string) => boolean} canRedo historyCommands.canRedo 를 감싼 것
@@ -97,8 +95,8 @@ export function createRoutineEditorView(deps) {
     render(commands.setSize({ rows, cols }));
   }
 
-  if (reUndoBtn) reUndoBtn.onclick = () => render(commands.undo());   // 4828
-  if (reRedoBtn) reRedoBtn.onclick = () => render(commands.redo());   // 4829
+  // ⚠ Undo/Redo(4828-4829)는 여기서 걸지 않는다(RM-09). 마크업의 `data-command="undo" data-board="routine"` 을
+  //   input/controls 의 bindCommandButtons 가 듣고 app/main 의 실행기가 루틴 보드를 되돌린다 — 메인 표의 짝과 한 명령이다.
   // ⚠ 4830-4835 에는 confirmOnce 가 없다 — '초기화'는 한 번 누르면 바로 비운다.
   if (reClearBtn) reClearBtn.onclick = () => render(commands.clear());
   if (closeBtn) closeBtn.onclick = () => render(commands.close());     // 4836

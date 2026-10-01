@@ -1,21 +1,24 @@
-// src/domain/hotkeys.js — 단축키 (순수 함수, import 0개)
+// src/domain/hotkeys.js — 단축키 (순수 함수, 같은 domain 의 commands.js 만 import)
 //
 // 신설 파일이다(2026-09-20). 그전에는 글쇠가 `input/controls.js` 안에 문자열로 박혀 있었다
 // (`key === 'b'`, `key === 'n'` …). 바꾸려면 코드를 고쳐야 했고, 어떤 글쇠가 쓰이는지 알려면
 // 그 파일을 읽어야 했다 — 화면 어디에도 목록이 없었다.
 //
-// 여기서 정하는 것은 **무엇을 할 수 있고 기본 글쇠가 무엇인가** 하나다. 실제로 듣는 것은
-// `input/controls.js` 이고, 고르는 화면은 `ui/settingsView.js` 이고, 어디에 담는지는
-// `app/main.js` 가 정한다. 이 파일은 그 셋이 같은 표를 보게 하는 자리다.
+// 2026-10-01(RM-09)부터 **무엇을 할 수 있고 기본 글쇠가 무엇인가**의 주인은 명령 등록부
+// (`domain/commands.js`)다. 이 파일은 그 표에서 글쇠가 있는 줄을 골라 단축키 표로 보이고, 사용자가 바꾼
+// 글쇠를 정규화 · 저장하는 규칙을 맡는다. 실제로 듣는 것은 `input/controls.js`, 고르는 화면은
+// `ui/settingsView.js`, 어디에 담는지는 `app/main.js` 다.
 //
 // ⚠ 이 파일은 `KeyboardEvent` 를 **받지 않는다.** 이벤트는 브라우저의 것이고 도메인은 그것을
 //   모른다 — 호출부가 `{key, code, ctrl, meta, alt, shift}` 로 풀어서 넘긴다(eventKey 참고).
 // ⚠ 글쇠 이름은 **화면에 그대로 나가는 글자**다(`Space`, `B`, `Escape`). 바꾸면 설정 화면과
 //   안내 문구가 함께 달라진다.
 
+import { COMMANDS } from './commands.js';
+
 /**
  * @typedef {Object} HotkeyAction
- * @property {string} id      커맨드 쪽 이름. 저장 파일의 키이기도 하다
+ * @property {string} id      명령 id. 저장 파일의 키이기도 하다
  * @property {string} label   설정 화면에 나가는 이름
  * @property {string} hint    무엇을 하는지 한 줄
  * @property {string[]} keys  기본 글쇠(여럿이면 전부 듣는다)
@@ -23,58 +26,11 @@
  */
 
 /**
- * 이 앱이 듣는 글쇠 전부. **여기 없는 글쇠는 앱이 듣지 않는다.**
- *
- * ⚠ `Undo`·`Redo` 는 고정이다. OS 관례(`Ctrl/Cmd+Z`)를 바꾸면 손이 먼저 틀리고, 되돌리기를
- *   잘못 눌러 잃는 것이 가장 비싸다.
- * ⚠ `Escape` 도 고정이다. 이 앱에서 한 글쇠에 두 뜻이 걸려 있고(받는 중이면 받아 적기를 끝내고,
- *   아니면 고른 동작을 푼다) 브라우저·OS 가 먼저 가져가는 경우도 있다.
- * @type {readonly HotkeyAction[]}
+ * 이 앱이 듣는 글쇠 전부 — 명령 등록부에서 **기본 글쇠가 있는 명령**만 고른 것이다.
+ * **여기 없는 글쇠는 앱이 듣지 않는다.** 고정 여부와 그 이유는 등록부의 각 줄에 있다.
+ * @type {readonly import('./commands.js').CommandDef[]}
  */
-export const HOTKEY_ACTIONS = Object.freeze([
-  Object.freeze({
-    id: 'capture',
-    label: '받아 적기 · 여기서 끊기',
-    hint: '동작이 바뀌는 자리마다 한 번. 앞 구간이 놓이고 그 자리에서 다음이 열린다',
-    keys: Object.freeze(['B', 'K']),
-    fixed: false
-  }),
-  Object.freeze({
-    id: 'skip',
-    label: '건너뛰기',
-    hint: '여기까지는 안무가 아니다(설명·쉬는 시간). 앞 구간을 놓지 않고 경계만 옮긴다',
-    keys: Object.freeze(['N']),
-    fixed: false
-  }),
-  Object.freeze({
-    id: 'play',
-    label: '재생 · 일시정지',
-    hint: '영상 패널이 열려 있을 때 듣는다',
-    keys: Object.freeze(['Space']),
-    fixed: false
-  }),
-  Object.freeze({
-    id: 'stop',
-    label: '받아 적기 그만',
-    hint: '열려 있던 마지막 구간은 버린다. 받는 중이 아니면 고른 동작을 푼다',
-    keys: Object.freeze(['Escape']),
-    fixed: true
-  }),
-  Object.freeze({
-    id: 'undo',
-    label: '되돌리기',
-    hint: 'OS 관례라 바꾸지 않는다',
-    keys: Object.freeze(['Ctrl+Z', 'Cmd+Z']),
-    fixed: true
-  }),
-  Object.freeze({
-    id: 'redo',
-    label: '다시 하기',
-    hint: 'OS 관례라 바꾸지 않는다',
-    keys: Object.freeze(['Ctrl+Y', 'Cmd+Shift+Z']),
-    fixed: true
-  })
-]);
+export const HOTKEY_ACTIONS = Object.freeze(COMMANDS.filter(c => c.keys.length > 0));
 
 /** 바꿀 수 있는 것만. 설정 화면이 이 순서로 줄을 세운다. */
 export const EDITABLE_ACTIONS = Object.freeze(HOTKEY_ACTIONS.filter(a => !a.fixed));
@@ -259,4 +215,24 @@ export function toSaved(map) {
  */
 export function keysLabel(keys) {
   return Array.isArray(keys) && keys.length ? keys.join(' · ') : '없음';
+}
+
+/**
+ * 눌린 글쇠가 부르는 명령. 없으면 `null`.
+ *
+ * ⚠ 표의 차례대로 처음 맞는 하나다 — 정규화된 표에는 겹침이 없지만, 화면에 적지 않는 `alsoKeys` 는 사용자의
+ *   글쇠와 겹칠 수 있고 그때는 사용자가 고른 쪽(앞의 줄)이 이긴다.
+ * ⚠ 글자를 치는 중이면 `whileTyping` 인 명령만 본다. 홑글쇠가 입력칸에서 먹으면 이름을 치는 동안 블록이 쌓인다.
+ * @param {Record<string, string[]>} map normalizeHotkeys 를 거친 표
+ * @param {string} pressed normalizeKey 를 거친 이름
+ * @param {boolean} [typing] 지금 글자를 치고 있는가
+ * @returns {import('./commands.js').CommandDef|null}
+ */
+export function commandForKey(map, pressed, typing = false) {
+  if (!pressed) return null;
+  for (const cmd of HOTKEY_ACTIONS) {
+    if (typing && !cmd.whileTyping) continue;
+    if ((map[cmd.id] || []).includes(pressed) || cmd.alsoKeys.includes(pressed)) return cmd;
+  }
+  return null;
 }

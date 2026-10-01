@@ -1822,16 +1822,15 @@ export function createVideoPanel(deps) {
 
   // ⚠ 한 커맨드다. 처음 누르면 열고(그 시각이 1카운트), 그 뒤로는 경계를 찍는다 — 그 판정은
   //   usecases/captureCommands 안에 있고 화면은 그것을 흉내 내지 않는다.
-  if (captureBtn) captureBtn.onclick = () => captureToggle();
+  // ⚠ `▮ 끊기` · `건너뛰기` · `■ 그만` 의 누름은 여기서 걸지 않는다(RM-09). 마크업의 `data-command` 를
+  //   input/controls 의 bindCommandButtons 가 듣고, app/main 의 실행기가 아래 반환 객체의 captureToggle ·
+  //   captureSkip · stopCapture 를 부른다 — 단축키(`B`·`N`·`Esc`)와 같은 길 하나다. 여기서도 걸면 두 번 돈다.
   if (voiceBtn) {
     voiceBtn.onclick = () => {
       if (!voice) return;
       voice.toggle();
       renderCapture();
     };
-  }
-  if (captureSkipBtn && commands.captureSkip) {
-    captureSkipBtn.onclick = () => { render(strip(commands.captureSkip({ sec: getCurrentSec() }))); renderCapture(); };
   }
 
   /**
@@ -1877,9 +1876,6 @@ export function createVideoPanel(deps) {
         if (named) commitHistory();
       });
     };
-  }
-  if (captureCancelBtn && commands.stopCapture) {
-    captureCancelBtn.onclick = () => { render(commands.stopCapture()); renderCapture(); };
   }
   if (markerBlocksBtn && commands.markersToBlocks) {
     markerBlocksBtn.onclick = () => {

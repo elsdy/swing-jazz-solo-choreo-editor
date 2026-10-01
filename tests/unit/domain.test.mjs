@@ -52,8 +52,9 @@ import * as ProjectCmd from '../../src/usecases/projectCommands.js';
 import { clipsByProgress, clipsSummary, formatTakenAt, normalizeTakenAt } from '../../src/domain/project/media.js';
 import {
   DEFAULT_HOTKEYS, EDITABLE_ACTIONS, HOTKEY_ACTIONS, MAX_KEYS_PER_ACTION,
-  checkKey, eventKey, keysLabel, normalizeHotkeys, normalizeKey, ownerOf, setKeys, toSaved
+  checkKey, commandForKey, eventKey, keysLabel, normalizeHotkeys, normalizeKey, ownerOf, setKeys, toSaved
 } from '../../src/domain/hotkeys.js';
+import { COMMANDS, commandById, commandTitle, runnerGaps } from '../../src/domain/commands.js';
 import {
   BOARD_MAIN, BOARD_ROUTINE, NONE, assertDirty, createStore, mergeDirty
 } from '../../src/usecases/store.js';
@@ -4652,6 +4653,55 @@ test('단축키 표: 바꿀 수 있는 것과 기본 글쇠', () => {
   assert.equal(keysLabel([]), '없음');
   assert.equal(checkKey('Escape').ok, false);
   assert.equal(checkKey('Space').ok, true);
+});
+
+test('명령 등록부: id 는 하나씩이고 단축키 표는 등록부에서 파생된다(RM-09)', () => {
+  const ids = COMMANDS.map(c => c.id);
+  assert.equal(new Set(ids).size, ids.length, '같은 id 가 두 줄');
+  // ⚠ 저장되는 이름이다 — 사용자가 바꾼 글쇠가 이 id 로 담겨 있다. 바꾸면 옛 설정이 말없이 기본값으로 돌아간다.
+  for (const id of ['capture', 'skip', 'play']) assert.ok(commandById(id), `저장되는 id '${id}' 가 사라졌다`);
+  // 단축키 표는 등록부에서 글쇠가 있는 줄을 **같은 객체로** 고른 것이다 — 따로 적은 사본이 아니다.
+  for (const a of HOTKEY_ACTIONS) assert.equal(a, commandById(a.id));
+  assert.deepEqual(HOTKEY_ACTIONS.map(a => a.id), COMMANDS.filter(c => c.keys.length).map(c => c.id));
+  // 화면에 적지 않는 글쇠는 고정 명령에만 둔다(사용자가 바꾸는 줄에 숨은 글쇠가 있으면 설정 화면이 거짓말이 된다).
+  for (const c of COMMANDS) if (c.alsoKeys.length) assert.equal(c.fixed, true, c.id);
+  assert.equal(commandById('없는명령'), undefined);
+});
+
+test('commandForKey: 글쇠 → 명령, 글자를 치는 중에는 whileTyping 인 것만', () => {
+  const map = normalizeHotkeys(null);
+  assert.equal(commandForKey(map, 'B').id, 'capture');
+  assert.equal(commandForKey(map, 'Space').id, 'play');
+  assert.equal(commandForKey(map, 'Escape').id, 'stop');
+  assert.equal(commandForKey(map, 'Ctrl+Z').id, 'undo');
+  assert.equal(commandForKey(map, 'Cmd+Shift+Z').id, 'redo');
+  // 예전 글쇠 처리가 듣던 조합도 그대로 듣는다(화면에는 관례 둘만 적는다)
+  assert.equal(commandForKey(map, 'Ctrl+Shift+Z').id, 'redo');
+  assert.equal(commandForKey(map, 'Cmd+Y').id, 'redo');
+  assert.equal(commandForKey(map, 'Q'), null);
+  assert.equal(commandForKey(map, ''), null);
+  // 입력칸 안 — 홑글쇠는 듣지 않고 Escape · Ctrl 조합은 듣는다(보존 결함 #11)
+  assert.equal(commandForKey(map, 'B', true), null);
+  assert.equal(commandForKey(map, 'Space', true), null);
+  assert.equal(commandForKey(map, 'Escape', true).id, 'stop');
+  assert.equal(commandForKey(map, 'Ctrl+Z', true).id, 'undo');
+  // 사용자가 바꾼 글쇠를 따른다
+  const moved = setKeys(map, 'play', ['P']);
+  assert.equal(commandForKey(moved, 'P').id, 'play');
+  assert.equal(commandForKey(moved, 'Space'), null);
+});
+
+test('commandTitle · runnerGaps: 툴팁은 지금 글쇠를 싣고, 실행 표의 빈자리를 센다', () => {
+  const undoCmd = commandById('undo');
+  assert.match(commandTitle(undoCmd), /^되돌리기 .*\(Ctrl\+Z · Cmd\+Z\)$/);
+  assert.match(commandTitle(commandById('play'), ['P']), /\(P\)$/, '바꾼 글쇠가 툴팁에 실린다');
+  assert.doesNotMatch(commandTitle(commandById('play'), []), /\(/, '글쇠가 없으면 괄호도 없다');
+  assert.equal(commandTitle(undefined), '');
+
+  const all = Object.fromEntries(COMMANDS.map(c => [c.id, () => true]));
+  assert.deepEqual(runnerGaps(all), { missing: [], unknown: [] });
+  const { play, ...noPlay } = all;
+  assert.deepEqual(runnerGaps({ ...noPlay, playy: () => true }), { missing: ['play'], unknown: ['playy'] });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
