@@ -246,7 +246,9 @@ export function placeRoutineBlock(board, args, ids, opt) {
 /**
  * 그룹을 (targetRow, targetStartIndex)로 옮긴다. movePlacementGroup(3636-3671).
  *
- * groupId 는 유지하고 meta(name/category/type/routineId)만 첫 세그먼트에서 복사하며
+ * groupId 는 유지하고 meta(name/category/pending/type/routineId)만 첫 세그먼트에서 복사하며
+ * (⚠ pending 은 2026-10-01 에 더했다 — 그전에는 받아 적기의 `?` 블록을 옮기거나 늘이거나 복사하면 표시가 빠져
+ *  이름도 `?` 도 없는 빈 블록이 됐다. 이동 · 복사 · 늘이기 세 자리가 같은 meta 를 쓴다)
  * 세그먼트 id 는 새로 발급한다. 레인 탐색은 **자기 그룹을 제거한 뒤의** 배열 위에서 한다(3646).
  *
  * ⚠ 원본은 여기서 unmarkDraggingGroups(ctx)(3665)를 부른다 — DOM 조작이라 ui/overlays 소관이다.
@@ -269,7 +271,7 @@ export function moveGroup(board, args, ids, opt) {
     ? Math.min(rawCount, totalCellsFrom(targetRow, targetStartIndex, board))      // 3640
     : rawCount;
   const segments = buildSegments(targetRow, targetStartIndex, count, board);      // 3641
-  const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId }; // 3642
+  const meta = { name: group[0].name, category: group[0].category, pending: group[0].pending, type: group[0].type, routineId: group[0].routineId }; // 3642
   const kept = board.placements.filter(p => p.groupId !== groupId);               // 3643
   const subRow = findFreeLane(kept, segments);                                    // 3644-3653
   const added = makeSegmentPlacements(segments, { groupId, ...meta }, ids, { subRow }); // 3654-3660
@@ -302,7 +304,7 @@ export function copyGroup(board, args, ids, opt) {
     ? Math.min(rawCount, totalCellsFrom(targetRow, targetStartIndex, board))      // 3676
     : rawCount;
   const segments = buildSegments(targetRow, targetStartIndex, count, board);      // 3677
-  const meta = { name: group[0].name, category: group[0].category, type: group[0].type, routineId: group[0].routineId }; // 3678
+  const meta = { name: group[0].name, category: group[0].category, pending: group[0].pending, type: group[0].type, routineId: group[0].routineId }; // 3678
   const subRow = findFreeLane(board.placements, segments);                        // 3679-3690
   const newGroupId = uidOf(ids)();                                                // 3692
   const added = makeSegmentPlacements(segments, { groupId: newGroupId, ...meta }, ids, { subRow }); // 3693-3699
@@ -333,7 +335,7 @@ export function resizeGroup(board, args, ids, opt) {
   const previousRows = group.map(p => p.row);                                     // 3709
   const first = group[0];                                                         // 3710
   const originalSubRow = first.subRow || 0;                                       // 3711
-  const meta = { name: first.name, category: first.category, type: first.type, routineId: first.routineId }; // 3712
+  const meta = { name: first.name, category: first.category, pending: first.pending, type: first.type, routineId: first.routineId }; // 3712
   const kept = board.placements.filter(p => p.groupId !== groupId);               // 3713
   const count = policy.clamp
     ? Math.min(newCount, totalCellsFrom(first.row, first.startIndex, board))
