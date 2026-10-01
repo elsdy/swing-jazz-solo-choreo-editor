@@ -37,7 +37,7 @@ python3 server.py
 
 | 이름 | 무엇 | 반환 | 주의 |
 |---|---|---|---|
-| `kind` | 어느 어댑터가 만든 재생기인가 | `'youtube' \| 'file' \| 'null' \| 'engine'` | 함수가 아니라 값이다 |
+| `kind` | 어느 어댑터가 만든 재생기인가 | `'youtube' \| 'file' \| 'clock' \| 'null' \| 'engine'` — `clock` 은 영상 없이 박자로 도는 가상 재생기(2026-10-01, RM-22) | 함수가 아니라 값이다 |
 | `capabilities` | 이 재생기가 할 수 있는 것 | `MediaCapabilities` | `Object.freeze` 로 불변. 아래 별도 표 |
 | `getState()` | 로드·재생 상태와 오류 | `{load, play, error}` | `error` 는 코드 5종 중 하나 + 메시지. **한국어 문구는 뷰가 만든다** |
 | `getDuration()` | 길이 | `number \| null` | 모르면 `null`. `0` 은 "0초짜리"라는 거짓 정보다(라이브는 길이가 없다) |
