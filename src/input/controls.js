@@ -22,9 +22,11 @@ import { DEFAULT_HOTKEYS, EDITABLE_ACTIONS, eventKey } from '../domain/hotkeys.j
 /**
  * 동작 id → 이 파일이 부를 커맨드 이름. domain/hotkeys 는 **무엇을 할 수 있는지**만 알고
  * 그것이 어떤 커맨드인지는 모른다(도메인은 커맨드를 모른다) — 그 다리를 여기 한 줄로 둔다.
+ * 내보내는 것은 시험이 읽기 위해서다 — `tools/check-principles.mjs`(D-14)는 이 표를 글자로 읽고,
+ * 시험이 그 글자 읽기가 이 값과 같은지 맞춰 본다(RM-05).
  * @type {Readonly<Record<string, string>>}
  */
-const HOTKEY_COMMANDS = Object.freeze({
+export const HOTKEY_COMMANDS = Object.freeze({
   capture: 'captureToggle',
   skip: 'captureSkip',
   play: 'togglePlay'

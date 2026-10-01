@@ -19,13 +19,16 @@ python3 server.py
 ## 고치기 전에 돌리는 것
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 308개 (도메인·어댑터·유스케이스 294 + server.py 실물 14, ffmpeg 이 있으면 실제로 한 번 자른다)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 320개 (도메인·어댑터·유스케이스 294 + 원칙 검사기 자기 시험 12 + server.py 실물 14, ffmpeg 이 있으면 실제로 한 번 자른다)
 node tests/run.mjs                # 격자 알고리즘 골든 151개
 node tools/check-arch.mjs         # 계층 방향과 순수성
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
+node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 다섯(U-11 · U-12 · D-5 · R-6 · D-14)
 ```
 
-넷 다 의존성이 0이고 몇 초 안에 끝난다(서버 테스트는 `python3` 을 띄운다). 고친 뒤에도 돌린다.
+다섯 다 의존성이 0이고 몇 초 안에 끝난다(서버 테스트는 `python3` 을 띄운다). 고친 뒤에도 돌린다.
+
+원칙 검사가 걸린 자리는 **고친다**(2026-10-01 — 0 에서 시작했고 지금 저장소에 예외 표식은 없다). 검사기가 글자를 잘못 읽어 걸린 것이 분명할 때만 그 줄이나 윗줄에 `// 원칙-예외(D-5): 이유` 처럼 원칙 번호와 **이유**를 단 표식을 둔다 — 이유가 빈 표식은 통과하지 못한다. 잴 수 있는 원칙이 새로 생기면 `tools/check-principles.mjs` 의 `RULES` 에 한 줄을 더하고, 일부러 어긴 조각이 붉어지는 시험을 `tests/unit/checkPrinciples.test.mjs` 에 함께 둔다.
 
 ## 계층 규칙
 
