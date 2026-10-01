@@ -20,7 +20,7 @@ python3 server.py
 node tests/run.mjs                     # 격자 알고리즘 골든 150개
 node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스 단위 66개
 node tools/check-arch.mjs              # 계층 방향과 순수성
-node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커
+node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지
 node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 다섯(U-11 · U-12 · D-5 · R-6 · D-14)
 ```
 

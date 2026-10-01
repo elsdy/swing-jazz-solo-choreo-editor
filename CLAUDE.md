@@ -19,10 +19,10 @@ python3 server.py
 ## 고치기 전에 돌리는 것
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 320개 (도메인·어댑터·유스케이스 294 + 원칙 검사기 자기 시험 12 + server.py 실물 14, ffmpeg 이 있으면 실제로 한 번 자른다)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 331개 (도메인·어댑터·유스케이스 294 + 원칙 검사기 자기 시험 12 + 문서 라벨 대조 자기 시험 11 + server.py 실물 14, ffmpeg 이 있으면 실제로 한 번 자른다)
 node tests/run.mjs                # 격자 알고리즘 골든 151개
 node tools/check-arch.mjs         # 계층 방향과 순수성
-node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커
+node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 튜토리얼·기능 설명서가 인용한 라벨이 화면에 있는지
 node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 다섯(U-11 · U-12 · D-5 · R-6 · D-14)
 ```
 
@@ -65,7 +65,7 @@ node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 다섯(U-1
 
 ## 화면에 적힌 글자
 
-버튼·제목·플레이스홀더 문구를 바꾸면 [튜토리얼](docs/TUTORIAL.md)과 [기능 설명서](docs/FEATURES.md)가 통째로 틀린 문서가 된다. 라벨을 바꾼 변경은 두 문서를 함께 고친다. 실제로 `동작 팔레트` → `동작 목록` 개명이 문서 없이 병합된 적이 있다.
+버튼·제목·플레이스홀더 문구를 바꾸면 [튜토리얼](docs/TUTORIAL.md)과 [기능 설명서](docs/FEATURES.md)가 통째로 틀린 문서가 된다. 라벨을 바꾼 변경은 두 문서를 함께 고친다. 실제로 `동작 팔레트` → `동작 목록` 개명이 문서 없이 병합된 적이 있다. 이제 `node tools/check-docs.mjs` 가 두 문서의 한글 백틱 인용을 화면 글자와 대조해 없으면 붉어진다(2026-10-01, [개발 원칙 R-9](docs/PRINCIPLES.md#r-9)) — 옛 라벨을 이력으로 말할 때는 백틱 대신 「」 로 적고, 라벨이 아닌 한글 인용(사용자가 적는 값의 예)은 `tools/lib/doc-labels.mjs` 의 `NOT_LABELS` 에 이유와 함께 둔다. 영어 라벨과 「자리만 옮겨 간 것」은 검사가 못 잡으니 여전히 눈으로 본다.
 
 사용자에게 보이는 새 한국어 문구를 만들 때는 기존 문구의 어투를 따른다. 확인은 `confirm()` 이 아니라 버튼 라벨이 `정말요?` 로 2초 바뀌는 `confirmOnce` 방식이다.
 
