@@ -195,16 +195,9 @@ export function createProjectPanel(options) {
     return el;
   }
 
-  // 이름은 눌러서 고친다 — 앱바의 입력칸이 주인이고 여기는 그리로 보낸다.
-  if (nameEl) {
-    nameEl.onclick = () => {
-      const input = byId('fileNameInput');
-      if (!input) return;
-      input.focus();
-      if (input.select) input.select();
-      if (input.scrollIntoView) input.scrollIntoView({ block: 'nearest' });
-    };
-  }
+  // 이름은 눌러서 고친다 — 앱바의 입력칸이 주인이고 여기는 그리로 보낸다. 누름은 `data-command="rename"` 이
+  // 듣는다(RM-09). ⚠ 예전에는 여기서 입력칸에 포커스만 줬는데, 입력칸이 **닫힌 파일 메뉴 안**에 있어서
+  // 포커스가 가지 않았다 — 눌러도 아무 일이 없었다. 이제 명령이 파일 메뉴를 연다.
   const input = byId('fileNameInput');
   if (input) input.addEventListener('input', () => { if (nameEl) render(); });
 

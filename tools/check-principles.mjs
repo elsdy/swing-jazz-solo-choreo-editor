@@ -269,15 +269,48 @@ function collectCss(files) {
 // ── 규칙 표 ─────────────────────────────────────────────────────────────────
 
 /**
- * input/controls.js 원문에서 HOTKEY_COMMANDS 표를 글자로 읽는다(D-14). 시험이 이 결과를 실제로 내보낸 값과 맞춰 본다 —
+ * domain/commands.js 원문에서 등록부의 id 를 글자로 읽는다(D-14). 시험이 이 결과를 실제로 내보낸 COMMANDS 와 맞춰 본다 —
  * 표의 꼴이 바뀌어 읽는 법이 낡으면 거기서 붉어진다.
- * @returns {{ map: Record<string, string>, line: number }}
+ * @returns {{ ids: string[], line: number }}
  */
-export function hotkeyCommandTable(ctlText) {
-  const tbl = ctlText.match(/(?:export )?const HOTKEY_COMMANDS = Object\.freeze\(\{([\s\S]*?)\}\)/);
-  const map = {};
-  if (tbl) for (const m of tbl[1].matchAll(/([\w$]+)\s*:\s*'([\w$]+)'/g)) map[m[1]] = m[2];
-  return { map, line: tbl ? lineAt(ctlText, tbl.index) : 1 };
+export function commandIdTable(cmdText) {
+  const at = cmdText.search(/export const COMMANDS = Object\.freeze\(\[/);
+  if (at < 0) return { ids: [], line: 1 };
+  const ids = [...cmdText.slice(at).matchAll(/def\(\{\s*id:\s*'([\w-]+)'/g)].map(m => m[1]);
+  return { ids, line: lineAt(cmdText, at) };
+}
+
+/**
+ * 객체 리터럴 `{ … }` 의 최상위 키. 여는 괄호의 자리를 받는다. 주석 · 문자열을 지운 원문(blankJs)에 쓴다.
+ * @param {string} code
+ * @param {number} open `{` 의 자리
+ * @returns {Set<string>}
+ */
+function topLevelKeys(code, open) {
+  const close = matchBrace(code, open);
+  let depth = 0;
+  let top = '';
+  for (const c of code.slice(open + 1, close)) {
+    if ('{(['.includes(c)) depth++;
+    else if ('})]'.includes(c)) depth--;
+    else if (depth === 0) top += c;
+    if (depth > 0 && top.slice(-1) !== '#') top += '#';
+  }
+  const keys = new Set();
+  for (const m of top.matchAll(/(?:^|,)\s*([\w$]+)\s*(?=[:,(#]|$)/g)) keys.add(m[1]);
+  return keys;
+}
+
+/**
+ * app/main.js 원문에서 `COMMAND_RUNNERS` 의 키를 글자로 읽는다(D-14).
+ * @returns {{ keys: Set<string>, line: number }}
+ */
+export function commandRunnerTable(mainText) {
+  const code = blankJs(mainText);
+  const m = code.match(/const COMMAND_RUNNERS = Object\.freeze\(\{/);
+  if (!m) return { keys: new Set(), line: 1 };
+  const open = m.index + m[0].length - 1;
+  return { keys: topLevelKeys(code, open), line: lineAt(mainText, open) };
 }
 
 /** @typedef {{ file: string, line: number, principle: string, what: string, fix: string }} Violation */
@@ -423,64 +456,70 @@ export const RULES = [
     },
   },
   {
-    principle: 'D-14',
-    what: '이름으로 잇는 단축키 배선이 어긋났다 — 그 글쇠는 말없이 아무 일도 하지 않는다',
-    fix: 'domain/hotkeys 의 동작 · input/controls 의 HOTKEY_COMMANDS · app/main 의 bindControls 파사드 세 곳을 맞춘다',
+    principle: 'R-10',
+    what: '조립부가 같은 뷰 이름(views.X)을 두 번 단다 — 앞의 뷰가 말없이 덮여 그것을 부르는 그리기가 던진다',
+    fix: '새 뷰에 아직 없는 이름을 준다(grep 으로 먼저 찾는다). 일부러 바꿔 끼우는 것이면 원칙-예외 표식에 이유를 적는다',
     scan(files) {
       const out = [];
-      const hk = files['src/domain/hotkeys.js'];
+      const main = files['src/app/main.js'];
+      if (!main) return out;
+      const code = blankJs(main);
+      const first = new Map();
+      for (const m of code.matchAll(/(?<![\w$.])views\.([\w$]+)\s*=(?![=>])/g)) {
+        const line = lineAt(main, m.index);
+        if (!first.has(m[1])) { first.set(m[1], line); continue; }
+        if (!excused(main, line, 'R-10')) out.push({ file: 'src/app/main.js', line, snippet: `views.${m[1]} 를 ${first.get(m[1])}번째 줄에서 이미 달았다 — 여기서 덮는다` });
+      }
+      return out;
+    },
+  },
+  {
+    principle: 'D-14',
+    what: '이름으로 잇는 명령 배선이 어긋났다 — 그 글쇠나 버튼은 말없이 아무 일도 하지 않는다',
+    fix: 'domain/commands 의 COMMANDS · app/main 의 COMMAND_RUNNERS · 마크업의 data-command 를 같은 id 로 맞춘다',
+    scan(files) {
+      const out = [];
+      const cmd = files['src/domain/commands.js'];
       const ctl = files['src/input/controls.js'];
       const main = files['src/app/main.js'];
-      if (!hk || !ctl || !main) return out;
+      if (!cmd || !main) return out;
       const blind = (file, what) => out.push({ file, line: 1, snippet: `${what}을(를) 하나도 읽지 못했다 — 표의 꼴이 바뀌었으면 이 검사기의 읽는 법도 고친다(조용히 0개로 통과하지 않는다)` });
 
-      // ① 바꿀 수 있는 동작(fixed: false) — 이것만 HOTKEY_COMMANDS 를 거쳐 커맨드를 부른다
-      const editable = [];
-      for (const m of hk.matchAll(/id:\s*'([\w-]+)'[\s\S]*?fixed:\s*(true|false)/g)) if (m[2] === 'false') editable.push(m[1]);
+      // ① 등록부의 id
+      const { ids, line: idLine } = commandIdTable(cmd);
+      // ② 조립 층의 실행 표
+      const { keys: runners, line: runLine } = commandRunnerTable(main);
+      if (!ids.length) blind('src/domain/commands.js', 'COMMANDS 의 id');
+      if (!runners.size) blind('src/app/main.js', 'COMMAND_RUNNERS 의 키');
+      if (!ids.length || !runners.size) return out;
 
-      // ② HOTKEY_COMMANDS 표
-      const { map, line: tblLine } = hotkeyCommandTable(ctl);
-
-      // ③ app/main 의 bindControls({ … commands: { … } }) 파사드의 최상위 키
-      const facade = new Set();
-      const mainCode = blankJs(main);
-      const bind = mainCode.search(/\nbindControls\(\{/);
-      let facadeLine = 1;
-      if (bind >= 0) {
-        const cm = mainCode.slice(bind).match(/\n\s*commands\s*:\s*\{/);
-        if (cm) {
-          const open = bind + cm.index + cm[0].length - 1;
-          facadeLine = lineAt(main, open);
-          const close = matchBrace(mainCode, open);
-          let depth = 0;
-          const body = mainCode.slice(open + 1, close);
-          let top = '';
-          for (const c of body) {
-            if ('{([' .includes(c)) depth++;
-            else if ('})]'.includes(c)) depth--;
-            else if (depth === 0) top += c;
-            if (depth > 0 && top.slice(-1) !== '#') top += '#';
-          }
-          for (const m of top.matchAll(/(?:^|,)\s*([\w$]+)\s*(?=[:,(#]|$)/g)) facade.add(m[1]);
+      for (const id of ids) {
+        if (!runners.has(id)) out.push({ file: 'src/app/main.js', line: runLine, snippet: `명령 '${id}' 가 COMMAND_RUNNERS 에 없다` });
+      }
+      for (const id of runners) {
+        if (!ids.includes(id)) out.push({ file: 'src/domain/commands.js', line: idLine, snippet: `COMMAND_RUNNERS.${id} — 등록부(COMMANDS)에 없는 id 다` });
+      }
+      // ③ 버튼이 가리키는 id — 마크업과 JS 가 만드는 마크업 모두
+      for (const [file, text] of Object.entries(files)) {
+        if (!/^(?:index\.html|src\/.*\.js)$/.test(file)) continue;
+        for (const m of text.matchAll(/data-command="([\w-]+)"/g)) {
+          if (!ids.includes(m[1])) out.push({ file, line: lineAt(text, m.index), snippet: `data-command="${m[1]}" — 등록부(COMMANDS)에 없는 id 다` });
         }
       }
 
-      if (!editable.length) blind('src/domain/hotkeys.js', 'HOTKEY_ACTIONS 의 바꿀 수 있는 동작');
-      if (!Object.keys(map).length) blind('src/input/controls.js', 'HOTKEY_COMMANDS 표');
-      if (!facade.size) blind('src/app/main.js', 'bindControls 의 commands 파사드 키');
-      if (!editable.length || !Object.keys(map).length || !facade.size) return out;
-
-      for (const id of editable) {
-        if (!map[id]) out.push({ file: 'src/input/controls.js', line: tblLine, snippet: `동작 '${id}' 가 HOTKEY_COMMANDS 에 없다` });
-      }
-      for (const [id, name] of Object.entries(map)) {
-        if (!editable.includes(id)) out.push({ file: 'src/input/controls.js', line: tblLine, snippet: `HOTKEY_COMMANDS.${id} — domain/hotkeys 에 바꿀 수 있는 동작 '${id}' 가 없다` });
-        if (!facade.has(name)) out.push({ file: 'src/app/main.js', line: facadeLine, snippet: `HOTKEY_COMMANDS.${id} → commands.${name} 가 bindControls 파사드에 없다` });
-      }
-      // ④ controls 가 commands.X 로 직접 부르는 이름도 파사드에 있어야 한다
-      const ctlCode = blankJs(ctl);
-      for (const m of new Set([...ctlCode.matchAll(/(?<![\w$.])commands\.([\w$]+)/g)].map(m => m[1]))) {
-        if (!facade.has(m)) out.push({ file: 'src/input/controls.js', line: lineAt(ctl, ctlCode.search(new RegExp(`commands\\.${m}\\b`))), snippet: `commands.${m} 를 부르는데 bindControls 파사드에 없다` });
+      // ④ controls 가 commands.X 로 직접 부르는 이름은 bindControls({ … commands: { … } }) 파사드에 있어야 한다
+      if (ctl) {
+        const mainCode = blankJs(main);
+        const bind = mainCode.search(/\nbindControls\(\{/);
+        const cm = bind >= 0 ? mainCode.slice(bind).match(/\n\s*commands\s*:\s*\{/) : null;
+        const facade = cm ? topLevelKeys(mainCode, bind + cm.index + cm[0].length - 1) : new Set();
+        if (!facade.size) blind('src/app/main.js', 'bindControls 의 commands 파사드 키');
+        else {
+          const ctlCode = blankJs(ctl);
+          for (const m of new Set([...ctlCode.matchAll(/(?<![\w$.])commands\.([\w$]+)/g)].map(m => m[1]))) {
+            if (!facade.has(m)) out.push({ file: 'src/input/controls.js', line: lineAt(ctl, ctlCode.search(new RegExp(`commands\\.${m}\\b`))), snippet: `commands.${m} 를 부르는데 bindControls 파사드에 없다` });
+          }
+        }
       }
       return out.filter(v => !excused(files[v.file], v.line, 'D-14'));
     },

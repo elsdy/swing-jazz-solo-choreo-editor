@@ -12,8 +12,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkPrinciples, loadRepoFiles, hotkeyCommandTable, RULES } from '../../tools/check-principles.mjs';
-import { HOTKEY_COMMANDS } from '../../src/input/controls.js';
+import { checkPrinciples, loadRepoFiles, commandIdTable, RULES } from '../../tools/check-principles.mjs';
+import { COMMANDS } from '../../src/domain/commands.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TOOL = join(ROOT, 'tools', 'check-principles.mjs');
@@ -55,7 +55,7 @@ test('위반이 있으면 종료 코드 1과 파일:줄 — 원칙 꼴로 찍는
   assert.match(good.stdout, /원칙 검사 통과 — 어긴 자리 0/);
 
   // 원칙마다 규칙이 표 한 줄 — { 원칙, 무엇, 고치는 법, scan }
-  assert.deepEqual(RULES.map(r => r.principle), ['U-11', 'U-12', 'D-5', 'R-6', 'D-14']);
+  assert.deepEqual(RULES.map(r => r.principle), ['U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14']);
   for (const r of RULES) {
     assert.equal(typeof r.scan, 'function');
     assert.ok(r.what && r.fix, `${r.principle}: 무엇 · 고치는 법이 비었다`);
@@ -118,27 +118,44 @@ test('R-6 마크업 클래스가 둘인 요소의 className 대입만 잡는다'
   assert.equal(run('R-6', { 'index.html': html, 'src/ui/v.js': "const floatBtn = byId('floatBtn');\nfloatBtn.classList.toggle('on', on);\n" }).length, 0);
 });
 
-test('D-14 단축키 표의 커맨드가 파사드에 없으면 잡는다', () => {
-  const hotkeys = "export const HOTKEY_ACTIONS = Object.freeze([\n  Object.freeze({ id: 'play', fixed: false }),\n  Object.freeze({ id: 'skip', fixed: false }),\n  Object.freeze({ id: 'undo', fixed: true })\n]);\n";
-  const controls = (tbl) => `export const HOTKEY_COMMANDS = Object.freeze({\n${tbl}\n});\nfunction f(commands) { commands.undo(); }\n`;
-  const main = (keys) => `import x from 'y';\nbindControls({\n  els,\n  commands: {\n${keys}\n  }\n});\n`;
-  const facade = "    togglePlay: () => Boolean(views.video && views.video.togglePlay()),\n    captureSkip: () => 1,\n    undo,";
+test('D-14 명령 등록부 · 실행 표 · 버튼의 id 가 어긋나면 잡는다', () => {
+  const commands = "export const COMMANDS = Object.freeze([\n  def({ id: 'play', fixed: false }),\n  def({ id: 'undo', fixed: true })\n]);\n";
+  const controls = 'function f(commands) { commands.setSortMode(); }\n';
+  const main = (runners, facade = '    setSortMode: () => 1,') =>
+    `import x from 'y';\nconst COMMAND_RUNNERS = Object.freeze({\n${runners}\n});\nbindControls({\n  els,\n  commands: {\n${facade}\n  }\n});\n`;
   const good = {
-    'src/domain/hotkeys.js': hotkeys,
-    'src/input/controls.js': controls("  play: 'togglePlay',\n  skip: 'captureSkip'"),
-    'src/app/main.js': main(facade),
+    'src/domain/commands.js': commands,
+    'src/input/controls.js': controls,
+    'src/app/main.js': main("  play: () => Boolean(views.video && views.video.togglePlay()),\n  undo: ({ board }) => { render(undo(board)); return true; }"),
+    'index.html': '<button data-command="undo">Undo</button>',
   };
   assert.deepEqual(run('D-14', good), []);
   const said = (files) => run('D-14', files).map(v => v.snippet).join('\n');
 
-  // HOTKEY_COMMANDS 가 가리키는 이름이 파사드에 없다 — 2026-09-20 의 스페이스
-  assert.match(said({ ...good, 'src/app/main.js': main('    captureSkip: () => 1,\n    undo,') }), /commands\.togglePlay 가 bindControls 파사드에 없다/);
-  // 바꿀 수 있는 동작 id 가 HOTKEY_COMMANDS 에 없다
-  assert.match(said({ ...good, 'src/input/controls.js': controls("  play: 'togglePlay'") }), /동작 'skip' 가 HOTKEY_COMMANDS 에 없다/);
+  // 등록부에 있는데 실행이 없다 — 2026-09-20 의 스페이스
+  assert.match(said({ ...good, 'src/app/main.js': main('  undo: () => true') }), /명령 'play' 가 COMMAND_RUNNERS 에 없다/);
+  // 실행만 있고 등록부에 없다
+  assert.match(said({ ...good, 'src/app/main.js': main('  play: () => 1,\n  undo: () => 1,\n  redoo: () => 1') }), /COMMAND_RUNNERS\.redoo/);
+  // 버튼이 없는 id 를 가리킨다
+  assert.match(said({ ...good, 'index.html': '<button data-command="undoo">Undo</button>' }), /data-command="undoo"/);
   // controls 가 commands.X 로 직접 부르는 이름
-  assert.match(said({ ...good, 'src/app/main.js': main('    togglePlay: () => 1,\n    captureSkip: () => 1,') }), /commands\.undo/);
-  // 파사드를 하나도 못 읽으면(객체 꼴이 바뀌었다) 조용히 통과하지 않는다
-  assert.match(said({ ...good, 'src/app/main.js': 'bindControls(makeDeps());\n' }), /파사드 키을\(를\) 하나도 읽지 못했다/);
+  assert.match(said({ ...good, 'src/app/main.js': main('  play: () => 1,\n  undo: () => 1', '    addMove: () => 1,') }), /commands\.setSortMode/);
+  // 실행 표를 하나도 못 읽으면(꼴이 바뀌었다) 조용히 통과하지 않는다
+  assert.match(said({ ...good, 'src/app/main.js': 'const COMMAND_RUNNERS = makeRunners();\nbindControls({\n  commands: {\n    setSortMode,\n  }\n});\n' }), /COMMAND_RUNNERS 의 키을\(를\) 하나도 읽지 못했다/);
+});
+
+test('R-10 조립부가 같은 views 이름을 두 번 달면 잡는다', () => {
+  // 2026-10-01(RM-09) — 명령 팔레트를 동작 목록 뷰의 이름(views.palette)에 달아 부팅 중 views.palette.render() 가 던졌다
+  const bad = "views.palette = paletteView;\nviews.palette.render();\nviews.palette = createCommandPalette({});\n";
+  const v = run('R-10', { 'src/app/main.js': bad });
+  assert.equal(v.length, 1);
+  assert.equal(v[0].line, 3);
+  assert.match(v[0].snippet, /views\.palette 를 1번째 줄에서 이미 달았다/);
+  // 이름이 다르면, 비교(===)·화살표·읽기는 넘긴다
+  const fine = "views.palette = paletteView;\nviews.commandPalette = createCommandPalette({});\nif (views.palette === x) f();\nconst g = () => views.palette;\n";
+  assert.equal(run('R-10', { 'src/app/main.js': fine }).length, 0);
+  // 일부러 갈아 끼우는 것은 이유를 단 표식으로
+  assert.equal(run('R-10', { 'src/app/main.js': bad.replace('views.palette = create', '// 원칙-예외(R-10): 시험용으로 갈아 끼운다\nviews.palette = create') }).length, 0);
 });
 
 test('지금 저장소는 통과한다', () => {
@@ -178,15 +195,16 @@ test('예외 표식 — 이유가 붙은 것만 통과한다', () => {
   assert.equal(run('D-5', { 'src/a.js': '// 원칙-예외(U-11): 다른 원칙\nconst d = Number(x) || 3;\n' }).length, 1);
 });
 
-test('D-14 · 검사기가 글자로 읽은 HOTKEY_COMMANDS 가 실제로 내보낸 값과 같다', () => {
-  const text = readFileSync(join(ROOT, 'src', 'input', 'controls.js'), 'utf8');
-  assert.deepEqual(hotkeyCommandTable(text).map, { ...HOTKEY_COMMANDS });
+test('D-14 · 검사기가 글자로 읽은 등록부의 id 가 실제로 내보낸 COMMANDS 와 같다', () => {
+  const text = readFileSync(join(ROOT, 'src', 'domain', 'commands.js'), 'utf8');
+  assert.deepEqual(commandIdTable(text).ids, COMMANDS.map(c => c.id));
 });
 
 test('실제 저장소 — 짝 하나 · 이름 하나를 틀리면 붉어진다(빈 손 통과 막기)', () => {
   const files = loadRepoFiles();
   const strip = { ...files, 'src/ui/settingsView.js': files['src/ui/settingsView.js'].replace('.settings-row[hidden] { display: none; }', '') };
   assert.ok(checkPrinciples(strip, only('U-12')).some(v => v.snippet.startsWith('.settings-row')));
-  const typo = { ...files, 'src/input/controls.js': files['src/input/controls.js'].replace("play: 'togglePlay'", "play: 'togglePlayy'") };
+  const typo = { ...files, 'src/app/main.js': files['src/app/main.js'].replace('\n  play: ', '\n  playy: ') };
+  assert.notEqual(typo['src/app/main.js'], files['src/app/main.js'], '바꿀 자리를 못 찾았다 — 시험이 빈손이다');
   assert.ok(checkPrinciples(typo, only('D-14')).length > 0);
 });

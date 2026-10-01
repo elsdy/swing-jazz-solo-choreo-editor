@@ -21,7 +21,7 @@ node tests/run.mjs                     # 격자 알고리즘 골든 150개
 node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스 단위 66개
 node tools/check-arch.mjs              # 계층 방향과 순수성
 node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지
-node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 다섯(U-11 · U-12 · D-5 · R-6 · D-14)
+node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 여섯(U-11 · U-12 · D-5 · R-6 · R-10 · D-14)
 ```
 
 둘의 역할이 다르다. 골든은 **격자 알고리즘의 현재 동작**을 기록한 것이라 undo·링크·영상처럼 격자 밖의 일은 지켜 주지 못한다. 그쪽 안전망이 단위 테스트다.
@@ -230,6 +230,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `gestureMath.js` | 제스처 판정의 순수 부분. `resolveDragCount` 의 `lowerBound` 가 곳마다 다른 하한을 담는다. 히트 판정의 행·칸 산술(`resolveHitCell`), 드래그 프리뷰 카운트(`dragPreviewCount` — 두 입력 파일에 두 벌이던 것), 늘이기 세 갈래의 우선순위(`resizeHitKind`)도 여기 있다(RM-08) |
 | `boardGesture.js` | 보드 위 그리기·빠른 배치·더블탭의 **전이 함수**(2026-10-01, RM-08). `(상태, 이벤트, env) → (다음 상태, 할 일 목록)` 꼴이고 `input/boardController` 는 이벤트를 값으로 바꿔 넘긴 뒤 할 일을 차례대로 실행할 뿐이다. 측정(사각형 재기·포인터 밑 찾기)은 env 의 함수로 받아 원본이 부르던 그 자리에서만 부른다. 마우스와 터치의 다른 규칙이 그대로 들어 있다 — 시험은 `tests/unit/boardGesture.test.mjs` |
 | `popupPlacement.js` | 떠 있는 창 넷(빠른 배치 팝업 · 블록 동작 팝업 · 루틴 블록 팝업 · 동작 메뉴)의 자리 산술(2026-10-01, RM-08). 넷은 일부러 다르다 — **합치지 않고** 따로 떼어 지금 값을 시험에 굳혔다. 크기를 재는 일과 한 프레임 기다리는 순서는 화면 쪽에 남는다 |
+| `commands.js` | **명령 등록부**(2026-10-01, RM-09). 명령마다 한 줄 — id · 라벨 · 설명 · 기본 글쇠 · 버튼 글자 · 툴팁 몸말 · 글자를 치는 중에도 듣는가(`whileTyping`). 실행 함수는 없다 — 실행은 `app/main` 의 `COMMAND_RUNNERS` 가 같은 id 로 잇는다. id 는 바꾼 글쇠가 저장되는 이름이라 바꾸지 않는다 |
+| `hotkeys.js` | 단축키 규칙. 단축키 표(`HOTKEY_ACTIONS`)는 등록부에서 글쇠가 있는 줄을 고른 것이다. 글쇠 이름 정규화 · 사용자가 바꾼 표의 정규화 · 충돌(한 글쇠는 한 명령) · 눌린 글쇠 → 명령(`commandForKey`) |
 | `links.js` | YouTube URL 정규화와 커스텀 링크 목록 규칙 |
 | `defaults.js` | 초기값만. `makeDefaultMoves(ids)` 가 uid 소비 순서를 결정적으로 만든다 |
 | `tempo.js` | 카운트 ↔ 초 변환. 카운트 축에 얹는 곱셈 한 겹. 2026-09-09 부터 영상 패널이 실제로 쓴다. `shiftTempo` 는 잘라내기 뒤 시간축을 통째로 민다 |
@@ -330,6 +332,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `layout.js` | 셸의 부작용 전부. 브레이크포인트·스크롤 락·셀 크기 동기화 |
 | `cssVars.js` | `--cellW` `--cellH` `--rowLabelW` `--noteW` 의 유일한 소유자 |
 | `popup.js` | 팝업 공통 부품(위치 계산, 바깥 클릭 닫기) |
+| `commandButtons.js` | `data-command` 버튼의 툴팁을 등록부에서 단다 — 지금 글쇠가 괄호로 붙는다. 엄지 바처럼 JS 로 버튼을 그리는 뷰는 `commandFace` 로 글자 · 툴팁을 받는다(RM-09) |
+| `commandPalette.js` | `Ctrl+K` 명령 찾기와 `?` 단축키 일람(RM-09). 등록부를 읽기만 하고 실행은 주입받는다. 열 때 요소를 만들고 닫을 때 없앤다 |
 | `widgets.js` | `escapeHtml` `confirmOnce` `makeInlineStarBtn` |
 | `docsRegistry.js` | 앱에서 읽을 문서 목록의 유일한 주인 |
 | `docsHub.js` | 앱 안에서 문서를 읽는 화면과 마크다운 렌더러 |
@@ -339,7 +343,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | 파일 | 책임 |
 |---|---|
 | `boardController.js` | 보드 1개당 위임 이벤트 컨트롤러. 마우스와 터치는 서로 다른 규칙을 쓴다 |
-| `controls.js` | 사이드바·툴바의 버튼/입력/파일 인풋 바인딩과 단축키 |
+| `controls.js` | 사이드바·툴바의 버튼/입력/파일 인풋 바인딩과 단축키. 단축키(`bindHotkeys`)와 `data-command` 버튼(`bindCommandButtons`)은 명령 id 를 `runCommand` 에 넘길 뿐 무엇을 할지 모른다(RM-09) |
 | `hitTest.js` | 화면 좌표 → 보드·행·칸. 보드 밖으로 나가면 앵커 트랙으로 되돌아간다 |
 | `dragSession.js` | 두 보드가 공유하는 **하나의** 드래그 세션 |
 | `pointerSession.js` | 동시에 하나만 존재하는 리사이즈 세션 |
@@ -352,7 +356,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 |---|---|
 | `render.js` | `Dirty` → 뷰 호출. 앱에서 뷰를 아는 유일한 파일이고 렌더 순서를 정한다 |
 
-`app/main.js` 가 이 계층의 나머지 절반이다. 저장소를 만들고, 어댑터를 포트 자리에 꽂고, 뷰와 컨트롤러에 협력자를 주입하고, presenter 를 그 모두에 넘긴다. 모든 뷰와 컨트롤러의 JSDoc 이 "`app/main` 이 넘긴다"고 적어 둔 대상이 이것이다. `index.html` 은 마크업과 CSS만 갖고 이 파일 하나를 `<script type="module">` 로 부른다.
+`app/main.js` 가 이 계층의 나머지 절반이다. 명령 등록부의 **실행 표**(`COMMAND_RUNNERS` — 명령 id → 무엇을 하나)도 여기 하나뿐이다. 단축키 · `data-command` 버튼 · 명령 찾기가 모두 `runCommand(id, {board})` 로 이 표를 거치고, 부팅 때 `runnerGaps` 가 등록부와 어긋난 자리를 콘솔에 적는다. 저장소를 만들고, 어댑터를 포트 자리에 꽂고, 뷰와 컨트롤러에 협력자를 주입하고, presenter 를 그 모두에 넘긴다. 모든 뷰와 컨트롤러의 JSDoc 이 "`app/main` 이 넘긴다"고 적어 둔 대상이 이것이다. `index.html` 은 마크업과 CSS만 갖고 이 파일 하나를 `<script type="module">` 로 부른다.
 
 영상 재생기도 여기서만 산다. **재생기를 만드는 것은 패널이 실제로 화면에 보이는 순간**이고, 그 전에는 `pickPlayer('')` 가 준 널 재생기가 자리를 지킨다 — 패널을 한 번도 안 연 사용자에게 유튜브 요청이 나가면 안 되기 때문이다. 소스가 바뀌어도 종류(`youtube`/`file`/`null`)가 같으면 재생기를 다시 만들지 않고 `load()` 만 부른다. iframe 을 다시 만들면 로딩이 눈에 보이게 끊긴다. 로컬 파일의 blob URL 도 여기서만 산다 — `URL.createObjectURL` 을 부르는 자리는 `app/main` 하나이고, store 에는 파일명만 들어간다(파일 객체는 직렬화할 수 없고 blob URL 은 이 실행에서만 산다).
 
@@ -389,6 +393,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 겹침·쌓기 규칙을 바꾼다 | `src/domain/lanes.js` | `repack-*` `clear-*` 갱신. 네 조작(놓기·이동·복사·리사이즈)이 같은 규칙을 쓰므로 `boardOps` 의 네 정책 상수를 나란히 고친다 |
 | 놓기·이동·복사·리사이즈 동작을 바꾼다 | `src/domain/boardOps.js` 의 `*_POLICY` 상수 | 해당 골든 갱신. 반환값의 `renderRows` 와 `changedRows` 를 혼동하지 말 것 |
 | 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
+| 명령(글쇠 · 버튼 · 명령 찾기로 부르는 일)을 더한다 | `src/domain/commands.js` 한 줄 + `src/app/main.js` 의 `COMMAND_RUNNERS` 한 줄 + 버튼이면 마크업에 `data-command="<id>"` | 마크업 글자는 등록부의 `button` 과 같게, `title` 은 적지 않는다(시험이 본다). 셋이 어긋나면 원칙 검사 D-14 가 붉어진다 |
 | 화면이 안 다시 그려진다 | 그 조작의 커맨드가 돌려주는 `Dirty` | `dev: true` 로 `assertDirtyCovers` 를 켜 본다 |
 | 저장 파일 포맷을 바꾼다 | `src/domain/project/schema.js` | `serialize` `normalize` `merge` `migrations` 넷을 함께([개발 원칙 D-4](PRINCIPLES.md#d-4)) |
 | 저장 위치·최근 목록을 바꾼다 | `src/ports/storage.js` + `src/adapters/localStore.js` | 용량 상한을 먼저 확인한다 |

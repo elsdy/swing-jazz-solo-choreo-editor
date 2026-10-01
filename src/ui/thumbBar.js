@@ -17,6 +17,8 @@
  * @typedef {{ id: string, label: string, title?: string, cls?: string, main?: boolean, disabled?: boolean, run: () => void }} ThumbAction
  */
 
+
+import { commandFace } from './commandButtons.js';
 /**
  * @param {{
  *   elements?: Record<string, HTMLElement|null>,
@@ -31,12 +33,17 @@
  *     stop: () => void,
  *     toggleSheet: () => void,
  *     quickPlace: () => void
- *   }
+ *   },
+ *   face?: (commandId: string) => { label: string, title: string }
  * }} options
+ *   face: 명령 등록부의 글자 · 툴팁(RM-09). 영상 패널 · 채우기 줄의 같은 버튼과 글자 · 툴팁이 같아진다 —
+ *   툴팁에는 지금 글쇠가 실린다. 없으면 등록부의 기본값이다.
  * @returns {{ render(): void }}
  */
 export function createThumbBar(options) {
-  const { elements = {}, getState, actions } = options;
+  const { elements = {}, getState, actions, face = commandFace } = options;
+  /** 등록부의 명령을 엄지 바의 한 칸으로 — id · 글자 · 툴팁은 등록부의 것이다. */
+  const cmd = (commandId, item) => ({ id: item.id, ...face(commandId), ...item });
   const byId = (id) => (id in elements ? elements[id] : document.getElementById(id));
   const doc = (byId('thumbBar') && byId('thumbBar').ownerDocument) || document;
 
@@ -70,11 +77,11 @@ export function createThumbBar(options) {
         }]
         : [];
       return keep([
-        { id: 'play', label: '⏯', title: '재생·일시정지', cls: 'ghost', run: actions.togglePlay },
-        { id: 'cut', label: '▮ 끊기', title: '동작이 바뀌는 자리', cls: 'warn', main: true, run: actions.capture },
+        cmd('play', { id: 'play', cls: 'ghost', run: actions.togglePlay }),
+        cmd('capture', { id: 'cut', cls: 'warn', main: true, run: actions.capture }),
         ...micItems,
-        { id: 'skip', label: '건너뛰기', title: '여기까지는 안무가 아니다', cls: 'ghost', run: actions.skip },
-        { id: 'stop', label: '■ 그만', title: '받아 적기를 끝낸다', cls: 'ghost', run: actions.stop }
+        cmd('skip', { id: 'skip', cls: 'ghost', run: actions.skip }),
+        cmd('stop', { id: 'stop', cls: 'ghost', run: actions.stop })
       ]);
     }
 
@@ -105,20 +112,20 @@ export function createThumbBar(options) {
       return keep([
         { id: 'sheet', label: '≡ 동작', title: '동작 목록을 연다', cls: 'ghost', run: actions.toggleSheet },
         ...(actions.rewind ? [{ id: 'rewind', label: '⏮ 처음으로', title: '영상을 맨 처음으로 되감고 바로 재생한다', cls: 'ghost', run: actions.rewind }] : []),
-        { id: 'play', label: '⏯', title: '재생·일시정지', cls: 'ghost', run: actions.togglePlay },
+        cmd('play', { id: 'play', cls: 'ghost', run: actions.togglePlay }),
         ...tapItems,
-        {
-          // ⚠ 받는 중의 `cut` 과 **같은 id·같은 라벨·같은 자리**다(2026-09-22). 첫 타든 열째 타든
-          //   손이 하는 일은 같은 한 번의 누름이라, 버튼이 갈리면 "지금은 어느 쪽인가"를 읽게 된다.
-          //   id 가 같으므로 받기 시작해도 **버튼이 갈아 끼워지지 않고** 그 자리에 그대로 있다.
+        // ⚠ 받는 중의 `cut` 과 **같은 id·같은 라벨·같은 자리**다(2026-09-22). 첫 타든 열째 타든
+        //   손이 하는 일은 같은 한 번의 누름이라, 버튼이 갈리면 "지금은 어느 쪽인가"를 읽게 된다.
+        //   id 가 같으므로 받기 시작해도 **버튼이 갈아 끼워지지 않고** 그 자리에 그대로 있다.
+        // ⚠ 못 누를 때만 툴팁이 까닭을 말한다. 누를 수 있으면 등록부의 툴팁(영상 패널의 `▮ 끊기` 와 같은 글)이다.
+        cmd('capture', {
           id: 'cut',
-          label: '▮ 끊기',
-          title: st.canCapture ? '처음 누른 자리가 1카운트 — 그 뒤로는 동작이 바뀌는 자리마다' : '먼저 ② 박자 맞추기에서 BPM 을 정하세요',
+          ...(st.canCapture ? {} : { title: '먼저 ② 박자 맞추기에서 BPM 을 정하세요' }),
           cls: 'warn',
           main: true,
           disabled: !st.canCapture,
           run: actions.capture
-        }
+        })
       ]);
     }
 
@@ -128,8 +135,8 @@ export function createThumbBar(options) {
     //   크게 둔다. 캔버스 바에도 같은 버튼이 첫 자리에 있다(눈이 가는 자리와 엄지가 닿는 자리).
     return [
       { id: 'sheet', label: '≡ 동작', title: '동작 목록을 연다', cls: 'ghost', run: actions.toggleSheet },
-      { id: 'quick', label: '+ 빠른 배치', title: '격자를 눌러 고르며 놓는다', cls: 'ghost', run: actions.quickPlace },
-      { id: 'video', label: '▶ 영상으로 채우기', title: '영상을 보며 동작이 바뀌는 자리를 찍는다', cls: 'primary', main: true, run: actions.openPanel }
+      cmd('quickPlace', { id: 'quick', cls: 'ghost', run: actions.quickPlace }),
+      cmd('videoPanel', { id: 'video', cls: 'primary', main: true, run: actions.openPanel })
     ];
   }
 
