@@ -63,60 +63,600 @@
       {
         "id": "Q2",
         "title": "라이선스 — LICENSE(GPL v2)와 README(GPL-3.0)를 하나로",
-        "answer": null,
+        "answer": "무슨 말인지 모르겠어",
         "revisit": "외부 기여를 받기 전"
       },
       {
         "id": "Q3",
         "title": "첫 대상(혼자 배우는 댄서 / 강사)과 시장 언어",
-        "answer": null,
+        "answer": "무슨 말인지 모르겠어",
         "revisit": "RM-26 을 시작할 때"
       },
       {
         "id": "Q4",
         "title": "원본 동작 보존 원칙의 졸업",
-        "answer": null,
+        "answer": "무슨 말인지 모르겠어",
         "revisit": "기둥 B 를 시작할 때"
       },
       {
         "id": "Q5",
         "title": "개발 전용 도구(브라우저 회귀 시험) 허용",
-        "answer": null,
+        "answer": "개발할 때만 허용한다 — Playwright 같은 브라우저 시험 도구는 시험을 돌릴 때만 깐다. 앱 실행은 의존성 0 그대로(2026-10-01, RM-08 마무리)",
         "revisit": "RM-08 1단이 끝났을 때"
       },
       {
         "id": "Q6",
         "title": "파트를 마커와 합칠까",
-        "answer": null,
+        "answer": "무슨 말인지 모르겠어",
         "revisit": "RM-23 을 시작할 때"
       },
       {
         "id": "Q7",
         "title": "루틴 편집 보드에도 카운트 ↔ 시간",
-        "answer": null
+        "answer": "무슨 말인지 모르겠어"
       },
       {
         "id": "Q8",
         "title": "공유 링크·클라우드",
-        "answer": null,
+        "answer": "무슨 말인지 모르겠어",
         "revisit": "RM-21 이 나간 뒤"
       },
       {
         "id": "Q9",
         "title": "적응형 작업 차례 — 기록을 살릴까 끌까",
-        "answer": null,
+        "answer": "무슨 말인지 모르겠어",
         "revisit": "2026-10-05"
+      },
+      {
+        "id": "Q10",
+        "title": "RM-04 — 이름을 묻는 다섯 자리의 인라인화를 이 항목에서 할까, RM-15 로 넘길까",
+        "answer": "prompt 만 걷는 최소 인라인을 RM-04 에서 한다(권장) (2026-10-01)",
+        "options": [
+          {
+            "label": "prompt 만 걷는 최소 인라인을 RM-04 에서 한다(권장)",
+            "note": "받아 적는 중에 모달이 뜨는 일이 이번에 끝난다. RM-15 는 그 위에 Tab 으로 다음 ?·연속 이름 붙이기만 얹는다. 크기는 M 의 위쪽 끝이다"
+          },
+          {
+            "label": "이름 입력은 통째로 RM-15 에 넘긴다",
+            "note": "RM-04 는 알림 채널과 토스트만 해서 작아지고 겹침이 없다. 대신 「고른 블록에 이름 붙이기」 prompt 는 RM-15 가 올 때까지 받아 적기 흐름을 끊는다"
+          }
+        ]
+      },
+      {
+        "id": "Q11",
+        "title": "RM-04 — 「참고」 급(병합 완료 같은 소식)을 어디에 띄울까 — 상태줄은 아직 없다",
+        "answer": "급만 정하고 토스트로 대신 띄운다(권장) (2026-10-01)",
+        "options": [
+          {
+            "label": "급만 정하고 토스트로 대신 띄운다(권장)",
+            "note": "RM-04 가 M 에 머문다. RM-19 가 상태줄을 세우면 조립부의 받는 자리만 바꾼다"
+          },
+          {
+            "label": "최소 상태줄 한 칸을 여기서 같이 만든다",
+            "note": "세 급이 처음부터 제자리를 갖는다. 대신 RM-19 의 몫과 겹쳐 크기가 L 쪽으로 커진다"
+          }
+        ]
+      },
+      {
+        "id": "Q12",
+        "title": "RM-04 — 성공 소식 토스트를 ⚙ 설정에서 끌 수 있게 할까",
+        "answer": "설정 없이 늘 켠다(권장) (2026-10-01)",
+        "options": [
+          {
+            "label": "설정 없이 늘 켠다(권장)",
+            "note": "막음·실패 알림은 꺼지면 안 되고, 성공 소식은 짧게 떴다 사라져 거슬릴 일이 적다. 설정 필드가 늘지 않는다"
+          },
+          {
+            "label": "「성공 알림 토스트」 켬/끔(기본 켬)을 둔다",
+            "note": "받아 적기에 방해된다고 느끼는 사람은 끌 수 있다. 실패 알림은 끄지 못한다. 설정 필드와 설정 화면 한 줄이 는다"
+          }
+        ]
+      },
+      {
+        "id": "Q13",
+        "title": "RM-06 — 문서의 어떤 백틱 인용을 「라벨」로 보고 대조할까",
+        "answer": "백틱 인용 전부 + 거르기 규칙·제외 목록 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "백틱 인용 전부 + 거르기 규칙·제외 목록 (추천)",
+            "note": "문서 쓰는 법은 그대로다. src/ 전체를 긁으니 동작·갈래 이름은 저절로 통과해 제외 목록이 짧아진다. 다만 오탐이 날 때마다 목록이 는다"
+          },
+          {
+            "label": "한글이 든 인용만",
+            "note": "가장 싸고 오탐이 적다. 대신 `Undo` `Redo` 같은 영어 라벨은 못 잡고, RM-32(영어 UI) 뒤에는 기준을 다시 세워야 한다"
+          },
+          {
+            "label": "문서에 표식을 단 인용만(예: 굵은 백틱)",
+            "note": "오탐이 없고 검사기가 단순하다. 대신 인용 350개를 한 번 손으로 가려야 하고, 표식을 빠뜨린 새 인용은 검사를 빠져나간다"
+          }
+        ]
+      },
+      {
+        "id": "Q14",
+        "title": "RM-06 — 처음 돌렸을 때 걸린 불일치를 어떻게 다룰까",
+        "answer": "이번에 전부 가려 0에서 시작 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "이번에 전부 가려 0에서 시작 (추천)",
+            "note": "검사가 깨끗하게 서고 낡은 설명이 바로 고쳐진다. 문서 고침 커밋이 붙어 하루 남짓 걸린다"
+          },
+          {
+            "label": "지금 불일치를 기준선으로 얼리고 새것만 잡기",
+            "note": "한나절이면 끝난다. 대신 이미 낡은 문서는 남는다. 기준선 개수가 늘면 실패하게 하고, RM-05 의 같은 갈림과 답을 맞춘다"
+          }
+        ]
+      },
+      {
+        "id": "Q15",
+        "title": "RM-07 — 카테고리 순서를 어느 쪽으로 맞출까",
+        "answer": "되살릴 때만 정렬하지 않는다 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "되살릴 때만 정렬하지 않는다 (추천)",
+            "note": "고칠 곳은 categories 줄 하나와 정규화의 선택 인자뿐이다. 저장 파일 · 골든 · 마이그레이션이 그대로라 크기가 S 다. 「불러오면 가나다, 편집 중에는 만든 순서」라는 불일치는 남는다"
+          },
+          {
+            "label": "상태를 언제나 가나다로 둔다",
+            "note": "처음 상태와 카테고리 더하기도 정렬한다. 새 안무의 기본 묶음 순서가 가나다로 바뀌고 저장 파일의 키 순서도 달라진다. defaults.js · addCategory · 마이그레이션 · 골든 갱신이 따르고 크기가 M 이 된다"
+          },
+          {
+            "label": "중복 판정만 키 순서를 무시한다",
+            "note": "유령 단계와 Redo 소실은 사라진다. 하지만 Undo 한 번에 묶음 순서가 가나다로 흔들리는 것은 남는 반쪽 고침이다"
+          }
+        ]
+      },
+      {
+        "id": "Q16",
+        "title": "RM-07 — 불러올 때의 정렬도 이번에 걷을까",
+        "answer": "이번에는 두고 RM-34 와 함께 정한다 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "이번에는 두고 RM-34 와 함께 정한다 (추천)",
+            "note": "이번 항목은 Undo 결함만 고친다. 「순서를 저장한다」는 성격이 같은 RM-34 에서 한 번에 정한다"
+          },
+          {
+            "label": "이번에 함께 걷는다",
+            "note": "불러오기 · 되살리기 · 저장이 모두 같은 순서를 지킨다. 대신 동작 변경이 하나 더 생긴다. 옛 파일을 열면 묶음 순서가 달라질 수 있고, 골든 load-04-category-fallback 을 갱신하고 meta.intentionalChanges 에 적어야 한다"
+          }
+        ]
+      },
+      {
+        "id": "Q17",
+        "title": "RM-05 — 처음 돌렸을 때 걸리는 자리를 어떻게 다루나 — D-5 를 좁히면 거의 남지 않고, 남는 것은 주로 U-12 · R-6 이다",
+        "answer": "이번에 전부 고치고 0에서 시작 (2026-10-01)",
+        "options": [
+          {
+            "label": "이번에 전부 고치고 0에서 시작",
+            "note": "검사가 깨끗하게 선다. U-12 짝 더하기는 동작이 바뀌지 않지만, R-6 을 classList 로 바꾸면 화면에서 확인해야 해 하루를 넘길 수 있다"
+          },
+          {
+            "label": "지금 위반을 기준선으로 얼리고 새것만 잡는다",
+            "note": "바로 끝나고 동작이 바뀌지 않는다. 기준선 개수가 늘면 실패하게 해 둔다. RM-06 도 같은 답을 쓰면 뼈대가 하나로 준다"
+          },
+          {
+            "label": "괜찮은 자리마다 표식 주석",
+            "note": "그 줄에서 왜 괜찮은지 읽힌다. 다만 R-6 은 걸리는 자리가 많아 주석이 꽤 들어간다"
+          }
+        ]
+      },
+      {
+        "id": "Q18",
+        "title": "RM-05 — U-12 를 짝 검사로 잡나, 전역 [hidden] 규칙 한 줄로 없애나",
+        "answer": "짝 검사(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "짝 검사(추천)",
+            "note": "동작이 바뀌지 않는다. CSS 를 문자열에서 뽑아야 해 검사기에서 가장 무거운 부분이 된다"
+          },
+          {
+            "label": "전역 [hidden]{display:none !important} 한 줄 + 그 줄이 있는지만 검사",
+            "note": "원인이 사라지고 index.html 의 짝 11개와 뷰의 짝들이 필요 없어진다(tests/index.html 에 이미 선례가 있다). 다만 docsHub 의 visibility 로 숨기는 [hidden] 처럼 일부러 다르게 쓰는 자리가 바뀌므로 동작 변경 커밋으로 따로 내고 화면에서 확인해야 한다. RM-17 의 !important 없애기와 부딪친다"
+          }
+        ]
+      },
+      {
+        "id": "Q19",
+        "title": "RM-05 — 언제 돌게 하나",
+        "answer": "CLAUDE.md 목록에만 올린다 (2026-10-01)",
+        "options": [
+          {
+            "label": "CLAUDE.md 목록에만 올린다",
+            "note": "지금 두 검사와 같다. 돌리는 것을 잊으면 그만이다"
+          },
+          {
+            "label": "커밋 훅에 넣는다",
+            "note": "전역 규칙(빠른 검사는 커밋 훅)과 맞는다. 저장소에 훅 자리가 없어 .githooks/ 와 core.hooksPath 설정을 새로 세우고 check-arch · check-docs 도 함께 올린다"
+          }
+        ]
+      },
+      {
+        "id": "Q20",
+        "title": "RM-08 — 떼어 낸 순수 함수를 어디에 두나",
+        "answer": "도메인 층(src/domain/)에 둔다 — 추천 (2026-10-01)",
+        "options": [
+          {
+            "label": "도메인 층(src/domain/)에 둔다 — 추천",
+            "note": "제스처 산술이 이미 거기 있어 한 갈래로 모인다. 순수성 검사가 그대로 걸리고 check-arch 를 고칠 일이 없다. 대신 도메인에 화면 좌표·팝업 같은 화면 냄새가 섞인다."
+          },
+          {
+            "label": "입력·화면 층 안에 순수 파일을 따로 둔다",
+            "note": "주제 가까이에 있어 찾기 쉽다. 그러나 check-arch 에 그 파일만 순수성 검사를 거는 규칙을 새로 더해야 하고, 더하지 않으면 브라우저 호출이 다시 스며든다."
+          }
+        ]
+      },
+      {
+        "id": "Q21",
+        "title": "RM-08 — 보드 입력 분기를 어디까지 뽑나",
+        "answer": "전이 함수까지 — (상태, 이벤트) → (다음 상태, 할 일) — 추천 (2026-10-01)",
+        "options": [
+          {
+            "label": "전이 함수까지 — (상태, 이벤트) → (다음 상태, 할 일) — 추천",
+            "note": "어느 분기가 먼저 이기나 같은 순서 버그까지 시험이 잡는다. RM-11 이 이 전이표를 포인터 이벤트에 그대로 꽂을 수 있다. 보드 입력을 크게 옮겨야 해서 커밋을 경로마다 잘게 나눈다(M 의 윗끝)."
+          },
+          {
+            "label": "계산만 — 좌표→칸, 카운트, 탭/끌기 판정, 팝업 자리",
+            "note": "작고 동작이 바뀔 위험이 거의 없다(한나절~하루). 분기 우선순위 버그는 시험 밖에 남는다."
+          }
+        ]
+      },
+      {
+        "id": "Q22",
+        "title": "RM-08 — Q5 다시 묻기 — 실제 브라우저를 띄워 누르는 자동 시험 도구를 개발할 때만 들여도 되나",
+        "answer": "개발용으로만 허용한다 (2026-10-01)",
+        "options": [
+          {
+            "label": "개발용으로만 허용한다",
+            "note": "Playwright 같은 도구를 시험 돌릴 때만 깐다. 앱을 쓰는 사람에게는 아무것도 깔리지 않는다. 대신 저장소에 package.json 이 생기고 '의존성 0' 규칙을 '앱 실행에만 0' 으로 좁힌다. 리스너 순서·터치가 조용히 죽는 버그까지 기계가 잡는 2단을 낼 수 있다."
+          },
+          {
+            "label": "허용하지 않는다",
+            "note": "의존성 0 을 시험까지 지킨다. DOM 쪽 동작은 계속 폰에서 손으로 확인하고, 그 확인 목록을 문서로 고정한다."
+          },
+          {
+            "label": "이번 1단이 끝난 뒤 다시 정한다",
+            "note": "지금 계획은 1단(순수 함수 시험)만이라 이 답과 상관없이 시작할 수 있다."
+          }
+        ]
+      },
+      {
+        "id": "Q23",
+        "title": "RM-13 — 가드·보드 라우팅 고침(결함 #11)을 원본 동작 보존 원칙의 졸업(Q4) 전에 내도 되나",
+        "answer": "이 항목의 첫 커밋을 #11 고침으로 따로 낸다 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "이 항목의 첫 커밋을 #11 고침으로 따로 낸다 (추천)",
+            "note": "결함 하나를 고치는 동작 변경 커밋이라 지금 원칙으로도 낼 수 있다. Q4는 RM-11 때 정한다"
+          },
+          {
+            "label": "Q4에 먼저 답하고 시작한다",
+            "note": "기둥 B 전체의 기준이 먼저 서지만, RM-13은 Q4 답을 기다리며 멈춘다"
+          }
+        ]
+      },
+      {
+        "id": "Q24",
+        "title": "RM-13 — 붙여넣기는 어디에 놓이나",
+        "answer": "고른 블록 바로 뒤, 없으면 마지막으로 누른 빈 칸 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "고른 블록 바로 뒤, 없으면 마지막으로 누른 빈 칸 (추천)",
+            "note": "새 화면 표시 없이 지금 선택만으로 된다. 빈 칸을 누른 자리 하나만 세션에 더 기억한다"
+          },
+          {
+            "label": "키보드 커서(초점 칸)를 새로 둔다",
+            "note": "스프레드시트처럼 자연스럽지만 표시·상태가 하나 늘고 RM-14 선택 모델과 함께 설계해야 해 L에 가까워진다"
+          }
+        ]
+      },
+      {
+        "id": "Q25",
+        "title": "RM-13 — 복사한 블록을 어디에 담나",
+        "answer": "앱 안에만 담는다 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "앱 안에만 담는다 (추천)",
+            "note": "권한을 묻지 않고 M 안에서 끝난다. 다른 탭이나 메모장으로는 나가지 않는다"
+          },
+          {
+            "label": "시스템 클립보드에 RM-21 글 문법으로 담는다",
+            "note": "다른 안무표·메모장과 주고받을 수 있다. 다만 RM-21 문법이 먼저 정해져야 하고 파싱이 붙어 M을 넘는다"
+          }
+        ]
+      },
+      {
+        "id": "Q26",
+        "title": "RM-22 — 영상이 없을 때도 표와 소리만으로 반복할까",
+        "answer": "BPM 만으로 도는 가상 재생도 둔다 (2026-10-01)",
+        "options": [
+          {
+            "label": "첫 판은 영상이 있을 때만",
+            "note": "반복·배속·미러·소리 모두 영상 재생 위에서만 켜진다. 지금의 재생기 표본과 재생 헤드를 그대로 써서 작고 빠르다"
+          },
+          {
+            "label": "BPM 만으로 도는 가상 재생도 둔다",
+            "note": "브라우저 시계로 흐르는 가짜 재생기를 하나 더 두어 표 위에서 재생 헤드와 소리를 돌린다. 「없으면 표만으로」가 채워지지만 재생기 하나와 BPM 입력 흐름이 늘어난다"
+          }
+        ]
+      },
+      {
+        "id": "Q27",
+        "title": "RM-22 — 반복 구간·배속을 안무표에 저장할까",
+        "answer": "연습 구간 목록을 저장한다 (2026-10-01)",
+        "options": [
+          {
+            "label": "저장하지 않는다(화면 상태)",
+            "note": "지금의 In/Out처럼 새로고침하면 사라진다. 필드 등록표를 건드리지 않고, 구간·속도를 남기는 일은 RM-29 에 맡긴다"
+          },
+          {
+            "label": "연습 구간 목록을 저장한다",
+            "note": "「8x3~8x4 0.75배」를 이름 붙여 남긴다. 필드 등록표 한 줄·규칙 표 셋·왕복 견본이 늘고, RM-29 와 표기·자리를 함께 정해야 한다"
+          }
+        ]
+      },
+      {
+        "id": "Q28",
+        "title": "RM-22 — 카운트 소리와 미러의 기본값을 설정에서 정하게 할까",
+        "answer": "조작 줄의 토글만, 기본은 끔(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "조작 줄의 토글만, 기본은 끔(추천)",
+            "note": "처음에는 조용하다. 켜고 끄는 것은 그때그때 조작 줄에서 한다"
+          },
+          {
+            "label": "⚙ 설정에 기본값 칸을 둔다",
+            "note": "「늘 소리 켜고 시작」「늘 미러」와 소리 종류·음량을 사람마다 정한다. 설정 화면이 한 절 늘어난다"
+          }
+        ]
+      },
+      {
+        "id": "Q29",
+        "title": "RM-09 — 한 PR 로 낼까, 등록부와 새 화면을 쪼갤까",
+        "answer": "등록부 먼저, 팔레트 · 일람은 뒤 PR (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "등록부 먼저, 팔레트 · 일람은 뒤 PR (추천)",
+            "note": "첫 PR 은 구조 커밋 위주라 골든 그대로를 가리기 쉽다. RM-10 · RM-13 · RM-14 가 등록부만 들어와도 출발할 수 있다. 대신 Ctrl+K · `?` 는 한 번 더 기다린다"
+          },
+          {
+            "label": "셋을 한 PR 로",
+            "note": "「입구가 하나」가 한 번에 보인다. 대신 PR 이 크고, 라벨 · 문서 고침이 한꺼번에 몰려 회귀를 가리기 어렵다"
+          }
+        ]
+      },
+      {
+        "id": "Q30",
+        "title": "RM-09 — 사용자가 글쇠를 바꿀 수 있는 명령의 범위",
+        "answer": "지금처럼 받아 적기 · 건너뛰기 · 재생만 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "지금처럼 받아 적기 · 건너뛰기 · 재생만 (추천)",
+            "note": "설정 화면과 충돌 규칙이 그대로다. 나머지 명령은 기본 글쇠만 갖거나 팔레트로만 부른다. RM-13 의 편집 글쇠가 들어올 때 다시 정한다"
+          },
+          {
+            "label": "등록부의 고정 아닌 모든 명령",
+            "note": "손에 맞추기 좋다. 대신 설정 화면이 길어지고 충돌 검사 범위가 넓어진다"
+          }
+        ]
+      },
+      {
+        "id": "Q31",
+        "title": "RM-09 — 팔레트 · 일람을 여는 글쇠",
+        "answer": "Ctrl/Cmd+K 와 Shift+/(`?`), 둘 다 고정 · 입력칸 가드 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "Ctrl/Cmd+K 와 Shift+/(`?`), 둘 다 고정 · 입력칸 가드 (추천)",
+            "note": "익은 관례다. 글자를 치는 중에는 듣지 않으므로 RM-15 의 이름 입력과 부딪치지 않는다. 브라우저가 Ctrl+K 를 먼저 가져가는 환경에서는 팔레트를 버튼으로도 연다"
+          },
+          {
+            "label": "둘 다 설정에서 바꿀 수 있게",
+            "note": "충돌을 사용자가 피할 수 있다. 대신 바꿀 수 있는 명령이 둘 늘고, 일람을 여는 글쇠를 잊으면 일람으로 찾을 수도 없다"
+          }
+        ]
+      },
+      {
+        "id": "Q32",
+        "title": "RM-31 — 구간 앞에 여유를 붙일까",
+        "answer": "앞에 2카운트 여유(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "앞에 2카운트 여유(추천)",
+            "note": "첫 동작의 준비 움직임과 음악 들어가는 자리가 보인다. 블록을 눌러 들을 때 조금 앞에서 트는 지금 동작과도 맞는다"
+          },
+          {
+            "label": "박자 그대로",
+            "note": "계산이 단순하고 영상 길이가 마디 수와 딱 맞지만 첫 프레임이 동작 중간이 되기 쉽다"
+          },
+          {
+            "label": "단추 옆 칸에서 고른다(기본 2)",
+            "note": "사람마다 갈리는 값을 그때그때 바꾼다. 칸 하나와 문서 한 줄이 늘어난다"
+          }
+        ]
+      },
+      {
+        "id": "Q33",
+        "title": "RM-31 — 블록 말고 마디로도 고를 수 있게 할까",
+        "answer": "블록 선택만(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "블록 선택만(추천)",
+            "note": "지금 있는 선택으로 바로 된다. 여러 마디는 블록을 클릭해 더해 고른다. 범위 선택은 RM-14 가 서면 따라온다"
+          },
+          {
+            "label": "블록이 없으면 `여기가 [행]` 의 마디 하나도",
+            "note": "`이 마디에 맵핑` 과 같은 길이라 싸게 붙는다. 다만 한 마디씩만 되고 단추 뜻이 둘로 갈린다"
+          }
+        ]
+      },
+      {
+        "id": "Q34",
+        "title": "RM-31 — 잘라 낸 클립을 어떻게 둘까",
+        "answer": "목록에 곁들여 두고 박자를 물려준다(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "목록에 곁들여 두고 박자를 물려준다(추천)",
+            "note": "지금 영상은 그대로이고, 새 클립은 열자마자 안무표와 맞는다. 여러 대목을 잇달아 뽑을 수 있다"
+          },
+          {
+            "label": "기존 자르기처럼 갈아 끼운다",
+            "note": "applyTrim 을 그대로 쓰지만 지금 영상이 바뀌고 이 대목 밖의 싱크가 끊긴다"
+          },
+          {
+            "label": "곁에 두고 브라우저 내려받기까지",
+            "note": "남에게 보내기 편하지만 같은 파일이 두 곳에 생기고 폰에서는 큰 파일을 다시 받는다"
+          }
+        ]
+      },
+      {
+        "id": "Q35",
+        "title": "RM-30 — 두 테이크의 「같은 동작」을 무엇으로 맞대나",
+        "answer": "마커 이름으로 맞댄다(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "마커 이름으로 맞댄다(추천)",
+            "note": "클립마다 이미 있는 마커(이름 + 카운트 구간)끼리 같은 이름을 짝짓는다. 박자가 조금 어긋나도 사람이 찍은 구간이라 엉뚱한 동작끼리 붙지 않는다. 마커가 없는 테이크는 전체만 견준다"
+          },
+          {
+            "label": "마디 · 카운트 구간으로 맞댄다",
+            "note": "각 테이크 템포로 초를 카운트로 바꿔 같은 8x3~8x4를 견준다. RM-22 구간 문법과 같다. 다만 박자가 어긋난 테이크는 다른 동작끼리 견준다"
+          },
+          {
+            "label": "테이크 전체만 맞댄다",
+            "note": "가장 싸고 먼저 낼 수 있다. 「어느 대목이 나아졌나」는 말하지 못한다"
+          }
+        ]
+      },
+      {
+        "id": "Q36",
+        "title": "RM-30 — 가동 범위 요약을 어디에 두나",
+        "answer": "짝 파일에만 둔다(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "짝 파일에만 둔다(추천)",
+            "note": "안무 파일 포맷이 바뀌지 않고 RM-29를 기다리지 않는다. 요약은 원본에서 언제든 다시 만든다. 대신 남에게 준 안무 파일에는 잰 값이 따라가지 않는다"
+          },
+          {
+            "label": "영상 목록 항목(클립)에 싣는다",
+            "note": "파일만으로 숫자가 남는다. 다만 media는 되돌리기 스냅샷을 타서 되돌리면 요약이 사라질 수 있으므로 되돌리기 밖으로 빼는 장치가 필요하다. 필드 등록표 · 왕복 견본도 는다"
+          },
+          {
+            "label": "RM-29 연습 기록 줄에 싣는다",
+            "note": "로드맵 문장과 가장 가깝다. 다만 RM-29 스키마가 정해질 때까지 이 대목이 멈춘다"
+          }
+        ]
+      },
+      {
+        "id": "Q37",
+        "title": "RM-30 — 「분석 지우기」가 짝 파일도 지우나",
+        "answer": "화면에서만 지우고 짝 파일은 둔다(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "화면에서만 지우고 짝 파일은 둔다(추천)",
+            "note": "되돌릴 수 없는 삭제를 만들지 않는다(클립을 지우지 않기로 한 2026-09-13 결정과 같은 태도). 다시 분석하면 덮어쓴다"
+          },
+          {
+            "label": "짝 파일까지 지운다",
+            "note": "남은 자리가 깔끔하다. 대신 확인을 confirmOnce로 한 번 더 받고 서버에 DELETE를 더해야 한다"
+          }
+        ]
+      },
+      {
+        "id": "Q38",
+        "title": "RM-34 — 몇 번째 색까지 썼는지를 어떻게 기억하나",
+        "answer": "저장하지 않고 지금 루틴들에서 셈한다 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "저장하지 않고 지금 루틴들에서 셈한다 (추천)",
+            "note": "파일 형식이 그대로이고, 다시 열거나 사용자가 색을 바꿔도 겹치지 않는다. 루틴을 지우면 그 색이 비어 다음 루틴이 그 색을 받아, 원본의 「지워도 되돌아가지 않는다」와 달라진다"
+          },
+          {
+            "label": "카운터를 안무표 파일에 필드로 저장한다",
+            "note": "원본의 돌아가는 순서를 지키지만 필드 등록표와 규칙 표 셋 · 왕복 견본에 한 줄씩 더해야 한다. 사용자가 색을 직접 바꾸면 카운터와 실제 색이 어긋나 다시 겹칠 수 있다"
+          }
+        ]
+      },
+      {
+        "id": "Q39",
+        "title": "RM-34 — 색을 고르는 판을 무엇으로 하나",
+        "answer": "여덟 색 견본만 보여 준다 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "여덟 색 견본만 보여 준다 (추천)",
+            "note": "모두 대비 4.5:1 을 넘겨 글자가 늘 읽히고, 「가장 적게 쓰인 색」 셈과 맞물린다. 고를 수 있는 색은 여덟 개뿐이다"
+          },
+          {
+            "label": "카테고리처럼 브라우저 기본 색 고르개를 쓴다",
+            "note": "아무 색이나 고를 수 있지만 대비가 모자란 색이 들어올 수 있고, 입력 중 미리보기와 확정을 나눠 다시 그려야 고르개가 닫히지 않는다. 팔레트 밖 색은 다음 색 셈에서 빠진다"
+          }
+        ]
+      },
+      {
+        "id": "Q40",
+        "title": "RM-34 — RM-07 이 넘긴 「카테고리를 만든 순서대로 저장할까」를 이 항목에서 함께 하나",
+        "answer": "이 항목에서는 하지 않고 따로 항목으로 둔다 (추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "이 항목에서는 하지 않고 따로 항목으로 둔다 (추천)",
+            "note": "이 항목은 루틴 색만 바꾼다. 카테고리 순서는 불러오기 정렬을 빼는 또 하나의 동작 변경이라 옛 파일의 묶음 순서가 달라질 수 있어 따로 내는 편이 회귀를 가르기 쉽다"
+          },
+          {
+            "label": "함께 한다",
+            "note": "「순서를 저장한다」는 성격이 같은 두 일을 한 번에 정한다. 대신 크기가 커지고 동작 변경 커밋이 둘이 된다"
+          }
+        ]
+      },
+      {
+        "id": "Q41",
+        "title": "RM-29 — 판본을 어디에 두나",
+        "answer": "안무 파일 안에 함께 둔다(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "안무 파일 안에 함께 둔다(추천)",
+            "note": "파일 하나만 옮기면 판본과 기록이 다 따라가고 서버 없이도 된다. 서버 쪽 손댈 것이 없어 RM-25 를 기다리지 않는다. 대신 판본 수만큼 파일이 커지고, 정적 경로의 최근 목록(localStorage)은 쿼터가 금방 차므로 RM-33 이 먼저면 낫다"
+          },
+          {
+            "label": "서버 보관 폴더에 따로 둔다",
+            "note": "안무 파일은 가볍게 남고 .history API 를 이어 쓴다. 대신 서버 없이는 판본이 없고, 남에게 준 파일에는 판본이 따라가지 않는다. server.py·projectServer·서버 시험이 늘고 RM-25 가 선행이 된다"
+          }
+        ]
+      },
+      {
+        "id": "Q42",
+        "title": "RM-29 — 판본마다 영상을 따로 두나",
+        "answer": "영상은 안무 공통, 판본은 안무표만 뜬다(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "영상은 안무 공통, 판본은 안무표만 뜬다(추천)",
+            "note": "가장 작다. 영상 목록·박자·마커가 그대로이고, 기록이 판본과 테이크를 둘 다 가리켜 잇는다. B안 영상이 A안 목록에도 보인다"
+          },
+          {
+            "label": "판본마다 기준 영상을 가진다",
+            "note": "판본을 고르면 영상도 갈아탄다. 영상 블록의 주인이 바뀌어 저장 포맷과 되돌리기 범위가 크게 움직이고, 크기가 L 을 넘는다"
+          }
+        ]
+      },
+      {
+        "id": "Q43",
+        "title": "RM-29 — 판본이 든 파일의 쓰기 버전",
+        "answer": "판본·기록이 있을 때만 version 2 로 쓴다(추천) (2026-10-01)",
+        "options": [
+          {
+            "label": "판본·기록이 있을 때만 version 2 로 쓴다(추천)",
+            "note": "판본을 안 쓴 사람의 파일 바이트는 그대로다. 폰에 캐시된 옛 앱은 미래 스키마로 보고 거절해 판본을 지우지 않는다. 대신 쓰는 모양이 둘(v1 평평 · v2 doc 묶음)이 된다"
+          },
+          {
+            "label": "늘 version 1 로 쓰고 최상위 키만 더한다",
+            "note": "쓰는 모양이 하나로 남는다. 다만 옛 앱이 열고 저장하면 마이그레이션이 판본을 빈 배열로 덮어 조용히 사라진다"
+          }
+        ]
       }
     ]
   },
   "order": [
-    "RM-02",
-    "RM-03",
-    "RM-04",
-    "RM-05",
-    "RM-06",
-    "RM-07",
-    "RM-08"
+    "RM-09",
+    "RM-13",
+    "RM-22",
+    "RM-31",
+    "RM-34"
   ],
   "flow": {
     "note": "「다음」 칸의 토대부터 — 결정이 선 작은 것으로 몸을 풀고, 뒤의 여럿이 밟을 채널을 먼저 놓는다.",
@@ -226,94 +766,108 @@
           "name": "알림 세 급 — alert·prompt 를 토스트·인라인으로",
           "size": "M",
           "after": [],
-          "soft": [],
-          "questions": [],
+          "soft": [
+            "RM-03",
+            "RM-07"
+          ],
+          "questions": [
+            "Q10",
+            "Q11",
+            "Q12"
+          ],
           "defaults": [],
           "tags": [
             "C",
             "D"
           ],
-          "what": "앱이 사용자에게 무언가를 알리는 길을 세 급으로 나눈다. 작업을 멈춰야 하는 오류만 창을 띄워 막고, 알아야 할 실패는 화면 구석에 잠깐 떴다 사라지는 토스트로, 참고할 소식은 상태줄로 보낸다. 지금은 「병합 완료」 같은 성공 소식까지 브라우저 alert 창으로 뜬다. 그래서 영상을 틀어 놓고 동작을 받아 적는 도중에도 확인 버튼을 눌러야만 이어 갈 수 있다.",
+          "what": "앱이 알리는 길을 막음(앱 안 모달)·토스트·참고 세 급으로 나눈다. 성공 소식과 가벼운 실패까지 브라우저 alert 로 띄우던 것, 이름을 브라우저 prompt 로 받던 것을 걷어 받아 적는 흐름이 끊기지 않게 한다. 지금은 Dirty.notify 가 'alert' 한 종류만 받고, 유스케이스·입력 층·조립부에 dialogs.alert 직접 호출이 14곳, promptText 가 5곳 흩어져 있다. 판의 RM-15(인라인 이름)·RM-07(Undo 유령 단계)·RM-03(같은 projectCommands.js 를 고치는 중)과 겹치고, RM-09·RM-19·RM-12·RM-13·RM-14 가 이 채널 위에 선다.",
           "stage": null,
           "pr": null,
           "files": [
             "src/usecases/store.js",
             "src/app/render.js",
-            "src/app/main.js",
+            "src/app/main.js#views.notify",
+            "src/app/main.js#openFromFolder",
             "src/ui/toastView.js",
+            "src/ui/inlineName.js",
+            "src/ui/widgets.js",
             "src/ports/env.js",
-            "src/adapters/browser.js",
+            "src/adapters/browser.js#browserDialogs",
             "src/usecases/projectCommands.js",
             "src/usecases/categoryCommands.js",
-            "src/usecases/paletteCommands.js",
-            "src/usecases/routineCommands.js",
+            "src/usecases/paletteCommands.js#addMove",
+            "src/usecases/paletteCommands.js#renameMove",
+            "src/usecases/paletteCommands.js#promptMoveCategory",
+            "src/usecases/routineCommands.js#renameRoutine",
             "src/usecases/captureCommands.js#nameSelected",
             "src/input/controls.js",
+            "src/input/paletteInput.js",
+            "src/ui/paletteView.js",
+            "src/ui/routineListView.js",
             "src/ui/categoryView.js",
-            "src/ui/videoPanel.js",
+            "src/ui/videoPanel.js#renderClips",
+            "src/ui/videoPanel.js#createVideoPanel",
             "src/testing/golden-adapter.mjs",
-            "docs/FEATURES.md",
-            "docs/TUTORIAL.md"
+            "tests/unit/notice.test.mjs",
+            "tests/unit/domain.test.mjs"
           ],
           "plan": "docs/roadmap/plans/RM-04.md"
         },
         {
           "id": "RM-05",
           "name": "check-principles — 기계로 잡히는 원칙을 검사기로",
-          "size": "S",
+          "size": "M",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q17",
+            "Q18",
+            "Q19"
+          ],
           "defaults": [],
           "tags": [
             "D"
           ],
-          "what": "사람이 리뷰할 때마다 기억해야 했던 개발 원칙 가운데, 코드 글자만 보고도 어긴 것을 알 수 있는 다섯 가지(U-11 · U-12 · D-5 · R-6 · D-14)를 검사 스크립트 하나로 옮긴다. 원칙이 30개를 넘자 사람이 다 기억하지 못했다. 특히 「display 를 준 클래스가 hidden 숨김을 이긴다」(U-12)는 이미 적어 둔 원칙인데도 새 화면을 만들 때마다 다시 빠뜨려 네 번 났다.",
+          "what": "코드 글자만 보고도 어긴 것을 알 수 있는 다섯 원칙(U-11 · U-12 · D-5 · R-6 · D-14)을 tools/ 의 검사기 하나로 옮겨, 사람이 리뷰 때마다 떠올리지 않아도 걸리게 한다. RM-06 과는 검사기 뼈대를 함께 쓰고, D-14 대조는 RM-09 가 들어오면 걷어내며, U-12 를 전역 규칙으로 풀면 RM-17 과 CSS 자리가 겹친다.",
           "stage": null,
           "pr": null,
           "files": [
             "tools/check-principles.mjs",
             "tests/unit/checkPrinciples.test.mjs",
+            "src/input/controls.js#HOTKEY_COMMANDS",
             "CLAUDE.md",
             "docs/PRINCIPLES.md",
-            "index.html",
-            "src/input/controls.js#HOTKEY_COMMANDS",
-            "src/app/main.js",
-            "src/domain/project/normalize.js",
-            "src/domain/project/merge.js",
-            "src/domain/routines.js",
-            "src/domain/choreoPlan.js",
-            "src/ui/settingsView.js",
-            "src/ui/docsHub.js",
-            "src/ui/phrasingView.js",
-            "docs/roadmap/ROADMAP.json",
-            "docs/ROADMAP.md"
+            "docs/ROADMAP.md",
+            "docs/roadmap/ROADMAP.json"
           ],
           "plan": "docs/roadmap/plans/RM-05.md"
         },
         {
           "id": "RM-06",
           "name": "문서의 라벨 인용을 코드와 대조하는 검사",
-          "size": "S",
+          "size": "M",
           "after": [],
-          "soft": [],
-          "questions": [],
+          "soft": [
+            "RM-05"
+          ],
+          "questions": [
+            "Q13",
+            "Q14"
+          ],
           "defaults": [],
           "tags": [
             "E"
           ],
-          "what": "튜토리얼과 기능 설명서가 따옴표(백틱)로 인용한 버튼·제목 이름이 지금 화면에 실제로 있는지를 기계로 대조하는 검사를 더한다. 화면 라벨을 바꾸고 문서를 안 고친 채 병합한 일이 있었다(`동작 팔레트` → `동작 목록`). 개편 뒤 튜토리얼 첫 절이 없어진 화면을 설명한 적도 있다. 사람이 우연히 찾기 전에 검사가 붉어지게 한다.",
+          "what": "문서 검사기가 튜토리얼·기능 설명서의 백틱 인용을 모두 뽑아, 그 글자가 index.html·admin.html·src/ 에 실제로 있는지 다섯 번째 검사로 대조한다. 라벨을 바꾸고 문서를 안 고친 병합(`동작 팔레트` → `동작 목록`)과 없어진 화면을 설명하던 튜토리얼 첫 절을 사람보다 먼저 붉게 잡으려는 것이고, 검사기 뼈대는 RM-05 와 나눠 쓰며 RM-09·RM-10 이 들어오면 긁기 대신 그 표를 읽도록 바뀐다.",
           "stage": null,
           "pr": null,
           "files": [
             "tools/check-docs.mjs",
+            "tools/docLabels.mjs",
             "tests/unit/checkDocs.test.mjs",
-            "docs/TUTORIAL.md",
-            "docs/FEATURES.md",
-            "index.html",
-            "admin.html",
-            "src/ui/",
             "CLAUDE.md",
+            "README.md",
+            "docs/ARCHITECTURE.md",
             "docs/PRINCIPLES.md",
             "docs/ROADMAP.md",
             "docs/roadmap/ROADMAP.json"
@@ -323,31 +877,28 @@
         {
           "id": "RM-07",
           "name": "메인 Undo 직후의 유령 단계",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [
             "RM-01"
           ],
-          "questions": [],
+          "questions": [
+            "Q15",
+            "Q16"
+          ],
           "defaults": [],
           "tags": [
             "D"
           ],
-          "what": "되돌리기(Undo)를 한 번 누른 직후에 무엇이든 하면, 되돌리기 단계가 하나 더 쌓이고 다시 실행(Redo)이 사라지는 결함을 고친다. 원인은 되돌릴 때 카테고리 순서가 가나다순으로 다시 정렬되는 데 있다. 편집기에서 삭제를 물어보지 않으므로 Undo 는 유일한 안전망이다. 그래서 Undo 는 한 번 누르면 정확히 한 단계만 되돌아가야 한다.",
+          "what": "되돌린 상태에서 카테고리 키가 가나다순으로 다시 정렬된다. 그래서 Undo 직후의 커밋이 같은 화면의 단계를 하나 더 쌓고 다시 실행 대기열을 날린다. 되살린 카테고리 순서를 스냅샷과 같게 맞춰 Undo 한 번이 정확히 한 단계가 되게 한다. RM-04 의 「되돌리기」 토스트가 이 Undo 를 부르고, 순서를 저장할지는 RM-34 와 겹친다.",
           "stage": null,
           "pr": null,
           "files": [
-            "src/domain/project/snapshot.js",
+            "src/domain/project/snapshot.js#UNDO_OPS",
+            "src/domain/project/snapshot.js#applySnapshot",
             "src/domain/categories.js#normalize",
-            "src/domain/categories.js#addCategory",
-            "src/domain/defaults.js",
-            "src/usecases/historyCommands.js",
-            "src/usecases/store.js",
-            "src/domain/project/serialize.js",
-            "src/domain/project/migrations.js",
+            "src/usecases/historyCommands.js#restoreMain",
             "tests/unit/domain.test.mjs",
-            "tests/unit/docFields.test.mjs",
-            "docs/deviations.md",
             "docs/BUG_REPORTS.md",
             "docs/ROADMAP.md",
             "docs/roadmap/ROADMAP.json"
@@ -360,36 +911,72 @@
           "size": "M",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q20",
+            "Q21",
+            "Q22"
+          ],
           "defaults": [
             "Q5"
           ],
           "tags": [
             "D"
           ],
-          "what": "보드 위 터치·마우스 동작(어느 칸을 눌렀나, 탭인가 끌기인가, 팝업을 어디에 띄우나)을 정하는 계산을 화면 코드에서 떼어 순수 함수로 만들고 시험으로 덮는다. 기록된 버그 53건 중 22건이 이 화면·입력 층에서 나왔다. 그런데 이 층 1만 2천 줄 가운데 시험이 불러 쓰는 파일은 세 개뿐이다. 동작은 바꾸지 않는다. 지금 동작을 시험에 기록해 두어 뒤의 편집 개선(RM-11·RM-12)이 무엇을 깨는지 바로 보이게 한다.",
+          "what": "보드의 히트 판정, 탭인지 끌기인지 가르는 분기, 팝업 네 개의 자리 계산을 화면 코드에서 떼어 순수 함수로 만들고 시험으로 지금 동작을 굳힌다. 동작은 바꾸지 않는다. 이 일은 RM-11(포인터 이벤트 통일)과 RM-12(직접 조작 문법)가 이 층을 다시 짜기 전에 무엇이 깨지는지 바로 보이게 하는 안전망이다.",
           "stage": null,
           "pr": null,
           "files": [
-            "src/input/boardController.js",
-            "src/input/touchDrag.js",
-            "src/input/pointerSession.js",
-            "src/input/hitTest.js#hitTest",
-            "src/input/paletteInput.js",
-            "src/input/dragSession.js",
-            "src/ui/popup.js#positionPopup",
-            "src/ui/placementActionPopup.js",
-            "src/ui/routineActionPopup.js",
-            "src/ui/paletteView.js",
             "src/domain/gestureMath.js",
-            "src/domain/grid.js",
+            "src/domain/boardGesture.js",
+            "src/domain/popupPlacement.js",
+            "src/input/hitTest.js#hitTest",
+            "src/input/boardController.js#createBoardController",
+            "src/input/touchDrag.js#updatePreviewFromDrag",
+            "src/input/pointerSession.js#applyPreview",
+            "src/ui/popup.js#positionPopup",
+            "src/ui/placementActionPopup.js#createPlacementActionPopup",
+            "src/ui/routineActionPopup.js#createRoutineActionPopup",
+            "src/ui/paletteView.js#createPaletteView",
+            "tests/unit/gestureMath.test.mjs",
+            "tests/unit/boardHit.test.mjs",
+            "tests/unit/boardGesture.test.mjs",
+            "tests/unit/popupPlacement.test.mjs",
             "tools/check-arch.mjs",
-            "tests/unit/",
-            "docs/deviations.md",
             "docs/BUG_REPORTS.md",
             "docs/ARCHITECTURE.md"
           ],
-          "plan": "docs/roadmap/plans/RM-08.md"
+          "plan": "docs/roadmap/plans/RM-08.md",
+          "wrapup": [
+            {
+              "text": "폰에서 손으로 확인한다 — 터치 그리기(행을 넘지 않음)·손가락 빠른 배치·블록 탭 팝업 자리. 시험 창 폭이 바뀌지 않아 브라우저로 못 봤다",
+              "state": "done"
+            },
+            {
+              "text": "Q5(개발 전용 도구 허용)를 정한다 — RM-08 1단이 끝나 2단(브라우저 회귀 시험)이 이 결정을 기다린다",
+              "state": "done"
+            }
+          ]
+        },
+        {
+          "id": "RM-36",
+          "name": "폰의 `+ 빠른 배치` 가 켜짐을 보이게 한다",
+          "size": "S",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "tags": [
+            "B"
+          ],
+          "what": "폰 폭에서는 캔버스 바의 「+ 빠른 배치」가 숨고 엄지 줄의 같은 버튼만 보이는데, 엄지 줄은 이 버튼을 늘 흐린 모양으로 그리고 켜졌는지를 받지도 않는다. 그래서 눌러 켜도 하이라이트가 안 되어 토글로 보이지 않는다. 엄지 줄이 켜짐을 읽어 캔버스 바와 같은 활성 모양을 입게 한다.",
+          "stage": null,
+          "files": [
+            "src/ui/thumbBar.js#plan",
+            "src/app/main.js",
+            "index.html",
+            "tests/unit/"
+          ],
+          "addedAt": "2026-10-01"
         }
       ]
     },
@@ -406,35 +993,67 @@
           "after": [
             "RM-04"
           ],
-          "soft": [],
-          "questions": [],
+          "soft": [
+            "RM-36"
+          ],
+          "questions": [
+            "Q29",
+            "Q30",
+            "Q31"
+          ],
           "defaults": [],
           "tags": [
             "C"
           ],
-          "what": "지금은 같은 명령(영상 열기 · 되돌리기 · 프로젝트 이름 등)이 화면 여러 곳에 따로 만들어져 있다. 그래서 라벨 · 툴팁 · 단축키가 제각각 어긋난다. 명령마다 이름 · 라벨 · 툴팁 · 단축키 · 실행을 한 표에 적고 모든 버튼과 글쇠가 그 표를 따르게 한다. 그 위에 Ctrl+K 명령 팔레트와 `?` 단축키 일람을 얹는다.",
+          "what": "되돌리기 · 재생 · 끊기 · 영상 열기 · 프로젝트 이름처럼 같은 일을 하는 입구가 여러 곳에 따로 있어 라벨 · 툴팁 · 글쇠가 서로 어긋난다. 그래서 명령마다 id · 라벨 · 툴팁 · 기본 글쇠 · 「지금 할 수 있나」를 도메인 표 한 벌에 적고, 버튼 · 글쇠 · 엄지 줄이 모두 그 표를 따르게 한다. 그 위에 Ctrl+K 팔레트와 `?` 일람을 얹는다. 판의 RM-36(엄지 줄)과 파일이 겹친다. RM-10(라벨 문자열 표) · RM-13(키보드 편집) · RM-14(선택 액션 바) · RM-18(아이콘 열)이 이 표 위에 서고, RM-15 와는 `?` 글쇠가 부딪친다. RM-05 의 D-14 대조와 RM-06 의 라벨 긁기는 이 표를 읽도록 바뀐다.",
           "stage": null,
           "pr": null,
           "files": [
-            "src/domain/hotkeys.js",
             "src/domain/commands.js",
-            "src/input/controls.js",
-            "src/ui/toolbarView.js",
+            "src/domain/hotkeys.js#HOTKEY_ACTIONS",
+            "src/input/controls.js#bindHotkeys",
+            "src/input/controls.js#HOTKEY_COMMANDS",
+            "src/input/controls.js#bindControls",
+            "src/ui/toolbarView.js#createToolbarView",
             "src/ui/routineEditorView.js",
-            "src/ui/fileMenu.js",
-            "src/ui/videoPanel.js",
-            "src/ui/savedListsView.js",
-            "src/ui/settingsView.js",
+            "src/ui/thumbBar.js#plan",
+            "src/ui/fileMenu.js#createFileMenu",
+            "src/ui/videoPanel.js#createVideoPanel",
+            "src/ui/settingsView.js#createSettingsView",
             "src/ui/commandPalette.js",
-            "src/app/main.js",
-            "index.html",
+            "src/ui/shortcutSheet.js",
+            "src/app/main.js#applyHotkeys",
+            "src/app/main.js#undo",
+            "src/app/main.js#redo",
+            "src/app/main.js#runCommand",
+            "index.html#undoBtn",
+            "index.html#reUndoBtn",
+            "index.html#projectName",
+            "tools/check-principles.mjs",
             "tools/check-docs.mjs",
-            "tests/unit/",
-            "docs/FEATURES.md",
-            "docs/TUTORIAL.md",
-            "docs/ARCHITECTURE.md"
+            "tests/unit/commands.test.mjs",
+            "tests/unit/notice.test.mjs",
+            "tests/unit/checkPrinciples.test.mjs",
+            "docs/ARCHITECTURE.md",
+            "docs/PRINCIPLES.md#d-14",
+            "docs/ROADMAP.md",
+            "docs/HISTORY.md"
           ],
-          "plan": "docs/roadmap/plans/RM-09.md"
+          "plan": "docs/roadmap/plans/RM-09.md",
+          "wrapup": [
+            {
+              "text": "영상과 박자를 넣고 영상 패널의 ▮ 끊기 · 건너뛰기 · ■ 그만 을 손으로 눌러 본다 — 누름이 등록부 실행 표로 옮겨 갔고 시험에서는 박자가 없어 꺼져 있었다",
+              "state": "approved"
+            },
+            {
+              "text": "파일 메뉴의 프로젝트 저장 을 눌러 내려받기 · 보관 폴더 저장이 되는지 본다 — 누름을 실행 표로 옮겼는데 시험에서는 내려받기 때문에 누르지 않았다",
+              "state": "done"
+            },
+            {
+              "text": "쓰는 브라우저에서 Ctrl+K(Cmd+K)가 주소창에 뺏기지 않고 명령 찾기가 뜨는지 본다 — 뺏기면 ⚙ 설정 › 단축키 에서 바꾼다",
+              "state": "approved"
+            }
+          ]
         },
         {
           "id": "RM-10",
@@ -561,29 +1180,47 @@
           "after": [
             "RM-09"
           ],
-          "soft": [],
-          "questions": [],
+          "soft": [
+            "RM-14",
+            "RM-21"
+          ],
+          "questions": [
+            "Q23",
+            "Q24",
+            "Q25"
+          ],
           "defaults": [],
           "tags": [
             "B"
           ],
-          "what": "블록을 마우스로 잡지 않고 키보드로도 고치게 한다. 고른 블록을 화살표로 한 칸, Shift+화살표로 한 마디씩 옮기고, Delete로 지우고, Ctrl+C/V/D로 복사·붙여넣기·복제한다. 지금은 키보드로 할 수 있는 편집이 되돌리기·다시 하기와 받아 적기 글쇠뿐이다. 그래서 한 칸만 옮기려 해도 작은 손잡이를 정확히 끌어야 한다.",
+          "what": "고른 블록을 화살표로 한 칸, Shift+화살표로 한 마디 옮기고, Delete로 지우고, Ctrl+C/V/D로 복사·붙여넣기·복제하게 한다. 이 명령들은 이미 있는 옮기기·복사·지우기 명령을 그대로 불러 끌기와 같은 층 규칙을 따르게 한다. RM-09 명령 등록부 위에 서고, 선택 묶음 규칙은 RM-14, 삭제 뒤 알림은 RM-04 채널, 선택 비우기는 RM-03, 복사 경로는 RM-02와 겹친다.",
           "stage": null,
           "pr": null,
           "files": [
             "src/domain/hotkeys.js",
-            "src/domain/commands.js",
             "src/input/controls.js#bindHotkeys",
+            "src/input/controls.js#HOTKEY_COMMANDS",
             "src/usecases/boardCommands.js",
-            "src/domain/boardOps.js",
-            "src/app/main.js",
-            "src/ui/settingsView.js",
-            "tests/unit/",
-            "docs/FEATURES.md",
-            "docs/TUTORIAL.md",
+            "src/app/main.js#boardCommandsFor",
+            "src/app/main.js#activeBoardId",
+            "src/ui/settingsView.js#renderKeys",
+            "tests/unit/keyboardEdit.test.mjs",
+            "tests/unit/hotkeyRouting.test.mjs",
+            "tests/unit/domain.test.mjs",
+            "tests/unit/staleSelection.test.mjs",
             "docs/deviations.md"
           ],
-          "plan": "docs/roadmap/plans/RM-13.md"
+          "plan": "docs/roadmap/plans/RM-13.md",
+          "wrapup": [
+            {
+              "text": "넓은 화면에서 마우스로 블록을 눌러 고른 뒤 화살표 · Delete · Ctrl+C/V/D 가 먹는지 손으로 본다(시험은 좁은 폭에서 Cmd+A 로만 골랐다)",
+              "state": "done"
+            },
+            {
+              "text": "Ctrl+S(Cmd+S)가 브라우저의 페이지 저장 대신 프로젝트 파일을 내려받는지 본다(브라우저 시험에서 다운로드를 하지 않았다)",
+              "state": "done"
+            }
+          ]
         },
         {
           "id": "RM-14",
@@ -858,38 +1495,49 @@
           "name": "★ 마디 반복 연습기 — 마디 단위 반복·배속·미러·카운트 소리",
           "size": "L",
           "after": [],
-          "soft": [],
-          "questions": [],
+          "soft": [
+            "RM-20"
+          ],
+          "questions": [
+            "Q26",
+            "Q27",
+            "Q28"
+          ],
           "defaults": [],
           "tags": [
             "★"
           ],
-          "what": "영상의 반복 구간을 초가 아니라 안무표의 마디·블록(나중에는 파트) 단위로 잡는다. 여기에 배속·좌우 반전(미러)·박자에 맞춘 카운트 소리를 붙인 연습 도구다. 지금은 In/Out을 초로 찍어야 반복할 수 있어서 「8x3만 다시」를 하려면 영상을 뒤져야 한다. 영상과 카운트가 한 축에 묶인 이 편집기라서 마디를 누르는 것만으로 반복이 된다.",
+          "what": "영상의 반복 구간을 초가 아니라 안무표에서 고른 블록이나 마디의 카운트 구간으로 잡는다. 여기에 두 소스가 함께 쓰는 배속·미러·박자에 맞춘 카운트 소리를 붙인 연습 조작 줄을 둔다. 지금 있는 In/Out 반복 장치·배속 계약·선택 구간 계산을 그대로 다시 쓰고, 파트 단위 반복(RM-23)과 구간·배속의 저장(RM-29)은 그 항목들과 겹치므로 이 판에서는 이음매만 남긴다.",
           "stage": null,
           "pr": null,
           "files": [
-            "src/app/main.js#enforceLoop",
-            "src/app/main.js#ensurePlayer",
-            "src/usecases/videoCommands.js#setInOut",
-            "src/usecases/videoCommands.js#setLoop",
-            "src/usecases/videoCommands.js#panelState",
-            "src/usecases/store.js",
-            "src/domain/tempo.js#placementToSpan",
+            "src/domain/practice.js",
             "src/domain/tempo.js#groupToSpan",
             "src/domain/tempo.js#countToTime",
-            "src/ports/media.js",
-            "src/adapters/media/youtubePlayer.js",
-            "src/adapters/media/filePlayer.js",
+            "src/usecases/videoCommands.js#panelState",
+            "src/usecases/videoCommands.js#setLoop",
+            "src/usecases/videoCommands.js#selectClip",
+            "src/usecases/videoCommands.js#removeClip",
+            "src/usecases/store.js",
             "src/adapters/audio/",
-            "src/ui/videoPanel.js",
-            "src/ui/playhead.js",
+            "src/app/main.js#enforceLoop",
+            "src/app/main.js#ensurePlayer",
+            "src/ui/videoPanel.js#renderCut",
+            "src/ui/videoPanel.js#selectedRange",
+            "src/ui/boardView.js#renderRow",
             "src/ui/poseOverlay.js",
-            "index.html",
-            "docs/TUTORIAL.md",
-            "docs/FEATURES.md",
-            "tests/unit/"
+            "index.html#videoLoopBtn",
+            "docs/HISTORY.md",
+            "tests/unit/practice.test.mjs",
+            "tests/unit/domain.test.mjs"
           ],
-          "plan": "docs/roadmap/plans/RM-22.md"
+          "plan": "docs/roadmap/plans/RM-22.md",
+          "wrapup": [
+            {
+              "text": "유튜브 · 내 영상 파일에서 마디 반복 · 배속 · 미러를 눌러 보고, 카운트 소리가 박에 맞는지 귀로 듣는다(자동 시험은 영상 없는 박자 시계와 예약 횟수까지만 쟀다)",
+              "state": "approved"
+            }
+          ]
         },
         {
           "id": "RM-23",
@@ -1121,37 +1769,45 @@
           "after": [
             "RM-25"
           ],
-          "soft": [],
-          "questions": [],
+          "soft": [
+            "RM-22",
+            "RM-33"
+          ],
+          "questions": [
+            "Q41",
+            "Q42",
+            "Q43"
+          ],
           "defaults": [],
           "tags": [
             "★"
           ],
-          "what": "한 안무를 A안·B안·공연본처럼 이름 붙인 판본으로 갈라 두고, 연습할 때마다 날짜·속도·메모·잘 된 정도를 한 줄씩 적는 기록을 붙인다. 지금은 변형을 만들려면 파일을 따로 저장해야 하고, 영상 목록의 날짜·메모 말고는 연습을 남길 자리가 없다. 「이 안무가 어떻게 바뀌었고 내가 얼마나 나아졌나」를 한 파일 안에서 시간 순으로 보려는 항목이다.",
+          "what": "한 안무 파일 안에 이름 붙인 판본(A안·공연본)을 떠 두고, 날짜·구간·속도·시도·별점·걸린 자리·메모를 적는 연습 기록을 쌓아 영상 목록 곁에서 시간 순으로 보게 한다. 스키마와 계약에 자리만 적혀 있고 아무도 쓰지 않는 판본과 기록을 실제로 배선하는 일이다. 겹치는 항목: RM-22(구간·배속 표기와 「이번 연습 기록하기」 이음매), RM-25(서버 안전망 판, 판본을 열기 전 지금 본문을 지키는 일), RM-30(기록 줄에 잰 값 한 칸), RM-33(정적 경로 저장 쿼터), RM-35(스냅샷 크기).",
           "stage": null,
           "pr": null,
           "files": [
             "src/domain/project/schema.js",
-            "src/domain/project/migrations.js",
-            "src/domain/project/serialize.js",
-            "src/domain/project/normalize.js",
-            "src/domain/project/media.js",
+            "src/domain/project/versions.js",
+            "src/domain/project/migrations.js#MIGRATIONS",
+            "src/domain/project/serialize.js#buildProjectFile",
+            "src/domain/project/normalize.js#normalizeProject",
             "src/ports/storage.js",
-            "src/usecases/projectCommands.js",
-            "src/usecases/videoCommands.js",
-            "src/usecases/store.js",
-            "src/adapters/projectServer.js",
-            "src/adapters/localStore.js",
-            "src/ui/projectPanel.js",
-            "src/ui/fileMenu.js",
-            "src/app/main.js",
-            "index.html",
-            "server.py",
-            "tests/unit/",
-            "tests/server.test.mjs",
-            "docs/FEATURES.md",
-            "docs/TUTORIAL.md",
-            "docs/PORTS.md"
+            "src/usecases/store.js#createStore",
+            "src/usecases/versionCommands.js",
+            "src/usecases/projectCommands.js#applyProjectData",
+            "src/usecases/projectCommands.js#readProjectData",
+            "src/usecases/projectCommands.js#saveProject",
+            "src/usecases/projectCommands.js#draftSnapshot",
+            "src/ui/projectPanel.js#createProjectPanel",
+            "src/ui/practiceLogView.js",
+            "src/app/main.js#projectDeps",
+            "src/app/main.js#createProjectPanel",
+            "index.html#projectPanel",
+            "tests/unit/versions.test.mjs",
+            "tests/unit/domain.test.mjs",
+            "docs/PORTS.md",
+            "docs/HISTORY.md",
+            "docs/ROADMAP.md"
           ],
           "plan": "docs/roadmap/plans/RM-29.md"
         },
@@ -1162,31 +1818,41 @@
           "after": [
             "RM-29"
           ],
-          "soft": [],
-          "questions": [],
+          "soft": [
+            "RM-22"
+          ],
+          "questions": [
+            "Q35",
+            "Q36",
+            "Q37"
+          ],
           "defaults": [],
-          "what": "영상에서 잰 관절 각도를 저장해 두고, 같은 동작을 찍은 지난 테이크와 오늘 테이크를 나란히 견준다. 각도 계산, 모델, 영상 위 뼈대 그림은 이미 되어 있다. 하지만 결과가 어디에도 저장되지 않아 영상을 바꾸면 사라진다. 그래서 「무릎이 지난주보다 20° 더 열렸다」를 말할 수 없다.",
+          "what": "분석이 끝나면 원본 관절점을 클립 곁 짝 파일로 서버에 남긴다. 다시 열면 분석하지 않고 되살리며, 두 테이크의 가동 범위 요약을 관절마다 전 → 후 · 차이로 견준다. 이 항목은 영상을 바꾸면 결과가 사라져 이미 만든 비교 계산(rom.compare)을 부를 자리가 없는 문제를 푼다. RM-29(연습 기록 줄의 잰 값 한 칸)와 RM-22(카운트 구간 문법)와 겹치되, 짝 파일 · 요약 표 · 클립끼리 비교는 둘 없이 먼저 선다.",
           "stage": null,
           "pr": null,
           "files": [
-            "src/domain/rom.js",
-            "src/domain/kinematics.js",
-            "src/domain/poseTracks.js",
-            "src/domain/project/media.js",
-            "src/domain/project/serialize.js",
-            "src/ports/pose.js",
-            "src/ports/storage.js",
-            "src/usecases/poseCommands.js",
-            "src/adapters/clipServer.js",
-            "src/ui/poseView.js",
-            "src/ui/projectPanel.js",
-            "src/app/main.js",
             "server.py",
-            "tests/unit/",
+            "src/domain/clips.js",
+            "src/domain/rom.js",
+            "src/ports/pose.js",
+            "src/ports/clips.js",
+            "src/adapters/clipServer.js",
+            "src/usecases/poseCommands.js",
+            "src/ui/poseView.js",
+            "src/ui/projectPanel.js#clipRow",
+            "src/app/main.js#runPoseAnalysis",
+            "src/app/main.js#ensurePlayer",
+            "src/app/main.js#dropPoseAnalysis",
+            "src/domain/project/schema.js",
+            "src/domain/project/media.js",
+            "tests/unit/domain.test.mjs",
+            "tests/unit/docFields.test.mjs",
             "tests/server.test.mjs",
             "docs/FEATURES.md",
             "docs/TUTORIAL.md",
-            "docs/PORTS.md"
+            "docs/PORTS.md",
+            "docs/HISTORY.md",
+            "CLAUDE.md"
           ],
           "plan": "docs/roadmap/plans/RM-30.md"
         },
@@ -1195,65 +1861,44 @@
           "name": "안무표에서 고른 구간을 영상으로 잘라 내보내기",
           "size": "M",
           "after": [],
-          "soft": [],
-          "questions": [],
+          "soft": [
+            "RM-20"
+          ],
+          "questions": [
+            "Q32",
+            "Q33",
+            "Q34"
+          ],
           "defaults": [],
-          "what": "안무표에서 블록이나 마디를 고르면, 그 대목에 해당하는 영상만 잘라 새 영상 파일로 만든다. 지금은 영상 쪽에서 In/Out 시각을 손으로 찍어야만 자를 수 있다. 박자를 이미 맞춰 두었으니 「이 여섯 마디」라고 고르기만 하면 초 구간은 앱이 계산하게 하려는 것이다.",
+          "what": "안무표에서 고른 블록들이 덮는 카운트 구간을 맞춰 둔 박자로 초 구간으로 바꾸고, 서버의 기존 자르기(ffmpeg)로 그 대목만 담은 MP4 를 만들어 영상 목록에 곁들여 더한다. 사람이 In/Out 을 손으로 찍지 않게 하려는 것이고, 지금 보는 영상·박자·마커는 그대로 둔다. RM-14(선택 액션 바)가 서면 같은 명령을 그 바에도 걸고, RM-20(영상 패널 재편)과는 같은 ④ 자르기 구획을 만진다.",
           "stage": null,
           "pr": null,
           "files": [
             "src/domain/tempo.js#groupToSpan",
             "src/usecases/videoCommands.js#applyTrim",
-            "src/adapters/clipServer.js",
+            "src/adapters/clipServer.js#trim",
             "server.py#_trim_clip",
+            "server.py#trimmed_name",
             "src/ui/videoPanel.js#selectedRange",
-            "src/app/main.js",
-            "index.html",
-            "docs/FEATURES.md",
-            "docs/TUTORIAL.md",
-            "tests/unit/"
+            "src/ui/videoPanel.js#renderCut",
+            "src/app/main.js#trimState",
+            "src/app/main.js#trimCurrentClip",
+            "index.html#videoTrimHelp",
+            "docs/HISTORY.md",
+            "tests/unit/domain.test.mjs",
+            "tests/server.test.mjs"
           ],
-          "plan": "docs/roadmap/plans/RM-31.md"
-        },
-        {
-          "id": "RM-32",
-          "name": "영어 UI",
-          "size": "L",
-          "after": [
-            "RM-10"
-          ],
-          "soft": [],
-          "questions": [],
-          "defaults": [
-            "Q3"
-          ],
-          "tags": [
-            "C"
-          ],
-          "what": "앱의 버튼·메뉴·안내·오류 문구를 영어로도 내고, 설정에서 언어를 고르게 한다. 스윙 커뮤니티는 나라를 넘나들고 동작 이름(Swing Out, Tuck Turn 같은)은 이미 영어인데, 화면 글자는 한국어 한 벌이라 영어권 댄서·강사는 쓸 수 없다. RM-10 이 글자를 표 하나로 모은 뒤, 그 표에 영어 한 벌을 옆에 놓는 일이다.",
-          "stage": null,
-          "pr": null,
-          "files": [
-            "src/domain/strings.js",
-            "src/ui/settingsView.js",
-            "src/adapters/localStore.js",
-            "src/app/main.js",
-            "index.html",
-            "src/ui/videoPanel.js",
-            "src/ui/fileMenu.js",
-            "src/ui/savedListsView.js",
-            "src/ui/trashView.js",
-            "src/ui/widgets.js",
-            "src/ui/composeView.js",
-            "src/adapters/speechInput.js",
-            "src/usecases/",
-            "tools/check-docs.mjs",
-            "tests/unit/",
-            "docs/FEATURES.md",
-            "docs/TUTORIAL.md",
-            "docs/ARCHITECTURE.md"
-          ],
-          "plan": "docs/roadmap/plans/RM-32.md"
+          "plan": "docs/roadmap/plans/RM-31.md",
+          "wrapup": [
+            {
+              "text": "본 트리의 server.py 서버(localhost:8000 · Tailscale :8000)를 다시 띄운다 — 자르기 API 가 label 인자를 받게 바뀌었다(안 띄우면 내보낸 파일 이름이 초로 지어진다)",
+              "state": "review"
+            },
+            {
+              "text": "앞 여유 2카운트를 써 보고 ⚙ 설정이나 단추 옆 칸으로 바꿀 수 있게 할지 정한다",
+              "state": "review"
+            }
+          ]
         },
         {
           "id": "RM-33",
@@ -1290,28 +1935,33 @@
         {
           "id": "RM-34",
           "name": "루틴 색을 고른다 · 순번을 저장한다",
-          "size": "S",
+          "size": "M",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q38",
+            "Q39",
+            "Q40"
+          ],
           "defaults": [],
           "tags": [
             "A"
           ],
-          "what": "루틴을 만들면 여덟 색이 만든 순서대로 하나씩 붙는데, 몇 번째 색까지 썼는지를 기억하지 않는다. 그래서 안무표를 다시 열면 순서가 첫 색부터 다시 시작해, 이미 있는 루틴과 같은 색이 새 루틴에 붙는다. 이 항목은 겹치지 않게 색을 붙이고, 사용자가 루틴 색을 직접 바꿀 수 있게 한다.",
+          "what": "새 루틴의 색을 세션 카운터 대신 지금 안무표의 루틴들에서 셈해, 다시 열거나 불러온 뒤에도 기존 루틴과 겹치지 않게 한다. 루틴 목록의 색 칩을 눌러 색을 바꾸고 저장·되돌리기까지 되게 한다. 판의 RM-07(정렬 순서 저장을 이 항목으로 미룸), RM-12·RM-15(누르기 문법), RM-17(토큰 밖 데이터 색)과 닿는다.",
           "stage": null,
           "pr": null,
           "files": [
             "src/domain/routines.js#nextColor",
-            "src/usecases/routineCommands.js",
+            "src/usecases/routineCommands.js#takeRoutineColor",
+            "src/usecases/routineCommands.js#setRoutineColor",
             "src/usecases/store.js",
-            "src/ui/routineListView.js",
-            "src/app/main.js",
-            "src/domain/categories.js",
+            "src/ui/routineListView.js#buildCard",
+            "src/app/main.js#views.routineList",
             "tests/unit/domain.test.mjs",
+            "tests/unit/routineColor.test.mjs",
             "docs/deviations.md",
-            "docs/FEATURES.md",
-            "docs/TUTORIAL.md"
+            "docs/HISTORY.md",
+            "docs/ROADMAP.md"
           ],
           "plan": "docs/roadmap/plans/RM-34.md"
         },
@@ -1350,5 +2000,8 @@
         }
       ]
     }
+  ],
+  "retired": [
+    "RM-32"
   ]
 }
