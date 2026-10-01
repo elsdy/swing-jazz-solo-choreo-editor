@@ -406,24 +406,24 @@ export function pendingCount(store, boardId = BOARD_MAIN) {
 }
 
 /**
- * 선택한 블록들에 이름을 붙인다. 이름은 dialogs 가 묻는다(원본 renameMove 와 같은 idiom).
+ * 선택한 블록들에 이름을 붙인다. 이름은 화면 층이 인라인 입력으로 묻고 args.label 로 넘긴다(RM-04 —
+ * 전에는 prompt 창이 받아 적는 흐름을 끊었다).
  *
  * ⚠ 선택 안에 이름 있는 블록이 섞여 있으면 **이름 없는 것만** 바꾼다 — 고르다 딸려 들어온 블록의
  *   이름을 조용히 덮어쓰면 되돌릴 길을 찾기 어렵다.
  * ⚠ 동작 목록에는 등록하지 않는다(placeBlockAt 과 같은 이유).
  *
  * @param {object} store
- * @param {{ boardId?:'main'|'routine' }} [args]
- * @param {{ dialogs:{promptText:(title:string, value?:string)=>string|null} }} deps
+ * @param {{ boardId?:'main'|'routine', label?:string|null }} [args] label 이 null·빈 문자열이면 아무 일도 없다
  * @returns {object & {named?:number}} Dirty
  */
-export function nameSelected(store, args = {}, deps = {}) {
+export function nameSelected(store, args = {}) {
   const { boardId = BOARD_MAIN } = args;
   const state = store.get();
   const board = boardOf(state, boardId);
   const chosen = [...(state.selection || [])].filter(gid => board.placements.some(p => p.groupId === gid && isPending(p)));
   if (!chosen.length) return NONE;
-  const label = deps.dialogs.promptText('이 블록의 이름', '');
+  const { label } = args;
   if (label == null || !String(label).trim()) return NONE;
   let placements = board.placements;
   const rows = [];

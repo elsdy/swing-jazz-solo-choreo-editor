@@ -21,6 +21,7 @@
 //   같은 ui 계층이라 import 하되, 테스트가 화면 폭을 흉내 낼 수 있도록 deps 로 덮어쓸 수 있게 뒀다.
 
 import { CLS } from './domContract.js';
+import { askText } from './inlinePrompt.js';
 import { isRoutineOverlayMode as layoutIsRoutineOverlayMode } from './layout.js';
 
 /** 루틴 편집기 보드의 store 상 id. usecases/store.BOARD_ROUTINE 과 같은 문자열이다(ui 는 usecases 를 import 하지 않는다). */
@@ -40,7 +41,7 @@ const COLS_FALLBACK = '8', ROWS_FALLBACK = '4';
  *   redo: () => any,
  *   clear: () => any,
  *   close: () => any,
- *   rename: (routineId: string) => any,
+ *   rename: (routineId: string, next: string|null) => any,
  *   toggleQuickPlace: () => any,
  *   setSize: (size: { rows: number, cols: number }) => any
  * }} commands app/main 이 묶어 넘긴다. ⚠ undo/redo/clear 는 **이미 합성돼 있어야 한다**(아래 계약 참조).
@@ -103,7 +104,11 @@ export function createRoutineEditorView(deps) {
   if (closeBtn) closeBtn.onclick = () => render(commands.close());     // 4836
   if (reTitle) reTitle.ondblclick = () => {                            // 4837
     const routineId = store.session.editingRoutineId;
-    if (routineId) render(commands.rename(routineId));
+    if (!routineId) return;
+    const routine = store.routines.find(r => r.id === routineId);
+    // 제목 위에서 바로 적는다(RM-04 — 원본 4678 의 prompt 자리)
+    askText({ anchor: reTitle, title: '루틴 이름', value: routine ? routine.name : '' })
+      .then((next) => render(commands.rename(routineId, next)));
   };
 
   // 4839-4850 — 버튼 클래스는 여기서 만지지 않는다. 커맨드가 store.session.quickPlaceMode.routine 을

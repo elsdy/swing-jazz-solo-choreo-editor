@@ -38,7 +38,7 @@ import { groupToSpan, secondsPerCount } from '../domain/tempo.js';
 
 import { STORAGE_KEYS } from '../ports/storage.js';
 import { projectTime } from '../ports/media.js';
-import { browserEnv, browserDialogs, browserFileIO, debounce, longPress } from '../adapters/browser.js';
+import { browserEnv, browserFileIO, debounce, longPress } from '../adapters/browser.js';
 import {
   createRecentList, createFavoritesRepo, loadLocalMeta, loadLinksRaw, saveLinksRaw, localKv
 } from '../adapters/localStore.js';
@@ -95,6 +95,8 @@ import { buildTracks, framesOfTrack, pickSubjectAt } from '../domain/poseTracks.
 import { createPlayhead } from '../ui/playhead.js';
 import { SEL, DATA } from '../ui/domContract.js';
 import { confirmOnce } from '../ui/widgets.js';
+import { createToastView } from '../ui/toastView.js';
+import { askText } from '../ui/inlinePrompt.js';
 import { readCellW } from '../ui/cssVars.js';
 import { initLayout, isStacked, syncCellSize } from '../ui/layout.js';
 
@@ -194,14 +196,54 @@ const render = (dirty, opts) => {
 /**
  * 알림은 언제나 렌더 뒤다(app/render 의 마지막 단계). 급(block·toast·status)은 유스케이스가 정하고
  * 어디에 띄울지는 여기서 정한다(RM-04).
+ *   block  → 앱 안 모달(ui/toastView) — 브라우저 alert 는 더 쓰지 않는다
+ *   toast  → 토스트
+ *   status → 상태줄(RM-19)이 서기 전까지 토스트로 대신 띄운다
+ *
+ * ⚠ 「되돌리기」 버튼은 **그 지우기가 아직 맨 위 단계일 때만** 되돌린다. 토스트가 떠 있는 몇 초 사이에
+ *   다른 것을 놓으면 Undo 가 그것을 되돌리게 된다 — 지운 것을 살리려다 방금 한 일을 잃는다.
+ *   그래서 토스트를 띄울 때의 히스토리 깊이를 적어 두고, 누를 때 깊이가 그대로인지 본다. 지우기 배선은
+ *   모두 커밋까지 끝낸 Dirty 를 돌려주므로(withUndoToast) 띄우는 시점의 깊이가 곧 지운 뒤의 깊이다.
  */
-views.notify = (n) => browserDialogs.alert(n.message);
+const toastView = createToastView({
+  onAction: (action) => {
+    if (action.command !== 'undo') return;
+    const stack = hist.stack(action.boardId);
+    if (stack.past.length !== action.depth || stack.future.length) {
+      toastView.show(notice('toast', '그 뒤에 다른 작업을 해서 되돌리지 않았습니다. Ctrl+Z 로 한 단계씩 되돌리세요.'));
+      return;
+    }
+    render(undo(action.boardId));
+  }
+});
+views.notify = (n) => {
+  if (n.action && n.action.command === 'undo') {
+    toastView.show({ ...n, action: { ...n.action, depth: hist.stack(n.action.boardId).past.length } });
+    return;
+  }
+  toastView.show(n);
+};
+
+/**
+ * 지우기 뒤에 「지웠습니다 · 되돌리기」 토스트를 붙인다(RM-04). 실제로 지운 것이 있을 때만 붙인다.
+ * ⚠ 히스토리 커밋까지 **여기서** 끝낸다 — 토스트가 그려지는 순간의 깊이를 되돌리기 판정에 쓰기 때문이다.
+ *   호출부가 뒤이어 다시 커밋해도 같은 스냅샷이라 단계가 쌓이지 않는다(historyCommands 의 같은 값 거르기).
+ * @param {import('../usecases/store.js').Dirty} dirty 지우기 커맨드의 결과
+ * @param {string} message
+ * @param {'main'|'routine'} [boardId]
+ */
+function withUndoToast(dirty, message, boardId = BOARD_MAIN) {
+  if (!dirty || !Object.keys(dirty).some(k => k !== 'notify')) return dirty;
+  return mergeDirty(mergeDirty(dirty, commitHistory(boardId)), {
+    notify: notice('toast', message, { label: '되돌리기', command: 'undo', boardId })
+  });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. 커맨드 ctx + 히스토리 커밋 헬퍼
 // ─────────────────────────────────────────────────────────────────────────────
 
-const paletteCtx = { store, dialogs: browserDialogs, ids: browserEnv, storage: { saveFavorites } };
+const paletteCtx = { store, ids: browserEnv, storage: { saveFavorites } };
 const categoryCtx = { store, storage: { saveFavorites } };
 const linkCtx = { store, ids: browserEnv, storage };
 
@@ -236,7 +278,6 @@ const canRedo = (boardId) => History.canRedo(hist, boardId);
 const routineDeps = {
   store,
   env: browserEnv,
-  dialogs: browserDialogs,
   storage,
   commitHistory,
   resetHistory: (boardId) => History.reset(hist, boardId)   // 4804-4805·4817
@@ -255,7 +296,6 @@ const setProjectFileName = (fileName) => {
 const projectDeps = {
   store,
   env: browserEnv,               // ⚠ nowIso() 가 필요하다 — browserEnv 가 갖고 있다
-  dialogs: browserDialogs,
   files: browserFileIO,
   storage,
   setProjectFileName,
@@ -355,7 +395,7 @@ function boardCommandsFor(boardId) {
       unmarkDragging: () => overlays.unmarkDraggingGroups(boardId)   // 3665
     }),
     copyGroup: (args) => BoardCmd.copyGroupTo(store, { boardId, ...args }, ids),
-    removeGroup: (args) => BoardCmd.removeGroup(store, { boardId, ...args }),
+    removeGroup: (args) => withUndoToast(BoardCmd.removeGroup(store, { boardId, ...args }), '블록을 지웠습니다.', boardId),
     toggleSelection: (args) => BoardCmd.toggleSelection(store, { boardId, ...args }),
     commitHistory: () => commitHistory(boardId)
   };
@@ -416,10 +456,10 @@ const paletteView = createPaletteView({
   commands: {
     activatePaletteMove: (moveId) => PaletteCmd.activatePaletteMove(paletteCtx, moveId),
     setMoveCategory: (moveId, next) => PaletteCmd.setMoveCategory(paletteCtx, moveId, next),
-    deleteMove: (moveId) => PaletteCmd.deleteMove(paletteCtx, moveId),
+    deleteMove: (moveId) => withUndoToast(PaletteCmd.deleteMove(paletteCtx, moveId), '동작을 지웠습니다.'),
     toggleMoveFavorite: (moveName) => PaletteCmd.toggleMoveFavorite(paletteCtx, moveName), // ⚠ 이름
-    renameMove: (moveId) => PaletteCmd.renameMove(paletteCtx, moveId),
-    promptMoveCategory: (moveId) => PaletteCmd.promptMoveCategory(paletteCtx, moveId)
+    renameMove: (moveId, next) => PaletteCmd.renameMove(paletteCtx, moveId, next),
+    setMoveCategoryKey: (moveId, next) => PaletteCmd.setMoveCategoryKey(paletteCtx, moveId, next)
   },
   // 카드 입력 배선은 input/paletteInput 이 만들고 여기서 주입한다(설계서 §0 의 교차 해소).
   // ⚠ 뷰는 훅이 하나(attachCardInput)이고 input 은 둘(카드 · 이름)이다 — 그 다리도 여기다.
@@ -441,7 +481,7 @@ views.category = createCategoryView({
     previewColor: (key, color) => CategoryCmd.previewColor(categoryCtx, key, color),
     commitColor: () => CategoryCmd.commitColor(categoryCtx),          // ⚠ 인자 없이 부른다
     renameLabel: (key, rawLabel) => CategoryCmd.renameLabel(categoryCtx, key, rawLabel),
-    removeCategory: (key) => CategoryCmd.removeCategory(categoryCtx, key),
+    removeCategory: (key) => withUndoToast(CategoryCmd.removeCategory(categoryCtx, key), '카테고리를 지웠습니다.'),
     toggleCategoryFavorite: (key) => CategoryCmd.toggleCategoryFavorite(categoryCtx, key)
   }
 });
@@ -588,9 +628,9 @@ views.routineList = createRoutineListView({
   },
   commands: {
     toggleFavorite: (routineId) => RoutineCmd.toggleFavorite(routineDeps, routineId),
-    renameRoutine: (routineId) => RoutineCmd.renameRoutine(routineDeps, routineId),
+    renameRoutine: (routineId, next) => RoutineCmd.renameRoutine(routineDeps, routineId, next),
     openRoutineEditor: (routineId) => RoutineCmd.openEditor(routineDeps, routineId),
-    deleteRoutine: (routineId) => RoutineCmd.deleteRoutine(routineDeps, routineId)
+    deleteRoutine: (routineId) => withUndoToast(RoutineCmd.deleteRoutine(routineDeps, routineId), '루틴을 지웠습니다.')
   }
 });
 
@@ -605,7 +645,7 @@ views.routineEditor = createRoutineEditorView({
     redo: () => redo(BOARD_ROUTINE),                             // 2927-2936
     clear: () => mergeDirty(BoardCmd.clearRoutineBoard(store), commitHistory(BOARD_ROUTINE)), // 4830-4835
     close: () => RoutineCmd.closeEditor(routineDeps),
-    rename: (routineId) => RoutineCmd.renameRoutine(routineDeps, routineId),
+    rename: (routineId, next) => RoutineCmd.renameRoutine(routineDeps, routineId, next),
     // ⚠ 메인이 아니라 **루틴** 퀵피커의 close 다. 그대로 넘기면 첫 인자가 truthy 라 미리보기가 남는다.
     toggleQuickPlace: () => BoardCmd.toggleQuickPlaceMode(store, { boardId: BOARD_ROUTINE }, {
       closeQuickPicker: () => quickPickers[BOARD_ROUTINE].close()
@@ -619,9 +659,8 @@ const routineActionPopup = createRoutineActionPopup({
   commands: {
     openRoutineEditor: (routineId) => RoutineCmd.openEditor(routineDeps, routineId),
     // 1751-1752 두 줄 전부. 히스토리 커밋을 빼면 루틴 블록 삭제만 Undo 가 안 된다.
-    removeGroup: (groupId) => mergeDirty(
-      BoardCmd.removeGroup(store, { boardId: BOARD_MAIN, groupId }),
-      commitHistory(BOARD_MAIN)
+    removeGroup: (groupId) => withUndoToast(
+      BoardCmd.removeGroup(store, { boardId: BOARD_MAIN, groupId }), '블록을 지웠습니다.'
     )
   }
 });
@@ -635,9 +674,8 @@ const placementActionPopup = createPlacementActionPopup({
   commands: {
     toggleSelection: (groupId) => BoardCmd.toggleSelection(store, { boardId: BOARD_MAIN, groupId }),
     // ⚠ 삭제와 히스토리 커밋 둘 다. 커밋을 빼면 이 길로 지운 것만 되돌리기가 안 된다.
-    removeGroup: (groupId) => mergeDirty(
-      BoardCmd.removeGroup(store, { boardId: BOARD_MAIN, groupId }),
-      commitHistory(BOARD_MAIN)
+    removeGroup: (groupId) => withUndoToast(
+      BoardCmd.removeGroup(store, { boardId: BOARD_MAIN, groupId }), '블록을 지웠습니다.'
     ),
     openPicker: (groupId, x, y) => quickPickers[BOARD_MAIN].openForGroup(groupId, x, y)
   }
@@ -656,9 +694,10 @@ const paletteInput = createPaletteInput({
   dragSession,
   longPress,
   openMoveContextMenu: (moveId, x, y) => paletteView.openContextMenu(moveId, x, y),
+  askText,                                           // ui/inlinePrompt — input 은 ui 를 import 하지 않는다
   commands: {
     cancelActivePaletteMove: () => PaletteCmd.cancelActivePaletteMove(paletteCtx), // ⚠ 반환을 버린다
-    renameMove: (moveId) => PaletteCmd.renameMove(paletteCtx, moveId),
+    renameMove: (moveId, next) => PaletteCmd.renameMove(paletteCtx, moveId, next),
     placeMoveOnMain: (args) => BoardCmd.placeMoveAt(store, { boardId: BOARD_MAIN, ...args }, { ids: browserEnv }),
     commitMainHistory: () => commitHistory(BOARD_MAIN)
   }
@@ -1096,7 +1135,10 @@ function chooseLocalFile(file) {
     try {
       saved = await clipLibrary.saveClip(file, clipDirParts(subdir, projectNameForClips()), file.name);
     } catch {
-      return;                                    // 복사 실패는 조용히 — blob 으로는 이미 재생 중이다
+      // blob 으로는 이미 재생 중이라 막을 일은 아니다. 다만 다음에 열면 영상이 없으니 알아야 한다(RM-04 —
+      // 전에는 조용히 삼켜서, 보관된 줄 알았던 영상이 새로고침 뒤에 사라졌다).
+      render({ notify: notice('toast', '영상을 보관 폴더에 복사하지 못했습니다. 지금은 이 창에서만 재생됩니다.') });
+      return;
     }
     attachPath(saved.path);
   });
@@ -1724,7 +1766,6 @@ views.video = createVideoPanel({
   getTrimState: trimState,
   getTrimError: () => trimError,
   onTrim: trimCurrentClip,
-  dialogs: browserDialogs,
   // ⚠ 매 렌더 불린다(패널이 열린 채 URL 만 바뀌는 경로가 있다). 아래 셋은 전부 멱등이다.
   onSync: (shown) => {
     if (shown) {
@@ -1780,7 +1821,7 @@ views.video = createVideoPanel({
     // 영상 목록(2026-09-12). 같은 안무를 여러 번 찍으면 영상이 여러 개 달린다.
     selectClip: (args) => VideoCmd.selectClip(store, args),
     renameClip: (args) => VideoCmd.renameClip(store, args),
-    removeClip: (args) => VideoCmd.removeClip(store, args),
+    removeClip: (args) => withUndoToast(VideoCmd.removeClip(store, args), '영상을 목록에서 뺐습니다.'),
     // 받아 적기(2026-09-12). 메인 보드에만 놓는다 — 루틴 편집기와 영상 패널은 동시에 열리지 않는다.
     captureToggle: (args) => {
       const dirty = CaptureCmd.captureToggle(store, args, { ids: browserEnv });
@@ -1795,7 +1836,7 @@ views.video = createVideoPanel({
       return CaptureCmd.stopCapture(store);
     },
     markersToBlocks: () => CaptureCmd.markersToBlocks(store, {}, { ids: browserEnv }),
-    nameSelected: () => CaptureCmd.nameSelected(store, {}, { dialogs: browserDialogs }),
+    nameSelected: (label) => CaptureCmd.nameSelected(store, { label }),
     // 표 전체 옮기기(2026-09-20). 받아 적기와 같은 자리에 두지만 박자와는 무관하다 —
     // 놓인 블록을 카운트 축에서 통째로 민다.
     canShiftAll: () => store.board(BOARD_MAIN).placements.length > 0,
@@ -2028,7 +2069,7 @@ views.project = createProjectPanel({
     select: (id) => render(VideoCmd.selectClip(store, { id })),
     rename: (id, name) => { render(VideoCmd.renameClip(store, { id, name })); commitHistoryAndRender(); },
     setMeta: (id, patch) => { render(VideoCmd.setClipMeta(store, { id, ...patch })); commitHistoryAndRender(); },
-    remove: (id) => { render(VideoCmd.removeClip(store, { id })); commitHistoryAndRender(); }
+    remove: (id) => { render(withUndoToast(VideoCmd.removeClip(store, { id }), '영상을 목록에서 뺐습니다.')); }
   },
   openVideoPanel: () => render(VideoCmd.openPanel(store)),
   confirmOnce

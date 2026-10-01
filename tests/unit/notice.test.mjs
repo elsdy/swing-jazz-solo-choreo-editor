@@ -11,6 +11,7 @@ import { counterEnv } from '../../src/ports/env.js';
 import * as Palette from '../../src/usecases/paletteCommands.js';
 import * as Category from '../../src/usecases/categoryCommands.js';
 import * as Project from '../../src/usecases/projectCommands.js';
+import * as Routine from '../../src/usecases/routineCommands.js';
 
 /** 부르면 던지는 대화상자 — 유스케이스가 아직 대화상자를 부르고 있으면 여기서 붉어진다. */
 const NO_DIALOGS = {
@@ -80,4 +81,37 @@ test('동작 파일을 들이다 저장이 던지면 같은 문구의 토스트�
   const dirty = Project.loadMoveListFromFile(deps, { data: { moves: [] }, fileName: '동작.json' });
   assert.deepEqual(dirty.notify, notice('toast', '동작 파일을 읽을 수 없습니다.'));
   assert.notEqual(dirty, NONE);
+});
+
+// ── 이름은 묻지 않고 받는다(prompt 창 → 그 칸 위의 인라인 입력) ─────────────────────
+
+test('동작 이름 바꾸기: 적은 값을 받고, null 은 취소, 빈 이름은 토스트로 거부한다', () => {
+  const store = createStore({ ids: counterEnv() });
+  const ctx = { store, dialogs: NO_DIALOGS, ids: counterEnv({ prefix: 'm' }) };
+  const move = store.get().library[0];
+  assert.deepEqual(Palette.renameMove(ctx, move.id, null), NONE, '취소');
+  assert.deepEqual(Palette.renameMove(ctx, move.id, '   '), { notify: notice('toast', '이름을 비워둘 수 없습니다.') });
+  const dirty = Palette.renameMove(ctx, move.id, '새 이름');
+  assert.equal(dirty.palette, true);
+  assert.equal(store.get().library[0].name, '새 이름');
+});
+
+test('카테고리 키 바꾸기: 없는 키는 토스트로 거부하고, 있는 키는 옮긴다', () => {
+  const store = createStore({ ids: counterEnv() });
+  const ctx = { store, dialogs: NO_DIALOGS, ids: counterEnv({ prefix: 'm' }) };
+  const move = store.get().library[0];
+  const other = Object.keys(store.get().categories).find(k => k !== move.category);
+  assert.deepEqual(Palette.setMoveCategoryKey(ctx, move.id, ''), NONE, '빈 값은 취소(원본 3267)');
+  assert.deepEqual(Palette.setMoveCategoryKey(ctx, move.id, '없는키'), { notify: notice('toast', '존재하는 카테고리 키를 입력해 주세요.') });
+  Palette.setMoveCategoryKey(ctx, move.id, ` ${other} `);
+  assert.equal(store.get().library[0].category, other, '앞뒤 공백은 걷는다(원본 3268)');
+});
+
+test('루틴 이름 바꾸기: 적은 값을 받고, null 은 취소다', () => {
+  const store = createStore({ ids: counterEnv() });
+  store.update({ routines: [{ id: 'r1', name: '옛 이름', rows: 1, cols: 8, placements: [] }] });
+  const deps = { store, env: counterEnv(), dialogs: NO_DIALOGS, storage: { saveRoutineFavorites() {} }, commitHistory: () => NONE };
+  assert.deepEqual(Routine.renameRoutine(deps, 'r1', null), NONE);
+  Routine.renameRoutine(deps, 'r1', '새 루틴');
+  assert.equal(store.get().routines[0].name, '새 루틴');
 });

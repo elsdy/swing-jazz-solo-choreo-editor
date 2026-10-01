@@ -3203,6 +3203,109 @@
       .corner { z-index: 4; }     /* 머리줄의 모서리는 행 이름보다 한 겹 위다 */
     }
 
+
+    /* ── 알림 세 급(RM-04) — 토스트 · 앱 안 모달 · 그 칸 위의 이름 입력 ───────────────────
+       브라우저 alert·prompt 창의 자리다. 토스트는 누르지 않아도 작업이 이어지고(몇 초 뒤 사라진다),
+       모달은 작업을 멈춰야 하는 오류에만 뜬다. 떠 있는 창들(context-menu 등)보다 위다. */
+    /* 아래 가운데다 — 오른쪽 아래 구석은 로드맵 보드 위젯(🧭)과 영상 패널이 쓴다(2026-10-01 브라우저 시험에서 가렸다). */
+    .toast-stack {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 16px;
+      z-index: 5000;
+      display: grid;
+      gap: 8px;
+      justify-items: center;
+      max-width: min(420px, calc(100vw - 32px));
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 10px 10px 14px;
+      border-radius: 12px;
+      background: rgba(11, 18, 32, 0.97);
+      border: 1px solid rgba(148,163,184,0.22);
+      border-left: 4px solid var(--warn);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.34);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.4;
+      animation: toast-in 160ms ease-out;
+    }
+    .toast-status { border-left-color: var(--accent); }
+    .toast-text { flex: 1 1 auto; min-width: 0; }
+    .toast-action {
+      flex: 0 0 auto;
+      padding: 4px 10px;
+      font-weight: 800;
+      color: var(--accent);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(148,163,184,0.2);
+    }
+    .toast-close {
+      flex: 0 0 auto;
+      padding: 2px 6px;
+      color: var(--muted);
+      background: transparent;
+      border: 0;
+    }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+    @media (max-width: 720px) {
+      .toast-stack { left: 16px; right: 16px; transform: none; bottom: 12px; justify-items: stretch; max-width: none; }
+    }
+
+    .notice-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 6000;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: rgba(2, 6, 14, 0.55);
+    }
+    .notice-modal {
+      width: min(420px, 100%);
+      padding: 18px;
+      border-radius: 14px;
+      background: rgba(11, 18, 32, 0.99);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      box-shadow: var(--shadow);
+      color: var(--text);
+      display: grid;
+      gap: 14px;
+    }
+    .notice-modal-text { margin: 0; font-size: 14px; line-height: 1.5; }
+    .notice-modal-ok { justify-self: end; min-width: 80px; font-weight: 800; }
+
+    .inline-prompt {
+      position: fixed;
+      z-index: 5500;
+      display: grid;
+      gap: 4px;
+      padding: 8px;
+      border-radius: 12px;
+      background: rgba(11, 18, 32, 0.98);
+      border: 1px solid rgba(34, 197, 94, 0.5);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+    }
+    .inline-prompt-title { font-size: 11px; font-weight: 800; color: var(--muted); }
+    .inline-prompt-input { width: 100%; box-sizing: border-box; font-size: 14px; }
+    .inline-prompt-hint { font-size: 11px; color: var(--muted); }
+
+    :root[data-theme] .toast,
+    :root[data-theme] .notice-modal,
+    :root[data-theme] .inline-prompt {
+      background: var(--t-pop);
+      box-shadow: 0 18px 46px rgba(0,0,0,0.35), 0 0 40px rgba(var(--t-glow), 0.12);
+    }
+    :root[data-theme] .inline-prompt { border-color: rgba(var(--t-glow), 0.55); }
+    :root[data-theme] .toast-status { border-left-color: rgb(var(--t-glow)); }
+
   </style>
 </head>
 <body data-sheet="off" data-links="off" data-notes="off">

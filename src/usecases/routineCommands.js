@@ -22,7 +22,7 @@ import { cloneJsonValue } from '../domain/project/snapshot.js';
  * @typedef {Object} RoutineDeps
  * @property {ReturnType<import('./store.js').createStore>} store
  * @property {{ uid: () => string }} env                       uid 생성기(원본 uid 1696)
- * @property {{ promptText: (msg: string, def?: string) => string|null, alert: (msg: string) => void }} dialogs
+ * @property {object} [dialogs]  ⚠ RM-04 부터 쓰지 않는다 — 루틴 이름은 renameRoutine 의 인자로 받는다
  * @property {{ saveRoutineFavorites: (ids: Iterable<string>) => unknown }} storage
  *   ⚠ deleteRoutine 은 이걸 **부르지 않는다**(원본 4624 가 저장하지 않는 결함을 그대로 보존).
  * @property {(boardId: 'main'|'routine') => import('./store.js').Dirty|void} [commitHistory]
@@ -114,15 +114,15 @@ export function createFromSelection(deps) {
  * @see index.html:4675
  * @param {RoutineDeps} deps
  * @param {string} routineId
+ * @param {string|null} next 새 이름. null 이면 취소
  * @returns {import('./store.js').Dirty}
  */
-export function renameRoutine(deps, routineId) {
-  const { store, dialogs } = deps;
+export function renameRoutine(deps, routineId, next) {
+  const { store } = deps;
   const state = store.get();
   const routine = state.routines.find(r => r.id === routineId);
   if (!routine) return NONE;                                      // 4677
-  const next = dialogs.promptText('루틴 이름', routine.name);      // 4678
-  if (next == null) return NONE;                                  // 4679
+  if (next == null) return NONE;                                  // 4679 취소(원본 4678 의 prompt 는 화면 층이 묻는다 — RM-04)
 
   const main = boardOf(state, BOARD_MAIN);
   const res = renameRoutineDomain(state.routines, main.placements, routineId, next);

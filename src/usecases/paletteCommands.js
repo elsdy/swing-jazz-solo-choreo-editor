@@ -33,7 +33,7 @@ import { setGroupMove } from './boardCommands.js';
 /**
  * @typedef {Object} PaletteCtx
  * @property {ReturnType<import('./store.js').createStore>} store
- * @property {import('../ports/env.js').Dialogs} dialogs  promptText/alert 만 쓴다
+ * @property {object} [dialogs]  ⚠ RM-04 부터 쓰지 않는다 — 이름은 인자로 받고 거부 사유는 Dirty.notify 로 돌려준다
  * @property {(()=>string)|{uid:()=>string}} ids  uid 생성기(adapters/browser.browserEnv)
  * @property {{ saveFavorites?: (fav:{moveNames:string[],categories:string[]}) => unknown }} [storage]
  *   ⚠ 원본 saveFavorites(4227-4230)는 choreo_fav_moves 와 choreo_fav_cats **두 키를 함께** 쓴다.
@@ -90,15 +90,17 @@ export function addMove(ctx, rawName, category) {
  *   원본 3191 이 state.placements 만 훑기 때문이다 — 보존 대상 결함(deviations-found.jsonl 참조).
  *   그래서 Dirty 에 boards.routine 을 넣지 않는다.
  * @see index.html:3183
+ * ⚠ 이름은 묻지 않고 받는다(RM-04). 원본은 prompt('동작 이름 변경')(3186)로 물었다 — 이제 화면 층이
+ *   그 칸 위의 인라인 입력(ui/inlinePrompt)으로 묻고 적은 값을 넘긴다. 취소는 예전처럼 null.
  * @param {PaletteCtx} ctx
  * @param {string} moveId
+ * @param {string|null} next 새 이름. null 이면 취소
  * @returns {import('./store.js').Dirty}
  */
-export function renameMove(ctx, moveId) {
+export function renameMove(ctx, moveId, next) {
   const state = ctx.store.get();
   const move = state.library.find(m => m.id === moveId);
   if (!move) return NONE;                                       // 3184-3185
-  const next = ctx.dialogs.promptText('동작 이름 변경', move.name);   // 3186
   if (next == null) return NONE;                                // 3187: 취소
   const board = boardOf(state, BOARD_MAIN);
   const res = Moves.renameMove(state.library, board.placements, moveId, next);
@@ -138,7 +140,7 @@ export function deleteMove(ctx, moveId) {
  * 카드의 카테고리 `<select>` 변경(3120-3126). [history] 뒤이어 saveHistory()(3125).
  *
  * ⚠ 렌더 범위가 컨텍스트 메뉴 경로와 다르다 — 여기는 renderRows(affectedRows)(3124),
- *   메뉴는 renderBoard(true)(3274). 그래서 두 경로를 하나로 합치지 않았다(promptMoveCategory 참조).
+ *   메뉴는 renderBoard(true)(3274). 그래서 두 경로를 하나로 합치지 않았다(setMoveCategoryKey 참조).
  * ⚠ "존재하는 카테고리 키인가" 검사(3269)는 이 경로에 **없다**. select 의 option 이 사전에서
  *   만들어지므로 원본도 검사하지 않는다.
  * @see index.html:3120
@@ -158,22 +160,23 @@ export function setMoveCategory(ctx, moveId, nextCategory) {
 }
 
 /**
- * 컨텍스트 메뉴의 '카테고리: …' 항목(3265-3281). prompt 로 **카테고리 키**를 직접 받는다.
+ * 컨텍스트 메뉴의 '카테고리: …' 항목(3265-3281). **카테고리 키**를 직접 받는다 — 원본은 prompt 로 물었고(3266),
+ * RM-04 부터는 화면 층의 인라인 입력이 묻고 적은 값을 넘긴다(그래서 이름이 promptMoveCategory 에서 바뀌었다).
  * [history] 뒤이어 saveHistory()(3275).
  *
- * ⚠ setMoveCategory 와 별개 함수인 이유는 셋이다: ①prompt 를 탄다 ②없는 키면 alert 로 거부한다(3269)
+ * ⚠ setMoveCategory 와 별개 함수인 이유는 셋이다: ①손으로 적은 키를 받는다 ②없는 키면 alert 로 거부한다(3269)
  *   ③렌더가 renderBoard(true) 라 골격까지 다시 세운다(3274). 옵션 하나로 합치면 셋 중 하나를 잃는다.
  * ⚠ `if (!next) return;`(3267) 이라 **빈 문자열도 취소로 취급**한다(renameMove 의 `next == null` 과 다르다).
  * @see index.html:3265
  * @param {PaletteCtx} ctx
  * @param {string} moveId
+ * @param {string|null} next 적은 카테고리 키. null·빈 문자열이면 취소
  * @returns {import('./store.js').Dirty}
  */
-export function promptMoveCategory(ctx, moveId) {
+export function setMoveCategoryKey(ctx, moveId, next) {
   const state = ctx.store.get();
   const move = state.library.find(m => m.id === moveId);
   if (!move) return NONE;                                       // 3249-3250 이 이미 걸렀지만 방어
-  const next = ctx.dialogs.promptText('카테고리 키 변경', move.category);   // 3266
   if (!next) return NONE;                                       // 3267
   const trimmed = next.trim();                                  // 3268
   if (!state.categories[trimmed]) {                             // 3269

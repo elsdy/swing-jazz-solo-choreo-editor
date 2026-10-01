@@ -3581,8 +3581,8 @@ test('받아 적기: 고른 블록에 이름을 붙이면 이름 있는 블록�
   store.update({ selection: new Set(groups) });
 
   assert.equal(CaptureCmd.pendingCount(store), 1);
-  const dialogs = { promptText: () => '찰스턴' };
-  const out = CaptureCmd.nameSelected(store, {}, { dialogs });
+  // 이름은 화면 층의 인라인 입력이 묻고 label 로 넘긴다(RM-04 — 전에는 prompt 창이었다)
+  const out = CaptureCmd.nameSelected(store, { label: '찰스턴' });
   assert.equal(out.named, 1, '이름 없는 블록만 바뀐다');
   const after = store.board(BOARD_MAIN).placements;
   assert.equal(CaptureCmd.pendingCount(store), 0);
@@ -3591,8 +3591,8 @@ test('받아 적기: 고른 블록에 이름을 붙이면 이름 있는 블록�
 
   // 취소와 빈 이름은 아무것도 바꾸지 않는다.
   store.update({ selection: new Set(groups) });
-  assert.deepEqual(CaptureCmd.nameSelected(store, {}, { dialogs: { promptText: () => null } }), NONE);
-  assert.deepEqual(CaptureCmd.nameSelected(store, {}, { dialogs: { promptText: () => '  ' } }), NONE);
+  assert.deepEqual(CaptureCmd.nameSelected(store, { label: null }), NONE);
+  assert.deepEqual(CaptureCmd.nameSelected(store, { label: '  ' }), NONE);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

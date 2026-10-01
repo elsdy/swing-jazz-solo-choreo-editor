@@ -23,7 +23,7 @@ import { categoryColor } from '../domain/categories.js';
  * @param {Object} deps.store             store 인스턴스(읽기 전용)
  * @param {Object} deps.commands          커맨드 파사드
  *   cancelActivePaletteMove() -> Dirty   ⚠ 반환값을 버리는 호출부가 있다
- *   renameMove(moveId) -> Dirty          (paletteCommands.renameMove)
+ *   renameMove(moveId, next) -> Dirty    (paletteCommands.renameMove — 이름은 askText 가 묻는다)
  *   placeMoveOnMain({ moveId, startRow, startIndex, totalCount }) -> Dirty
  *   commitMainHistory() -> Dirty|void    (saveHistory)
  * @param {(dirty: object) => void} deps.render
@@ -35,13 +35,15 @@ import { categoryColor } from '../domain/categories.js';
  * @param {Object} deps.dragSession       input/dragSession 인스턴스(begin/current/update/end/BOTH_BOARDS)
  * @param {Function} deps.longPress       adapters/browser.longPress (주입 — input 은 adapters 를 import 하지 않는다)
  * @param {(moveId: string, x: number, y: number) => void} deps.openMoveContextMenu  ui/paletteView 소유
+ * @param {(opts:{anchor?:any, title:string, value?:string}) => Promise<string|null>} deps.askText
+ *   ui/inlinePrompt.askText 주입(RM-04 — input 은 ui 를 import 하지 않는다). 이름 칸 위에서 바로 적는다
  * @returns {{ attachCardInput(cardEl: HTMLElement, move: object): void,
  *             attachNameTrigger(nameEl: HTMLElement, moveId: string): void }}
  */
 export function createPaletteInput(deps) {
   const {
     store, commands, render, mainBoardEl, overlays,
-    hitTest, dragSession, longPress, openMoveContextMenu, doc = document
+    hitTest, dragSession, longPress, openMoveContextMenu, askText, doc = document
   } = deps;
 
   const mainBoard = () => store.board('main');
@@ -171,10 +173,14 @@ export function createPaletteInput(deps) {
     nameEl.addEventListener('dblclick', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const dirty = commands.renameMove(moveId);
-      apply(dirty);
-      // 3195: 취소·빈 이름이면 원본도 saveHistory 를 부르지 않는다(조기 반환).
-      if (changed(dirty)) apply(commands.commitMainHistory());
+      const move = store.get().library.find(m => m.id === moveId);
+      if (!move) return;
+      askText({ anchor: nameEl, at: { x: e.clientX, y: e.clientY }, title: '동작 이름 변경', value: move.name }).then((next) => {
+        const dirty = commands.renameMove(moveId, next);
+        apply(dirty);
+        // 3195: 취소·빈 이름이면 원본도 saveHistory 를 부르지 않는다(조기 반환).
+        if (changed(dirty)) apply(commands.commitMainHistory());
+      });
     });
 
     nameEl.addEventListener('contextmenu', (e) => {
