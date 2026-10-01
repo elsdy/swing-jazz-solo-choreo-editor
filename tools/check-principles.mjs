@@ -1,14 +1,16 @@
 // tools/check-principles.mjs — 글자만 보고 어긴 것을 알 수 있는 개발 원칙을 기계로 잰다. 의존성 0.
 //
-//   node tools/check-principles.mjs          어긴 자리가 있으면 exit 1
-//   node tools/check-principles.mjs --list   규칙 표와 훑은 파일 수만 찍는다
+//   node tools/check-principles.mjs               어긴 자리가 있으면 exit 1
+//   node tools/check-principles.mjs --list        규칙 표와 훑은 파일 수만 찍는다
+//   node tools/check-principles.mjs --root <폴더> 다른 폴더를 저장소처럼 훑는다(자기 시험이 쓴다)
 //
 // 원칙(docs/PRINCIPLES.md)이 30개를 넘자 「어떻게 확인할까」가 grep 한 줄인 것까지 사람이 리뷰 때마다
 // 떠올려야 했고, 떠올리지 못하면 같은 버그가 되풀이됐다 — U-12(display 가 hidden 을 이김)가 네 번 났다.
 // 잴 수 있는 것은 여기서 잰다. 규칙 하나 = RULES 표 한 줄 { 원칙, 무엇, 고치는 법, scan }.
 //
 // ⚠ 넓게 잡으면 경보가 잦아지고, 잦은 경보는 무시된다. 그래서 각 규칙은 **글자로 확실한 것만** 잡는다.
-//   그래도 사람이 보고 괜찮다고 가린 자리는 그 줄(또는 바로 윗줄)에 표식을 단다:
+//   걸린 자리는 고치는 것이 먼저다(2026-10-01 결정 — 0 에서 시작). 검사기가 글자를 잘못 읽어 걸린 것이
+//   분명할 때만 그 줄(또는 바로 윗줄)에 표식을 단다:
 //       // 원칙-예외(D-5): 왜 괜찮은지
 //   이유가 빈 표식은 표식으로 치지 않는다.
 //
@@ -292,7 +294,8 @@ function walk(dir, acc = []) {
 export function loadRepoFiles(root = ROOT) {
   const files = {};
   for (const p of walk(join(root, 'src'))) files[relative(root, p).replaceAll('\\', '/')] = readFileSync(p, 'utf8');
-  files['index.html'] = readFileSync(join(root, 'index.html'), 'utf8');
+  const html = join(root, 'index.html');
+  try { files['index.html'] = readFileSync(html, 'utf8'); } catch { /* 없는 폴더도 훑는다(자기 시험의 임시 폴더) */ }
   return files;
 }
 
@@ -326,6 +329,18 @@ function collectCss(files) {
 }
 
 // ── 규칙 표 ─────────────────────────────────────────────────────────────────
+
+/**
+ * input/controls.js 원문에서 HOTKEY_COMMANDS 표를 글자로 읽는다(D-14). 시험이 이 결과를 실제로 내보낸 값과 맞춰 본다 —
+ * 표의 꼴이 바뀌어 읽는 법이 낡으면 거기서 붉어진다.
+ * @returns {{ map: Record<string, string>, line: number }}
+ */
+export function hotkeyCommandTable(ctlText) {
+  const tbl = ctlText.match(/(?:export )?const HOTKEY_COMMANDS = Object\.freeze\(\{([\s\S]*?)\}\)/);
+  const map = {};
+  if (tbl) for (const m of tbl[1].matchAll(/([\w$]+)\s*:\s*'([\w$]+)'/g)) map[m[1]] = m[2];
+  return { map, line: tbl ? lineAt(ctlText, tbl.index) : 1 };
+}
 
 /** @typedef {{ file: string, line: number, principle: string, what: string, fix: string }} Violation */
 
@@ -479,16 +494,14 @@ export const RULES = [
       const ctl = files['src/input/controls.js'];
       const main = files['src/app/main.js'];
       if (!hk || !ctl || !main) return out;
+      const blind = (file, what) => out.push({ file, line: 1, snippet: `${what}을(를) 하나도 읽지 못했다 — 표의 꼴이 바뀌었으면 이 검사기의 읽는 법도 고친다(조용히 0개로 통과하지 않는다)` });
 
       // ① 바꿀 수 있는 동작(fixed: false) — 이것만 HOTKEY_COMMANDS 를 거쳐 커맨드를 부른다
       const editable = [];
       for (const m of hk.matchAll(/id:\s*'([\w-]+)'[\s\S]*?fixed:\s*(true|false)/g)) if (m[2] === 'false') editable.push(m[1]);
 
       // ② HOTKEY_COMMANDS 표
-      const tbl = ctl.match(/const HOTKEY_COMMANDS = Object\.freeze\(\{([\s\S]*?)\}\)/);
-      const tblLine = tbl ? lineAt(ctl, tbl.index) : 1;
-      const map = {};
-      if (tbl) for (const m of tbl[1].matchAll(/([\w$]+)\s*:\s*'([\w$]+)'/g)) map[m[1]] = m[2];
+      const { map, line: tblLine } = hotkeyCommandTable(ctl);
 
       // ③ app/main 의 bindControls({ … commands: { … } }) 파사드의 최상위 키
       const facade = new Set();
@@ -513,6 +526,11 @@ export const RULES = [
           for (const m of top.matchAll(/(?:^|,)\s*([\w$]+)\s*(?=[:,(#]|$)/g)) facade.add(m[1]);
         }
       }
+
+      if (!editable.length) blind('src/domain/hotkeys.js', 'HOTKEY_ACTIONS 의 바꿀 수 있는 동작');
+      if (!Object.keys(map).length) blind('src/input/controls.js', 'HOTKEY_COMMANDS 표');
+      if (!facade.size) blind('src/app/main.js', 'bindControls 의 commands 파사드 키');
+      if (!editable.length || !Object.keys(map).length || !facade.size) return out;
 
       for (const id of editable) {
         if (!map[id]) out.push({ file: 'src/input/controls.js', line: tblLine, snippet: `동작 '${id}' 가 HOTKEY_COMMANDS 에 없다` });
@@ -541,7 +559,9 @@ export function checkPrinciples(files, rules = RULES) {
 // ── 명령줄 ──────────────────────────────────────────────────────────────────
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const files = loadRepoFiles();
+  const at = process.argv.indexOf('--root');
+  const root = at > 0 && process.argv[at + 1] ? resolve(process.argv[at + 1]) : ROOT;
+  const files = loadRepoFiles(root);
   if (process.argv.includes('--list')) {
     for (const r of RULES) console.log(`${r.principle.padEnd(5)} ${r.what}`);
     console.log(`\n훑은 파일 ${Object.keys(files).length}개`);
