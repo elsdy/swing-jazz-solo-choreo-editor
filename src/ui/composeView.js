@@ -25,6 +25,8 @@ const CSS = `
 .compose-head h2 { margin: 0; font-size: 14px; font-weight: 800; color: #e5e7eb; }
 .compose-head .compose-spacer { flex: 1; }
 .compose-step { padding: 0 14px; display: grid; gap: 6px; }
+/* ⚠ display:grid 가 브라우저 기본 [hidden]{display:none} 을 이긴다(개발 원칙 U-12) — 계획 전부터 3단계 빈 표가 보였다. */
+.compose-step[hidden] { display: none; }
 .compose-step h3 { margin: 0; font-size: 12.5px; color: #dbe4ef; display: flex; align-items: center; gap: 8px; }
 .compose-step h3 .compose-badge { font-size: 10px; font-weight: 800; color: #0b1220; background: #86efac;
   border-radius: 999px; padding: 1px 7px; }

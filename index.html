@@ -906,6 +906,8 @@
     }
     /* 휴지통 — 목록과 같은 행 모양이되 한 단 흐리다. 되돌릴 길이 보이는 것이 목적이지 목록의 경쟁자가 아니다. */
     .saved-trash { display: grid; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(148, 163, 184, 0.22); }
+    /* ⚠ display:grid 가 브라우저 기본 [hidden]{display:none} 을 이긴다(개발 원칙 U-12) — 비었을 때 점선 경계만 남았다. */
+    .saved-trash[hidden] { display: none; }
     .saved-trash-head { font-size: 11px; color: var(--muted); }
     .saved-trash-item { opacity: .82; }
     .saved-trash-item:hover { opacity: 1; }
