@@ -43,6 +43,7 @@ import {
   createRecentList, createFavoritesRepo, loadLocalMeta, loadLinksRaw, saveLinksRaw, localKv
 } from '../adapters/localStore.js';
 import { normalizeHotkeys, toSaved as savedHotkeys } from '../domain/hotkeys.js';
+import { nudgeDelta } from '../domain/keyboardEdit.js';
 import { runnerGaps } from '../domain/commands.js';
 import { fetchTitle } from '../adapters/youtubeOembed.js';
 import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/media/pickPlayer.js';
@@ -768,6 +769,42 @@ function applyHotkeys(next) {
  */
 const activeBoardId = () => (store.get().session.editingRoutineId ? BOARD_ROUTINE : BOARD_MAIN);
 
+/** 글쇠 · 버튼이 건넨 보드 이름을 보드 id 로. 모르는 값이면 메인. */
+const boardIdOf = (board) => (board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN);
+
+// ── 키보드 편집의 보관 자리 (RM-13) ────────────────────────────────────────────
+// ⚠ 담아 둔 블록은 **이 창 안에만** 있다(시스템 클립보드에 쓰지 않는다). 안무표가 아니라 편집 중의 손 짐이라
+//   저장 · 되돌리기 · 초안 어디에도 들어가지 않고, 새로고침하면 빈다.
+/** @type {import('../domain/keyboardEdit.js').ClipBlock[]} */
+let clipboard = [];
+/** 마지막으로 누른 메인 보드의 빈 칸. 고른 블록이 없을 때 붙여넣기가 여기 놓인다. */
+let pasteCell = null;
+
+/** 보드 위 한 점의 칸. 메인 보드 밖이면 null. 빈 칸 누름을 기억할 때만 쓴다. */
+function rememberPasteCell(clientX, clientY) {
+  const hit = hitTest.hitTest(clientX, clientY, { boardEl, board: store.get().boards[BOARD_MAIN], boardId: BOARD_MAIN });
+  pasteCell = hit.inBoard && Number.isFinite(hit.row) && Number.isFinite(hit.col) ? { row: hit.row, startIndex: hit.col } : null;
+}
+
+/** 바꾼 것이 있으면 그 보드의 히스토리에 한 단계를 쌓는다 — 글쇠 한 번이 되돌리기 한 단계다. */
+function commitIfChanged(dirty, boardId) {
+  if (!dirty || !Object.keys(dirty).some(k => k !== 'notify')) return dirty;
+  return mergeDirty(dirty, commitHistory(boardId));
+}
+
+/**
+ * 고른 블록을 한 방향으로 옮긴다. ⚠ 고른 것이 없으면 거짓 — 화살표의 스크롤을 막지 않는다.
+ * @param {string} board
+ * @param {'left'|'right'|'up'|'down'|'barLeft'|'barRight'} dir
+ */
+function nudge(board, dir) {
+  const boardId = boardIdOf(board);
+  if (!BoardCmd.copySelection(store, { boardId }).length) return false;
+  const delta = nudgeDelta(dir, store.get().boards[boardId].cols);
+  render(commitIfChanged(BoardCmd.nudgeSelection(store, { boardId, delta }, { ids: browserEnv }), boardId));
+  return true;
+}
+
 /** 명령 하나의 지금 글쇠. 툴팁 · 일람이 읽는다. */
 const keysNow = (id) => hotkeyMap[id];
 
@@ -827,6 +864,49 @@ const COMMAND_RUNNERS = Object.freeze({
     return Boolean(views.video && views.video.openFile());
   },
   // ⚠ 메인과 루틴은 **각자의** 퀵피커를 닫는다. 그대로 넘기면 첫 인자가 truthy 라 미리보기가 남는다(1692).
+  // ── 키보드 편집(RM-13) — 지금 보드에서 고른 블록에 먹는다. 고른 것이 없으면 거짓(스크롤 · 글자 복사를 막지 않는다).
+  nudgeLeft: (ctx) => nudge(ctx.board, 'left'),
+  nudgeRight: (ctx) => nudge(ctx.board, 'right'),
+  nudgeUp: (ctx) => nudge(ctx.board, 'up'),
+  nudgeDown: (ctx) => nudge(ctx.board, 'down'),
+  nudgeBarLeft: (ctx) => nudge(ctx.board, 'barLeft'),
+  nudgeBarRight: (ctx) => nudge(ctx.board, 'barRight'),
+  deleteSelection: ({ board }) => {
+    const boardId = boardIdOf(board);
+    const count = BoardCmd.copySelection(store, { boardId }).length;
+    if (!count) return false;
+    render(withUndoToast(BoardCmd.removeSelection(store, { boardId }), count > 1 ? `블록 ${count}개를 지웠습니다.` : '블록을 지웠습니다.', boardId));
+    return true;
+  },
+  copySelection: ({ board }) => {
+    const clip = BoardCmd.copySelection(store, { boardId: boardIdOf(board) });
+    if (!clip.length) return false;
+    clipboard = clip;
+    render({ notify: notice('status', clip.length > 1 ? `블록 ${clip.length}개를 담았습니다.` : '블록을 담았습니다.') });
+    return true;
+  },
+  paste: ({ board }) => {
+    if (!clipboard.length) return false;
+    const boardId = boardIdOf(board);
+    const at = BoardCmd.pasteAnchor(store, { boardId, fallback: boardId === BOARD_MAIN ? pasteCell : null });
+    render(commitIfChanged(BoardCmd.pasteClip(store, { boardId, clip: clipboard, at }, { ids: browserEnv }), boardId));
+    return true;
+  },
+  // 복제는 담아 둔 것을 건드리지 않는다 — 붙여넣기와 **같은 커맨드**(pasteClip)에 지금 고른 것을 넘긴다.
+  duplicate: ({ board }) => {
+    const boardId = boardIdOf(board);
+    const clip = BoardCmd.copySelection(store, { boardId });
+    if (!clip.length) return false;
+    const at = BoardCmd.pasteAnchor(store, { boardId });
+    render(commitIfChanged(BoardCmd.pasteClip(store, { boardId, clip, at }, { ids: browserEnv }), boardId));
+    return true;
+  },
+  selectAll: ({ board }) => {
+    const dirty = BoardCmd.selectAll(store, { boardId: boardIdOf(board) });
+    if (dirty === NONE) return false;
+    render(dirty);
+    return true;
+  },
   quickPlace: ({ board }) => {
     const boardId = board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN;
     render(BoardCmd.toggleQuickPlaceMode(store, { boardId }, { closeQuickPicker: () => quickPickers[boardId].close() }));
@@ -875,6 +955,7 @@ bindControls({
   runCommand,
   // 단축키가 먹는 보드(RM-13) — 루틴 편집기가 열려 있으면 루틴 보드다. 버튼은 `data-board` 로 따로 가른다.
   activeBoardId,
+  rememberCell: rememberPasteCell,
   // ⚠ 게터다 — 설정에서 바꾸면 다음 입력부터 바로 들어야 한다(값으로 주면 묶은 시점에 갇힌다).
   hotkeys: () => hotkeyMap,
   commands: {

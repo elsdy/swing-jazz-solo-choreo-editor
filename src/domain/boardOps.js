@@ -313,6 +313,38 @@ export function copyGroup(board, args, ids, opt) {
 }
 
 /**
+ * 담아 둔 블록 하나를 (targetRow, targetStartIndex)에 붙여 넣는다(2026-10-01, RM-13 키보드 붙여넣기 · 복제).
+ *
+ * copyGroup 과 **같은 규칙**이다 — COPY_POLICY(끝에서 자르기 · 붙여 넣은 행의 층 당기기), 빈 레인 찾기,
+ * groupId 먼저 · 세그먼트 id 다음의 발급 차례. 다른 점은 무엇을 복사할지가 보드 위의 그룹이 아니라
+ * **값**(이름 · 카테고리 · 길이 …)으로 들어온다는 것 하나다 — 복사한 뒤 원본을 지워도 붙여 넣을 수 있어야 한다.
+ * ⚠ 새 복사 길이 층 규칙(D-1)을 우회하지 않게 따로 식을 두지 않는다. 바꿀 일이 생기면 copyGroup 과 함께 바꾼다.
+ *
+ * @param {object} board
+ * @param {{ block: {name:string, category:string, pending?:boolean, type?:string, routineId?:string, count:number},
+ *           targetRow:number, targetStartIndex:number }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @param {Partial<typeof COPY_POLICY>} [opt]
+ * @returns {{placements:object[], renderRows:number[]|'all'|null, changedRows:number[], groupId:string|null}}
+ */
+export function pasteBlock(board, args, ids, opt) {
+  const policy = { ...COPY_POLICY, ...opt };
+  const { block, targetRow, targetStartIndex } = args;
+  if (!block || !(block.count > 0)) return { ...noRender(board), groupId: null };
+  const count = policy.clamp
+    ? Math.min(block.count, totalCellsFrom(targetRow, targetStartIndex, board))
+    : block.count;
+  if (count <= 0) return { ...noRender(board), groupId: null };
+  const segments = buildSegments(targetRow, targetStartIndex, count, board);
+  const meta = { name: block.name, category: block.category, pending: block.pending, type: block.type, routineId: block.routineId };
+  const subRow = findFreeLane(board.placements, segments);
+  const groupId = uidOf(ids)();
+  const added = makeSegmentPlacements(segments, { groupId, ...meta }, ids, { subRow });
+  const rows = [...new Set(segments.map(s => s.row))];
+  return { ...finish([...board.placements, ...added], rows, rows, policy), groupId };
+}
+
+/**
  * 그룹의 길이를 newCount 로 다시 만든다. rebuildGroup(3706-3726) — 리사이즈 확정 경로.
  *
  * ⚠ 오늘의 기본 정책(RESIZE_POLICY)은 이동·복사와 같다 — findFreeLane 으로 빈 레인을 찾아 내려가고

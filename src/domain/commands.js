@@ -103,6 +103,90 @@ export const COMMANDS = Object.freeze([
     fixed: true,
     button: 'Redo',
   }),
+  // ── 키보드 편집 (2026-10-01, RM-13) — 안무표에서 고른 블록에 먹는다 ──────────────
+  // ⚠ 화살표 · Delete · Ctrl+C/V/A 는 고정이다. OS 와 다른 앱이 같은 뜻으로 쓰는 글쇠라 바꾸면 손이 먼저 틀리고,
+  //   Delete · Backspace 는 사용자가 고를 수 없는 글쇠이기도 하다(hotkeys 의 RESERVED). 복제(Ctrl+D)만
+  //   바꿀 수 있다 — 브라우저의 북마크 글쇠라 그쪽을 쓰는 사람이 있다.
+  // ⚠ 글자를 치는 중에는 하나도 듣지 않는다(입력칸의 화살표 · Delete · Ctrl+C/V/A 는 글자 편집이다).
+  // ⚠ 고른 블록이 없으면 실행기가 거짓을 돌려줘 기본 동작(스크롤 · 글자 복사)을 막지 않는다.
+  def({
+    id: 'nudgeLeft',
+    label: '한 칸 앞으로',
+    hint: '고른 블록을 한 카운트 앞으로 옮긴다. 행 처음이면 윗 행 끝으로 넘어간다',
+    keys: ['ArrowLeft'],
+    fixed: true,
+  }),
+  def({
+    id: 'nudgeRight',
+    label: '한 칸 뒤로',
+    hint: '고른 블록을 한 카운트 뒤로 옮긴다. 표 끝에 닿으면 멈춘다 — 길이를 자르지 않는다',
+    keys: ['ArrowRight'],
+    fixed: true,
+  }),
+  def({
+    id: 'nudgeUp',
+    label: '윗 마디로',
+    hint: '고른 블록을 같은 박자 자리의 윗 행으로 옮긴다',
+    keys: ['ArrowUp'],
+    fixed: true,
+  }),
+  def({
+    id: 'nudgeDown',
+    label: '아랫 마디로',
+    hint: '고른 블록을 같은 박자 자리의 아랫 행으로 옮긴다',
+    keys: ['ArrowDown'],
+    fixed: true,
+  }),
+  def({
+    id: 'nudgeBarLeft',
+    label: '한 마디 앞으로',
+    hint: '고른 블록을 8카운트 앞으로 옮긴다',
+    keys: ['Shift+ArrowLeft'],
+    fixed: true,
+  }),
+  def({
+    id: 'nudgeBarRight',
+    label: '한 마디 뒤로',
+    hint: '고른 블록을 8카운트 뒤로 옮긴다',
+    keys: ['Shift+ArrowRight'],
+    fixed: true,
+  }),
+  def({
+    id: 'deleteSelection',
+    label: '고른 블록 지우기',
+    hint: '지운 뒤 뜨는 알림의 되돌리기나 Ctrl+Z 로 살린다',
+    // macOS 자판의 delete 글쇠는 브라우저에 `Backspace` 로 들어온다.
+    keys: ['Delete', 'Backspace'],
+    fixed: true,
+  }),
+  def({
+    id: 'copySelection',
+    label: '고른 블록 복사',
+    hint: '이름 · 카테고리 · 길이와 서로의 간격을 담는다. 이 창 안에서만 붙는다',
+    keys: ['Ctrl+C', 'Cmd+C'],
+    fixed: true,
+  }),
+  def({
+    id: 'paste',
+    label: '붙여넣기',
+    hint: '고른 블록 바로 뒤에, 고른 것이 없으면 마지막으로 누른 빈 칸에 붙인다. 붙인 블록이 고른 것이 된다',
+    keys: ['Ctrl+V', 'Cmd+V'],
+    fixed: true,
+  }),
+  def({
+    id: 'duplicate',
+    label: '복제',
+    hint: '고른 블록을 바로 뒤에 한 벌 더 놓는다. 담아 둔 복사본은 그대로다',
+    keys: ['Ctrl+D', 'Cmd+D'],
+    fixed: false,
+  }),
+  def({
+    id: 'selectAll',
+    label: '모두 고르기',
+    hint: '안무표의 블록을 모두 고른다',
+    keys: ['Ctrl+A', 'Cmd+A'],
+    fixed: true,
+  }),
   // ── 명령을 찾는 두 화면 — 둘 다 이 표를 읽기만 한다 ─────────────────────────
   // ⚠ 둘 다 바꿀 수 있다(설정 › 단축키). 일부 브라우저는 Ctrl+K 를 주소창 검색에 쓰고, `?` 는 자판에 따라
   //   손이 멀다 — 글쇠를 비우면 그 화면은 팔레트 · 버튼으로만 열린다(끄는 길이 곧 이것이다).
@@ -155,6 +239,10 @@ export const COMMANDS = Object.freeze([
     hint: '지금 안무표를 이름칸의 이름으로 저장한다',
     title: '지금 안무표를 이름칸의 이름으로 저장합니다',
     button: '프로젝트 저장',
+    // 브라우저의 「페이지 저장」 대신 안무표를 저장한다(RM-13). 이름칸에서 이름을 고치다 바로 누르는 글쇠라
+    // 글자를 치는 중에도 듣는다 — 조합 글쇠라 글자가 들어갈 일이 없다.
+    keys: ['Ctrl+S', 'Cmd+S'],
+    whileTyping: true,
     fixed: false,
   }),
   def({

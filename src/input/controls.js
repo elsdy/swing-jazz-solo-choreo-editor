@@ -231,7 +231,10 @@ export function bindControls(deps) {
   //   아니다) 등록 순서가 결과를 바꾸지 않는다 — 여기에 두어도 동작이 같다.
   if (els.mainBoardEl) {
     els.mainBoardEl.addEventListener('click', (e) => {
-      if (!e.target.closest(SEL.placement)) apply(commands.clearSelection());
+      if (e.target.closest(SEL.placement)) return;
+      apply(commands.clearSelection());
+      // 붙여넣기(Ctrl+V)가 고른 블록이 없을 때 놓일 자리 — 마지막으로 누른 빈 칸(RM-13). 칸 계산은 조립 층이 한다.
+      if (typeof deps.rememberCell === 'function') deps.rememberCell(e.clientX, e.clientY);
     });
   }
 
@@ -262,6 +265,9 @@ export function bindCommandButtons(deps) {
     runCommand(btn.dataset.command, { board: btn.dataset.board || 'main', source: 'button' });
   });
 }
+
+/** 재생기(`<video>` · `<audio>`)가 포커스를 쥐었을 때 그쪽에 양보하는 화살표. */
+const PLAYER_KEYS = Object.freeze(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Shift+ArrowLeft', 'Shift+ArrowRight']);
 
 /**
  * 전역 단축키. 원본 onHotkey(2820-2831) + bindControls 의 등록(2380).
@@ -307,12 +313,13 @@ export function bindHotkeys(deps) {
    * ⚠ 그래서 재생기가 포커스를 쥐고 있으면 **우리는 비킨다.** 글쇠 하나에 주인은 하나다.
    *   막지도 않는다(preventDefault 없음) — 막으면 재생기 쪽 처리까지 취소되어 진짜로 아무 일도
    *   일어나지 않는다.
-   * ⚠ 재생/일시정지에만 해당한다. `B`·`K`·`N` 은 재생기가 쓰지 않는 글쇠라 그대로 우리 것이다.
+   * ⚠ 재생/일시정지와 화살표에만 해당한다. `B`·`K`·`N` 은 재생기가 쓰지 않는 글쇠라 그대로 우리 것이다.
    * @param {EventTarget|null} target
    * @param {string} pressed normalizeKey 를 거친 이름
    */
   const playerOwnsKey = (target, pressed) => {
-    if (pressed !== 'Space') return false;
+    // 화살표도 재생기가 쥐면 되감기 · 소리 크기다(RM-13) — 고른 블록이 있어도 비킨다.
+    if (pressed !== 'Space' && !PLAYER_KEYS.includes(pressed)) return false;
     const tag = target && target.tagName;
     return tag === 'VIDEO' || tag === 'AUDIO';
   };

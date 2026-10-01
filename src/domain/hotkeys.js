@@ -47,7 +47,11 @@ export const MAX_KEYS_PER_ACTION = 3;
  * 받아 줄 수 없는 글쇠. 브라우저·OS 가 먼저 가져가거나, 이 앱이 이미 다른 뜻으로 쓴다.
  * ⚠ 소문자 비교다(normalizeKey 를 거친 뒤 대조한다).
  */
-const RESERVED = Object.freeze(['escape', 'tab', 'enter', 'backspace', 'delete', 'meta', 'control', 'alt', 'shift']);
+const RESERVED = Object.freeze([
+  'escape', 'tab', 'enter', 'backspace', 'delete', 'meta', 'control', 'alt', 'shift',
+  // 화살표는 키보드 편집(RM-13)의 고정 글쇠다. 다른 명령에 주면 고른 블록이 움직이지 않는다.
+  'arrowleft', 'arrowright', 'arrowup', 'arrowdown',
+]);
 
 /**
  * 브라우저 이벤트에서 뽑은 날값을 **화면에 그대로 나가는 글쇠 이름**으로 만든다.
@@ -77,7 +81,9 @@ export function normalizeKey(raw) {
   if (src.alt) parts.push('Alt');
   // ⚠ Shift 는 **조합으로만** 센다. 홑글쇠의 대문자화는 위에서 이미 했고, `Shift+B` 와 `B` 를
   //   다른 것으로 두면 대문자로 친 사람이 아무것도 못 누르는 일이 생긴다.
-  if (src.shift && parts.length > 0) parts.push('Shift');
+  // ⚠ 화살표만은 Shift 홀로도 센다(2026-10-01, RM-13) — `Shift+ArrowLeft` 는 한 마디 이동이고, 화살표에는
+  //   대문자가 없어 위의 걱정이 없다.
+  if (src.shift && (parts.length > 0 || base.startsWith('Arrow'))) parts.push('Shift');
   parts.push(base);
   return parts.join('+');
 }
