@@ -19,7 +19,7 @@ python3 server.py
 ## 고치기 전에 돌리는 것
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 346개 (도메인·어댑터·유스케이스 308 + 원칙 검사기 자기 시험 12 + 문서 라벨 대조 자기 시험 12 + server.py 실물 14, ffmpeg 이 있으면 실제로 한 번 자른다)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 398개 (도메인·어댑터·유스케이스 360 + 원칙 검사기 자기 시험 12 + 문서 라벨 대조 자기 시험 12 + server.py 실물 14, ffmpeg 이 있으면 실제로 한 번 자른다)
 node tests/run.mjs                # 격자 알고리즘 골든 151개
 node tools/check-arch.mjs         # 계층 방향과 순수성
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 튜토리얼·기능 설명서가 인용한 라벨이 화면에 있는지
