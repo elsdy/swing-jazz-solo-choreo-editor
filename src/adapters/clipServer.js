@@ -72,8 +72,9 @@ export function createClipServer(options = {}) {
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data && data.ok === true && typeof data.path === 'string') {
-          // 원칙-예외(D-5): 길이 0 인 클립은 없다 — 서버가 0 을 주면 「모름」이라 자른 구간으로 메운다
-          return { ok: true, path: data.path, name: data.name, url: data.url, durationSec: Number(data.durationSec) || (outSec - inSec) };
+          // 길이 0 인 클립은 없다 — 서버가 0 · 빈 값을 주면 「모름」이라 자른 구간으로 메운다(개발 원칙 D-5: `|| 기본값` 으로 쓰지 않는다)
+          const dur = Number(data.durationSec);
+          return { ok: true, path: data.path, name: data.name, url: data.url, durationSec: dur > 0 ? dur : (outSec - inSec) };
         }
         return { ok: false, error: (data && data.error) || `HTTP ${res.status}` };
       } catch (e) {
