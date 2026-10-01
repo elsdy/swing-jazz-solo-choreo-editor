@@ -366,6 +366,11 @@ test('server.py: ffmpeg 이 있으면 In~Out 을 다시 인코딩한 MP4 가 같
     const again = await (await fetch(`${s.base}/api/clips/trim`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: up.path, inSec: 0.5, outSec: 2 }) })).json();
     assert.equal(again.name, 'take [0m00.5s-0m02.0s] (2).mp4');
+    // 안무표에서 고른 대목(RM-31)은 초 대신 그 말로 이름을 짓는다. 못 쓰는 글자는 '_' 로 접는다.
+    const named = await (await fetch(`${s.base}/api/clips/trim`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: up.path, inSec: 0.5, outSec: 2, label: '8x5 ~ 8x8 Shim/Sham' }) })).json();
+    assert.equal(named.name, 'take [8x5 ~ 8x8 Shim_Sham].mp4');
+    assert.equal(named.path, 'video-clip/p/take [8x5 ~ 8x8 Shim_Sham].mp4');
   } finally {
     s.stop();
   }
@@ -664,6 +669,14 @@ function askPython(expr, env = {}) {
   assert.equal(res.status, 0, res.stderr);
   return res.stdout.trim();
 }
+
+test('server.py: 고른 대목의 이름(label)은 파일 이름에 못 쓰는 글자·대괄호를 걸러 짓고, 비면 초로 짓는 쪽으로 떨어진다', { skip: !hasPython && 'python3 없음' }, () => {
+  const out = askPython(
+    "'|'.join(str(server.labeled_name('take.mov', l)) for l in ('8x5 ~ 8x8 Shim Sham', 'a/b:[c]', '  ', None, '..x', 'ㄱ' * 200))"
+  ).split('|');
+  assert.deepEqual(out.slice(0, 5), ['take [8x5 ~ 8x8 Shim Sham].mp4', 'take [a_b_c].mp4', 'None', 'None', 'take [x].mp4']);
+  assert.equal(out[5], `take [${'ㄱ'.repeat(80)}].mp4`, '라벨은 80자에서 자른다');
+});
 
 test('server.py: 데이터·설정·캐시가 저장소 밖의 서로 다른 자리다', { skip: !hasPython && 'python3 없음' }, () => {
   const [data, config, cache] = askPython(

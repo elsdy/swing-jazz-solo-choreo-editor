@@ -21,7 +21,7 @@ function defaultFetch() {
  * @param {{fetchImpl?: typeof fetch|null, base?: string}} [options] 테스트가 가짜 fetch 를 준다
  * @returns {{
  *   probe: () => Promise<ClipServerConfig|null>,
- *   trim: (path: string, inSec: number, outSec: number) => Promise<TrimResult>,
+ *   trim: (path: string, inSec: number, outSec: number, label?: string) => Promise<TrimResult>,
  *   getConfig: () => Promise<ClipServerConfig|null>,
  *   setConfig: (next: {root?: string, subdir?: string}) => Promise<ClipServerConfig|null>,
  *   upload: (file: Blob & {name?: string}, projectName: string, fileName?: string) => Promise<{path:string, url:string}|null>,
@@ -61,14 +61,16 @@ export function createClipServer(options = {}) {
      * 걸릴 수 있다 — 호출부는 그동안 "잘라내는 중" 을 보여 준다. 원본 파일은 서버에 그대로 남는다.
      * ⚠ 이 함수만은 실패 이유를 돌려준다(`{ok:false, error}`) — ffmpeg 이 없는 것과 인코딩이 실패한 것은 사용자가
      *   할 일이 다르다. 문구는 서버가 만든 그대로고(한국어), 여기서 새 문구를 만들지 않는다.
+     * label 을 주면 새 파일 이름이 초 대신 그 말로 지어진다(`take [8x5 ~ 8x8 Shim Sham].mp4` — RM-31).
+     * @param {string} [label]
      * @returns {Promise<TrimResult>}
      */
-    async trim(path, inSec, outSec) {
+    async trim(path, inSec, outSec, label) {
       if (!doFetch) return { ok: false, error: 'no fetch' };
       try {
         const res = await doFetch(`${base}/api/clips/trim`, {
           method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path, inSec, outSec })
+          body: JSON.stringify(label ? { path, inSec, outSec, label } : { path, inSec, outSec })
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data && data.ok === true && typeof data.path === 'string') {

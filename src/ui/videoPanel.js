@@ -22,6 +22,7 @@
 //     ① 두 점 앵커가 완성된 순간(markTempoPoint 가 committed 를 돌려줄 때)
 //     ② 탭 템포 확정(commitTaps)  ③ BPM·박 직접 입력의 change(blur/Enter)
 //     ④ 재앵커  ⑤ 템포 지우기  ⑥ 마커 추가·삭제·박자 반영  ⑦ 잘라내기 결과 적용(applyTrim)
+//     ⑧ 고른 대목 내보내기 결과 적용(addExcerptClip — app/main 이 커밋한다)
 //   패널 열기/접기/따라가기·탭 한 번 한 번·In/Out 찍기·구간 반복에는 걸지 않는다 — 화면 상태이지 안무가 아니다.
 
 import { CLS, DATA } from './domContract.js';
@@ -35,6 +36,7 @@ import { flowTrack } from '../domain/flowTrack.js';
 import { openCount } from '../domain/stepTodos.js';
 import { markersAt, normalizeMarkers } from '../domain/markers.js';
 import { activeClipOf, clipCoverage, normalizeMedia } from '../domain/project/media.js';
+import { EXCERPT_LEAD_COUNTS, excerptLabel, excerptSpan } from '../domain/excerpt.js';
 
 /** 메인 보드의 store 상 id. usecases/store.BOARD_MAIN 과 같은 문자열이다(ui 는 usecases 를 import 하지 않는다). */
 const BOARD_MAIN = 'main';
@@ -57,6 +59,17 @@ const TRIM_TEXT = Object.freeze({
   'not-stored': '이 파일은 아직 보관 폴더에 없습니다. 보관이 끝나면(파일명 옆 경로가 생기면) 잘라낼 수 있습니다.',
   'busy': '잘라내는 중… 구간 길이에 따라 수십 초가 걸릴 수 있습니다. 끝나면 새 클립으로 바뀝니다.',
   'ready': '이 구간만 남긴 새 클립(MP4)을 만들고 그 클립으로 갈아 끼웁니다. 박자 설정과 마커도 새 시간축으로 따라갑니다.'
+});
+
+/**
+ * 고른 대목 내보내기(RM-31)가 잠긴 이유 → 안내 문구. 자르기와 같은 서버·파일 조건은 TRIM_TEXT 를 그대로 쓰고,
+ * 내보내기에만 있는 셋(선택 없음 · 박자 없음 · 영상 밖)만 여기 둔다.
+ */
+const EXPORT_TEXT = Object.freeze({
+  'no-selection': '안무표에서 블록을 고르면(여럿은 하나씩 더해 고르기) 그 대목만 박자로 계산해 잘라 냅니다. 지금 영상은 그대로 둡니다.',
+  'no-tempo': '박자를 먼저 맞추세요(`② 박자 맞추기`). 그래야 고른 마디가 영상의 몇 초인지 계산할 수 있습니다.',
+  'outside': '고른 대목이 이 영상 밖입니다 — 박자 기준점보다 앞이거나 영상이 끝난 뒤입니다.',
+  'busy': '잘라내는 중… 구간 길이에 따라 수십 초가 걸릴 수 있습니다. 끝나면 영상 목록에 새 클립이 생깁니다.'
 });
 
 /**
@@ -193,6 +206,10 @@ export function formatRange(from, to, cols) {
  * @property {() => string} [getTrimError] 마지막 잘라내기 실패 이유(서버 문구). 비어 있으면 실패가 없었다
  * @property {(range: {inSec:number, outSec:number}) => void} [onTrim] `✂ 잘라서 새 클립으로`. 서버에 자르기를 시키고
  *   끝나면 applyTrim 커맨드로 소스를 갈아 끼우는 것까지 호출부(app/main)의 몫이다
+ * @property {() => string} [getExportError] 마지막 내보내기 실패 이유(서버 문구). 비어 있으면 실패가 없었다
+ * @property {(req: {startSec:number, endSec:number, label:string}) => void} [onExportExcerpt]
+ *   `🎞 고른 대목 잘라 내보내기`(RM-31). 서버에 자르기를 시키고 끝나면 addExcerptClip 으로 **목록에 더하기만** 하는 것까지
+ *   호출부의 몫이다. 서버·파일 조건(busy 포함)은 getTrimState 를 함께 쓴다 — 한 번에 하나만 자른다
  * @property {{
  *   togglePanel: () => any, closePanel: () => any,
  *   setCollapsed: (args?: {collapsed?: boolean}) => any,
@@ -266,6 +283,8 @@ export function createVideoPanel(deps) {
     getTrimState = () => 'no-server',
     getTrimError = () => '',
     onTrim = () => {},
+    getExportError = () => '',
+    onExportExcerpt = () => {},
     onSync = () => {},
     commands,
     elements = {}
@@ -336,6 +355,8 @@ export function createVideoPanel(deps) {
   const voiceHelp = byId('videoVoiceHelp');
   const trimBtn = byId('videoTrimBtn');
   const trimHelp = byId('videoTrimHelp');
+  const exportBtn = byId('videoExportBtn');
+  const exportHelp = byId('videoExportHelp');
   const markerSelBtn = byId('videoMarkerSelBtn');
   const markerRowBtn = byId('videoMarkerRowBtn');
   const markerClearBtn = byId('videoMarkerClearBtn');
@@ -1369,6 +1390,7 @@ export function createVideoPanel(deps) {
       trimHelp.textContent = err && state !== 'busy' ? `잘라내기 실패: ${err}` : (TRIM_TEXT[state] || TRIM_TEXT.ready);
       trimHelp.classList.toggle(CLS.isError, !!err && state !== 'busy');
     }
+    renderExport(board);
 
     // 마커 — 만들기 버튼과 목록.
     const sel = selectedRange();
@@ -1672,6 +1694,59 @@ export function createVideoPanel(deps) {
       const range = inOutRange();
       if (!range || getTrimState() !== 'ready') return;
       onTrim(range);
+    };
+  }
+
+  /**
+   * 고른 대목을 무엇으로 자를지 — 안 되면 왜인가(RM-31). 버튼과 안내가 같은 답을 읽는다.
+   * 순서가 곧 안내의 우선순위다: 고른 것 → 박자 → 서버·파일 조건 → 영상 밖.
+   * @returns {{state:string, sel?: {from:number, to:number, names:string[]}, span?: import('../domain/excerpt.js').ExcerptSpan, label?: string}}
+   */
+  function excerptPlan() {
+    const sel = selectedRange();
+    if (!sel) return { state: 'no-selection' };
+    const range = { fromCount: sel.from, toCount: sel.to };
+    const t = tempo();
+    if (!isTempoUsable(t)) return { state: 'no-tempo', sel };
+    const serverState = getTrimState();
+    if (serverState !== 'ready') return { state: serverState, sel };
+    const span = excerptSpan(range, t, { leadCounts: EXCERPT_LEAD_COUNTS, durationSec: getDurationSec() });
+    if (!span.ok) return { state: span.reason === 'no-tempo' ? 'no-tempo' : 'outside', sel };
+    return { state: 'ready', sel, span, label: excerptLabel(range, mainBoard().cols, sel.names) };
+  }
+
+  function renderExport(board) {
+    if (!exportBtn && !exportHelp) return;
+    const plan = excerptPlan();
+    if (exportBtn) {
+      exportBtn.disabled = plan.state !== 'ready';
+      exportBtn.textContent = plan.state === 'busy' ? '🎞 잘라내는 중…' : '🎞 고른 대목 잘라 내보내기';
+    }
+    if (!exportHelp) return;
+    const err = getExportError();
+    let text;
+    if (err && plan.state !== 'busy') text = `내보내기 실패: ${err}`;
+    else if (plan.state === 'ready') {
+      const { span, label } = plan;
+      const notes = [];
+      if (span.leadSec > 0) notes.push(`앞 ${EXCERPT_LEAD_COUNTS}카운트 여유 포함`);
+      if (span.clippedStart) notes.push('앞부분이 영상 0초보다 앞이라 잘렸습니다');
+      if (span.clippedEnd) notes.push('뒷부분이 영상 끝을 넘어 잘렸습니다');
+      text = `「${label}」 → ${formatClock(span.startSec)} ~ ${formatClock(span.endSec)} (${(span.endSec - span.startSec).toFixed(1)}초`
+        + `${notes.length ? ' · ' + notes.join(' · ') : ''}). 새 클립은 영상 목록에 더해지고 지금 영상은 그대로입니다.`;
+    } else {
+      text = EXPORT_TEXT[plan.state] || TRIM_TEXT[plan.state] || '';
+      if (plan.sel && plan.state !== 'busy') text = `선택: ${formatRange(plan.sel.from, plan.sel.to, board.cols)} — ${text}`;
+    }
+    exportHelp.textContent = text;
+    exportHelp.classList.toggle(CLS.isError, !!err && plan.state !== 'busy');
+  }
+
+  if (exportBtn) {
+    exportBtn.onclick = () => {
+      const plan = excerptPlan();
+      if (plan.state !== 'ready') return;
+      onExportExcerpt({ startSec: plan.span.startSec, endSec: plan.span.endSec, label: plan.label });
     };
   }
 

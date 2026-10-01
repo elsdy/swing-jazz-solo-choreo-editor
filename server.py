@@ -44,7 +44,7 @@
                                           그 이름의 파일이 이미 있으면 그것을 먼저 .history 에 남긴다 — 복구가 무엇도 지우지 않는다
     HEAD /api/clips/<path>                있는지(200/404)
     GET  /clips/<path>                    파일. Range 를 지원한다(<video> 탐색에 필수)
-    POST /api/clips/trim {path, inSec, outSec}   보관된 클립을 [inSec, outSec) 로 잘라 **다시 인코딩**해 같은 폴더에
+    POST /api/clips/trim {path, inSec, outSec, label?}   보관된 클립을 [inSec, outSec) 로 잘라 **다시 인코딩**해 같은 폴더에
                                           '<이름> [0m12.3s-0m45.0s].mp4' 로 둔다(원본은 그대로). ffmpeg 이 있어야 한다
                                           (health 의 ffmpeg 필드). → {path, name, url, size, durationSec}
 
@@ -329,6 +329,20 @@ def trimmed_name(file_name, in_sec, out_sec):
     """잘라 낸 클립의 이름. 'take.mov' + [12.3, 45.0) → 'take [0m12.3s-0m45.0s].mp4'. 재인코딩이라 확장자는 늘 .mp4 다."""
     stem = re.sub(r'\.[^.]*$', '', file_name) or file_name
     return f'{stem} [{clock_tag(in_sec)}-{clock_tag(out_sec)}].mp4'
+
+
+LABEL_MAX = 80
+
+
+def labeled_name(file_name, label):
+    """안무표에서 고른 대목을 잘라 낸 클립의 이름(RM-31). 'take.mov' + '8x5 ~ 8x8 Shim Sham' →
+    'take [8x5 ~ 8x8 Shim Sham].mp4'. 라벨은 파일 이름에 못 쓰는 글자를 '_' 로 접고 길이를 자른다.
+    라벨이 비면 None — 호출부가 초로 짓는 trimmed_name 으로 떨어진다."""
+    tag = safe_segment(re.sub(r'[\[\]]', '', str(label or '')), '')[:LABEL_MAX].strip()
+    if not tag:
+        return None
+    stem = re.sub(r'\.[^.]*$', '', file_name) or file_name
+    return f'{stem} [{tag}].mp4'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1592,7 +1606,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._error(HTTPStatus.NOT_FOUND, 'no such clip')
         if not self.ffmpeg:
             return self._error(HTTPStatus.NOT_IMPLEMENTED, 'ffmpeg 이 없습니다. 설치하고(brew install ffmpeg) 서버를 다시 켜거나 --ffmpeg 로 경로를 주세요.')
-        name = trimmed_name(src.name, in_sec, out_sec)
+        name = labeled_name(src.name, data.get('label')) or trimmed_name(src.name, in_sec, out_sec)
         final, n = name, 2
         while (src.parent / final).exists():
             final = numbered_name(name, n)

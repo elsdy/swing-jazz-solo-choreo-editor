@@ -976,3 +976,43 @@ export function applyTrim(store, args = {}) {
     markers: shiftMarkersForTrim(cur.markers, inSec, outSec)
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 내보내기 — 안무표에서 고른 대목을 잘라 **곁에** 둔다 (RM-31 · 2026-10-01)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 안무표에서 고른 대목을 잘라 낸 새 클립이 생겼다. **목록에 더하기만 한다** — 지금 보는 영상과 그 박자·마커,
+ * In/Out 은 그대로다. 여러 대목을 연달아 뽑을 수 있어야 하고, 안무표의 다른 대목과 지금 영상의 싱크가
+ * 끊기면 안 된다. 그래서 applyTrim(지금 영상을 갈아 끼우고 시간축을 당긴다)을 부르지 않는다.
+ *
+ * 새 클립은 원본의 박자·마커를 startSec 만큼 당겨 **물려받는다** — 잘라 낸 영상의 0초가 원본의 startSec 이니
+ * 같은 박자가 그대로 맞는다. 찍은 날짜도 같은 테이크라 물려받는다.
+ * ⚠ 같은 경로의 클립이 이미 있으면 아무것도 하지 않는다(서버는 늘 새 이름을 주므로 보통은 없다).
+ * ⚠ 실제 인코딩은 어댑터(clipServer.trim)가 했고 여기는 결과만 받는다.
+ * @param {object} store
+ * @param {{name?: string, path?: string, label?: string, startSec?: number, endSec?: number}} args
+ * @returns {import('./store.js').Dirty}
+ */
+export function addExcerptClip(store, args = {}) {
+  const startSec = Number(args.startSec);
+  const endSec = Number(args.endSec);
+  const source = normalizeMediaSource({ kind: 'file', name: args.name, path: args.path });
+  if (!source || !Number.isFinite(startSec) || !Number.isFinite(endSec) || !(endSec > startSec)) return NONE;
+  const cur = normalizeMedia(store.get().media);
+  const id = clipIdOf(source);
+  if (!id || cur.clips.some(c => c.id === id)) return NONE;
+  const from = activeClipOf(cur);
+  const label = String(args.label == null ? '' : args.label).trim();
+  const clip = {
+    id,
+    name: label || defaultClipName(cur.clips.length),
+    takenAt: from.takenAt || '',
+    note: from.name ? `「${from.name}」에서 잘라 냄` : '',
+    source,
+    tempo: shiftTempo(from.tempo, -startSec),
+    markers: shiftMarkersForTrim(from.markers, startSec, endSec)
+  };
+  store.update({ media: normalizeMedia({ activeId: cur.activeId, clips: [...cur.clips, clip] }) });
+  return VIDEO;
+}
