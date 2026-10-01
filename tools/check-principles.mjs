@@ -20,79 +20,17 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { blankJs, lineAt } from './lib/js-text.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // ── 글자 다루기 ─────────────────────────────────────────────────────────────
-
-/** 오프셋 → 1부터 세는 줄 번호. */
-const lineAt = (text, index) => text.slice(0, index).split('\n').length;
 
 /** 그 줄이나 바로 윗줄에 이유가 붙은 예외 표식이 있나. */
 function excused(text, line, principle) {
   const lines = text.split('\n');
   const re = new RegExp(`원칙-예외\\(${principle}\\)\\s*:\\s*\\S`);
   return re.test(lines[line - 1] || '') || re.test(lines[line - 2] || '');
-}
-
-/**
- * JS 원문에서 주석과 문자열 **속**을 같은 길이의 공백으로 지운다(줄바꿈은 남겨 줄 번호가 그대로다).
- * 템플릿의 `${…}` 안은 코드이므로 남긴다. 정규식 리터럴은 앞 글자로 어림한다.
- */
-function blankJs(src) {
-  const out = src.split('');
-  const blank = (a, b) => { for (let i = a; i < b; i++) if (out[i] !== '\n') out[i] = ' '; };
-  let i = 0;
-  const stack = []; // '{' 코드 블록 · '`' 템플릿 안 `${` 의 깊이
-  const prevSignificant = (k) => { while (k >= 0 && /\s/.test(src[k])) k--; return k >= 0 ? src[k] : ''; };
-  function readTemplate() {
-    // src[i] === '`'
-    let j = i + 1;
-    let start = j;
-    while (j < src.length) {
-      if (src[j] === '\\') { j += 2; continue; }
-      if (src[j] === '`') { blank(start, j); i = j + 1; return; }
-      if (src[j] === '$' && src[j + 1] === '{') {
-        blank(start, j);
-        i = j + 2;
-        readCode(1);
-        j = i;          // i 는 짝 '}' 바로 뒤
-        start = j;
-        continue;
-      }
-      j++;
-    }
-    blank(start, j); i = j;
-  }
-  function readCode(depth) {
-    while (i < src.length) {
-      const c = src[i];
-      const n = src[i + 1];
-      if (c === '/' && n === '/') { const e = src.indexOf('\n', i); const end = e < 0 ? src.length : e; blank(i, end); i = end; continue; }
-      if (c === '/' && n === '*') { const e = src.indexOf('*/', i + 2); const end = e < 0 ? src.length : e + 2; blank(i, end); i = end; continue; }
-      if (c === '\'' || c === '"') {
-        let j = i + 1;
-        while (j < src.length && src[j] !== c && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1;
-        blank(i + 1, j); i = j + 1; continue;
-      }
-      if (c === '`') { readTemplate(); continue; }
-      if (c === '/' && /^[(,=:[!&|?{};+\-*%<>~^]?$/.test(prevSignificant(i - 1)) && !/[\w$)\]]/.test(prevSignificant(i - 1))) {
-        let j = i + 1; let inClass = false;
-        while (j < src.length && src[j] !== '\n') {
-          if (src[j] === '\\') { j += 2; continue; }
-          if (src[j] === '[') inClass = true; else if (src[j] === ']') inClass = false;
-          else if (src[j] === '/' && !inClass) break;
-          j++;
-        }
-        blank(i + 1, j); i = j + 1; continue;
-      }
-      if (c === '{') depth++;
-      if (c === '}') { depth--; if (depth === 0 && stack !== null) { i++; return; } }
-      i++;
-    }
-  }
-  readCode(Infinity);
-  return out.join('');
 }
 
 /** `open` 이 가리키는 여는 괄호의 짝 닫는 괄호 위치. 원문은 blankJs 를 거친 것이어야 한다. */
