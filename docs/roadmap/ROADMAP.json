@@ -1893,7 +1893,6 @@
             "src/ui/projectPanel.js#createProjectPanel",
             "src/ui/practiceLogView.js",
             "src/app/main.js#projectDeps",
-            "src/ui/projectPanel.js#createProjectPanel",
             "index.html#projectPanel",
             "tests/unit/versions.test.mjs",
             "tests/unit/domain.test.mjs",
