@@ -793,8 +793,8 @@
             "B"
           ],
           "what": "안무표에서 블록 몇 개를 고른 채 「전체 초기화(링크 포함)」·「전체 불러오기」·「안무표만 비우기」를 누르면, 블록은 사라져도 고른 목록은 그대로 남는다. 그래서 도구 모음에 「루틴으로 편성 (2)」가 계속 떠 있고, 눌러도 편성할 블록이 없어 아무 일도 없다. 이 세 동작이 끝날 때 고른 목록도 함께 비워, 버튼이 사라지는 것이 맞는 모습이 되게 한다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 34,
           "files": [
             "src/usecases/boardCommands.js#clearBoard",
             "src/usecases/boardCommands.js#clearPlacements",
@@ -806,7 +806,10 @@
             "docs/ROADMAP.md",
             "docs/roadmap/ROADMAP.json"
           ],
-          "plan": "docs/roadmap/plans/RM-03.md"
+          "plan": "docs/roadmap/plans/RM-03.md",
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-09-30",
+          "branch": "rm-03-parallel"
         },
         {
           "id": "RM-04",
@@ -828,8 +831,8 @@
             "D"
           ],
           "what": "앱이 알리는 길을 막음(앱 안 모달)·토스트·참고 세 급으로 나눈다. 성공 소식과 가벼운 실패까지 브라우저 alert 로 띄우던 것, 이름을 브라우저 prompt 로 받던 것을 걷어 받아 적는 흐름이 끊기지 않게 한다. 지금은 Dirty.notify 가 'alert' 한 종류만 받고, 유스케이스·입력 층·조립부에 dialogs.alert 직접 호출이 14곳, promptText 가 5곳 흩어져 있다. 판의 RM-15(인라인 이름)·RM-07(Undo 유령 단계)·RM-03(같은 projectCommands.js 를 고치는 중)과 겹치고, RM-09·RM-19·RM-12·RM-13·RM-14 가 이 채널 위에 선다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 35,
           "files": [
             "src/usecases/store.js",
             "src/app/render.js",
@@ -858,7 +861,10 @@
             "tests/unit/notice.test.mjs",
             "tests/unit/domain.test.mjs"
           ],
-          "plan": "docs/roadmap/plans/RM-04.md"
+          "plan": "docs/roadmap/plans/RM-04.md",
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-04-parallel"
         },
         {
           "id": "RM-05",
@@ -876,8 +882,8 @@
             "D"
           ],
           "what": "코드 글자만 보고도 어긴 것을 알 수 있는 다섯 원칙(U-11 · U-12 · D-5 · R-6 · D-14)을 tools/ 의 검사기 하나로 옮겨, 사람이 리뷰 때마다 떠올리지 않아도 걸리게 한다. RM-06 과는 검사기 뼈대를 함께 쓰고, D-14 대조는 RM-09 가 들어오면 걷어내며, U-12 를 전역 규칙으로 풀면 RM-17 과 CSS 자리가 겹친다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 36,
           "files": [
             "tools/check-principles.mjs",
             "tests/unit/checkPrinciples.test.mjs",
@@ -887,7 +893,10 @@
             "docs/ROADMAP.md",
             "docs/roadmap/ROADMAP.json"
           ],
-          "plan": "docs/roadmap/plans/RM-05.md"
+          "plan": "docs/roadmap/plans/RM-05.md",
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-05-parallel"
         },
         {
           "id": "RM-06",
@@ -906,8 +915,8 @@
             "E"
           ],
           "what": "문서 검사기가 튜토리얼·기능 설명서의 백틱 인용을 모두 뽑아, 그 글자가 index.html·admin.html·src/ 에 실제로 있는지 다섯 번째 검사로 대조한다. 라벨을 바꾸고 문서를 안 고친 병합(`동작 팔레트` → `동작 목록`)과 없어진 화면을 설명하던 튜토리얼 첫 절을 사람보다 먼저 붉게 잡으려는 것이고, 검사기 뼈대는 RM-05 와 나눠 쓰며 RM-09·RM-10 이 들어오면 긁기 대신 그 표를 읽도록 바뀐다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 37,
           "files": [
             "tools/check-docs.mjs",
             "tools/docLabels.mjs",
@@ -919,7 +928,10 @@
             "docs/ROADMAP.md",
             "docs/roadmap/ROADMAP.json"
           ],
-          "plan": "docs/roadmap/plans/RM-06.md"
+          "plan": "docs/roadmap/plans/RM-06.md",
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-06-parallel"
         },
         {
           "id": "RM-07",
@@ -938,8 +950,8 @@
             "D"
           ],
           "what": "되돌린 상태에서 카테고리 키가 가나다순으로 다시 정렬된다. 그래서 Undo 직후의 커밋이 같은 화면의 단계를 하나 더 쌓고 다시 실행 대기열을 날린다. 되살린 카테고리 순서를 스냅샷과 같게 맞춰 Undo 한 번이 정확히 한 단계가 되게 한다. RM-04 의 「되돌리기」 토스트가 이 Undo 를 부르고, 순서를 저장할지는 RM-34 와 겹친다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 38,
           "files": [
             "src/domain/project/snapshot.js#UNDO_OPS",
             "src/domain/project/snapshot.js#applySnapshot",
@@ -950,7 +962,10 @@
             "docs/ROADMAP.md",
             "docs/roadmap/ROADMAP.json"
           ],
-          "plan": "docs/roadmap/plans/RM-07.md"
+          "plan": "docs/roadmap/plans/RM-07.md",
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-07-parallel"
         },
         {
           "id": "RM-08",
@@ -970,8 +985,8 @@
             "D"
           ],
           "what": "보드의 히트 판정, 탭인지 끌기인지 가르는 분기, 팝업 네 개의 자리 계산을 화면 코드에서 떼어 순수 함수로 만들고 시험으로 지금 동작을 굳힌다. 동작은 바꾸지 않는다. 이 일은 RM-11(포인터 이벤트 통일)과 RM-12(직접 조작 문법)가 이 층을 다시 짜기 전에 무엇이 깨지는지 바로 보이게 하는 안전망이다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 39,
           "files": [
             "src/domain/gestureMath.js",
             "src/domain/boardGesture.js",
@@ -1002,7 +1017,10 @@
               "text": "Q5(개발 전용 도구 허용)를 정한다 — RM-08 1단이 끝나 2단(브라우저 회귀 시험)이 이 결정을 기다린다",
               "state": "done"
             }
-          ]
+          ],
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-08-parallel"
         },
         {
           "id": "RM-36",
@@ -1070,8 +1088,8 @@
             "C"
           ],
           "what": "되돌리기 · 재생 · 끊기 · 영상 열기 · 프로젝트 이름처럼 같은 일을 하는 입구가 여러 곳에 따로 있어 라벨 · 툴팁 · 글쇠가 서로 어긋난다. 그래서 명령마다 id · 라벨 · 툴팁 · 기본 글쇠 · 「지금 할 수 있나」를 도메인 표 한 벌에 적고, 버튼 · 글쇠 · 엄지 줄이 모두 그 표를 따르게 한다. 그 위에 Ctrl+K 팔레트와 `?` 일람을 얹는다. 판의 RM-36(엄지 줄)과 파일이 겹친다. RM-10(라벨 문자열 표) · RM-13(키보드 편집) · RM-14(선택 액션 바) · RM-18(아이콘 열)이 이 표 위에 서고, RM-15 와는 `?` 글쇠가 부딪친다. RM-05 의 D-14 대조와 RM-06 의 라벨 긁기는 이 표를 읽도록 바뀐다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 40,
           "files": [
             "src/domain/commands.js",
             "src/domain/hotkeys.js#HOTKEY_ACTIONS",
@@ -1117,7 +1135,10 @@
               "text": "쓰는 브라우저에서 Ctrl+K(Cmd+K)가 주소창에 뺏기지 않고 명령 찾기가 뜨는지 본다 — 뺏기면 ⚙ 설정 › 단축키 에서 바꾼다",
               "state": "done"
             }
-          ]
+          ],
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-09-parallel"
         },
         {
           "id": "RM-10",
@@ -1258,8 +1279,8 @@
             "B"
           ],
           "what": "고른 블록을 화살표로 한 칸, Shift+화살표로 한 마디 옮기고, Delete로 지우고, Ctrl+C/V/D로 복사·붙여넣기·복제하게 한다. 이 명령들은 이미 있는 옮기기·복사·지우기 명령을 그대로 불러 끌기와 같은 층 규칙을 따르게 한다. RM-09 명령 등록부 위에 서고, 선택 묶음 규칙은 RM-14, 삭제 뒤 알림은 RM-04 채널, 선택 비우기는 RM-03, 복사 경로는 RM-02와 겹친다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 41,
           "files": [
             "src/domain/hotkeys.js",
             "src/input/controls.js#bindHotkeys",
@@ -1284,7 +1305,10 @@
               "text": "Ctrl+S(Cmd+S)가 브라우저의 페이지 저장 대신 프로젝트 파일을 내려받는지 본다(브라우저 시험에서 다운로드를 하지 않았다)",
               "state": "done"
             }
-          ]
+          ],
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-13-parallel"
         },
         {
           "id": "RM-14",
@@ -1572,8 +1596,8 @@
             "★"
           ],
           "what": "영상의 반복 구간을 초가 아니라 안무표에서 고른 블록이나 마디의 카운트 구간으로 잡는다. 여기에 두 소스가 함께 쓰는 배속·미러·박자에 맞춘 카운트 소리를 붙인 연습 조작 줄을 둔다. 지금 있는 In/Out 반복 장치·배속 계약·선택 구간 계산을 그대로 다시 쓰고, 파트 단위 반복(RM-23)과 구간·배속의 저장(RM-29)은 그 항목들과 겹치므로 이 판에서는 이음매만 남긴다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 42,
           "files": [
             "src/domain/practice.js",
             "src/domain/tempo.js#groupToSpan",
@@ -1602,7 +1626,10 @@
               "state": "approved",
               "human": true
             }
-          ]
+          ],
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-22-parallel"
         },
         {
           "id": "RM-23",
@@ -1936,8 +1963,8 @@
           ],
           "defaults": [],
           "what": "안무표에서 고른 블록들이 덮는 카운트 구간을 맞춰 둔 박자로 초 구간으로 바꾸고, 서버의 기존 자르기(ffmpeg)로 그 대목만 담은 MP4 를 만들어 영상 목록에 곁들여 더한다. 사람이 In/Out 을 손으로 찍지 않게 하려는 것이고, 지금 보는 영상·박자·마커는 그대로 둔다. RM-14(선택 액션 바)가 서면 같은 명령을 그 바에도 걸고, RM-20(영상 패널 재편)과는 같은 ④ 자르기 구획을 만진다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 43,
           "files": [
             "src/domain/tempo.js#groupToSpan",
             "src/usecases/videoCommands.js#applyTrim",
@@ -1963,7 +1990,10 @@
               "text": "앞 여유 2카운트를 써 보고 ⚙ 설정이나 단추 옆 칸으로 바꿀 수 있게 할지 정한다",
               "state": "done"
             }
-          ]
+          ],
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-31-parallel"
         },
         {
           "id": "RM-33",
@@ -2013,8 +2043,8 @@
             "A"
           ],
           "what": "새 루틴의 색을 세션 카운터 대신 지금 안무표의 루틴들에서 셈해, 다시 열거나 불러온 뒤에도 기존 루틴과 겹치지 않게 한다. 루틴 목록의 색 칩을 눌러 색을 바꾸고 저장·되돌리기까지 되게 한다. 판의 RM-07(정렬 순서 저장을 이 항목으로 미룸), RM-12·RM-15(누르기 문법), RM-17(토큰 밖 데이터 색)과 닿는다.",
-          "stage": null,
-          "pr": null,
+          "stage": "merged",
+          "pr": 44,
           "files": [
             "src/domain/routines.js#nextColor",
             "src/usecases/routineCommands.js#takeRoutineColor",
@@ -2028,7 +2058,10 @@
             "docs/HISTORY.md",
             "docs/ROADMAP.md"
           ],
-          "plan": "docs/roadmap/plans/RM-34.md"
+          "plan": "docs/roadmap/plans/RM-34.md",
+          "mergedAt": "2026-10-01",
+          "startedAt": "2026-10-01",
+          "branch": "rm-34-parallel"
         },
         {
           "id": "RM-35",
