@@ -19,7 +19,7 @@ python3 server.py
 ## 고치기 전에 돌리는 것
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 479개 (도메인·어댑터·유스케이스 439 + 원칙 검사기 자기 시험 13 + 문서 라벨 대조 자기 시험 12 + server.py 실물 15, ffmpeg 이 있으면 실제로 한 번 자른다)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 480개 (도메인·어댑터·유스케이스 440 + 원칙 검사기 자기 시험 13 + 문서 라벨 대조 자기 시험 12 + server.py 실물 15, ffmpeg 이 있으면 실제로 한 번 자른다)
 node tests/run.mjs                # 격자 알고리즘 골든 151개
 node tools/check-arch.mjs         # 계층 방향과 순수성
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 튜토리얼·기능 설명서가 인용한 라벨이 화면에 있는지
@@ -73,7 +73,8 @@ node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 여섯(U-1
 
 무엇을 왜 만드는지는 [로드맵](docs/ROADMAP.md), **어디까지 왔는지**(끝낸 걸음·PR 번호·내 차례)는 `docs/roadmap/ROADMAP.json` 에 있다.
 이 파일은 여러 저장소를 한 화면에 모아 보는 **로드맵 보드**(`~/Github/roadmap-board`, `python3 rb.py next`)가 읽고 쓴다.
-항목을 더하면 문서의 칸 · 추적 표 · JSON 세 곳을 같은 `RM-nn` 으로 고친다 — 어긋나면 `tests/unit/roadmapFile.test.mjs` 가 붉어진다.
+항목을 더하면 문서의 칸 · 추적 표 · JSON 세 곳을 같은 `RM-nn` 으로 고친다. **판 파일(JSON)이 원본이다** — `tests/unit/roadmapFile.test.mjs` 는
+문서 ⊆ 판으로 재서, 판이 계획서와 함께 더한 항목은 문서에 아직 없어도 통과하고, 문서에만 있는 번호 · 칸 · 규모 · 선행이 다른 항목은 붉어진다.
 걸음은 끝낸 **뒤에** 적고, 보드가 쓴 JSON 변경은 그 항목의 PR 에 함께 커밋한다.
 `index.html` 끝의 짧은 인라인 스크립트는 그 보드의 **떠 있는 위젯**(오른쪽 아래 `🧭 로드맵`, Alt+R)을 불러온다 — 앱의 코드가 아니고 `src/` 와 무관하며, 보드가 꺼져 있으면 아무것도 뜨지 않는다. 지우지 않는다.
 
