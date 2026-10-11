@@ -25,8 +25,9 @@ const rows = [...mdText.matchAll(/^\| (RM-\d+) \| (.+?) \| (.+?) \| (.+?) \| (.+
 const items = new Map();
 for (const t of doc.tracks) for (const it of t.items) items.set(it.id, { ...it, lane: t.id });
 
-test('로드맵 파일은 roadmap-board/1 이고, 보드가 쓰는 꼴(두 칸 들여쓰기 · 한글 그대로)이다', () => {
-  assert.equal(doc.schema, 'roadmap-board/1');
+test('로드맵 파일은 factoriel/1(옛 이름 roadmap-board/1)이고, 보드가 쓰는 꼴(두 칸 들여쓰기 · 한글 그대로)이다', () => {
+  // 보드가 이름을 바꿨다(factoriel, B917) — 판을 다시 쓰면 새 이름이 적힌다. 옛 이름도 보드가 그대로 읽는다
+  assert.ok(['factoriel/1', 'roadmap-board/1'].includes(doc.schema), `스키마 이름이 보드의 것이 아니다: ${doc.schema}`);
   assert.equal(doc.stages.at(-1).key, 'merged');
   // 처음부터 쓰기 꼴로 두어야 보드가 걸음 하나를 적을 때 diff 가 한 줄이다
   assert.equal(jsonText, JSON.stringify(doc, null, 2) + '\n');
