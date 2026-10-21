@@ -1925,6 +1925,19 @@
           ],
           "at": "2026-10-20T14:30:27+09:00"
         }
+      },
+      {
+        "id": "Q97",
+        "title": "RM-38 — items-push 가 푸시 훅에 막힘 — 올릴 판 커밋 001218f(origin/main 0ae8346 위)는 시험을 지나는 내용인데, 훅이 본 트리(로컬 main 이 origin/main 보다 4 뒤 — docs/ROADMAP.md 규모가 옛 M/S)로 시험을 돌려 ",
+        "answer": null,
+        "options": [
+          {
+            "label": "본 트리 로컬 main 을 origin/main 으로 fast-forward(작업 사본의 판 변경은 그대로 두고) 한 뒤 items-push 를 다시 돌린다"
+          },
+          {
+            "label": "로컬 main 은 손대지 않는다 — 이 마무리는 뺌으로 적고, 훅이 밀어 올리는 커밋이 아닌 작업 사본을 시험하는 엔진 버그로 판에 올린다"
+          }
+        ]
       }
     ]
   },
@@ -2309,11 +2322,12 @@
           "soft": [],
           "questions": [
             "Q95",
-            "Q96"
+            "Q96",
+            "Q97"
           ],
           "defaults": [],
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 48,
           "what": "판(ROADMAP.json)이 다시 다듬으며 RM-16·18·19·24 를 L 로, RM-27 을 M 으로 바꿨는데 문서 ROADMAP.md 의 추적 표와 세 칸 항목 줄은 아직 M/S 라서, 로드맵 시험 두 개가 붉고 판 변경 올리기가 푸시 훅에 막힌다. 판이 원본이라는 D-19 에 따라 문서의 규모를 판에 맞춘다. 세 칸 항목 줄의 「(규모)」도 대조하게 해서 같은 일이 다시 생기면 곧바로 드러나게 한다. B949(판만 고쳐 로드맵 시험이 붉어진 버그)와 같은 꼴이다.",
           "addedAt": "2026-10-20T05:27:46Z",
           "found": {
@@ -2325,7 +2339,6 @@
             "why": "그 저장소의 시험 명령이 붉다"
           },
           "slug": "roadmap-doc-size-resync-with-board",
-          "priority": "top4",
           "files": [
             "docs/ROADMAP.md",
             "tests/unit/roadmapFile.test.mjs#mismatches",
@@ -2348,7 +2361,23 @@
           ],
           "plan": "docs/roadmap/plans/RM-38.md",
           "branch": "rm-38-roadmap-doc-size-resync-with-board",
-          "startedAt": "2026-10-20"
+          "startedAt": "2026-10-20",
+          "mergedAt": "2026-10-20",
+          "wrapup": [
+            {
+              "text": "판 변경 올리기(items-push) 요청이 남아 있다 — 판 커밋 b3abb8f 가 #48 로 main 에 함께 들어갔으니 items-push 를 다시 돌려 이미 올라간 것으로 정리한다",
+              "state": "approved",
+              "basis": {
+                "by": "frugal-fable",
+                "why": "판 커밋이 #48 로 main 에 이미 들어갔다면 items-push 재실행은 올라간 것을 정리하는 멱등 작업이라 무를 필요가 없고, 푸시 훅 시험이 다시 걸러주니 지금 돌려 막힌 요청을 닫는 게 항목 범위(판 변경 올리기 복구) 그대로다.",
+                "lens": [
+                  "범위",
+                  "데이터"
+                ],
+                "at": "2026-10-20T14:39:47+09:00"
+              }
+            }
+          ]
         }
       ]
     },
