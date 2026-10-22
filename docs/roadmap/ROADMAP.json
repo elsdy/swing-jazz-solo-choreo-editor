@@ -2366,7 +2366,7 @@
           "wrapup": [
             {
               "text": "판 변경 올리기(items-push) 요청이 남아 있다 — 판 커밋 b3abb8f 가 #48 로 main 에 함께 들어갔으니 items-push 를 다시 돌려 이미 올라간 것으로 정리한다",
-              "state": "approved",
+              "state": "done",
               "basis": {
                 "by": "frugal-fable",
                 "why": "판 커밋이 #48 로 main 에 이미 들어갔다면 items-push 재실행은 올라간 것을 정리하는 멱등 작업이라 무를 필요가 없고, 푸시 훅 시험이 다시 걸러주니 지금 돌려 막힌 요청을 닫는 게 항목 범위(판 변경 올리기 복구) 그대로다.",
