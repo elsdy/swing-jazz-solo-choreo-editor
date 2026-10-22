@@ -2401,7 +2401,9 @@ views.thumb = createThumbBar({
     tapBpm: views.video?.tapBpm?.() ?? null,
     canCapture: CaptureCmd.canCapture(store),
     voice: views.video?.voiceState?.() || { available: false, wanted: false, listening: false },
-    sheetOpen: document.body.dataset.sheet === 'on'
+    sheetOpen: document.body.dataset.sheet === 'on',
+    // 엄지 줄의 `+ 빠른 배치` 는 메인 표의 것이다(RM-36) — 캔버스 바와 같은 켜짐을 읽는다.
+    quickPlaceOn: !!store.get().session.quickPlaceMode[BOARD_MAIN]
   }),
   actions: {
     // 같은 명령의 입구다(RM-09) — 이 버튼은 패널이 닫혀 있을 때만 보이므로 여닫기가 곧 열기다.

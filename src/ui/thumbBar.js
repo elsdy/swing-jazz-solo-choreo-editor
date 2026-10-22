@@ -14,16 +14,18 @@
 
 /**
  * 한 자리에 놓을 버튼. `main` 은 그 순간의 주 동작이라 넓고 밝게 그린다.
- * @typedef {{ id: string, label: string, title?: string, cls?: string, main?: boolean, disabled?: boolean, run: () => void }} ThumbAction
+ * `pressed` 는 켜고 끄는 버튼만 단다 — 있으면 `aria-pressed` 로 실린다.
+ * @typedef {{ id: string, label: string, title?: string, cls?: string, main?: boolean, disabled?: boolean, pressed?: boolean, run: () => void }} ThumbAction
  */
 
 
 import { commandFace } from './commandButtons.js';
+import { CLS } from './domContract.js';
 /**
  * @param {{
  *   elements?: Record<string, HTMLElement|null>,
  *   getState: () => { panelOpen: boolean, capturing: boolean, canCapture: boolean, sheetOpen: boolean,
- *                     docked?: boolean, taps?: number, tapBpm?: number|null },
+ *                     docked?: boolean, taps?: number, tapBpm?: number|null, quickPlaceOn?: boolean },
  *   actions: {
  *     openPanel: () => void,
  *     togglePlay: () => void,
@@ -135,7 +137,14 @@ export function createThumbBar(options) {
     //   크게 둔다. 캔버스 바에도 같은 버튼이 첫 자리에 있다(눈이 가는 자리와 엄지가 닿는 자리).
     return [
       { id: 'sheet', label: '≡ 동작', title: '동작 목록을 연다', cls: 'ghost', run: actions.toggleSheet },
-      cmd('quickPlace', { id: 'quick', cls: 'ghost', run: actions.quickPlace }),
+      // ⚠ 토글이다(RM-36). 폰 폭에서는 캔버스 바의 `+ 빠른 배치` 가 숨고 이것만 보이므로, 켜짐을 여기서
+      //   보이지 않으면 켰는지 모른 채 칸을 누르게 된다 — 캔버스 바(ui/toolbarView)와 같은 활성 모양을 입는다.
+      cmd('quickPlace', {
+        id: 'quick',
+        cls: st.quickPlaceOn ? CLS.quickBtnActive : CLS.ghost,
+        pressed: Boolean(st.quickPlaceOn),
+        run: actions.quickPlace
+      }),
       cmd('videoPanel', { id: 'video', cls: 'primary', main: true, run: actions.openPanel })
     ];
   }
@@ -171,6 +180,8 @@ export function createThumbBar(options) {
       // ⚠ onclick 이다(addEventListener 가 아니다) — 다시 그릴 때마다 붙이면 한 번 누른 것이
       //   두 번 세 번 돌아간다. 대입은 언제나 마지막 하나만 남는다.
       btn.onclick = item.run;
+      if (item.pressed === undefined) btn.removeAttribute('aria-pressed');
+      else btn.setAttribute('aria-pressed', item.pressed ? 'true' : 'false');
       if (item.main) btn.dataset.main = '1';
       else delete btn.dataset.main;
       next.push(btn);
