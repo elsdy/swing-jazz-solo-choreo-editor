@@ -97,7 +97,9 @@ for (const d of DOCS) {
   if (outHeadings !== srcHeadings) problems.push(`${d.path}: 제목 ${srcHeadings}개인데 ${outHeadings}개만 렌더됐다`);
   if (outPre !== srcFences) problems.push(`${d.path}: 코드블록 ${srcFences}개인데 ${outPre}개만 렌더됐다`);
   if (outItems < srcItems) problems.push(`${d.path}: 목록 항목 ${srcItems}개인데 ${outItems}개만 렌더됐다`);
-  if (/&lt;a (id|name)=/.test(html)) problems.push(`${d.path}: 명시적 앵커가 글자로 새어 나왔다`);
+  // 코드 속 `<a id="x">` 는 예문이라 글자로 보이는 것이 맞다(RM-65 뒤로 인라인 코드가 `&lt;` 를 한 번만 바꿔 여기 걸린다).
+  const prose = html.replace(/<pre><code>[\s\S]*?<\/code><\/pre>|<code>[\s\S]*?<\/code>/g, '');
+  if (/&lt;a (id|name)=/.test(prose)) problems.push(`${d.path}: 명시적 앵커가 글자로 새어 나왔다`);
 
   stats.push(`${d.path.padEnd(24)} 제목 ${String(outHeadings).padStart(3)}  목차 ${toc.length}단1/${toc.reduce((s, n) => s + n.children.length, 0)}단2  ${(src.length / 1024).toFixed(0)}KB`);
 
