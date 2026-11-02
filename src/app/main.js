@@ -180,8 +180,15 @@ const saveFavorites = (fav) => favoritesRepo.save(fav);
 function persistProjectRecents(list) {
   return snapshots.saveRecents(list).catch((err) => { onRecentsStoreFailed(err); });
 }
-/** 목록 담기가 거부됐을 때 — 구조 커밋에서는 콘솔에만 남긴다. */
-let onRecentsStoreFailed = (err) => { console.warn('[storage] 최근 프로젝트 목록을 브라우저에 담지 못했다', err); };
+/**
+ * 목록 담기가 거부됐을 때 — **조용히 넘어가지 않는다**(RM-33). 옛 localStorage 경로에서는 저장 경로는 미처리 예외,
+ * 불러오기 경로는 「올바른 프로젝트 파일이 아닙니다」로 뭉개졌다. 이제 무엇이 안 됐는지 그대로 알린다.
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function onRecentsStoreFailed(err) {
+  console.warn('[storage] 최근 프로젝트 목록을 브라우저에 담지 못했다', err);
+  render({ notify: ProjectCmd.recentsStoreFailedNotice(err) });
+}
 
 const storage = {
   saveRecents: (kind, list) => (kind === 'projects' ? persistProjectRecents(list) : recentLists[kind].save(list)),
@@ -1343,7 +1350,17 @@ const draftStore = createDraftStore({
   // ⚠ 멈춘 줄 모르고 한 시간을 더 작업하는 것이 이 기능에서 가장 나쁜 실패다.
   onConflict: () => { draftBlocked = true; draftStopReason = 'conflict'; syncSaveTargetNote(); }
 });
-const draftSaver = debounceSave((payload) => draftStore.save(payload));
+/**
+ * 작업 문서 담기가 실패하고 있는가(RM-33). 쿼터 초과 · 저장소 막힘이면 참이 되고, 다음 담기가 되면 거짓으로 돌아온다.
+ * ⚠ 담기는 멈추지 않는다(편집을 막지 않는다) — 파일 메뉴의 「어디에 담기는가」 줄이 그 사실을 말할 뿐이다.
+ *   전에는 false 만 돌려주고 아무도 몰라, 새로고침 한 번에 그날의 일을 잃었다.
+ */
+let draftSaveFailed = false;
+// @complexity time=O(1) space=O(1) cc=2
+const draftSaver = debounceSave((payload) => draftStore.save(payload).then((ok) => {
+  if (Boolean(!ok) !== draftSaveFailed) { draftSaveFailed = !ok; syncSaveTargetNote(); }
+  return ok;
+}));
 
 /**
  * 담기가 막혔는가(2026-09-22). 더 새 판이 담아 둔 작업 문서를 만나면 참이 되고, 그때부터 이 세션은
@@ -2394,7 +2411,7 @@ openLinksIfAny(undefined);
 views.fileMenu = createFileMenu({
   // 자동 담기가 「저장했다」는 착각을 주던 것을 끝내는 한 줄이다(2026-09-22) — 무엇에 담기는지를 적는다.
   getSaveTarget: () => ({
-    bound: draftStore.bound(), kind: draftStore.kind, blocked: draftBlocked, reason: draftStopReason
+    bound: draftStore.bound(), kind: draftStore.kind, blocked: draftBlocked, reason: draftStopReason, failed: draftSaveFailed
   })
 });
 

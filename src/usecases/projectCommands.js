@@ -145,6 +145,19 @@ function persist(result, what) {
 }
 
 /**
+ * 최근 프로젝트 목록을 브라우저에 담지 못했을 때의 알림(RM-33, 2026-11-02).
+ * 「무엇이 안 됐고 무엇은 됐는지」를 함께 말한다 — 파일은 이미 받아졌거나 열렸고, 빠진 것은 목록의 한 줄뿐이다.
+ * ⚠ 불러오기 경로의 「올바른 프로젝트 파일이 아닙니다」와 섞지 않는다 — 그것은 파일이 틀렸을 때의 말이다.
+ * @param {{code?: string}|null|undefined} err StorageError(QUOTA_EXCEEDED · UNAVAILABLE …)
+ * @returns {import('./store.js').Notice}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function recentsStoreFailedNotice(err) {
+  const why = err && err.code === 'QUOTA_EXCEEDED' ? '저장 공간이 가득 차' : '저장소를 쓸 수 없어';
+  return notice('toast', `${why} 최근 프로젝트 목록을 이 브라우저에 담지 못했습니다 — 파일은 받아졌고 안무표도 그대로입니다.`);
+}
+
+/**
  * 최근목록 맨 앞에 넣고 같은 이름을 지운 뒤 상한만큼 자른다(4042·4053·4063·4398·4417·4443·4471).
  * ⚠ **임포트와 저장 경로 전용**이다. 최근목록에서 항목을 여는 경로는 목록을 건드리지 않는다 —
  *   통합하면 항목을 열 때마다 순서가 맨 앞으로 바뀐다(원본에 없는 동작).

@@ -17,7 +17,7 @@ export const UNTITLED = '제목 없는 안무';
 
 /**
  * @param {{
- *   getSaveTarget?: () => {bound: string, kind: 'server'|'browser', blocked?: boolean, reason?: string},
+ *   getSaveTarget?: () => {bound: string, kind: 'server'|'browser', blocked?: boolean, reason?: string, failed?: boolean},
  *   elements?: Record<string, HTMLElement|null>
  * }} [options]
  *   getSaveTarget: 지금 무엇에 담기고 있나 — 묶인 파일 이름(없으면 빈 문자열)과 담는 자리.
@@ -45,7 +45,7 @@ export function createFileMenu(options = {}) {
   function syncSaveNote() {
     if (!saveNote) return;
     if (!getSaveTarget) { saveNote.hidden = true; return; }
-    const { bound = '', kind = 'browser', blocked = false, reason = '' } = getSaveTarget() || {};
+    const { bound = '', kind = 'browser', blocked = false, reason = '', failed = false } = getSaveTarget() || {};
     saveNote.hidden = false;
     // ⚠ **막힌 것을 가장 먼저 말한다.** 담기가 멈춘 채로 「담기고 있습니다」라고 적으면 그 거짓말이
     //   이 줄을 둔 뜻을 통째로 무너뜨린다(실측으로 그렇게 나왔다).
@@ -58,6 +58,13 @@ export function createFileMenu(options = {}) {
           + '저쪽 것을 쓰려면 새로고침하고, 지금 화면의 것을 지키려면 이름을 바꿔 `프로젝트 저장` 하세요.'
         : `⚠ 담기를 멈췄습니다 — \`${what}\` 가 더 새 판의 앱에서 담긴 것이라 열지 못했습니다. `
           + '페이지를 새로고침하면 최신 앱으로 열립니다. 그 파일은 건드리지 않았습니다.';
+      return;
+    }
+    // 담기가 실패하고 있다(RM-33) — 쿼터 초과 · 저장소 막힘. 멈춘 것은 아니지만 「담기고 있습니다」는 거짓이 된다.
+    if (failed) {
+      saveNote.dataset.bound = 'stop';
+      saveNote.textContent = '⚠ 이 브라우저에 담지 못하고 있습니다 — 저장 공간이 찼거나 저장소가 막혔습니다. '
+        + '새로고침하면 지금 화면의 것이 사라질 수 있으니 `프로젝트 저장` 으로 파일을 받아 두세요.';
       return;
     }
     if (kind !== 'server') {
