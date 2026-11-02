@@ -38,7 +38,7 @@ const CSS = `
 .compose-status { font-size: var(--fs-1); color: var(--muted); line-height: 1.45; min-height: 1.4em; }
 .compose-status.is-error { color: var(--danger); }
 .compose-status.is-busy { color: var(--text); }
-.compose-mic.is-on { background: rgba(var(--danger-rgb), 0.25) !important; border-color: rgba(var(--danger-rgb), 0.6) !important; }
+.compose-mic.is-on:not(#_) { background: rgba(var(--danger-rgb), 0.25); border-color: rgba(var(--danger-rgb), 0.6); }
 .compose-table-wrap { overflow-x: auto; }
 .compose-table { border-collapse: collapse; width: 100%; font-size: var(--fs-2); }
 .compose-table th, .compose-table td { border: 1px solid rgba(var(--muted-rgb), 0.18); padding: var(--sp-1) var(--sp-2); text-align: left; white-space: nowrap; }

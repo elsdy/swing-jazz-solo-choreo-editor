@@ -598,7 +598,8 @@
       align-items: center;
       gap: var(--sp-2);
       padding: var(--sp-2);
-      color: var(--bg);
+      background: var(--block-bg); /* 색은 domain 이 정하고 ui/placementView 가 변수로 넘긴다 */
+      color: var(--block-ink, var(--bg));
       font-weight: 900;
       box-shadow: 0 8px 18px rgba(var(--black-rgb), 0.2);
       overflow: visible;
@@ -609,8 +610,8 @@
     /* 이름을 아직 안 붙인 블록(받아 적기). 자리는 잡혔지만 아직 비었다는 것이 한눈에 보여야 하므로
        채움을 지우고 점선만 남긴다 — 이름을 붙이면 클래스가 떨어지고 보통 블록으로 돌아온다. */
     .placement.is-pending {
-      background: rgba(var(--muted-rgb), 0.14) !important;
-      color: var(--text) !important;
+      background: rgba(var(--muted-rgb), 0.14);
+      color: var(--text);
       border: 2px dashed rgba(var(--muted-rgb), 0.75);
       box-shadow: none;
       font-weight: 700;
@@ -635,8 +636,9 @@
       outline-offset: -1px;
       box-shadow: 0 0 12px rgba(var(--focus-rgb), 0.45), 0 8px 18px rgba(var(--black-rgb), 0.2);
     }
-    .placement.is-resizing .resize-handle {
-      background: rgba(var(--focus-rgb), 0.55) !important;
+    /* 루틴 블록의 손잡이 규칙(아래 「루틴 배치 블록」)과 명시도가 같아질 수 있어 하나 더 높인다 — !important 대신. */
+    .placement.is-resizing .resize-handle.resize-handle {
+      background: rgba(var(--focus-rgb), 0.55);
       border-color: rgba(var(--focus-rgb), 0.8);
     }
     .resize-count-badge {
@@ -967,6 +969,7 @@
       display: inline-block;
     }
     .muted { color: var(--muted); }
+    .category-color:not(#_) { width: 22px; height: 22px; padding: 0; border: 1px solid rgba(var(--muted-rgb), 0.2); border-radius: var(--r-1); cursor: pointer; background: none; flex: 0 0 auto; }
     .ghost-drag {
       position: fixed;
       z-index: 2000;
@@ -977,7 +980,8 @@
 
     /* ── 좁은 화면 전용 조작 (2026-09-12) ──
        넓은 화면에서는 **없는 것과 같다**. 자리를 차지하지 않고 탭 순서에도 들어가지 않는다. */
-    .only-stacked { display: none !important; }   /* 사이드바가 위로 접히는 폭(≤1040)에서만 보인다 */
+    /* `:not(#_)` 는 ID 하나의 무게다 — 도우미 · 상태 클래스가 컴포넌트 규칙을 !important 없이 이긴다(개발 원칙 U-15). */
+    .only-stacked:not(#_) { display: none; }   /* 사이드바가 위로 접히는 폭(≤1040)에서만 보인다 */
     .sheet-backdrop { display: none; }
 
     /* ── 스크롤 락 버튼 ── */
@@ -1101,17 +1105,18 @@
         -webkit-overflow-scrolling: touch;
       }
       /* ── 태블릿: 루틴 편집기 풀스크린 오버레이 ── */
-      .routine-editor-panel {
-        position: fixed !important;
+      /* `body` 를 앞에 붙여 한 단 강하게 — 아래(뒤)에 있는 기본 규칙을 !important 없이 이긴다. */
+      body .routine-editor-panel {
+        position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
         z-index: 5000;
-        flex: none !important;
-        max-width: none !important;
-        width: 100% !important;
-        height: 100% !important;
-        border-left: none !important;
+        flex: none;
+        max-width: none;
+        width: 100%;
+        height: 100%;
+        border-left: none;
         border-radius: 0;
-        background: var(--bg) !important;
+        background: var(--bg);
       }
       .routine-editor-panel .board-wrap {
         flex: 1;
@@ -1258,17 +1263,18 @@
         right: -12px;
       }
       /* ── 모바일: 루틴 편집기 풀스크린 오버레이 ── */
-      .routine-editor-panel {
-        position: fixed !important;
+      /* `body` 를 앞에 붙여 한 단 강하게 — 아래(뒤)에 있는 기본 규칙을 !important 없이 이긴다. */
+      body .routine-editor-panel {
+        position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
         z-index: 5000;
-        flex: none !important;
-        max-width: none !important;
-        width: 100% !important;
-        height: 100% !important;
-        border-left: none !important;
+        flex: none;
+        max-width: none;
+        width: 100%;
+        height: 100%;
+        border-left: none;
         border-radius: 0;
-        background: var(--bg) !important;
+        background: var(--bg);
       }
       .routine-editor-panel .board-wrap {
         flex: 1;
@@ -1379,10 +1385,10 @@
       background: var(--line);
       margin: var(--sp-1) 0;
     }
-    .quick-btn-active {
-      background: rgba(var(--accent-rgb), 0.16) !important;
-      border: 1px solid rgba(var(--accent-rgb), 0.45) !important;
-      color: var(--accent) !important;
+    .quick-btn-active:not(#_) {
+      background: rgba(var(--accent-rgb), 0.16);
+      border: 1px solid rgba(var(--accent-rgb), 0.45);
+      color: var(--accent);
       font-weight: 800;
     }
     .star-btn {
@@ -1546,10 +1552,10 @@
     .edit-btn:hover { background: rgba(var(--routine-rgb), 0.25); }
 
     /* ── 루틴 배치 블록 ── */
-    /* 실제 색은 JS 가 루틴 색에서 만들어 인라인으로 칠한다. 여기 값은 그 전 한 프레임의 폴백이다.
-       !important 를 쓰면 안 된다 — 인라인 스타일을 이겨 루틴 색이 다시 묻힌다. */
+    /* 실제 색은 JS 가 루틴 색에서 만들어 `--block-bg` 로 넘긴다. 여기 값은 그 전 한 프레임의 폴백이다.
+       ⚠ 이 규칙이 `.placement` 보다 강하므로 변수를 먼저 읽어야 한다 — 폴백만 적으면 루틴 색이 다시 묻힌다. */
     .placement.is-routine {
-      background: linear-gradient(135deg, var(--routine) 0%, var(--routine) 100%);
+      background: var(--block-bg, linear-gradient(135deg, var(--routine) 0%, var(--routine) 100%));
     }
     .placement.is-routine .label { color: inherit; }
     .placement.is-routine .move-handle,
@@ -1624,7 +1630,7 @@
       color: var(--text, var(--text)); outline: none;
     }
     .link-row input:focus { border-color: rgba(var(--routine-rgb), 0.5); }
-    .link-label-input { max-width: 90px !important; flex: 0 0 90px !important; }
+    .link-label-input:not(#_) { max-width: 90px; flex: 0 0 90px; }
     /* URL입력 + 제목 칩을 gap 없이 붙여서 담는 sub-container */
     .yt-url-group {
       display: flex; flex: 1; min-width: 0; gap: 0; overflow: hidden;
@@ -1648,15 +1654,15 @@
     }
     .link-title-chip:hover { background: rgba(var(--routine-rgb), 0.28); }
     .link-title-fetching { font-size: var(--fs-1); color: rgba(var(--white-rgb), 0.3); flex-shrink: 0; }
-    .link-open-btn { padding: 2px 7px !important; font-size: var(--fs-3) !important; flex-shrink: 0; }
-    .link-reset-btn { padding: 2px 6px !important; font-size: var(--fs-2) !important; flex-shrink: 0; color: rgba(var(--white-rgb), 0.35) !important; }
-    .link-reset-btn:hover { color: var(--danger) !important; }
+    .link-open-btn:not(#_) { padding: 2px 7px; font-size: var(--fs-3); flex-shrink: 0; }
+    .link-reset-btn:not(#_) { padding: 2px 6px; font-size: var(--fs-2); flex-shrink: 0; color: rgba(var(--white-rgb), 0.35); }
+    .link-reset-btn:not(#_):hover { color: var(--danger); }
     .link-del-btn {
       padding: 2px 6px; font-size: var(--fs-3); background: transparent; border: none;
       cursor: pointer; color: rgba(var(--white-rgb), 0.3); border-radius: 4px; flex-shrink: 0;
     }
     .link-del-btn:hover { color: var(--danger); background: rgba(var(--danger-rgb), 0.15); }
-    .link-add-btn { font-size: var(--fs-1) !important; padding: 2px 8px !important; }
+    .link-add-btn:not(#_) { font-size: var(--fs-1); padding: 2px 8px; }
 
     /* ── 영상 패널 (2026-09 신설) ──
        ⚠ 켜야 보이는 기능이다. #videoPanel 에 `hidden` 이 붙어 있는 동안은 이 블록의 어떤 규칙도
@@ -1800,7 +1806,7 @@
     .video-float-bar button { padding: 2px 8px; font-size: var(--fs-1); }
     /* 좁은 화면에서는 띄우지 않는다 — 영상이 이미 안무표 위를 차지한다. */
     @media (max-width: 1040px) {
-      .only-wide { display: none !important; }
+      .only-wide:not(#_) { display: none; }
       body[data-videofloat="on"] .video-frame { position: relative; width: 100%; right: auto; bottom: auto; box-shadow: none; resize: none; }
       body[data-videofloat="on"] .video-frame-slot { display: none; }
       body[data-videofloat="on"] .video-float-bar { display: none; }
@@ -1969,7 +1975,7 @@
        (스크롤 락과 같은 화면 상태이지 안무가 아니다). 기본값은 마크업에 적혀 있다.
        ──────────────────────────────────────────────────────────────────────── */
     @media (max-width: 1040px) {
-      .only-stacked { display: inline-flex !important; }
+      .only-stacked:not(#_) { display: inline-flex; }
 
       /* 사이드바가 흐름에서 빠지므로 행은 **앱바 · 채우기 줄 · 작업 영역** 셋이다.
          ⚠⚠ 2026-09-21 에 `채우기` 줄을 더하면서 여기를 같이 못 고쳐, 이 폭에서 그 줄이 자리 없는
@@ -2008,8 +2014,9 @@
       /* ── 비고는 부를 때만(링크바는 전역 규칙으로 옮겼다 — 2026-09-20) ── */
       body[data-notes="on"] #notesToggleBtn,
       body[data-sheet="on"] #sidebarSheetBtn { background: rgba(var(--accent-rgb), 0.16); color: var(--accent); }
-      /* ⚠ `--noteW` 는 ui/cssVars 가 렌더마다 인라인으로 쓴다 — !important 라야 이긴다. */
-      body[data-notes="off"] .board-wrap { --noteW: 0px !important; }
+      /* ⚠ `--noteW` 는 ui/cssVars 가 렌더마다 인라인으로 쓴다 — 그것을 덮지 않고, 격자가 읽는
+         `--noteCol`(ui/boardView 가 `var(--noteCol, var(--noteW))` 로 읽는다)을 0 으로 둔다. */
+      body[data-notes="off"] .board-wrap { --noteCol: 0px; }
       body[data-notes="off"] .note-header,
       body[data-notes="off"] .note-cell { display: none; }
 
@@ -2028,8 +2035,8 @@
       .star-btn, #categoryManager .star-btn { min-width: 30px; min-height: 30px; font-size: var(--fs-4); padding: 0 var(--sp-1); }
       #addRoutineBtn { min-height: 32px; }
       #categoryManager input[type="text"] { min-height: 30px; }
-      /* ⚠ 색 견본은 인라인 width/height 라 !important 가 아니면 못 이긴다(ui/categoryView 가 쓴다). */
-      #categoryManager input[type="color"] { width: 30px !important; height: 30px !important; }
+      /* 색 견본의 기본 크기는 `.category-color`(ui/categoryView 가 붙인다) — 인라인이 아니라 여기서 이긴다. */
+      #categoryManager input[type="color"] { width: 30px; height: 30px; }
       .category-select { min-height: 30px; }
       .move-card { min-height: 40px; }
       .link-row input[type="url"], .link-row input[type="text"] { min-height: 32px; }
@@ -2245,7 +2252,7 @@
        그래서 터치 폭에서는
          · 엄지 바가 이미 가진 것(`≡ 동작` · `+ 빠른 배치`)을 캔버스 바에서 뺀다 — 한 줄이 준다
          · `▶ 영상으로 채우기` 를 **첫 자리로 올리고 강조**한다
-       ⚠ `.only-stacked` 가 `display: inline-flex !important` 라 숨기려면 이쪽도 !important 다.
+       ⚠ `.only-stacked:not(#_)` 가 ID 하나 무게라 숨기려면 이쪽은 ID 둘 무게(`#id:not(#_)`)라야 이긴다.
        ───────────────────────────────────────────────────────────────────── */
     @media (max-width: 1040px) {
       /* ── 손가락이 닿는 크기 (2026-09-21) ────────────────────────────────────
@@ -2265,7 +2272,7 @@
       }
       .file-menu-btn { min-height: 44px; }
       /* 엄지 바가 이미 가진 것은 여기서 뺀다 — 같은 버튼이 화면에 둘이면 한 줄이 그만큼 길어진다. */
-      #sidebarSheetBtn, #quickPlaceBtn, #modeManualBtn { display: none !important; }
+      #sidebarSheetBtn:not(#_), #quickPlaceBtn:not(#_), #modeManualBtn:not(#_) { display: none; }
       /* 채우기 줄은 한 줄로 두고 넘치면 옆으로 민다(줄바꿈하면 세로를 또 먹는다). */
       .mode-bar {
         flex-wrap: nowrap;
@@ -2943,8 +2950,8 @@
        밝은 테마는 그 전제가 뒤집혀서, **연한 글자·연한 칸**이 흰 바탕에서 사라진다.
        ⚠ 새 규칙을 더할 때 이 테마에서 한 번 열어 보는 것이 가장 빠른 점검이다. */
     :root[data-theme="candy"] .placement.is-pending {
-      background: rgba(var(--accent-rgb), 0.10) !important;
-      color: var(--t-dim) !important;
+      background: rgba(var(--accent-rgb), 0.10);
+      color: var(--t-dim);
       border-color: rgba(var(--t-glow), 0.55);
     }
     :root[data-theme="candy"] .legend span,
