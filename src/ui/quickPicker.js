@@ -74,7 +74,7 @@ export const ROUTINE_OPTIONS = Object.freeze({
 function makeAddBtn() {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.style.cssText = 'padding:var(--sp-1) var(--sp-3);width:auto;flex-shrink:0;font-size:18px;font-weight:bold;border-radius:8px;display:none;background:rgba(var(--accent-rgb), 0.16);border:1px solid rgba(var(--accent-rgb), 0.45);color:var(--accent);cursor:pointer;line-height:1;';
+  btn.style.cssText = 'padding:var(--sp-1) var(--sp-3);width:auto;flex-shrink:0;font-size:var(--fs-4);font-weight:bold;border-radius:8px;display:none;background:rgba(var(--accent-rgb), 0.16);border:1px solid rgba(var(--accent-rgb), 0.45);color:var(--accent);cursor:pointer;line-height:1;';
   btn.textContent = '+';
   return btn;
 }
@@ -184,7 +184,7 @@ export function createQuickPicker(deps, options = {}) {
     label.textContent = move.name;
     label.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
     const catBadge = document.createElement('span');
-    catBadge.style.cssText = 'font-size:10px;color:var(--muted);flex-shrink:0;';
+    catBadge.style.cssText = 'font-size:var(--fs-1);color:var(--muted);flex-shrink:0;';
     catBadge.textContent = categories[move.category]?.label || move.category;
     clickZone.append(dot, label, catBadge);
 

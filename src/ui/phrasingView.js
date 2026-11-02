@@ -16,23 +16,23 @@ const CSS = `
 .phrasing-popup {
   position: fixed; z-index: 5200; width: min(340px, 92vw);
   display: grid; gap: var(--sp-2); padding: var(--sp-3);
-  background: var(--x-0f1729); border: 1px solid rgba(var(--muted-rgb), 0.22);
+  background: var(--bg-2); border: 1px solid rgba(var(--muted-rgb), 0.22);
   border-radius: 12px; box-shadow: 0 18px 44px rgba(var(--black-rgb), 0.45);
 }
 /* ⚠ 반드시 있어야 한다. 위의 display:grid 가 브라우저 기본 스타일의 [hidden]{display:none} 을
    이겨서, 이 줄이 없으면 닫아도(hidden=true) 팝업이 화면에 그대로 떠 있는다.
    ⚠ 이 CSS 는 템플릿 문자열 안이다 — 주석에 백틱을 쓰면 문자열이 거기서 끊겨 모듈 전체가 죽는다. */
 .phrasing-popup[hidden] { display: none; }
-.phrasing-popup h3 { margin: 0; font-size: 12.5px; font-weight: 800; color: var(--x-e5e7eb); }
+.phrasing-popup h3 { margin: 0; font-size: var(--fs-3); font-weight: 800; color: var(--text); }
 .phrasing-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .phrasing-row .phrasing-grow { flex: 1; }
-.phrasing-label { font-size: var(--fs-1); color: var(--x-8892a4); white-space: nowrap; }
+.phrasing-label { font-size: var(--fs-1); color: var(--muted); white-space: nowrap; }
 .phrasing-num { width: 3.6em; text-align: center; }
 .phrasing-summary {
-  font-size: var(--fs-1); line-height: 1.5; color: var(--x-cbd5e1);
+  font-size: var(--fs-1); line-height: 1.5; color: var(--text);
   background: rgba(var(--muted-rgb), 0.10); border-radius: 8px; padding: 6px 9px;
 }
-.phrasing-legend { display: grid; gap: 3px; font-size: 10.5px; color: var(--x-94a3b8); }
+.phrasing-legend { display: grid; gap: 3px; font-size: var(--fs-1); color: var(--muted); }
 .phrasing-legend b { display: inline-block; width: 22px; height: 8px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
 .phrasing-swatches { display: flex; gap: 3px; align-items: center; }
 .phrasing-swatches i { width: 14px; height: 8px; border-radius: 3px; }

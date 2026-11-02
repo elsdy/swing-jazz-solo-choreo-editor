@@ -403,7 +403,7 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
       padding: '8px 12px',
       borderRadius: '12px',
       background: spec.background,
-      color: 'var(--x-08111f)',
+      color: 'var(--bg)',
       fontWeight: '900',
       boxShadow: '0 8px 18px rgba(var(--black-rgb), 0.2)',
     }, spec.text);
