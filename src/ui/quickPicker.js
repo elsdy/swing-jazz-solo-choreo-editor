@@ -36,6 +36,7 @@ import { CLS } from './domContract.js';
 import { makeInlineStarBtn } from './widgets.js';
 import { positionPopup, qDivider, qLabel, bindOutsideClose } from './popup.js';
 import { categoryNames, categoryColor, deriveKey } from '../domain/categories.js';
+import { matchMoves, suggestMoves } from '../domain/moveMatch.js';
 
 /**
  * 노브 기본값 = **메인 판**(원본 1842·2057). 루틴 인스턴스만 값을 뒤집는다.
@@ -74,7 +75,7 @@ export const ROUTINE_OPTIONS = Object.freeze({
 function makeAddBtn() {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.style.cssText = 'padding:4px 12px;width:auto;flex-shrink:0;font-size:18px;font-weight:bold;border-radius:8px;display:none;background:rgba(34,197,94,0.16);border:1px solid rgba(34,197,94,0.45);color:var(--accent);cursor:pointer;line-height:1;';
+  btn.style.cssText = 'padding:var(--sp-1) var(--sp-3);width:auto;flex-shrink:0;font-size:var(--fs-4);font-weight:bold;border-radius:var(--r-1);display:none;background:rgba(var(--accent-rgb), 0.16);border:1px solid rgba(var(--accent-rgb), 0.45);color:var(--accent);cursor:pointer;line-height:1;';
   btn.textContent = '+';
   return btn;
 }
@@ -175,16 +176,16 @@ export function createQuickPicker(deps, options = {}) {
     item.style.cursor = 'default';
 
     const clickZone = document.createElement('div');
-    clickZone.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;min-width:0;';
+    clickZone.style.cssText = 'display:flex;align-items:center;gap:var(--sp-2);flex:1;cursor:pointer;min-width:0;';
     clickZone.addEventListener('click', onClick);
 
     const dot = document.createElement('span');
-    dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(categories, move.category)};flex-shrink:0;`;
+    dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:var(--r-1);background:${categoryColor(categories, move.category)};flex-shrink:0;`;
     const label = document.createElement('span');
     label.textContent = move.name;
     label.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
     const catBadge = document.createElement('span');
-    catBadge.style.cssText = 'font-size:10px;color:var(--muted);flex-shrink:0;';
+    catBadge.style.cssText = 'font-size:var(--fs-1);color:var(--muted);flex-shrink:0;';
     catBadge.textContent = categories[move.category]?.label || move.category;
     clickZone.append(dot, label, catBadge);
 
@@ -209,11 +210,11 @@ export function createQuickPicker(deps, options = {}) {
     item.style.cursor = 'default';
 
     const clickZone = document.createElement('div');
-    clickZone.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;';
+    clickZone.style.cssText = 'display:flex;align-items:center;gap:var(--sp-2);flex:1;cursor:pointer;';
     clickZone.addEventListener('click', onClick);
 
     const dot = document.createElement('span');
-    dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(categories, key)};flex-shrink:0;`;
+    dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:var(--r-1);background:${categoryColor(categories, key)};flex-shrink:0;`;
     const label = document.createElement('span');
     label.textContent = categories[key].label;
     clickZone.append(dot, label);
@@ -244,6 +245,15 @@ export function createQuickPicker(deps, options = {}) {
     const header = document.createElement('div');
     header.className = CLS.quickPopupHeader;
     header.appendChild(qLabel(target.kind === 'group' ? '동작 정하기' : opts.title));
+    // 설명서의 그 절로 가는 작은 `?`(RM-26). 누름은 docsHub 가 문서 전체에서 위임받는다 — 여기서 걸지 않는다.
+    const helpBtn = document.createElement('button');
+    helpBtn.className = 'help-q';
+    helpBtn.type = 'button';
+    helpBtn.dataset.help = 'quick-place';
+    helpBtn.setAttribute('aria-label', '빠른 배치 설명 보기');
+    helpBtn.title = '설명서의 이 절로';
+    helpBtn.textContent = '?';
+    header.appendChild(helpBtn);
     const closeBtn = document.createElement('button');
     closeBtn.className = CLS.iconBtn;
     closeBtn.type = 'button';
@@ -306,7 +316,8 @@ export function createQuickPicker(deps, options = {}) {
 
       if (!ql) {
         addBtn.style.display = 'none';
-        const favs = library.filter(m => favNames.has(m.name));         // 1898
+        // 추리기 규칙은 domain/moveMatch 의 것이다(RM-15) — 블록 위 이름 입력과 같은 차례(즐겨찾기 → 나머지).
+        const favs = suggestMoves(library, '', favNames).filter(m => favNames.has(m.name));   // 1898
         const others = library.filter(m => !favNames.has(m.name));      // 1899
         if (favs.length) {
           resultList.appendChild(qLabel('즐겨찾기'));
@@ -317,12 +328,12 @@ export function createQuickPicker(deps, options = {}) {
         return;
       }
 
-      const matches = library.filter(m => m.name.toLowerCase().includes(ql));   // 1918
+      const matches = matchMoves(library, ql);                                   // 1918 — 규칙은 domain/moveMatch
       if (matches.length === 0) {
         addBtn.style.display = '';
         if (opts.addBtnKbActive) addBtn.classList.add(CLS.kbActive);    // 1923
         const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+        hint.style.cssText = 'font-size:var(--fs-1);color:var(--muted);padding:6px 10px;';
         // ⚠ 라벨 원문. 메인은 뒤에 안내가 붙고(1926) 루틴은 마침표에서 끝난다(4952).
         hint.textContent = opts.enterHint
           ? `"${q}" 와 일치하는 동작이 없습니다. Enter를 눌러 새 동작으로 추가`
@@ -416,7 +427,7 @@ export function createQuickPicker(deps, options = {}) {
     popup.appendChild(header);
 
     const badge = document.createElement('div');
-    badge.style.cssText = 'font-size:11px;color:var(--muted);padding:2px 4px 4px;';
+    badge.style.cssText = 'font-size:var(--fs-1);color:var(--muted);padding:2px 4px 4px;';
     badge.textContent = `동작: "${moveName}"`;
     popup.appendChild(badge);
 
@@ -434,11 +445,11 @@ export function createQuickPicker(deps, options = {}) {
 
     // 새 카테고리 색상 폼 (초기 숨김)
     const newCatForm = document.createElement('div');
-    newCatForm.style.cssText = 'display:none;align-items:center;gap:6px;padding:4px 0;';
+    newCatForm.style.cssText = 'display:none;align-items:center;gap:6px;padding:var(--sp-1) 0;';
     const catColorInput = document.createElement('input');
     catColorInput.type = 'color';
-    catColorInput.value = '#22c55e';
-    catColorInput.style.cssText = 'width:28px;height:28px;padding:0;border:1px solid rgba(148,163,184,0.2);border-radius:6px;cursor:pointer;background:none;flex:0 0 auto;';
+    catColorInput.value = '#22c55e'; // 원칙-예외(U-16): 새 카테고리의 기본 색 — 색 고르개의 데이터 값이다(var() 를 못 넣는다)
+    catColorInput.style.cssText = 'width:28px;height:28px;padding:0;border:1px solid rgba(var(--muted-rgb), 0.2);border-radius:var(--r-1);cursor:pointer;background:none;flex:0 0 auto;';
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
     confirmBtn.className = 'primary special';
@@ -518,7 +529,7 @@ export function createQuickPicker(deps, options = {}) {
         addBtn.style.display = '';
         newCatForm.style.display = 'flex';
         const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+        hint.style.cssText = 'font-size:var(--fs-1);color:var(--muted);padding:6px 10px;';
         hint.textContent = `"${q}" 와 일치하는 카테고리가 없습니다.`;
         resultList.appendChild(hint);
       } else {

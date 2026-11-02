@@ -61,6 +61,7 @@ import { groupCount, placementRangeLabel } from '../domain/placements.js';
  * @param {PlacementViewDeps} deps
  * @returns {HTMLDivElement}
  */
+// @complexity time=O(n) space=O(1) cc=13
 export function createPlacementEl(placement, visualSubRow, deps) {
   const { board, categories, routines, selection, policy, drag } = deps;
   const el = document.createElement('div');
@@ -83,8 +84,10 @@ export function createPlacementEl(placement, visualSubRow, deps) {
   // 배경과 글자색은 domain 이 정한다. 루틴 배치는 루틴 색에서 만든 그러데이션이고(예전에는
   // 색을 계산만 하고 칠하지 않아 CSS 의 보라 하나로만 보였다), 글자색은 대비비로 고른 값이다.
   const color = resolvePlacementColor(placement, { categories, routines: routines || [] });
-  el.style.background = color.background;
-  el.style.color = color.textColor;
+  // ⚠ 인라인 background/color 가 아니라 변수로 넘긴다 — 그래야 CSS 의 상태(.is-pending 같은)가
+  //   !important 없이 이긴다(개발 원칙 U-16, RM-17).
+  el.style.setProperty('--block-bg', color.background);
+  el.style.setProperty('--block-ink', color.textColor);
   const cnt = groupCount(board.placements, placement.groupId);
   // 이름 없는 블록은 자리와 길이만 있다. 빈 칸으로 두면 "왜 아무것도 안 적혔지"가 되므로 `?` 를 세운다
   // (docs/EDITING_FLOWS.md 1단계). name 은 빈 문자열 그대로라 이름을 붙이면 이 분기가 저절로 풀린다.
@@ -97,7 +100,7 @@ export function createPlacementEl(placement, visualSubRow, deps) {
     : '';
   el.innerHTML = `<div class="${CLS.tooltip}">${placement.pending ? '이름 없는 블록' : escapeHtml(placement.name)} ${cnt}c</div>`
     + `<div class="${CLS.moveHandle}" draggable="true" title="위치 이동"></div>`
-    + `<div class="${CLS.label}">${shown} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div>`
+    + `<div class="${CLS.label}">${shown} <span style="opacity:.72; font-size:var(--fs-1);">${cnt}c</span></div>`
     + `<div class="${CLS.resizeHandle}" title="길이 조절"></div>`
     + nameBtn;
   return el;

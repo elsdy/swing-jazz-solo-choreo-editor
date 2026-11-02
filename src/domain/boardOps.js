@@ -6,9 +6,9 @@
 // ctx 제자리 변형과 renderRows()/unmarkDraggingGroups()/state 접근만 걷어내고
 // "무엇을 다시 그릴지"를 값(renderRows·changedRows)으로 돌려준다.
 
-import { totalCellsFrom, buildSegments } from './grid.js';
+import { totalCellsFrom, buildSegments, linearOf, cellOf } from './grid.js';
 import { findFreeLane, clearSegmentsArea, repackLanes } from './lanes.js';
-import { getGroup, groupCount, affectedRowsByGroup, makeSegmentPlacements } from './placements.js';
+import { getGroup, groupCount, groupsOf, affectedRowsByGroup, makeSegmentPlacements } from './placements.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ⚠⚠ 반환 계약 — renderRows 와 changedRows 는 서로 다른 것이다
@@ -407,4 +407,317 @@ export function removeGroup(board, args, ids, opt) {
   const kept = board.placements.filter(p => p.groupId !== groupId);                // 3569
   const result = finish(kept, affectedRows, affectedRows, policy);                 // 3574-3575
   return { ...result, selectionRemoved: [groupId] };                               // 3570-3573
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 분할 · 병합 · 마디 편집 (2026-11-02, RM-16)
+//
+// 그룹을 **선형 카운트**로 펴서 다룬다(placements.shiftAllPlacements 와 같은 방식) — 조각의 row/startIndex 를
+// 손대지 않고, 구간을 정한 뒤 grid.buildSegments 로 다시 자른다. 마디 경계에 걸친 그룹이 조각 몇 개인지를
+// 여기서 셈하지 않는 까닭이다.
+//
+// 규칙(계획서 docs/roadmap/plans/RM-16.md 의 결정):
+//   · 끼운 마디가 여러 마디에 걸친 블록 한가운데를 지나가면 **그 자리에서 둘로 끊는다** — 카운트 길이가 그대로라
+//     음악과 어긋나지 않는다. 옮기기(행 맞바꾸기)도 두 행의 경계에서 같은 규칙으로 끊는다.
+//   · 병합은 **같은 이름 · 같은 층 · 바로 붙은 것**만. 이름 없는 `?` 블록끼리도 합친다. 루틴 블록은 합치지 않는다.
+//   · 지운 마디에만 있던 블록은 사라지고, 다른 마디로 이어지는 블록은 그 마디만큼 짧아진다.
+//   · 끝에 층 다시 채우기(D-1)를 **손댄 그룹의 행**에만 거친다 — 안 건드린 행의 층은 그대로다.
+// ⚠ 보드의 rows 는 마지막 행 번호다. 인트로 행(0)은 끼우거나 지우거나 옮길 수 없다 — 그 위에 끼우는 것도 없다.
+// ⚠ 마커 · 보정점은 건드리지 않는다(결정: 안무표만 밀고 마커는 그대로 둔다). 알림은 유스케이스가 한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 그룹의 이름 · 분류 · 표지 — 이동 · 복사 · 늘이기가 쓰는 그 meta 와 같다. */
+// @complexity time=O(1) space=O(1) cc=1
+function metaOf(head) {
+  return { name: head.name, category: head.category, pending: head.pending, type: head.type, routineId: head.routineId };
+}
+
+/**
+ * 그룹 하나의 선형 구간. 조각은 언제나 이어져 있으므로(makeSegmentPlacements) 첫 조각의 시작과 길이 합이면 된다.
+ * @returns {{ groupId:string, from:number, to:number, total:number, subRow:number, head:object, segs:object[] }}
+ */
+// @complexity time=O(k log k) space=O(k) cc=3
+function spanOf(segs, cols) {
+  const sorted = [...segs].sort((a, b) => a.row - b.row || a.startIndex - b.startIndex);
+  const head = sorted[0];
+  const from = linearOf(head.row, head.startIndex, cols);
+  const total = sorted.reduce((n, p) => n + p.length, 0);
+  return { groupId: head.groupId, from, to: from + total - 1, total, subRow: head.subRow || 0, head, segs: sorted };
+}
+
+/** 보드의 그룹 전부를 선형 구간으로. 등장 순(첫 조각의 배열 위치)을 지킨다. */
+// @complexity time=O(n log n) space=O(n) cc=2
+function spansOf(placements, cols) {
+  const out = [];
+  for (const [, segs] of groupsOf(placements)) out.push(spanOf(segs, cols));
+  return out;
+}
+
+/** 선형 구간 [from, from+total) 을 그룹 하나의 조각들로 다시 자른다. */
+// @complexity time=O(k) space=O(k) cc=1
+function rebuildSpan(board, groupId, meta, from, total, subRow, ids) {
+  const start = cellOf(from, board.cols);
+  const segments = buildSegments(start.row, start.index, total, board);
+  return makeSegmentPlacements(segments, { groupId, ...meta }, ids, { subRow });
+}
+
+/** 손댄 그룹의 행만 층을 다시 채우고(D-1) 결과를 조립한다. 행 수가 바뀌는 전이는 전 행을 그린다. */
+// @complexity time=O(n log n)? space=O(n) cc=3
+function finishRows(placements, touchedRows, renderAll, extra = {}) {
+  const rows = [...new Set(touchedRows)];
+  const packed = rows.length ? repackLanes(placements, rows) : { placements, changedRows: [] };
+  return {
+    placements: packed.placements,
+    renderRows: renderAll ? 'all' : unionRows(rows, packed.changedRows),
+    changedRows: unionRows(rows, packed.changedRows),
+    ...extra
+  };
+}
+
+/** 조각 목록의 행들. */
+const rowsOf = (segs) => segs.map(p => p.row);
+
+/**
+ * 그룹을 **앞 조각 frontCount 카운트 · 뒤 조각 나머지**로 둘로 나눈다. 이름 · 분류 · 층은 두 조각에 그대로 남는다.
+ * 앞 조각이 원래 그룹 번호를 지키고(고른 상태가 남는다), 뒤 조각은 새 번호를 받는다.
+ *
+ * ⚠ frontCount 가 1..total-1 이 아니면 아무것도 하지 않는다(renderRows:null) — 끝에서 자르면 조각이 비거나 전부다.
+ * ⚠ 루틴 블록은 자르지 않는다 — 루틴은 편집기에서 고친다.
+ *
+ * @param {object} board
+ * @param {{ groupId:string, frontCount:number }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @returns {{placements:object[], renderRows:number[]|null, changedRows:number[], groupIds:string[]}}
+ */
+// @complexity time=O(n log n) space=O(n) cc=5
+export function splitGroup(board, args, ids) {
+  const { groupId, frontCount } = args;
+  const group = getGroup(board.placements, groupId);
+  if (!group.length || group[0].type === 'routine') return { ...noRender(board), groupIds: [] };
+  const span = spanOf(group, board.cols);
+  const front = Math.trunc(Number(frontCount));
+  if (!(front >= 1 && front <= span.total - 1)) return { ...noRender(board), groupIds: [] };
+  const meta = metaOf(span.head);
+  const kept = board.placements.filter(p => p.groupId !== groupId);
+  const backId = uidOf(ids)();                                   // 그룹 번호가 조각 id 보다 먼저다(place 와 같은 차례)
+  const a = rebuildSpan(board, groupId, meta, span.from, front, span.subRow, ids);
+  const b = rebuildSpan(board, backId, meta, span.from + front, span.total - front, span.subRow, ids);
+  return finishRows([...kept, ...a, ...b], rowsOf(span.segs), false, { groupIds: [groupId, backId] });
+}
+
+/**
+ * 이 그룹과 합칠 수 있는 이웃 — **바로 뒤**에 붙은 것, 없으면 **바로 앞**에 붙은 것. 없으면 null.
+ * 같은 이름 · 같은 층 · 같은 `?` 여부여야 하고, 루틴 블록은 짝이 되지 않는다.
+ * @param {object[]} placements
+ * @param {number} cols
+ * @param {string} groupId
+ * @returns {string|null} 짝 그룹 번호
+ */
+// @complexity time=O(n log n) space=O(n) cc=9
+export function mergePartner(placements, cols, groupId) {
+  const mine = placements.filter(p => p.groupId === groupId);
+  if (!mine.length || mine[0].type === 'routine') return null;
+  const me = spanOf(mine, cols);
+  const alike = (s) => s.groupId !== groupId && s.head.type !== 'routine'
+    && (s.head.name || '') === (me.head.name || '') && !!s.head.pending === !!me.head.pending && s.subRow === me.subRow;
+  const spans = spansOf(placements, cols).filter(alike);
+  const next = spans.find(s => s.from === me.to + 1);
+  if (next) return next.groupId;
+  const prev = spans.find(s => s.to === me.from - 1);
+  return prev ? prev.groupId : null;
+}
+
+/**
+ * 붙어 있는 같은 이름 · 같은 층의 두 그룹을 하나로 합친다. 앞에 있는 쪽의 그룹 번호가 남고, 뒤의 것은 사라진다.
+ * 짝이 아니면(떨어져 있거나 이름 · 층이 다르면) 아무것도 하지 않는다 — mergePartner 가 짝의 기준이다.
+ *
+ * @param {object} board
+ * @param {{ groupId:string, withGroupId:string }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @returns {{placements:object[], renderRows:number[]|null, changedRows:number[], groupId:string|null, selectionRemoved:string[]}}
+ */
+// @complexity time=O(n log n) space=O(n) cc=10
+export function mergeGroups(board, args, ids) {
+  const { groupId, withGroupId } = args;
+  if (!withGroupId || withGroupId === groupId) return { ...noRender(board), groupId: null, selectionRemoved: [] };
+  const partner = mergePartner(board.placements, board.cols, groupId);
+  const other = partner === withGroupId ? withGroupId : null;
+  // 앞에서 찾은 짝이 뒤 것일 때 사용자가 앞 것을 가리켰을 수도 있다 — 반대 방향으로도 한 번 본다.
+  const paired = other || (mergePartner(board.placements, board.cols, withGroupId) === groupId ? withGroupId : null);
+  if (!paired) return { ...noRender(board), groupId: null, selectionRemoved: [] };
+  const a = spanOf(getGroup(board.placements, groupId), board.cols);
+  const b = spanOf(getGroup(board.placements, paired), board.cols);
+  if (a.to + 1 !== b.from && b.to + 1 !== a.from) return { ...noRender(board), groupId: null, selectionRemoved: [] };
+  const [first, second] = a.from < b.from ? [a, b] : [b, a];
+  const kept = board.placements.filter(p => p.groupId !== a.groupId && p.groupId !== b.groupId);
+  const merged = rebuildSpan(board, first.groupId, metaOf(first.head), first.from, first.total + second.total, first.subRow, ids);
+  return finishRows([...kept, ...merged], [...rowsOf(a.segs), ...rowsOf(b.segs)], false, {
+    groupId: first.groupId, selectionRemoved: [second.groupId]
+  });
+}
+
+/**
+ * 그룹들을 선형 경계 `boundary`(그 카운트부터 뒤)에서 잘라 뒤쪽을 `delta` 만큼 옮긴다 — 끼우기 · 복제 · 옮기기의 공통 걸음.
+ * 경계에 걸친 그룹은 끊긴다: 앞 조각이 번호를 지키고 뒤 조각은 새 번호를 받는다.
+ * @returns {{ placements:object[], touched:number[], cutIds:string[] }} touched 는 손댄 그룹의 **옮긴 뒤** 행
+ */
+// @complexity time=O(n log n) space=O(n) cc=4
+function shiftFrom(board, placements, boundary, delta, ids, nextBoard) {
+  const out = [];
+  const touched = [];
+  const cutIds = [];
+  for (const s of spansOf(placements, board.cols)) {
+    if (s.to < boundary) { out.push(...s.segs); continue; }
+    const meta = metaOf(s.head);
+    if (s.from >= boundary) {
+      const moved = rebuildSpan(nextBoard, s.groupId, meta, s.from + delta, s.total, s.subRow, ids);
+      out.push(...moved);
+      continue;
+    }
+    // 경계에 걸쳤다 — 그 자리에서 끊는다
+    const frontLen = boundary - s.from;
+    const backId = uidOf(ids)();
+    const front = rebuildSpan(nextBoard, s.groupId, meta, s.from, frontLen, s.subRow, ids);
+    const back = rebuildSpan(nextBoard, backId, meta, boundary + delta, s.total - frontLen, s.subRow, ids);
+    out.push(...front, ...back);
+    touched.push(...rowsOf(front), ...rowsOf(back));
+    cutIds.push(s.groupId);
+  }
+  return { placements: out, touched, cutIds };
+}
+
+/** 행 번호가 끼우거나 지울 수 있는 몸통 행인가(인트로 행 0 은 아니다). */
+const isBodyRow = (board, row) => Number.isInteger(row) && row >= 1 && row <= board.rows;
+
+/**
+ * `row` 위에 빈 마디 하나를 끼운다. 그 행부터의 배치가 모두 한 마디(cols 카운트) 밀리고 rows 가 하나 는다.
+ * 경계(row 의 첫 카운트)에 걸친 블록은 그 자리에서 둘로 끊긴다.
+ *
+ * @param {object} board
+ * @param {{ row:number }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @returns {{placements:object[], renderRows:'all'|null, changedRows:number[], rows:number, cutIds:string[]}}
+ */
+// @complexity time=O(n log n) space=O(n) cc=2
+export function insertRow(board, args, ids) {
+  const { row } = args;
+  if (!isBodyRow(board, row)) return { ...noRender(board), rows: board.rows, cutIds: [] };
+  const nextBoard = { ...board, rows: board.rows + 1 };
+  const boundary = linearOf(row, 0, board.cols);
+  const r = shiftFrom(board, board.placements, boundary, board.cols, ids, nextBoard);
+  return finishRows(r.placements, r.touched, true, { rows: nextBoard.rows, cutIds: r.cutIds });
+}
+
+/**
+ * `row` 마디를 지운다. 그 마디에만 있던 블록은 사라지고, 다른 마디로 이어지는 블록은 그 마디만큼 짧아지며,
+ * 뒤의 배치는 한 마디 당겨지고 rows 가 하나 준다. 인트로 행과 마지막 남은 몸통 행은 지우지 않는다.
+ *
+ * @param {object} board
+ * @param {{ row:number }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @returns {{placements:object[], renderRows:'all'|null, changedRows:number[], rows:number, selectionRemoved:string[]}}
+ */
+// @complexity time=O(n log n) space=O(n) cc=9
+export function deleteRow(board, args, ids) {
+  const { row } = args;
+  if (!isBodyRow(board, row) || board.rows <= 1) return { ...noRender(board), rows: board.rows, selectionRemoved: [] };
+  const cols = board.cols;
+  const nextBoard = { ...board, rows: board.rows - 1 };
+  const r0 = linearOf(row, 0, cols);
+  const r1 = r0 + cols - 1;
+  const out = [];
+  const touched = [];
+  const removed = [];
+  for (const s of spansOf(board.placements, cols)) {
+    if (s.to < r0) { out.push(...s.segs); continue; }
+    const meta = metaOf(s.head);
+    if (s.from > r1) { out.push(...rebuildSpan(nextBoard, s.groupId, meta, s.from - cols, s.total, s.subRow, ids)); continue; }
+    if (s.from >= r0 && s.to <= r1) { removed.push(s.groupId); continue; }   // 그 마디에만 있었다
+    // 걸쳤다 — 지운 마디 몫만 빼고 이어 붙인다(앞 조각 + 당겨진 뒤 조각은 선형으로 이어진다)
+    const frontLen = Math.max(0, r0 - s.from);
+    const backLen = Math.max(0, s.to - r1);
+    const from = frontLen ? s.from : r0;
+    const built = rebuildSpan(nextBoard, s.groupId, meta, from, frontLen + backLen, s.subRow, ids);
+    out.push(...built);
+    touched.push(...rowsOf(built));
+  }
+  return finishRows(out, touched, true, { rows: nextBoard.rows, selectionRemoved: removed });
+}
+
+/**
+ * `row` 마디를 바로 아래에 복제한다 — 새 마디를 끼우고(아래 블록은 한 마디 밀린다) 그 마디의 블록을
+ * **새 그룹 번호**로 복사한다. 여러 마디에 걸친 블록은 이 마디 몫만 복사된다.
+ *
+ * @param {object} board
+ * @param {{ row:number }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @returns {{placements:object[], renderRows:'all'|null, changedRows:number[], rows:number, copiedIds:string[]}}
+ */
+// @complexity time=O(n log n) space=O(n) cc=5
+export function duplicateRow(board, args, ids) {
+  const { row } = args;
+  if (!isBodyRow(board, row)) return { ...noRender(board), rows: board.rows, copiedIds: [] };
+  const cols = board.cols;
+  const nextBoard = { ...board, rows: board.rows + 1 };
+  const r0 = linearOf(row, 0, cols);
+  const r1 = r0 + cols - 1;
+  // 1) row+1 자리에 빈 마디를 끼운다(row 와 row+1 의 경계에 걸친 블록은 끊긴다)
+  const shifted = shiftFrom(board, board.placements, r1 + 1, cols, ids, nextBoard);
+  // 2) row 에 있는 조각을 새 번호로 한 마디 아래에 복사한다
+  const copies = [];
+  const copiedIds = [];
+  for (const s of spansOf(shifted.placements, cols)) {
+    if (s.to < r0 || s.from > r1) continue;
+    const from = Math.max(s.from, r0);
+    const to = Math.min(s.to, r1);
+    const copyId = uidOf(ids)();
+    copies.push(...rebuildSpan(nextBoard, copyId, metaOf(s.head), from + cols, to - from + 1, s.subRow, ids));
+    copiedIds.push(copyId);
+  }
+  const touched = [...shifted.touched, row + 1];
+  return finishRows([...shifted.placements, ...copies], touched, true, { rows: nextBoard.rows, copiedIds });
+}
+
+/**
+ * `row` 마디를 이웃(`delta` = -1 위 · +1 아래)과 맞바꾼다. 두 행의 경계에 걸친 블록은 경계에서 끊긴다 —
+ * 끼우기와 같은 규칙이다. 두 행 모두 몸통 행이어야 한다(인트로 행과는 바꾸지 않는다).
+ *
+ * @param {object} board
+ * @param {{ row:number, delta:number }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @returns {{placements:object[], renderRows:number[]|null, changedRows:number[], cutIds:string[]}}
+ */
+// @complexity time=O(n log n) space=O(n) cc=10
+export function moveRow(board, args, ids) {
+  const { row, delta } = args;
+  const step = Math.sign(Number(delta));
+  const other = row + step;
+  if (!step || !isBodyRow(board, row) || !isBodyRow(board, other)) return { ...noRender(board), cutIds: [] };
+  const cols = board.cols;
+  const lo = Math.min(row, other);
+  const b0 = linearOf(lo, 0, cols);            // 아랫 행(lo) 의 시작
+  const b1 = b0 + cols;                        // 윗 행(hi) 의 시작
+  const b2 = b1 + cols;                        // hi 다음 행의 시작
+  const out = [];
+  const touched = [];
+  const cutIds = [];
+  for (const s of spansOf(board.placements, cols)) {
+    if (s.to < b0 || s.from >= b2) { out.push(...s.segs); continue; }
+    const meta = metaOf(s.head);
+    // 세 경계에서 조각을 가른다: [from..b0-1] · [b0..b1-1] · [b1..b2-1] · [b2..to]
+    const pieces = [];
+    const cut = (a, b, shift) => { if (a <= b) pieces.push({ from: a + shift, total: b - a + 1 }); };
+    cut(s.from, Math.min(s.to, b0 - 1), 0);
+    cut(Math.max(s.from, b0), Math.min(s.to, b1 - 1), cols);    // lo 행 몫 → hi 로
+    cut(Math.max(s.from, b1), Math.min(s.to, b2 - 1), -cols);   // hi 행 몫 → lo 로
+    cut(Math.max(s.from, b2), s.to, 0);
+    if (pieces.length > 1) cutIds.push(s.groupId);
+    pieces.forEach((piece, i) => {
+      const id = i === 0 ? s.groupId : uidOf(ids)();
+      const built = rebuildSpan(board, id, meta, piece.from, piece.total, s.subRow, ids);
+      out.push(...built);
+      touched.push(...rowsOf(built));
+    });
+  }
+  return finishRows(out, [lo, lo + 1, ...touched], false, { cutIds });
 }

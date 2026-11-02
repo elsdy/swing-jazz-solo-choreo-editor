@@ -91,7 +91,7 @@ export const COMMANDS = Object.freeze([
     hint: '방금 한 일을 하나 되돌린다. 글쇠는 OS 관례라 바꾸지 않는다',
     keys: ['Ctrl+Z', 'Cmd+Z'],
     fixed: true,
-    button: 'Undo',
+    button: '되돌리기',
   }),
   def({
     id: 'redo',
@@ -101,7 +101,7 @@ export const COMMANDS = Object.freeze([
     // 예전 글쇠 처리는 Ctrl·Cmd 어느 쪽이든 `Y` 와 `Shift+Z` 를 모두 들었다 — 화면에는 관례 둘만 적는다.
     alsoKeys: ['Ctrl+Shift+Z', 'Cmd+Y'],
     fixed: true,
-    button: 'Redo',
+    button: '다시 하기',
   }),
   // ── 키보드 편집 (2026-10-01, RM-13) — 안무표에서 고른 블록에 먹는다 ──────────────
   // ⚠ 화살표 · Delete · Ctrl+C/V/A 는 고정이다. OS 와 다른 앱이 같은 뜻으로 쓰는 글쇠라 바꾸면 손이 먼저 틀리고,
@@ -158,6 +158,9 @@ export const COMMANDS = Object.freeze([
     // macOS 자판의 delete 글쇠는 브라우저에 `Backspace` 로 들어온다.
     keys: ['Delete', 'Backspace'],
     fixed: true,
+    // 단추 글자는 이름 그대로 — 짧은 「지우기」는 동작 목록 메뉴(strings 의 move.menu.delete)가 이미 쓴다(RM-10 의 「글자는 한 곳」 시험)
+    button: '고른 블록 지우기',
+    title: '고른 블록을 모두 지웁니다. 지운 뒤 뜨는 알림의 되돌리기나 Ctrl+Z 로 살립니다',
   }),
   def({
     id: 'copySelection',
@@ -165,6 +168,8 @@ export const COMMANDS = Object.freeze([
     hint: '이름 · 카테고리 · 길이와 서로의 간격을 담는다. 이 창 안에서만 붙는다',
     keys: ['Ctrl+C', 'Cmd+C'],
     fixed: true,
+    button: '복사',
+    title: '고른 블록을 담습니다 — 붙여넣기(Ctrl+V)로 다른 자리에 놓습니다',
   }),
   def({
     id: 'paste',
@@ -179,6 +184,25 @@ export const COMMANDS = Object.freeze([
     hint: '고른 블록을 바로 뒤에 한 벌 더 놓는다. 담아 둔 복사본은 그대로다',
     keys: ['Ctrl+D', 'Cmd+D'],
     fixed: false,
+    button: '복제',
+    title: '고른 블록을 바로 뒤에 한 벌 더 놓습니다',
+  }),
+  // ── 선택 액션 바에만 단추가 있는 것(RM-14) — 글쇠는 없다. 팔레트(Ctrl+K)로도 부른다 ──────────
+  def({
+    id: 'practiceSelection',
+    label: '고른 블록 반복',
+    hint: '고른 블록이 덮는 구간을 반복 구간으로 잡고 그 처음부터 재생한다. 박자(BPM)와 영상 · 박자 시계가 있어야 한다',
+    fixed: false,
+    button: '고른 블록 반복',
+    title: '안무표에서 고른 블록들이 덮는 구간을 반복합니다',
+  }),
+  def({
+    id: 'routineFromSelection',
+    label: '루틴으로 편성',
+    hint: '고른 블록을 묶어 루틴 하나로 만들고 루틴 편집기에서 연다',
+    fixed: false,
+    button: '루틴으로 편성',
+    title: '고른 블록을 묶어 루틴으로 만듭니다',
   }),
   def({
     id: 'selectAll',
@@ -186,6 +210,29 @@ export const COMMANDS = Object.freeze([
     hint: '안무표의 블록을 모두 고른다',
     keys: ['Ctrl+A', 'Cmd+A'],
     fixed: true,
+  }),
+  // ── 블록 위 이름 입력(2026-11-02, RM-15) ──────────────────────────────────
+  // ⚠ 고정이다 — Enter · F2 는 사용자가 고를 수 없는 글쇠(RESERVED)이고 파일 관리자 · 표의 「이름 바꾸기」 관례다.
+  //   단축키에 걸리지 않은 **글자 한 자**를 쳐도 같은 명령이 열린다(input/controls 의 글자 갈래) — 그 글자가 첫 자로 들어간다.
+  //   받아 적기 글쇠(B · K · N · Space)와 `?` 는 이 표에서 먼저 걸리므로 그대로 이긴다.
+  // ⚠ 글자를 치는 중에는 듣지 않는다 — 이름칸의 Enter 는 그 칸의 확정이다. 고른 블록이 없으면 실행기가 거짓을 돌려줘
+  //   Enter 의 기본 동작(단추 누름)을 막지 않는다.
+  def({
+    id: 'nameBlock',
+    label: '이름 붙이기',
+    hint: '고른 블록 위에 이름 입력을 연다. 글자를 바로 쳐도 열리고, Tab 으로 다음 ? 로 간다',
+    keys: ['Enter', 'F2'],
+    fixed: true,
+  }),
+  // ── 분할 (2026-11-02, RM-16) — 재생 헤드에 걸친 블록을 그 자리에서 나눈다 ───────────
+  // ⚠ 홑글쇠라 글자를 치는 중에는 듣지 않는다. 박자가 없으면 아무것도 자르지 않고 알린다 — 블록 팝업의
+  //   「여기서 자르기」가 「몇 번째 카운트에서」로 떨어지는 길이 그때의 길이다.
+  def({
+    id: 'splitAtPlayhead',
+    label: '재생 헤드에서 자르기',
+    hint: '재생 위치(초록 세로선)에 걸친 블록을 그 자리에서 앞뒤 둘로 나눈다. 층이 여럿이면 층마다',
+    keys: ['S'],
+    fixed: false,
   }),
   // ── 명령을 찾는 두 화면 — 둘 다 이 표를 읽기만 한다 ─────────────────────────
   // ⚠ 둘 다 바꿀 수 있다(설정 › 단축키). 일부 브라우저는 Ctrl+K 를 주소창 검색에 쓰고, `?` 는 자판에 따라
@@ -235,10 +282,12 @@ export const COMMANDS = Object.freeze([
   }),
   def({
     id: 'saveProject',
-    label: '프로젝트 저장',
-    hint: '지금 안무표를 이름칸의 이름으로 저장한다',
-    title: '지금 안무표를 이름칸의 이름으로 저장합니다',
-    button: '프로젝트 저장',
+    // 「프로젝트 저장」이었다(~2026-11-02, RM-10). 자동 담기(2026-09-22)가 들어온 뒤 이 단추의 실제 뜻은 파일로 받는 것이다 —
+    // 안무표는 한 번 내보내거나 폴더에서 열면 그 파일에 저절로 담긴다. id 는 저장되는 글쇠 이름이라 그대로 둔다.
+    label: '파일로 내보내기',
+    hint: '지금 안무표를 이름칸의 이름으로 파일에 담아 내려받기 폴더(서버로 열었으면 보관 폴더에도)에 받는다',
+    title: '지금 안무표를 이름칸의 이름으로 파일에 담아 내려받습니다. 서버로 열었다면 보관 폴더에도 쓰입니다',
+    button: '파일로 내보내기',
     // 브라우저의 「페이지 저장」 대신 안무표를 저장한다(RM-13). 이름칸에서 이름을 고치다 바로 누르는 글쇠라
     // 글자를 치는 중에도 듣는다 — 조합 글쇠라 글자가 들어갈 일이 없다.
     keys: ['Ctrl+S', 'Cmd+S'],
@@ -250,6 +299,31 @@ export const COMMANDS = Object.freeze([
     label: '이름 바꾸기',
     hint: '파일 메뉴를 열고 이름칸에 커서를 둔다',
     title: '안무표 이름을 바꿉니다',
+    fixed: false,
+  }),
+  // ── 내보내기 (2026-11-02, RM-21) — 파일 메뉴의 버튼 셋. 글쇠는 없다 ─────────────────
+  def({
+    id: 'copySheet',
+    label: '텍스트 시트 복사',
+    hint: '마디 하나를 한 줄로 적은 글(8x3 · 1 Swing Out · 5 Kick …)을 클립보드에 담는다. 메신저 · 메모장에 붙인다',
+    title: '마디 하나를 한 줄로 적은 글을 클립보드에 담습니다 — 메신저 · 메모장에 바로 붙일 수 있습니다',
+    button: '📋 텍스트 시트 복사',
+    fixed: false,
+  }),
+  def({
+    id: 'downloadSheetHtml',
+    label: '읽기 전용 HTML 내려받기',
+    hint: '앱 없이 더블클릭으로 열리는 한 장짜리 HTML 파일로 받는다. 안무표 · 텍스트 시트 · 영상 마커가 들어 있다',
+    title: '앱 없이 더블클릭으로 열리는 한 장짜리 HTML 파일로 받습니다',
+    button: '⬇ 읽기 전용 HTML',
+    fixed: false,
+  }),
+  def({
+    id: 'printSheet',
+    label: '인쇄 · PDF',
+    hint: '편집 도구 · 동작 목록 · 영상을 빼고 안무표만 A4 에 맞춰 인쇄한다. 인쇄 창에서 PDF 로 저장할 수 있다',
+    title: '안무표만 A4 에 맞춰 인쇄합니다. 인쇄 창에서 PDF 로 저장할 수 있습니다',
+    button: '🖨 인쇄 · PDF',
     fixed: false,
   }),
   def({

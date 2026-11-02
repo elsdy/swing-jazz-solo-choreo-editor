@@ -27,7 +27,7 @@ const PLACEMENT_GHOST_ID = 'touchPlacementGhost';
 const PALETTE_GHOST_ID = 'touchGhost';
 
 /** 플로팅 툴팁의 인라인 스타일. 원본 2778 의 cssText 를 **글자 그대로** 옮겼다. */
-const FLOATING_TIP_CSS = 'display:none;position:fixed;background:rgba(0,0,0,.85);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.3);';
+const FLOATING_TIP_CSS = 'display:none;position:fixed;background:rgba(var(--black-rgb), .85);color:var(--white);padding:4px 10px;border-radius:var(--r-1);font-size:var(--fs-2);font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:var(--shadow-sm);';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // body 포털 싱글턴 — 툴팁과 리사이즈 카운트 배지
@@ -117,9 +117,11 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
    * @see index.html:3900
    * @param {{row:number, startIndex:number, length:number}[]} segments domain/grid.buildSegments 의 결과
    * @param {number} previewCount 첫 블록에 적을 카운트
+   * @param {string} [label] 있으면 카운트 대신 첫 블록에 적는다(묶음 끌기의 「N개 함께」, RM-14)
    * @returns {void}
    */
-  function showPreview(segments, previewCount) {
+  // @complexity time=O(s) space=O(s) cc=4
+  function showPreview(segments, previewCount, label) {
     clearPreview();
     const rowRefs = refs();
     (segments || []).forEach((seg, index) => {
@@ -135,7 +137,7 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
       block.dataset[DATA.preview] = DATA.FLAG_ON;
       block.style.left = `calc(${seg.startIndex} * var(--cellW) + 4px)`;
       block.style.width = `calc(${seg.length} * var(--cellW) - 8px)`;
-      block.textContent = index === 0 ? `${previewCount}c` : '';
+      block.textContent = index === 0 ? (label ?? `${previewCount}c`) : '';
       ref.track.appendChild(block);
     });
   }
@@ -147,6 +149,40 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
    */
   function clearPreview() {
     el.querySelectorAll(SEL.previewNodes).forEach(node => node.remove());
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 네모 고르기(마퀴) — 빈 칸 끌기의 점선 네모 (RM-14, 2026-11-02)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * 행 · 칸 범위에 점선 네모를 그린다. 트랙이 행마다 따로이고(overflow:hidden) 보드 루트에는 position 이 없으므로
+   * **행마다 한 조각**을 그 트랙 안에 둔다 — 프리뷰 블록과 같은 자리 잡기(`calc(칸 * var(--cellW))`)다.
+   * ⚠ 매 움직임마다 지우고 다시 그린다. 행을 다시 그리지 않는다 — 배치 엘리먼트는 그대로다.
+   * @param {{rowFrom:number, rowTo:number, colFrom:number, colTo:number}} rect
+   * @returns {void}
+   */
+  // @complexity time=O(r) space=O(r) cc=3
+  function showMarquee(rect) {
+    clearMarquee();
+    if (!rect) return;
+    const rowRefs = refs();
+    for (let row = rect.rowFrom; row <= rect.rowTo; row++) {
+      const ref = rowRefs.get(row);
+      if (!ref) continue;
+      const piece = document.createElement('div');
+      piece.className = CLS.marqueeRect;
+      piece.dataset[DATA.marquee] = DATA.FLAG_ON;
+      piece.style.left = `calc(${rect.colFrom} * var(--cellW))`;
+      piece.style.width = `calc(${rect.colTo - rect.colFrom + 1} * var(--cellW))`;
+      ref.track.appendChild(piece);
+    }
+  }
+
+  /** 점선 네모를 전부 지운다. */
+  // @complexity time=O(r) space=O(1) cc=1
+  function clearMarquee() {
+    el.querySelectorAll(SEL.marqueeNodes).forEach(node => node.remove());
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -401,11 +437,11 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
   function showPlacementGhost(spec) {
     const ghost = spawnGhost(PLACEMENT_GHOST_ID, CLS.ghostDrag, {
       padding: '8px 12px',
-      borderRadius: '12px',
+      borderRadius: 'var(--r-2)',
       background: spec.background,
-      color: '#08111f',
+      color: 'var(--bg)',
       fontWeight: '900',
-      boxShadow: '0 8px 18px rgba(0,0,0,0.2)',
+      boxShadow: '0 8px 18px rgba(var(--black-rgb), 0.2)',
     }, spec.text);
     movePlacementGhost(spec.x, spec.y);
     return ghost;
@@ -483,6 +519,9 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
     // 배치 프리뷰
     showPreview,
     clearPreview,
+    // 네모 고르기(RM-14)
+    showMarquee,
+    clearMarquee,
     // 리사이즈 프리뷰
     showResizePreview,
     clearResizePreview,

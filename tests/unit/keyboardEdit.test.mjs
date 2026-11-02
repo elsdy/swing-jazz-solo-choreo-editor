@@ -262,3 +262,25 @@ test('재생기가 포커스를 쥐면 화살표는 재생기의 것이다', () 
   assert.deepEqual(calls, []);
   assert.equal(press(doc, 'ArrowLeft'), true, '재생기 밖에서는 우리 것이다');
 });
+
+// ── 블록 동작 팝업의 복사 (RM-11 동작 ⑥) ─────────────────────────────────────
+// 손가락에는 Alt+끌기가 없다. 팝업의 「⧉ 뒤에 복사」가 Alt+끌기와 같은 커맨드(copyGroupTo)를 그 블록 바로 뒤 칸으로 부른다.
+
+test('블록 팝업의 복사: 그 블록 하나만 바로 뒤에 복사하고, 고른 것은 건드리지 않는다', () => {
+  const store = storeWith([seg('a', 1, 0, 3), seg('b', 2, 0, 2)], ['b']);
+  const dirty = Board.copyGroupAfter(store, { boardId: BOARD_MAIN, groupId: 'a' }, { ids: ids() });
+  assert.ok(dirty && Object.keys(dirty).length > 0);
+  const groups = [...new Set(store.get().boards[BOARD_MAIN].placements.map(p => p.groupId))];
+  assert.equal(groups.length, 3);
+  const copy = groups.find(g => g !== 'a' && g !== 'b');
+  assert.deepEqual(startOf(store, copy), [1, 3]);
+  assert.equal(countOf(store, copy), 3);
+  assert.deepEqual([...store.get().selection], ['b']);
+});
+
+test('블록 팝업의 복사: 표 끝에 붙은 블록이면 복사하지 않고 그렇다고 말한다', () => {
+  const store = storeWith([seg('z', 8, 4, 4)]);
+  const dirty = Board.copyGroupAfter(store, { boardId: BOARD_MAIN, groupId: 'z' }, { ids: ids() });
+  assert.equal(store.get().boards[BOARD_MAIN].placements.length, 1);
+  assert.match(dirty.notify.message, /표 끝/);
+});

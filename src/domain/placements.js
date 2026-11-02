@@ -245,6 +245,41 @@ export function pendingGroupIds(placements) {
 }
 
 /**
+ * 표 위의 차례(행 → 칸)로 **지금 그룹의 다음(또는 앞) 이름 없는 그룹**의 groupId. 더 없으면 null (RM-15).
+ *
+ * `pendingGroupIds` 는 저장 차례다 — 받아 적기는 시간순으로 쌓지만, 옮기거나 붙여넣거나 마커를 블록으로 바꾸면
+ * 저장 차례와 표 위 차례가 어긋난다. Tab 으로 줄줄이 채울 때 사람은 표를 읽는 차례로 가야 하므로 여기서 다시 세운다.
+ * 그룹은 **첫 조각**(가장 앞의 row → startIndex)으로 줄 세운다 — 마디에 걸친 그룹도 한 번만 나온다.
+ *
+ * ⚠ 지금 그룹(`groupId`)은 이름 없는 것이 아니어도 된다 — Tab 은 이름을 붙인 **뒤에** 다음을 찾으므로 그때는 이미
+ *   pending 이 아니다. 자기 자신은 결과에서 뺀다.
+ * ⚠ 지금 그룹이 표에 없으면(지웠다 · 처음 연다) `next` 는 맨 앞의 `?`, `prev` 는 맨 뒤의 `?` 다.
+ *
+ * @param {Placement[]} placements
+ * @param {string|null|undefined} groupId 지금 고른 그룹. 없으면 null
+ * @param {'next'|'prev'} [dir]
+ * @returns {string|null}
+ */
+// @complexity time=O(n log n) space=O(n) cc=9
+export function adjacentPendingGroupId(placements, groupId, dir = 'next') {
+  const firsts = new Map();                      // groupId → 첫 조각
+  for (const p of placements || []) {
+    const cur = firsts.get(p.groupId);
+    if (!cur || p.row < cur.row || (p.row === cur.row && p.startIndex < cur.startIndex)) firsts.set(p.groupId, p);
+  }
+  const order = (a, b) => a.row - b.row || a.startIndex - b.startIndex;
+  const pendings = [...firsts.values()].filter(p => isPending(p) && p.groupId !== groupId).sort(order);
+  if (!pendings.length) return null;
+  const here = groupId == null ? null : firsts.get(groupId) || null;
+  if (dir === 'prev') {
+    const before = here ? pendings.filter(p => order(p, here) < 0) : pendings;
+    return before.length ? before[before.length - 1].groupId : null;
+  }
+  const after = here ? pendings.filter(p => order(p, here) > 0) : pendings;
+  return after.length ? after[0].groupId : null;
+}
+
+/**
  * 그 그룹에 이름을 붙인다(pending 키는 사라진다). 이름이 비면 아무것도 하지 않는다 —
  * 지우는 것은 삭제이지 이름 붙이기가 아니다.
  * @param {Placement[]} placements

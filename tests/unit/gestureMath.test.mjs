@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {
   DOUBLE_TAP_MS, QUICK_DRAG_THRESHOLD_PX, LONGPRESS_MOVE_THRESHOLD_PX,
   resolveDragCount, resolveResizeCount, isDoubleTap, exceedsThreshold,
-  resolveHitCell, dragPreviewCount, resizeHitKind,
+  resolveHitCell, dragPreviewCount, resizeHitKind, rectCellRange, MARQUEE_THRESHOLD_PX, resizeBlocked,
 } from '../../src/domain/gestureMath.js';
 
 const BOARD = { rows: 8, cols: 8 };   // 마지막 행 인덱스 8
@@ -30,11 +30,10 @@ test('끌기 카운트: 마지막 행 너머를 가리키면 시작 자리에서
   assert.equal(resolveDragCount({ startRow: 7, startIndex: 4, endRow: 12, endCol: 7, board: BOARD, lowerBound: 1 }), 12);
 });
 
-test('끌기 카운트: 터치 그리기(crossRow:false)는 끝 행을 보지 않고 자르지도 않는다', () => {
-  const base = { startRow: 8, startIndex: 6, board: BOARD, lowerBound: 1, crossRow: false };
-  assert.equal(resolveDragCount({ ...base, endRow: 3, endCol: 7 }), 2);
-  // 보드에 남은 칸은 2인데 그대로 5 를 돌려준다 — 놓는 커맨드가 뒤늦게 자른다(지금 동작).
-  assert.equal(resolveDragCount({ ...base, endRow: 8, endCol: 10 }), 5);
+test('끌기 카운트: 한 행 안에서만 세던 옛 터치 길은 없다 — 같은 입력이 행을 보고 보드 끝에서 잘린다 (RM-11)', () => {
+  const base = { startRow: 8, startIndex: 6, board: BOARD, lowerBound: 1 };
+  assert.equal(resolveDragCount({ ...base, endRow: 3, endCol: 7 }), 1);   // 옛 crossRow:false 는 2
+  assert.equal(resolveDragCount({ ...base, endRow: 8, endCol: 10 }), 2);  // 옛 길은 5 를 그대로 냈다
 });
 
 // ── 늘이기 카운트 ───────────────────────────────────────────────────────────
@@ -120,4 +119,21 @@ test('이동 임계: 어느 한 축이라도 임계를 **넘어야** 한다(같�
   assert.equal(exceedsThreshold(12, -12, 12), false);
   assert.equal(exceedsThreshold(-13, 0, 12), true);
   assert.equal(exceedsThreshold(0, 9, 8), true);
+});
+
+test('네모 범위: 두 꼭지점을 어느 쪽으로 끌어도 행 · 칸을 작은 것부터로 정규화하고, 못 잰 칸이 있으면 null (RM-14 마퀴)', () => {
+  assert.deepEqual(rectCellRange({ row: 3, col: 1 }, { row: 2, col: 5 }), { rowFrom: 2, rowTo: 3, colFrom: 1, colTo: 5 });
+  assert.deepEqual(rectCellRange({ row: 2, col: 4 }, { row: 2, col: 4 }), { rowFrom: 2, rowTo: 2, colFrom: 4, colTo: 4 });
+  assert.equal(rectCellRange({ row: 2, col: null }, { row: 2, col: 4 }), null);
+  assert.equal(rectCellRange(null, { row: 2, col: 4 }), null);
+  assert.equal(MARQUEE_THRESHOLD_PX, 4);
+});
+
+// ── 늘이기 가드 (RM-11 동작 ④) ───────────────────────────────────────────────
+
+test('늘이기 가드: 메인 보드의 루틴 블록은 마우스·손가락 모두 같은 답 — 포인터 종류를 묻지 않는다', () => {
+  assert.equal(resizeBlocked({ isRoutine: true, allowsRoutineBlocks: true }), true);    // 메인 보드의 루틴 블록
+  assert.equal(resizeBlocked({ isRoutine: false, allowsRoutineBlocks: true }), false);  // 메인 보드의 동작 블록
+  assert.equal(resizeBlocked({ isRoutine: true, allowsRoutineBlocks: false }), false);  // 루틴 보드(루틴 블록이 없다)
+  assert.equal(resizeBlocked.length, 1);   // 인자 하나 — pointerType 갈래가 다시 생기지 않게
 });

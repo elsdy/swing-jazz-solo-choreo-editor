@@ -15,6 +15,9 @@ import {
   checkKey, eventKey, keysLabel, normalizeHotkeys, ownerOf, setKeys
 } from '../domain/hotkeys.js';
 import { DEFAULT_THEME, THEMES, normalizeTheme } from '../domain/themes.js';
+import { SYMBOLS, environmentLines } from '../domain/supportMatrix.js';
+import { commandById } from '../domain/commands.js';
+import { escapeHtml } from './widgets.js';
 
 const STYLE_ID = 'settings-view-style';
 const CSS = `
@@ -22,30 +25,34 @@ const CSS = `
 .settings-themes { display: grid; gap: 6px; }
 .settings-theme {
   display: flex; align-items: center; gap: 10px; text-align: left; width: 100%;
-  padding: 8px 10px; border-radius: 10px; cursor: pointer;
-  background: rgba(148,163,184,0.06); border: 1px solid rgba(148,163,184,0.22); color: inherit;
+  padding: 8px 10px; border-radius: var(--r-2); cursor: pointer;
+  background: rgba(var(--muted-rgb), 0.06); border: 1px solid rgba(var(--muted-rgb), 0.22); color: inherit;
 }
-.settings-theme:hover { border-color: rgba(34,197,94,0.5); }
-.settings-theme.is-on { border-color: rgba(34,197,94,0.75); background: rgba(34,197,94,0.12); }
-.settings-theme b { display: block; font-size: 12.5px; }
-.settings-theme small { display: block; font-size: 11px; color: #94a3b8; margin-top: 1px; }
+.settings-theme:hover { border-color: rgba(var(--accent-rgb), 0.5); }
+.settings-theme.is-on { border-color: rgba(var(--accent-rgb), 0.75); background: rgba(var(--accent-rgb), 0.12); }
+.settings-theme b { display: block; font-size: var(--fs-3); }
+.settings-theme small { display: block; font-size: var(--fs-1); color: var(--muted); margin-top: 1px; }
 .settings-theme-swatch {
-  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px;
-  border: 1px solid rgba(148,163,184,0.3);
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: var(--r-2);
+  border: 1px solid rgba(var(--muted-rgb), 0.3);
 }
+/* 원칙-예외(U-16): 테마 견본은 그 테마의 색 자체라 지금 테마의 토큰을 따르면 안 된다 */
 .settings-theme-swatch[data-id="basic"] { background: linear-gradient(140deg, #0b1220 0%, #111827 60%, #22c55e 160%); }
+/* 원칙-예외(U-16): 테마 견본은 그 테마의 색 자체라 지금 테마의 토큰을 따르면 안 된다 */
 .settings-theme-swatch[data-id="neon"] {
   background: radial-gradient(circle at 30% 25%, rgba(56,189,248,0.85), transparent 55%),
               radial-gradient(circle at 75% 80%, rgba(251,191,36,0.9), transparent 55%),
               linear-gradient(160deg, #050b18, #0b1e38);
   border-color: rgba(56,189,248,0.5);
 }
+/* 원칙-예외(U-16): 테마 견본은 그 테마의 색 자체라 지금 테마의 토큰을 따르면 안 된다 */
 .settings-theme-swatch[data-id="rose"] {
   background: radial-gradient(circle at 30% 25%, rgba(244,114,182,0.9), transparent 55%),
               radial-gradient(circle at 78% 82%, rgba(192,132,252,0.9), transparent 55%),
               linear-gradient(160deg, #140a1c, #2a1236);
   border-color: rgba(244,114,182,0.5);
 }
+/* 원칙-예외(U-16): 테마 견본은 그 테마의 색 자체라 지금 테마의 토큰을 따르면 안 된다 */
 .settings-theme-swatch[data-id="candy"] {
   background: radial-gradient(circle at 28% 24%, rgba(244,114,182,0.95), transparent 58%),
               radial-gradient(circle at 78% 80%, rgba(45,212,191,0.9), transparent 58%),
@@ -55,57 +62,57 @@ const CSS = `
 
 /* 단축키 목록(2026-09-20). 한 줄이 동작 하나다 — 이름·하는 일·지금 글쇠·바꾸기. */
 .settings-keys { display: grid; gap: 6px; margin-top: 6px; }
-.settings-key-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-  padding: 7px 9px; border-radius: 10px;
-  background: rgba(255,255,255,0.03); border: 1px solid rgba(148,163,184,0.14); }
+.settings-key-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
+  padding: 7px 9px; border-radius: var(--r-2);
+  background: rgba(var(--white-rgb), 0.03); border: 1px solid rgba(var(--muted-rgb), 0.14); }
 .settings-key-row[hidden] { display: none; }
 .settings-key-main { flex: 1 1 14em; min-width: 0; }
-.settings-key-main b { display: block; font-size: 12px; }
-.settings-key-main small { display: block; margin-top: 1px; font-size: 10.5px; color: var(--muted, #94a3b8); line-height: 1.35; }
-.settings-key-caps { display: flex; gap: 4px; flex-wrap: wrap; }
-.settings-key-cap { font-size: 11px; font-weight: 800; padding: 2px 9px; border-radius: 6px;
-  background: rgba(15,23,42,0.85); border: 1px solid rgba(148,163,184,0.35); color: #e6edf6; white-space: nowrap; }
-.settings-key-row.is-listening .settings-key-cap { border-color: rgba(74,222,128,0.6); color: #bbf7d0; }
+.settings-key-main b { display: block; font-size: var(--fs-2); }
+.settings-key-main small { display: block; margin-top: 1px; font-size: var(--fs-1); color: var(--muted, var(--muted)); line-height: 1.35; }
+.settings-key-caps { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
+.settings-key-cap { font-size: var(--fs-1); font-weight: 800; padding: 2px 9px; border-radius: var(--r-1);
+  background: rgba(var(--bg-2-rgb), 0.85); border: 1px solid rgba(var(--muted-rgb), 0.35); color: var(--text); white-space: nowrap; }
+.settings-key-row.is-listening .settings-key-cap { border-color: rgba(var(--accent-rgb), 0.6); color: var(--text); }
 .settings-key-fixed .settings-key-cap { opacity: 0.55; }
 
 .settings-overlay { position: fixed; inset: 0; z-index: 6000; display: none;
-  background: rgba(6,10,20,0.72); backdrop-filter: blur(3px); }
+  background: rgba(var(--bg-rgb), 0.72); backdrop-filter: blur(3px); }
 .settings-overlay[data-open="1"] { display: block; }
 .settings-shell { position: absolute; left: 50%; top: 8vh; transform: translateX(-50%);
   width: min(780px, 96vw); max-height: 84vh;
   display: flex; flex-direction: column; overflow: hidden;
-  background: #0f1729; border: 1px solid rgba(148,163,184,0.22); border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
+  background: var(--bg-2); border: 1px solid rgba(var(--muted-rgb), 0.22); border-radius: var(--r-2);
+  box-shadow: var(--shadow); }
 .settings-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  border-bottom: 1px solid rgba(148,163,184,0.16); flex: 0 0 auto; }
-.settings-head h2 { margin: 0; font-size: 14px; font-weight: 800; color: #e5e7eb; white-space: nowrap; }
+  border-bottom: 1px solid rgba(var(--muted-rgb), 0.16); flex: 0 0 auto; }
+.settings-head h2 { margin: 0; font-size: var(--fs-4); font-weight: 800; color: var(--text); white-space: nowrap; }
 .settings-search { flex: 1; min-width: 0; }
 /* 갈래 옆단 + 본문. ⚠ 스크롤은 shell 이 아니라 **본문이** 한다 — 옆단이 같이 흘러가면
    긴 설정에서 갈래를 누르러 위로 되돌아가야 한다. */
 .settings-main { display: grid; grid-template-columns: 176px 1fr; min-height: 0; flex: 1 1 auto; }
-.settings-side { border-right: 1px solid rgba(148,163,184,0.16); padding: 10px 8px;
-  overflow-y: auto; display: grid; gap: 4px; align-content: start; }
+.settings-side { border-right: 1px solid rgba(var(--muted-rgb), 0.16); padding: 10px 8px;
+  overflow-y: auto; display: grid; gap: var(--sp-1); align-content: start; }
 .settings-nav-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
-  min-height: 38px; padding: 6px 9px; cursor: pointer; border: 1px solid transparent; border-radius: 8px;
-  background: transparent; color: #cbd5e1; font-size: 12px; font-weight: 700; }
-.settings-nav-item:hover { background: rgba(148,163,184,0.10); transform: none; }
-.settings-nav-item[aria-current="true"] { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.30); color: #eafff1; }
-.settings-nav-item .settings-nav-count { margin-left: auto; font-size: 10px; font-weight: 800; color: #7c8aa3; }
-.settings-nav-item[aria-current="true"] .settings-nav-count { color: #a7d8bb; }
+  min-height: 38px; padding: 6px 9px; cursor: pointer; border: 1px solid transparent; border-radius: var(--r-1);
+  background: transparent; color: var(--text); font-size: var(--fs-2); font-weight: 700; }
+.settings-nav-item:hover { background: rgba(var(--muted-rgb), 0.10); transform: none; }
+.settings-nav-item[aria-current="true"] { background: rgba(var(--accent-rgb), 0.14); border-color: rgba(var(--accent-rgb), 0.30); color: var(--text); }
+.settings-nav-item .settings-nav-count { margin-left: auto; font-size: var(--fs-1); font-weight: 800; color: var(--muted); }
+.settings-nav-item[aria-current="true"] .settings-nav-count { color: var(--muted); }
 .settings-nav-item:disabled { opacity: 0.4; cursor: default; }
-.settings-nav-hint { font-size: 10px; color: #64748b; padding: 2px 9px 8px; line-height: 1.4; }
-.settings-body { padding: 14px; display: grid; gap: 16px; align-content: start; overflow-y: auto; min-height: 0; }
+.settings-nav-hint { font-size: var(--fs-1); color: var(--muted); padding: 2px 9px 8px; line-height: 1.4; }
+.settings-body { padding: 14px; display: grid; gap: var(--sp-4); align-content: start; overflow-y: auto; min-height: 0; }
 /* 검색어에 걸린 줄. ⚠ 배경이 아니라 왼쪽 테두리다 — 배경은 갈래 선택이 이미 쓰고 있다. */
-.settings-row.is-hit { border-left: 2px solid #86efac; padding-left: 7px; margin-left: -9px; }
-.settings-empty { font-size: 12px; color: #94a3b8; line-height: 1.6; }
+.settings-row.is-hit { border-left: 2px solid var(--accent); padding-left: 7px; margin-left: -9px; }
+.settings-empty { font-size: var(--fs-2); color: var(--muted); line-height: 1.6; }
 @media (max-width: 640px) {
   /* 폰: 옆단을 위로 눕힌다. 손가락 과녁이 되도록 줄 높이는 그대로 둔다. */
   .settings-main { grid-template-columns: 1fr; }
-  .settings-side { border-right: 0; border-bottom: 1px solid rgba(148,163,184,0.16);
+  .settings-side { border-right: 0; border-bottom: 1px solid rgba(var(--muted-rgb), 0.16);
     grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; align-content: center; }
   .settings-nav-hint { display: none; }
 }
-.settings-section h3 { margin: 0 0 6px; font-size: 12.5px; color: #dbe4ef; }
+.settings-section h3 { margin: 0 0 6px; font-size: var(--fs-3); color: var(--text); }
 .settings-section .helper { margin: 6px 0 0; }
 .settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 /* ⚠ 반드시 있어야 한다. 위의 display:flex 가 브라우저 기본 [hidden]{display:none} 을 이겨서,
@@ -114,24 +121,36 @@ const CSS = `
    같은 함정을 이 저장소가 다섯 번 막았다(.video-panel · .video-field · .docs-toc-children …).
    ⚠ 이 CSS 는 템플릿 문자열 안이다 — 주석에 백틱을 쓰면 문자열이 거기서 끊겨 모듈 전체가 죽는다. */
 .settings-row[hidden] { display: none; }
-.settings-label { font-size: 11px; color: #8892a4; white-space: nowrap; }
-.settings-chip { font-size: 11px; color: #a7f3d0; background: rgba(34,197,94,0.14);
-  border: 1px solid rgba(34,197,94,0.25); border-radius: 999px; padding: 2px 8px;
+.settings-label { font-size: var(--fs-1); color: var(--muted); white-space: nowrap; }
+.settings-chip { font-size: var(--fs-1); color: var(--text); background: rgba(var(--accent-rgb), 0.14);
+  border: 1px solid rgba(var(--accent-rgb), 0.25); border-radius: var(--r-pill); padding: 2px 8px;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-chip.is-off { color: #94a3b8; background: rgba(148,163,184,0.10); border-color: rgba(148,163,184,0.22); }
+.settings-chip.is-off { color: var(--muted); background: rgba(var(--muted-rgb), 0.10); border-color: rgba(var(--muted-rgb), 0.22); }
 .settings-text { width: 10em; }
-.settings-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #cbd5e1;
-  background: rgba(148,163,184,0.10); border-radius: 6px; padding: 4px 8px; margin-top: 6px; word-break: break-all; }
+.settings-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-1); color: var(--text);
+  background: rgba(var(--muted-rgb), 0.10); border-radius: var(--r-1); padding: var(--sp-1) var(--sp-2); margin-top: 6px; word-break: break-all; }
 /* 저장장치 고르기(2026-09-13). 폰에서 누르는 것이라 줄마다 최소 44px 을 준다(손가락 과녁). */
-.settings-volumes { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.settings-volumes { display: flex; flex-direction: column; gap: var(--sp-1); margin: 6px 0; }
 .settings-volume { display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
   min-height: 44px; width: 100%; text-align: left; padding: 6px 10px; cursor: pointer;
-  color: #e2e8f0; background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.18);
-  border-radius: 8px; font-size: 12px; }
-.settings-volume:hover:not(:disabled) { background: rgba(148,163,184,0.16); }
-.settings-volume.is-current { border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.10); }
-.settings-volume span { font-size: 10px; color: #94a3b8; word-break: break-all; }
+  color: var(--text); background: rgba(var(--muted-rgb), 0.08); border: 1px solid rgba(var(--muted-rgb), 0.18);
+  border-radius: var(--r-1); font-size: var(--fs-2); }
+.settings-volume:hover:not(:disabled) { background: rgba(var(--muted-rgb), 0.16); }
+.settings-volume.is-current { border-color: rgba(var(--accent-rgb), 0.45); background: rgba(var(--accent-rgb), 0.10); }
+.settings-volume span { font-size: var(--fs-1); color: var(--muted); word-break: break-all; }
 .settings-volume:disabled { opacity: 0.45; cursor: not-allowed; }
+/* 이 환경(RM-27). 한 줄이 기능 하나 — 기호 · 이름 · 까닭. 기호는 domain/supportMatrix 의 ○ · △ · ✕ 와 같다. */
+.settings-env { display: grid; gap: 4px; margin-top: 6px; }
+.settings-env-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 8px; border-radius: var(--r-1);
+  background: rgba(var(--white-rgb), 0.03); border: 1px solid rgba(var(--muted-rgb), 0.14); font-size: var(--fs-2); }
+.settings-env-sym { flex: 0 0 1.4em; text-align: center; font-weight: 800; }
+.settings-env-row[data-status="ok"] .settings-env-sym { color: var(--accent); }
+.settings-env-row[data-status="no"] .settings-env-sym { color: var(--danger); }
+.settings-env-row[data-status="unknown"] .settings-env-sym { color: var(--now); }
+.settings-env-row[data-status="no"] { border-color: rgba(var(--danger-rgb), 0.28); }
+.settings-env-main { flex: 1 1 auto; min-width: 0; }
+.settings-env-main b { display: block; font-size: var(--fs-2); }
+.settings-env-main small { display: block; margin-top: 1px; font-size: var(--fs-1); color: var(--muted); line-height: 1.35; }
 `;
 
 /** 이 브라우저가 폴더 지정을 못 할 때의 안내. 기능이 없는 것이지 고장이 아니다. */
@@ -165,6 +184,10 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  * @property {() => string} [getProjectName] 경로 미리보기에 쓸 지금 프로젝트 이름
  * @property {(subdir: string, projectName: string) => string[]} [previewDirParts] 미리보기 경로 조각(domain/clips.clipDirParts)
  * @property {() => void} [onChange] 설정이 바뀌었다 — 호출부가 패널 문구 등을 다시 그린다
+ * @property {() => import('../domain/supportMatrix.js').Capabilities} [getCapabilities] 이 환경의 탐지 결과(RM-27). 없으면 「이 환경」 절은 「탐지하지 못했다」로 그린다
+ * @property {() => boolean} [getSupportNotify] 켤 때 「안 되는 것」 토스트를 띄우는가
+ * @property {(on: boolean) => void} [setSupportNotify]
+ * @property {{ replay: () => void }} [coach] 처음 한 번 안내 — 「안내 다시 보기」가 부른다(ui/coachmarks)
  * @property {Window} [win] `location.hostname` 으로 관리 화면을 열 수 있는 기기인지 본다
  * @property {Document} [doc]
  */
@@ -197,9 +220,17 @@ export function createSettingsView(deps) {
     saveHotkeys = () => {},
     // 작업 차례 기록(2026-09-21). 이 화면은 **읽고 지우기만** 한다 — 세는 것도 담는 것도 바깥이다.
     flow = { top: () => [], total: () => 0, clear: () => {} },
+    // 「처음 한 번」 안내(RM-19). 이 화면은 본 기록을 **비우기만** 한다 — 띄우는 것은 ui/onceHint 와 조립부다.
+    hints = { reset: () => {}, count: () => 0 },
     // 테마(2026-09-21). 목록의 주인은 domain/themes 이고, 고르면 바깥이 담고 `<html>` 에 바른다.
     getTheme = () => DEFAULT_THEME,
     setTheme = () => {},
+    // 이 환경(2026-11-02, RM-27). 탐지는 어댑터가 하고 여기는 결과를 표에 맞춰 그리기만 한다.
+    getCapabilities = null,
+    getSupportNotify = () => true,
+    setSupportNotify = () => {},
+    // 처음 한 번 안내(2026-11-02, RM-26). 본 기록을 지우고 첫 장부터 띄우는 것은 ui/coachmarks 의 것을 주입받는다.
+    coach = null,
     doc = document,
     // 관리 화면을 열 수 있는 기기인지 판정하고 새 탭을 여는 데 쓴다. 테스트가 가짜를 준다.
     win = typeof window === 'undefined' ? { location: { hostname: '' }, open() {} } : window
@@ -232,6 +263,16 @@ export function createSettingsView(deps) {
       <div class="settings-main">
         <nav class="settings-side" data-role="nav" aria-label="설정 갈래"></nav>
       <div class="settings-body">
+        <section class="settings-section" data-role="env-section" data-cat="env" data-available="1"
+          data-keywords="이 환경 지원 브라우저 사파리 크롬 파이어폭스 폰 서버 ffmpeg gpu 음성 폴더 안 되는 것 알림 support">
+          <h3>이 환경</h3>
+          <div class="helper">지금 이 브라우저 · 이 서버에서 <b>무엇이 되고 무엇이 안 되는지</b>입니다. 안 되는 것은 고장이 아니라 이 환경에 그 조건이 없는 것이고, 까닭을 함께 적습니다. 서버가 없어 숨은 설정 절(프로젝트 보관 폴더 · 자세 분석 모델 · 말로 채우기)도 여기서 까닭이 읽힙니다. 전체 표는 <code>문서</code> 의 <code>지원 범위</code> 에 있습니다.</div>
+          <div class="settings-env" data-role="env-list"></div>
+          <div class="settings-row">
+            <button class="ghost" data-act="env-notify" type="button" aria-pressed="true">안 되는 것 알림: 켬</button>
+            <span class="settings-label" data-role="env-note">켤 때 안 되는 것이 있으면 토스트로 한 번 알립니다 — 환경(브라우저 · 서버)이 바뀐 때만 다시 뜹니다.</span>
+          </div>
+        </section>
         <section class="settings-section" data-cat="storage" data-available="1"
           data-keywords="영상 클립 video clip 경로 path 폴더 디렉터리 저장 업로드 보관">
           <h3>영상 보관 폴더</h3>
@@ -262,7 +303,7 @@ export function createSettingsView(deps) {
         <section class="settings-section" data-role="projects-section" data-cat="storage"
           data-keywords="프로젝트 안무표 json 저장 최근 목록 폴더 경로 백업 보관">
           <h3>프로젝트 보관 폴더</h3>
-          <div class="helper"><code>프로젝트 저장</code> 을 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
+          <div class="helper"><code>${escapeHtml(commandById('saveProject').button)}</code> 를 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
           <div class="settings-row">
             <span class="settings-label">하위 폴더</span>
             <input class="settings-text" data-role="projects-subdir" type="text" placeholder="projects" disabled />
@@ -358,6 +399,20 @@ export function createSettingsView(deps) {
             <span class="settings-label" data-role="flow-note"></span>
           </div>
         </section>
+        <section class="settings-section" data-role="coach-section" data-cat="flow" data-available="1"
+          data-keywords="안내 코치마크 처음 한 번 다시 보기 말풍선 튜토리얼 시작 도움말 hint 설명">
+          <h3>처음 한 번 안내</h3>
+          <div class="helper">처음 켰을 때 <b>채우기 줄 → 동작 목록 → 영상</b> 차례로 뜨는 말풍선 세 장입니다. 한 번 끝까지 보거나 건너뛰면 다시 뜨지 않습니다 — 기본값은 「처음 한 번만」입니다. 이 브라우저에만 남고 안무표 파일에는 들어가지 않습니다.</div>
+          <div class="settings-row">
+            <button class="ghost" data-act="coach-replay" type="button">안내 다시 보기</button>
+            <span class="settings-label" data-role="coach-note"></span>
+          </div>
+          <div class="helper" data-role="hints-section">영상 패널의 단계 · 연습 줄 · 사이드바 서랍을 처음 열 때 한 번씩 뜨는 설명 말풍선도 있습니다. 이미 본 것은 다시 뜨지 않습니다.</div>
+          <div class="settings-row">
+            <button class="ghost" data-act="hints-reset" type="button">처음 한 번 안내 다시 보기</button>
+            <span class="settings-label" data-role="hints-note"></span>
+          </div>
+        </section>
         <div class="settings-empty" data-role="empty" hidden></div>
       </div>
       </div>
@@ -374,11 +429,12 @@ export function createSettingsView(deps) {
   //   서버 모드에서만 나오는 절이 있다)와 지금 고른 갈래·검색어에 걸리는가. 그래서 `section.hidden`
   //   을 직접 대입하는 자리를 남기지 않고 전부 applyFilter 를 거친다.
   const CATEGORIES = Object.freeze([
+    Object.freeze({ id: 'env', label: '이 환경', hint: '이 브라우저 · 서버에서 무엇이 되나' }),
     Object.freeze({ id: 'storage', label: '보관 자리', hint: '파일이 어디에 쌓이는가' }),
     Object.freeze({ id: 'models', label: '모델', hint: '자세 분석과 말로 채우기가 쓰는 모델' }),
     Object.freeze({ id: 'keys', label: '단축키', hint: '손을 자판에 두고 쓰는 글쇠' }),
     Object.freeze({ id: 'flow', label: '작업 차례', hint: '어떤 버튼 다음에 어떤 버튼을 눌렀나' }),
-    Object.freeze({ id: 'theme', label: '테마', hint: '화면 전체의 색과 빛' })
+    Object.freeze({ id: 'theme', label: '테마', hint: '화면 전체의 분위기(색)' })
   ]);
   const ALL_CAT = 'all';
 
@@ -687,6 +743,8 @@ export function createSettingsView(deps) {
     renderKeys();
     renderThemes();
     renderFlow();
+    renderEnv();
+    renderHints();
     await renderModels();
     await renderLlm();
     await renderProjects();
@@ -799,6 +857,12 @@ export function createSettingsView(deps) {
     }
     const kind = act.dataset.act;
     if (kind === 'close') { close(); return; }
+    if (kind === 'coach-replay') {
+      // 설정 창을 먼저 닫는다 — 말풍선이 가리키는 자리가 창 뒤에 있다.
+      close();
+      if (coach && typeof coach.replay === 'function') coach.replay();
+      return;
+    }
     if (kind === 'pick') {
       // ★ await 뒤로 미루지 않는다 — showDirectoryPicker 는 클릭 콜스택 안에서만 열린다.
       clips.pickFolder().then((picked) => {
@@ -1039,10 +1103,13 @@ export function createSettingsView(deps) {
   const flowListEl = overlay.querySelector('[data-role="flow-list"]');
   const flowNoteEl = overlay.querySelector('[data-role="flow-note"]');
 
-  /** 기록의 id 를 사람 말로. 모르는 id 는 그대로 보인다(단계가 늘어도 화면이 깨지지 않는다). */
+  /**
+   * 기록의 id 를 사람 말로. 모르는 id 는 그대로 보인다(단계가 늘어도 화면이 깨지지 않는다).
+   * ⚠ step4~6 은 RM-20 부터 번호 없는 **도구**다 — 열쇠는 그대로라 2026-10-05 의 판정 기록이 끊기지 않는다.
+   */
   const FLOW_LABELS = Object.freeze({
     step1: '① 영상 고르기', step2: '② 박자 맞추기', step3: '③ 받아 적기',
-    step4: '④ 구간 잘라내기', step5: '⑤ 마커', step6: '⑥ 자세 분석',
+    step4: '구간 잡고 잘라내기(도구)', step5: '마커(도구)', step6: '자세 분석(도구)',
     play: '재생·일시정지', tap: '탭', tapok: 'BPM 정하기',
     capture: '받아 적기·끊기', skip: '건너뛰기', stop: '그만'
   });
@@ -1056,6 +1123,58 @@ export function createSettingsView(deps) {
       ? rows.map(t => `${flowLabel(t.from)} → ${flowLabel(t.to)}   ${t.n}번`).join('\n')
       : '아직 기록이 없습니다. 영상 아래 단계 줄과 조작 줄을 쓰면 여기에 쌓입니다.';
     if (flowNoteEl) flowNoteEl.textContent = total ? `모두 ${total}번` : '';
+  }
+
+  // ── 이 환경 (2026-11-02, RM-27) ──────────────────────────────────────────
+  //
+  // 표의 주인은 domain/supportMatrix 하나다. 여기서는 탐지 결과를 그 표에 맞춰 줄로 그린다 —
+  // 「고장인가, 이 환경에서 원래 안 되는가」를 설정을 열어 바로 가르게 하려는 자리라 **늘 보인다**
+  // (서버 전용 절처럼 숨지 않는다. 안 되는 것이 있을수록 더 보여야 한다).
+  const envListEl = overlay.querySelector('[data-role="env-list"]');
+  const envNotifyBtn = overlay.querySelector('[data-act="env-notify"]');
+  const ENV_SYMBOL = Object.freeze({ ok: SYMBOLS.ok, no: SYMBOLS.no, unknown: '?' });
+
+  // @complexity time=O(f·k) space=O(f) cc=8
+  function renderEnv() {
+    if (!envListEl) return;
+    envListEl.textContent = '';
+    const caps = typeof getCapabilities === 'function' ? getCapabilities() : null;
+    if (!caps) {
+      const row = doc.createElement('div');
+      row.className = 'settings-env-row';
+      row.textContent = '이 환경을 아직 탐지하지 못했습니다.';
+      envListEl.appendChild(row);
+    } else {
+      for (const line of environmentLines(caps)) {
+        const row = doc.createElement('div');
+        row.className = 'settings-env-row';
+        row.dataset.status = line.status;
+        row.dataset.id = line.id;
+        const sym = doc.createElement('span');
+        sym.className = 'settings-env-sym';
+        sym.textContent = ENV_SYMBOL[line.status];
+        const main = doc.createElement('div');
+        main.className = 'settings-env-main';
+        const name = doc.createElement('b');
+        name.textContent = line.label;
+        const why = doc.createElement('small');
+        why.textContent = line.status === 'ok' ? '됩니다'
+          : line.status === 'unknown' ? '아직 모릅니다 — 자세 분석을 한 번 돌리면 GPU 로 섰는지 여기에 적힙니다'
+            : line.reasons.join(' / ');
+        main.append(name, why);
+        row.append(sym, main);
+        envListEl.appendChild(row);
+      }
+    }
+    if (envNotifyBtn) {
+      const on = !!getSupportNotify();
+      envNotifyBtn.textContent = on ? '안 되는 것 알림: 켬' : '안 되는 것 알림: 끔';
+      envNotifyBtn.setAttribute('aria-pressed', String(on));
+    }
+  }
+
+  if (envNotifyBtn) {
+    envNotifyBtn.onclick = () => { setSupportNotify(!getSupportNotify()); renderEnv(); };
   }
 
   // ── 테마 (2026-09-21) ────────────────────────────────────────────────────
@@ -1093,6 +1212,24 @@ export function createSettingsView(deps) {
       if (typeof flow.clear === 'function') flow.clear();
       renderFlow();
       if (flowNoteEl) flowNoteEl.textContent = '기록을 지웠습니다.';
+    };
+  }
+
+  // ── 처음 한 번 안내 (RM-19) ──────────────────────────────────────────────
+  const hintsResetBtn = overlay.querySelector('[data-act="hints-reset"]');
+  const hintsNoteEl = overlay.querySelector('[data-role="hints-note"]');
+
+  // @complexity time=O(1) space=O(1) cc=3
+  function renderHints() {
+    if (!hintsNoteEl) return;
+    const n = typeof hints.count === 'function' ? hints.count() : 0;
+    hintsNoteEl.textContent = n > 0 ? `본 안내 ${n}개` : '아직 본 안내가 없습니다.';
+  }
+  if (hintsResetBtn) {
+    hintsResetBtn.onclick = () => {
+      if (typeof hints.reset === 'function') hints.reset();
+      renderHints();
+      if (hintsNoteEl) hintsNoteEl.textContent = '되살렸습니다 — 그 단계를 다시 열면 안내가 뜹니다.';
     };
   }
 

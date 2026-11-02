@@ -19,6 +19,19 @@ import { readCellH, setNoteWidth } from './cssVars.js';
 import * as Grid from '../domain/grid.js';
 
 /**
+ * 보드에 「손가락 그리기를 받는다」를 적는다(RM-11). 값이 같으면 DOM 을 건드리지 않는다.
+ * 답은 domain/boardGesture.touchDrawArmed 가 내고, 트랙의 스크롤을 막는 것은 CSS 다.
+ * @param {HTMLElement|null} el  .board
+ * @param {boolean} armed
+ */
+// @complexity time=O(1) space=O(1) cc=3
+export function syncTouchDraw(el, armed) {
+  if (!el) return;
+  const v = armed ? '1' : '0';
+  if (el.dataset[DATA.touchDraw] !== v) el.dataset[DATA.touchDraw] = v;
+}
+
+/**
  * @typedef {Object} BoardViewOptions
  * @property {HTMLElement} el 보드 루트(#board 또는 #reBoard). 원본 ctx.el
  * @property {'main'|'routine'} boardId
@@ -106,23 +119,27 @@ export function createBoardView(options) {
    * @param {{rows:number, cols:number, hasIntroRow?:boolean}} board
    * @returns {void}
    */
+  // @complexity time=O(r*c) space=O(r*c) cc=3
   function buildBoardSkeleton(board) {
     const { cols, rows } = board;
     el.innerHTML = '';
     rowRefs.clear();
     const header = document.createElement('div');
     header.className = CLS.boardHeader;
-    header.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${cols}) var(--noteW)`;
+    header.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${cols}) var(--noteCol, var(--noteW))`;
     header.innerHTML = `<div class="${CLS.corner}">마디</div><div class="${CLS.headerCells}" style="grid-template-columns:repeat(${cols}, var(--cellW));">${Array.from({ length: cols }, (_, i) => `<div>${i + 1}</div>`).join('')}</div><div class="${CLS.noteHeader}">비고</div>`;
     el.appendChild(header);
 
+    // @complexity time=O(c) space=O(c) cc=1
     function buildRow(row, labelText) {
       const rowEl = document.createElement('div');
       rowEl.className = CLS.boardRow;
-      rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${cols}) var(--noteW)`;
+      rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${cols}) var(--noteCol, var(--noteW))`;
       const label = document.createElement('div');
       label.className = CLS.rowLabel;
       label.textContent = labelText;
+      // ⚠ 행 메뉴(RM-16)가 되읽는 행 번호. 트랙과 같은 키 · 같은 문자열 규약이다.
+      label.dataset[DATA.row] = row;
       const track = document.createElement('div');
       track.className = CLS.track;
       // ⚠ dataset 은 문자열이 된다 — 읽는 쪽(input)이 Number() 해야 한다.
