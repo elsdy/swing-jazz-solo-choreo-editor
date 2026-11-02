@@ -3,7 +3,7 @@
 // 오늘 index.html 은 "상태"를 네 군데에서 서로 다르게 정의한다:
 // snapshotState(2833) 6필드 · projectPayloadWithRoutines(5273) 12필드 · restoreSnapshot(2845)의 기본값 ·
 // mergeProjectData(4068)의 암묵 shape. 이 파일은 그 넷을 ChoreoDoc 한 타입 위로 모은다.
-// 파일은 여전히 version 1 로 쓴다(LEGACY_FILE_VERSION).
+// 파일은 여전히 version 1 로 쓴다(LEGACY_FILE_VERSION) — 판본 · 연습 기록이 든 파일만 3 이다(RM-29, VERSIONED_FILE_VERSION).
 //
 // ⚠ 2026-09 변경: UNDO_FIELDS 에 links 를 더해 **undo 스냅샷과 파일 포맷의 필드 집합이 같아졌다**.
 //   그 전에는 undo 6필드 / 파일 12필드로 "상태의 정의"가 갈려 있었고, 그 틈에서
@@ -23,11 +23,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 앱이 읽을 수 있는 최신 스키마 버전. migrations.js 만이 이 값을 소비한다.
- * ⚠ 이 값이 2 라고 해서 파일을 2 로 쓰지는 않는다 — serialize.js 는 오늘과 똑같이
- * LEGACY_FILE_VERSION(=1) 을 쓴다. 쓰기 포맷을 바꾸면 저장 파일 바이트가 달라져 동작 변경이 된다.
+ * 앱이 읽을 수 있는 최신 스키마 버전. migrations.js 와 serialize.js 가 이 값을 소비한다.
+ * ⚠ 2026-11-03(RM-29) 에 2 → 3. 판본(versions)·연습 기록(practiceLogs)이 실제로 쓰이기 시작했다.
+ *   파일은 **판본이나 기록이 있을 때만** 이 값(VERSIONED_FILE_VERSION)으로 쓰고, 없으면 오늘처럼 1 로 쓴다 —
+ *   판본을 안 쓴 사람의 저장 바이트가 한 글자도 늘지 않는다.
+ * ⚠ 왜 2 가 아니라 3 인가: 이 판 전의 앱은 SCHEMA_VERSION 이 이미 2 라 version 2 파일을 **열어 버린다**.
+ *   열고 다시 저장하면(자동 담기 1.2초) 판본을 모르는 앱이 version 1 로 덮어 판본이 조용히 사라진다.
+ *   3 으로 써야 폰에 캐시된 옛 앱이 「더 새 판의 파일」로 보고 거절한다(migrations.js 원칙 3).
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
+
+/**
+ * 판본·연습 기록이 든 파일이 박는 `version`. 읽는 판(SCHEMA_VERSION)과 같다.
+ * ⚠ 모양은 v1 과 **같이 평평하다**(안무 본문 키가 최상위) — 그 뒤에 versions · practiceLogs · baseVersionId 가 붙을 뿐이다.
+ *   그래서 판본을 안 쓰던 파일에 판본을 하나 뜨면 바이트 차이는 version 한 글자와 꼬리의 새 키뿐이다.
+ */
+export const VERSIONED_FILE_VERSION = SCHEMA_VERSION;
 
 /**
  * 오늘 projectPayloadWithRoutines(5275) · saveMoveListFile(4051) · saveCategoriesFile(4061) 이
@@ -114,6 +125,23 @@ export const UNDO_FIELDS = Object.freeze(FIELD_TABLE.slice().sort((a, b) => a.un
  *   스냅샷에만 있으면 저장·불러오기에서 새어 나간다.
  */
 export const DOC_FIELDS = Object.freeze(FIELD_TABLE.map(f => f.key));
+
+/**
+ * 판본(ChoreoVersion)이 **뜨지 않는** 필드(RM-29, 2026-11-03 · 판의 결정 Q42 「영상은 안무 공통, 판본은 안무표만」).
+ *   media  영상 목록과 영상마다의 박자 · 마커 — 같은 안무를 찍은 테이크라 판본마다 갈리지 않는다
+ *   links  링크바 — youtubeUrl 이 영상 소스와 같은 문자열이라(MediaSourceRef 주석) 영상과 함께 공통이다
+ * 판본을 열면 이 둘은 지금 값 그대로 남는다.
+ */
+export const VERSION_SKIP_FIELDS = Object.freeze(['media', 'links']);
+
+/**
+ * 판본이 뜨는 필드 — 등록표에서 VERSION_SKIP_FIELDS 를 뺀 전부다. 등록표에 필드가 늘면 판본에도 저절로 든다.
+ * 판본의 본문(`doc`)은 **파일과 같은 평평한 모양**이고 이 필드들의 파일 키만 담는다(비면 키째 빠지는 규칙도 같다).
+ */
+export const VERSION_FIELDS = Object.freeze(FIELD_TABLE.filter(f => !VERSION_SKIP_FIELDS.includes(f.key)).map(f => f.key));
+
+/** 판본 본문에 실리는 파일 키(등록표의 file 칸). */
+export const VERSION_FILE_KEYS = Object.freeze(FIELD_TABLE.filter(f => !VERSION_SKIP_FIELDS.includes(f.key)).flatMap(f => f.file));
 
 /**
  * 영상 블록(`media`)의 필드. 키 순서가 곧 저장 바이트다.
@@ -233,50 +261,55 @@ export const CLIP_FIELDS = Object.freeze(['id', 'name', 'takenAt', 'note', 'sour
  */
 
 /**
- * 프로젝트 파일 최상위. v1 은 doc 없이 필드가 전부 평평하게 놓여 있다.
+ * 프로젝트 파일 최상위. 쓰는 모양은 둘이다(RM-29) —
+ *   version 1  판본도 기록도 없는 파일. 안무 본문 키가 최상위에 평평하다(오늘까지의 모든 파일)
+ *   version 3  같은 평평한 본문 + 꼬리에 versions · practiceLogs · baseVersionId(있는 것만)
+ * 읽을 때만 쓰이는 중간 모양이 하나 더 있다 — migrations 의 v2(`doc` 묶음). 파일로 쓰인 적은 없고
+ * 최근 목록(IndexedDB)에 마이그레이션된 값이 담긴 적은 있다(loadProjectFromFile 이 read.data 를 넣는다).
  * @typedef {Object} ProjectFile
  * @property {number} version
- * @property {string} [projectId]        v2 신설. v1 파일은 `v1:${fileName}` 로 결정론적 부여
+ * @property {string} [projectId]        v2 중간 모양에만. v1 파일은 `v1:${fileName}` 로 결정론적 부여
  * @property {string} fileName
  * @property {string} savedAt            ISO. ⚠ 오늘 state 로 복원되지 않고 최근목록 메타로만 쓰인다
- * @property {ChoreoDoc} [doc]           v2. v1 은 rows/cols/... 가 최상위에 평평하다
- * @property {ChoreoVersion[]} [versions]      v2 신설. 이번 PR 에서는 항상 []
- * @property {PracticeLog[]} [practiceLogs]    v2 신설. 이번 PR 에서는 항상 []
- * @property {MediaRef[]} [media]              v2 최상위 자리. 아직 아무도 만들지 않아 항상 []
- *   ⚠ **이름이 doc.media 와 겹친다.** 최상위 `media` 는 연습 기록이 참조할 MediaRef 목록(빈 배열)이고,
- *     `doc.media` 는 이번에 신설한 `{tempo, source}` 블록이다. 둘은 다른 타입이며,
- *     projectCommands.readProjectData 가 `{...value, ...value.doc}` 로 펼칠 때 doc 쪽이 이긴다
- *     (그것이 우리가 읽고 싶은 값이다). v3 에서 최상위 자리의 이름을 바꿔 정리한다.
+ * @property {ChoreoDoc} [doc]           v2 중간 모양에만. v1 · v3 은 rows/cols/... 가 최상위에 평평하다
+ * @property {ChoreoVersion[]} [versions]      v3. 비면 키째 빠진다
+ * @property {PracticeLog[]} [practiceLogs]    v3. 비면 키째 빠진다
+ * @property {string} [baseVersionId]          v3. 지금 본문이 갈라져 나온 판본 id(새 판본의 부모가 된다). 판본이 없으면 빠진다
+ * @property {MediaRef[]} [mediaRefs]          v3 중간 모양의 자리. 아직 아무도 만들지 않는다
+ *   ⚠ 2026-11-03(RM-29) 에 **이름을 `media` 에서 `mediaRefs` 로** 옮겼다(migrations 의 2→3). v2 중간 모양에서는
+ *     최상위 `media`(MediaRef 빈 목록)와 `doc.media`(영상 목록 블록)의 이름이 겹쳐, readProjectData 가 펼칠 때
+ *     doc 쪽이 이기는 것에 기대고 있었다. 평평한 v1 · v3 파일에서 최상위 `media` 는 언제나 영상 목록 블록이다.
  */
 
 /**
- * 안무 버전 스냅샷. 이번 PR 에서는 자리만 정의하고 아무도 만들지 않는다.
+ * 안무 판본(RM-29). 사람이 일부러 떠 두는 것이라 지우기 전에는 밀려나지 않는다(서버 안전망 판 RM-25 와 다르다).
+ * ⚠ 되돌리기 스냅샷에 들지 않는다 — 판본마다 안무 본문을 통째로 품어, 넣으면 동작 하나 옮길 때마다 전부 문자열화된다.
+ * ⚠ 같은 파일 안에 있으므로 projectId 를 두지 않는다. 영상은 안무 공통이라(Q42) 기준 영상 자리(reference)도 두지 않는다.
  * @typedef {Object} ChoreoVersion
  * @property {string} id
- * @property {string} projectId
- * @property {string|null} parentId
- * @property {string} createdAt
- * @property {string} label
+ * @property {string|null} parentId   갈라져 나온 판본. 그 판본을 지워도 그대로 남는다(dangling 허용)
+ * @property {string} createdAt       ISO
+ * @property {string} label           사람이 붙인 이름(A안 · 공연본)
  * @property {string} note
- * @property {ChoreoDoc} doc
- * @property {MediaRef|null} reference
+ * @property {Object} doc             파일과 같은 평평한 모양의 안무 본문 — VERSION_FILE_KEYS 만 담는다
  */
 
 /**
- * 연습 기록. ChoreoVersion 과는 다른 축이며 의존은 versionId → version.id 한 방향뿐이다.
- * 이번 PR 에서는 자리만 정의한다.
+ * 연습 기록 한 줄(RM-29). ChoreoVersion · 영상과는 다른 축이며 의존은 id 로 가리키는 한 방향뿐이다 —
+ * 가리키는 판본 · 영상을 지워도 기록은 깨지지 않고 id 를 그대로 든다.
+ * ⚠ 비어 있는 칸(null · '')은 파일에 쓰지 않는다 — 한 줄이 약 300바이트에 머문다.
  * @typedef {Object} PracticeLog
  * @property {string} id
- * @property {string} projectId
- * @property {string} versionId
- * @property {string} at
- * @property {{from:CountRef,to:CountRef}|null} scope
+ * @property {string} at          연습한 날 `YYYY-MM-DD`(영상의 takenAt 과 같은 꼴). 모르면 ''
+ * @property {string} versionId   연습한 판본. 없으면 ''
+ * @property {string} clipId      그날 찍은 테이크 — 영상 목록(doc.media.clips)의 id. 없으면 ''
+ * @property {{from:CountRef,to:CountRef}|null} scope  연습한 구간(양 끝 칸 포함)
  * @property {number|null} bpm
- * @property {number|null} rating
+ * @property {number|null} rate   배속(0.75 같은)
  * @property {number|null} attempts
- * @property {number|null} cleanRuns
- * @property {{from:CountRef,to:CountRef,note?:string}[]} troubleSpots
- * @property {MediaRef|null} media
+ * @property {number|null} cleanRuns  attempts 를 넘지 않는다
+ * @property {number|null} rating     1~5
+ * @property {string} trouble     걸린 자리 한 줄(「8x3에서 늦음」)
  * @property {string} note
  */
 
@@ -290,6 +323,7 @@ export const CLIP_FIELDS = Object.freeze(['id', 'name', 'takenAt', 'note', 'sour
 
 /**
  * 영상 참조. 버전(기준 영상)에도 로그(오늘 찍은 영상)에도 붙으므로 둘 중 누구의 소유도 아니다.
+ * ⚠ 아직 아무도 만들지 않는다 — 연습 기록은 영상 목록의 id(clipId)로 가리키고(RM-29), 판본은 영상을 갖지 않는다(Q42).
  * @typedef {Object} MediaRef
  * @property {'youtube'|'file'|'url'} kind
  * @property {string} src

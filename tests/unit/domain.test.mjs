@@ -418,7 +418,30 @@ test('migrations: version 1 파일은 진입 규약(평평한 최상위)이 그�
   // 레코드를 날조하지 않는다 — v1 에는 역사가 없다
   assert.deepEqual(res.value.versions, []);
   assert.deepEqual(res.value.practiceLogs, []);
-  assert.deepEqual(res.value.media, []);
+  // v3(RM-29) — 최상위 MediaRef 목록은 이름이 `mediaRefs` 로 바뀌었다(최상위 media 는 평평한 파일에서 media 블록의 자리다)
+  assert.deepEqual(res.value.mediaRefs, []);
+  assert.equal('media' in res.value, false);
+});
+
+test('migrations: 파일에 든 판본·기록은 v1→v2 에서 빈 배열로 덮이지 않는다', () => {
+  // RM-29 — 판본 · 기록이 든 v1 모양의 파일(평평한 최상위에 versions · practiceLogs). 예전 v1→v2 는 둘을 [] 로 덮어썼다.
+  const versions = [{ id: 'v1', parentId: null, createdAt: '2026-11-01T00:00:00.000Z', label: 'A안', note: '', doc: { rows: 4 } }];
+  const practiceLogs = [{ id: 'L1', at: '2026-11-02', attempts: 3 }];
+  const file = { ...V1_FILE, versions, practiceLogs };
+  const res = migrateProjectFile(structuredClone(file));
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.value.versions, versions, '판본이 빈 배열로 덮였다');
+  assert.deepEqual(res.value.practiceLogs, practiceLogs, '기록이 빈 배열로 덮였다');
+  // 최상위 참조 목록은 새 이름(mediaRefs)으로 옮겨지고, 최상위 media 는 비어 안무 안 media 와 이름이 겹치지 않는다
+  assert.deepEqual(res.value.mediaRefs, []);
+  assert.equal('media' in res.value, false);
+  // 펼쳐 연 모양을 정규화해도 남는다(readProjectData → normalizeProject 의 길)
+  const n = normalizeProject({ ...res.value, ...res.value.doc }, { ids: counterEnv() });
+  assert.equal(n.versions.length, 1);
+  assert.equal(n.practiceLogs[0].attempts, 3);
+  // 손상된 것(배열이 아닌 것)은 빈 목록으로 접는다
+  const bad = migrateProjectFile({ ...V1_FILE, versions: 'x', practiceLogs: { a: 1 } });
+  assert.deepEqual([bad.value.versions, bad.value.practiceLogs], [[], []]);
 });
 
 test('migrations: 열린 v1 파일이 normalizeProject 를 그대로 통과한다', () => {
@@ -2314,7 +2337,8 @@ test('media: 우리가 쓴 media 블록은 v1→v2 왕복에서 살아남는다'
   };
   const res = migrateProjectFile(withMedia, { now: () => '1970-01-01T00:00:00.000Z' });
   assert.deepEqual(res.value.doc.media, withMedia.media, '최상위 media:[] 가 우리 블록을 덮어썼다');
-  assert.deepEqual(res.value.media, [], '최상위 자리는 MediaRef 목록 그대로다(이름만 같다)');
+  assert.deepEqual(res.value.mediaRefs, [], '최상위 MediaRef 목록은 v3 에서 mediaRefs 로 이름을 바꿨다(RM-29)');
+  assert.equal('media' in res.value, false, '최상위 media 자리가 비었다 — 이름이 겹치지 않는다');
 
   // readProjectData 의 되펼치기에서는 doc 쪽이 이긴다 — 우리가 읽고 싶은 값이 나온다.
   const flat = { ...res.value, ...res.value.doc };

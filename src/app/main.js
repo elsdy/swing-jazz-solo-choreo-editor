@@ -102,6 +102,10 @@ import { detectCapabilities } from '../adapters/capabilities.js';
 import { fingerprintOf, shouldNotify, unsupportedFeatures, unsupportedMessage } from '../domain/supportMatrix.js';
 import { themeAttr, normalizeTheme } from '../domain/themes.js';
 import { createProjectPanel } from '../ui/projectPanel.js';
+import { createVersionListView } from '../ui/versionListView.js';
+import { createPracticeLogView } from '../ui/practiceLogView.js';
+import * as VersionCmd from '../usecases/versionCommands.js';
+import { versionSummaries } from '../domain/project/versions.js';
 import { clipsByProgress, clipsSummary, formatTakenAt } from '../domain/project/media.js';
 import * as PlanCmd from '../usecases/planCommands.js';
 import * as SheetCmd from '../usecases/sheetCommands.js';
@@ -368,7 +372,9 @@ const projectDeps = {
   files: browserFileIO,
   storage,
   setProjectFileName,
-  commitHistory
+  commitHistory,
+  // RM-29 — 판본 열기는 연 판을 되돌리기의 바닥으로 삼는다(versionCommands.openVersion)
+  resetHistory: (boardId) => History.reset(hist, boardId)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2885,6 +2891,68 @@ views.project = createProjectPanel({
     remove: (id) => { render(withUndoToast(VideoCmd.removeClip(store, { id }), '영상을 목록에서 뺐습니다.')); }
   },
   openVideoPanel: () => render(VideoCmd.openPanel(store)),
+  // RM-29 — 그 영상과 찍은 날을 채운 연습 기록 초안을 연다(store 에는 `기록 적기` 를 눌러야 쌓인다)
+  logTake: (clipId) => views.practiceLog?.openDraft(VersionCmd.logDraft(projectDeps, { today: localToday(), clipId })),
+  confirmOnce
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 22-1. 판본과 연습 기록 — 프로젝트 칸 아래 (RM-29 · 2026-11-03)
+//
+// ⚠ 판본 · 기록은 되돌리기를 타지 않는다 — 그래서 commitHistory 를 부르지 않는다. 판본 **열기**만 안무표를 바꾸므로
+//   openVersion 이 전체 불러오기와 같은 길로 한 단계를 쌓는다.
+// ⚠ 「오늘」은 사람의 날(지역 날짜)이다 — 도메인은 시계를 모르므로 여기서 잰다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 지역 날짜 `YYYY-MM-DD`(연습한 날). toISOString 은 UTC 라 새벽에 하루가 밀린다. */
+// @complexity time=O(1) space=O(1) cc=1
+function localToday() {
+  return localDateOf(new Date());
+}
+
+/** Date → 지역 날짜 `YYYY-MM-DD`. */
+// @complexity time=O(1) space=O(1) cc=1
+function localDateOf(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** 판본의 뜬 시각(UTC ISO) → 지역 날짜. ⚠ `slice(0, 10)` 은 UTC 날이라 한국의 아침 9시 전에 뜬 판본이 어제로 보였다. */
+// @complexity time=O(1) space=O(1) cc=2
+function localDateOfIso(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : localDateOf(d);
+}
+
+const formatDay = (at) => formatTakenAt(at, new Date().getFullYear());
+
+views.versions = createVersionListView({
+  getVersions: () => versionSummaries(store.versions),
+  getBase: () => store.get().versionBase,
+  isKept: () => VersionCmd.currentIsKept(projectDeps),
+  formatDate: (createdAt) => formatDay(localDateOfIso(createdAt)),
+  commands: {
+    snapshot: () => render(VersionCmd.snapshotVersion(projectDeps)),
+    open: (id) => render(VersionCmd.openVersion(projectDeps, { id })),
+    edit: (id, patch) => render(VersionCmd.editVersionMeta(projectDeps, { id, ...patch })),
+    remove: (id) => render(VersionCmd.deleteVersion(projectDeps, { id }))
+  },
+  confirmOnce
+});
+
+views.practiceLog = createPracticeLogView({
+  getLogs: () => store.practiceLogs,
+  getContext: () => ({
+    cols: store.board(BOARD_MAIN).cols,
+    versions: versionSummaries(store.versions),
+    clips: VideoCmd.clipList(store).clips
+  }),
+  formatDate: formatDay,
+  commands: {
+    draft: () => VersionCmd.logDraft(projectDeps, { today: localToday() }),
+    save: (log) => render(VersionCmd.saveLog(projectDeps, log)),
+    remove: (id) => render(VersionCmd.deleteLog(projectDeps, { id }))
+  },
   confirmOnce
 });
 
