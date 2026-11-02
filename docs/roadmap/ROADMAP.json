@@ -2375,6 +2375,36 @@
             "note": "테마와 상관없이 같은 차례(영상 → 차례 → 연습 줄)가 된다. 대신 기본 테마의 모양이 바뀌고 RM-55 와 같은 줄을 고치게 된다"
           }
         ]
+      },
+      {
+        "id": "Q123",
+        "title": "RM-62 — 인쇄용 안무표의 「만든 날」도 이번에 함께 고칠까",
+        "answer": "함께 고친다 (2026-11-03)",
+        "options": [
+          {
+            "label": "함께 고친다",
+            "note": "추천 — src/domain/sheetHtml.js:190의 String(input.generatedAt).slice(0, 10)도 같은 UTC 날짜 버그다. sheetCommands가 지역 날짜를 넘기게 바꾼다. 손댈 파일이 둘 늘고 countSheet 시험 기대도 바뀐다"
+          },
+          {
+            "label": "이번에는 세 파일 이름만",
+            "note": "범위는 설명 그대로다. 인쇄의 「만든 날」은 0~9시에 계속 어제로 찍힌다. D-21 글자 검사는 String(...).slice 꼴을 못 잡으니 판에 따로 올린다"
+          }
+        ]
+      },
+      {
+        "id": "Q124",
+        "title": "RM-62 — D-21 원칙 · 검사를 RM-29와 이 항목 중 어디서 넣을까",
+        "answer": "이 항목이 넣는다 (2026-11-03)",
+        "options": [
+          {
+            "label": "이 항목이 넣는다",
+            "note": "추천 — RM-62가 먼저 병합되면 RM-29는 D-21 절과 규칙을 빼고 판본 목록 고침만 남긴다. RM-29 쪽에 이미 D-21 글이 있으면 병합 때 PRINCIPLES.md가 충돌한다"
+          },
+          {
+            "label": "RM-29가 넣고 이 항목은 코드만",
+            "note": "RM-29가 병합된 뒤에야 RM-62의 검사가 선다. 그 전에 RM-62가 병합되면 같은 꼴을 막는 장치가 한동안 없다"
+          }
+        ]
       }
     ]
   },
@@ -3742,8 +3772,8 @@
             "★"
           ],
           "what": "안무표 마디 위에 인트로·A·B·브레이크 같은 파트(이름·시작 마디·끝 마디·색)를 새 저장 필드로 둔다. 파트는 접고 펼 수 있고, 통째로 옮기거나 한 번 더 넣을 수 있다. 지금은 프레이즈 설정이 몇 마디마다 기계적으로 색만 칠할 뿐 곡의 뼈대를 담을 자리가 없어서, 같은 대목을 되풀이하려면 마디를 하나씩 다시 채워야 한다. 옮기기·되풀이·범위 따라가기는 RM-16 이 만들 마디 삽입·삭제·복제 연산을 부른다(지금 저장소에는 그 연산이 없다). 용어는 RM-10, 접힌 행 렌더는 RM-35 와 닿는다.",
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 67,
           "files": [
             "src/domain/project/schema.js#FIELD_TABLE",
             "src/domain/project/snapshot.js#UNDO_OPS",
@@ -3775,7 +3805,8 @@
           "plan": "docs/roadmap/plans/RM-23.md",
           "slug": "song-parts-as-first-class-sections",
           "branch": "rm-23-song-parts-as-first-class-sections",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-24",
@@ -4066,8 +4097,8 @@
             "E"
           ],
           "what": "server.py · 파이썬 실행 환경 · ffmpeg · 앱 파일을 맥 .dmg 와 윈도우 설치 파일 하나로 싼다. 터미널 없이 두 번 눌러 켜도 영상 보관·자르기·자세 분석이 그대로 되게 하려는 것이며, 방향(Q1 설치형·로컬 우선)은 정해졌다. RM-26(첫 실행 10분)이 먼저이지만 그 코드를 부르지 않으므로 점선 선행이다. RM-27 의 지원 표와 RM-33 의 출처별 저장과도 닿는다.",
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 66,
           "files": [
             "server.py#main",
             "server.py#Handler",
@@ -4094,7 +4125,22 @@
           "plan": "docs/roadmap/plans/RM-28.md",
           "slug": "installable-desktop-app-bundle",
           "branch": "rm-28-installable-desktop-app-bundle",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "wrapup": [
+            {
+              "text": "LGPL ffmpeg 를 지어(sh packaging/ffmpeg-lgpl-mac.sh — 소스 받기·짓기는 권한 분류기가 claude 에게 막았다) --ffmpeg 로 .dmg 를 다시 짓고 자르기를 잰다",
+              "state": "approved"
+            },
+            {
+              "text": "윈도우 기계에서 packaging/build.py 로 설치 파일을 짓고 packaging/README.md 의 손 점검표(켜기·영상·자르기·저장·다시 깔기)를 돈다",
+              "state": "approved"
+            },
+            {
+              "text": "지은 기계가 아닌 맥에서 .dmg 를 열어 첫 실행 경고 넘기기(튜토리얼 「설치형 앱으로 켠다」)가 맞는지 본다",
+              "state": "approved"
+            }
+          ],
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-29",
@@ -5173,14 +5219,17 @@
         {
           "id": "RM-62",
           "name": "기본 파일 이름의 날짜가 아침 9시 전에는 어제로 붙는다",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q123",
+            "Q124"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "src/usecases/projectCommands.js:266 · 288 · 308 — 이름 칸을 비운 채 저장하면 project_/moves_/categories_ 뒤에 nowIso(env).slice(0, 10) — UTC 날짜 — 를 붙인다. 한국(UTC+9)의 0~9시에는 어제 날짜가 된다. RM-29 에서 판본 목록의 같은 꼴을 찾아 그 자리만 지역 날짜(app/main localDateOfIso)로 고쳤다. 고칠 때 check-principles 에 D-21 규칙(Iso()/toISOString() 뒤의 .slice(0, 10))을 함께 넣는다 — docs/PRINCIPLES.md D-21.",
+          "what": "이름 칸을 비운 채 저장할 때 project_/moves_/categories_ 뒤에 붙는 날짜가 지금은 UTC 날짜(nowIso().slice(0, 10))다. 그래서 한국에서는 0~9시에 어제로 붙는다. 이것을 이 기계의 지역 날짜로 바꾸고, 같은 꼴이 다시 들어오지 않게 원칙 D-21과 그 기계 검사를 함께 넣는다. RM-29(판본과 연습 기록)가 판본 목록에서 같은 꼴을 고치며 localDateOfIso와 D-21을 다루고 있어 겹치지만, 둘 다 아직 main에는 없다(main에서 grep으로 확인함). 이 항목은 RM-29가 만들 것을 부르지 않으므로 선행으로 두지 않는다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T22:43:44Z",
@@ -5192,8 +5241,19 @@
             "side": "feature",
             "why": "이 저장소 코드(usecases/projectCommands)의 날짜 계산 버그 — 엔진과 무관"
           },
-          "slug": "default-filename-utc-date",
-          "priority": "top4"
+          "slug": "local-date-default-file-name",
+          "priority": "top4",
+          "files": [
+            "src/usecases/projectCommands.js#saveProject",
+            "src/usecases/projectCommands.js#saveMoveList",
+            "src/usecases/projectCommands.js#saveCategories",
+            "src/usecases/projectCommands.js#localDate",
+            "src/adapters/browser.js#browserEnv",
+            "tools/check-principles.mjs#RULES",
+            "tests/unit/localDateFileName.test.mjs",
+            "docs/PRINCIPLES.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-62.md"
         }
       ]
     }
