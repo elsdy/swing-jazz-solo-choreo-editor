@@ -4939,7 +4939,13 @@
           ],
           "plan": "docs/roadmap/plans/RM-53.md",
           "branch": "rm-53-close-duplicate-of-from-factoriel-track-plan-fix",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "wrapup": [
+            {
+              "text": "판에서 RM-53 을 RM-49 의 중복으로 적어 닫는다 — 계획서 요구 3(factoriel.py item merge RM-53 --into RM-49). 이 자리에서는 ROADMAP.json 을 고치지 않기로 해서 남겼다",
+              "state": "approved"
+            }
+          ]
         },
         {
           "id": "RM-54",
@@ -5308,7 +5314,7 @@
             "Q126"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "1200px 창에서는 영상 띠 아래 조작 줄의 단추들이 폭을 똑같이 나눠(flex 1 1 0) 갖는다. 그래서 `⏮ 처음으로` 단추가 68px밖에 못 받아 '처...'로 잘린다. 이 일에서는 그려진 단추의 글자 폭을 재고, 넘치면 짧은 꼴(⏮)로 접으며 전체 이름은 툴팁과 aria-label 로 남긴다(U-13 「재고 접을 것을 고른다」). RM-18(아이콘 스프라이트)이 생기기 전부터 있던 넘침이라 그 항목과는 따로 낸다. RM-18 의 코드는 부르지 않고 이모지 짧은 꼴만 쓴다.",
           "kind": "bug",
@@ -5330,7 +5336,9 @@
             "tests/unit/thumbBar.test.mjs",
             "docs/PRINCIPLES.md"
           ],
-          "plan": "docs/roadmap/plans/RM-63.md"
+          "plan": "docs/roadmap/plans/RM-63.md",
+          "branch": "rm-63-thumb-bar-rewind-fold-to-icon-when-clipped",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-64",
@@ -5342,7 +5350,7 @@
             "Q125"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "README 의 '고칠 때' 명령 블록에는 단위 시험 622개(server.py 16)와 원칙 검사 다섯이 적혀 있다. 하지만 CLAUDE.md 는 648개(server.py 22)와 원칙 아홉이고, ARCHITECTURE.md 첫머리에는 이보다 더 옛 수(단위 66 · 골든 150)가 남아 있다. 시험 수는 CLAUDE.md 한 자리에만 두고 README · ARCHITECTURE 는 숫자 없이 그 자리를 가리키게 한다. 숫자가 다시 끼어들면 문서 검사가 붉어지게 해, 수를 고치는 PR 이 한 자리만 맞추고 나머지를 빠뜨리는 일을 막는다.",
           "kind": "bug",
@@ -5366,7 +5374,9 @@
             "tools/check-docs.mjs#problems",
             "tests/unit/docCounts.test.mjs"
           ],
-          "plan": "docs/roadmap/plans/RM-64.md"
+          "plan": "docs/roadmap/plans/RM-64.md",
+          "branch": "rm-64-readme-test-counts-single-source",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-65",
