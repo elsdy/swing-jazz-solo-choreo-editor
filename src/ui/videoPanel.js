@@ -34,6 +34,7 @@ import { bpmFromTaps, driftCounts, isTempoUsable, normalizeTempo, tapSpread } fr
 import { driftReport } from '../domain/captureDrift.js';
 import { QUIET, applyGuide, captureGuide, exportGuide, markGuide, markerGuide, pointGuide, tapGuide, trimGuide, voiceGuide } from './guideLines.js';
 import { isStacked } from './layout.js';
+import { measureBandChrome, settleOnResize } from './resizeSettle.js';
 import { flowTrack } from '../domain/flowTrack.js';
 import { openCount } from '../domain/stepTodos.js';
 import { markersAt, normalizeMarkers } from '../domain/markers.js';
@@ -1215,6 +1216,7 @@ export function createVideoPanel(deps) {
    *   단계가 영상에 덮이거나 빈 띠만큼 아래가 내려앉는다.
    * ⚠ `padding-top` 은 rect 의 top·width 를 바꾸지 않는다 — 그래서 재고 쓰는 순서가 엉키지 않는다.
    */
+  // @complexity time=O(1) space=O(1) cc=3
   function placeBand() {
     const strip = panel;
     if (!strip) return;
@@ -1222,11 +1224,11 @@ export function createVideoPanel(deps) {
 
     // ── 창을 재서 영상 크기를 정한다 ───────────────────────────────────────────
     // 가로로는 띠의 폭까지, 세로로는 **남는 만큼**. 둘 중 먼저 걸리는 쪽이 크기를 정한다.
-    // ⚠ 머리줄과 단계 칸은 **실측**한다. 둘 다 띠의 padding-top 과 무관하므로 재는 순서가 엉키지
-    //   않는다(그 패딩은 이 함수가 마지막에 쓴다).
-    const head = strip.querySelector('.video-head');
-    const chromeH = (head ? head.getBoundingClientRect().height : 0)
-      + (bodyEl ? bodyEl.getBoundingClientRect().height : 0);
+    // ⚠ 머리줄과 단계 칸은 **실측**한다. 다만 단계 칸은 띠의 padding-top 과 **무관하지 않다** —
+    //   띠 칸의 높이가 묶여 있어 지난번 padding 이 크면 단계 칸이 눌린다(RM-66: 1600x1500 → 1200x820 에서
+    //   옛 padding 656px 에 단계 칸이 16px 로 눌려 띠가 한 번 늦게 줄었다). 그래서 **padding 을 비우고 잰다**
+    //   — 몇 번째로 재든 처음 연 것과 같은 값이 된다. 새 padding 은 이 함수가 마지막에 쓴다.
+    const chromeH = measureBandChrome(strip, [strip.querySelector('.video-head'), bodyEl]);
     const roomH = window.innerHeight - r.top - chromeH - BAND_DOCK_H - BAND_GAP * 3 - BOARD_MIN_H;
     const widthCap = Math.max(240, r.width - BAND_GAP * 2);
     const h0 = Math.max(BAND_MIN_H, Math.min(roomH, widthCap * 9 / 16));
@@ -1818,7 +1820,9 @@ export function createVideoPanel(deps) {
   // ⚠ 브라우저 창 크기가 바뀌면 포함 블록의 자리도 바뀐다 — 기준점을 버리고 다시 잰다.
   //   그리고 **다시 놓는다**: 1040px 을 넘나들면 받아 적기 창이 떴다 사라지고, 넓은 화면에서 적어 둔
   //   인라인 좌표가 폰 폭에 남아 있으면 오른쪽 위 작은 창이 엉뚱한 자리에 선다.
-  window.addEventListener('resize', () => { floatOriginCache = null; syncDetached(); });
+  // ⚠ 기준점은 resize 마다 곧바로 버리고, 놓기는 같은 resize 의 **다른 듣개(칸 크기 맞춤)가 다 돈 뒤**
+  //   한 틀에 한 번으로 미룬다(RM-66) — main.js 의 듣개 등록 차례에 기대지 않는다.
+  settleOnResize(window, { now: () => { floatOriginCache = null; }, later: syncDetached });
   if (floatDockBtn && commands.setFloating) {
     floatDockBtn.onclick = (e) => { e.stopPropagation(); render(commands.setFloating({ floating: false })); };
   }
