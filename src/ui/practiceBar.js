@@ -181,7 +181,7 @@ export function createPracticeBar(deps) {
         ? `${where} · ${clock(span.startSec)} ~ ${clock(span.endSec)}` + (p.loop ? ' — 반복 중' : ' — `🔁 반복` 을 켜면 끝에서 처음으로 되감습니다')
         : `${where} — 박자가 맞지 않아 반복할 수 없습니다.`;
     } else if (ready && span && p.loop) {
-      text = `In ${clock(span.startSec)} ~ Out ${clock(span.endSec)} 을 반복합니다(④ 의 In/Out).`;
+      text = `In ${clock(span.startSec)} ~ Out ${clock(span.endSec)} 을 반복합니다(도구 「구간 잡고 잘라내기」 의 In/Out).`;
     }
     applyGuide(help, practiceGuide({ ready, text }), CLS.isError);
   }

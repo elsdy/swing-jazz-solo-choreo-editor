@@ -55,7 +55,12 @@ export const STORAGE_KEYS = Object.freeze({
    * ⚠ 안무표가 아니라 **이 브라우저의 기억**이라 프로젝트 파일에 들어가지 않는다(단축키 · 테마와 같은 규약).
    *   `⚙ 설정` 의 `처음 한 번 안내 다시 보기` 가 비운다.
    */
-  onceHints: 'choreo_once_hints'
+  onceHints: 'choreo_once_hints',
+  /**
+   * 2026-11-02 신설(RM-26). 처음 한 번 안내(코치마크)를 끝까지 봤거나 건너뛰었다는 표시 하나.
+   * ⚠ 이 브라우저의 것이라 안무표 파일에 들어가지 않는다. ⚙ 설정의 「안내 다시 보기」가 지운다.
+   */
+  coachSeen: 'choreo_coach_seen'
 });
 
 /**

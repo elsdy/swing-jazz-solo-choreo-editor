@@ -7,11 +7,11 @@
 // "메인과 루틴을 동시에 리사이즈할 수 없다" 가 이 앱의 불변식이다.
 // ⚠ 그 불변식을 지키려고 여기서도 슬롯을 **하나만** 둔다. boardId 별 레지스트리로 바꾸지 마라.
 //
-// 리스너 등록 위치도 원본 그대로다(틀리면 터치 리사이즈가 조용히 죽는다):
-//   · PC   : startResize 가 **document** 에 mousemove/mouseup 을 건다(옵션 없음, 3752-3753).
-//   · 터치 : document 에 걸지 **않는다**. 보드 요소(el)의 touchmove/touchend/touchcancel
-//            핸들러(2551-2582, `{passive:false}`)가 `isActive(boardId)` 로 골라
-//            applyPreview / stopTouch 를 부른다. 그래야 preventDefault 가 먹는다.
+// 리스너는 마우스·손가락 **한 길**이다(RM-11, 2026-11-02): start 가 **document** 에 pointermove/pointerup/pointercancel
+// 을 건다(원본 3752-3753 의 mousemove/mouseup 자리). 원본은 터치만 보드 요소의 touchmove `{passive:false}` 가
+// preventDefault 로 스크롤을 막으며 applyPreview 를 불렀는데, 포인터 이벤트의 preventDefault 는 스크롤을 못 막으므로
+// 그 몫은 CSS `touch-action: none`(`.resize-handle`)이 맡고, 손가락은 pointerdown 과녁에 묵시적으로 붙잡혀
+// 보드 밖으로 나가도 document 까지 온다. 그래서 보드 쪽 갈래가 없어졌다 — 늘이기 중의 move/up 은 전부 여기다.
 //
 // ⚠⚠ 901e1d1 — 프리뷰 중에는 **절대로 커밋하거나 다시 그리지 않는다.**
 //   applyPreview 는 overlays 가 만든 점선 블록의 인라인 스타일만 만지고, rebuildGroup 은
@@ -70,10 +70,11 @@ export function createPointerSession(deps) {
   let active = null;
 
   /**
-   * PC 리사이즈. document 에 걸린다(원본 3756-3759).
-   * @param {MouseEvent} e
+   * 늘이기 중의 포인터 이동. document 에 걸린다(원본 3756-3759 의 mousemove — 이제 손가락도 같은 길이다).
+   * @param {PointerEvent} e
    */
-  function onMouseMove(e) {
+  // @complexity time=O(1) space=O(1) cc=2
+  function onPointerMove(e) {
     if (!active) return; // 원본 `if (!activeResizeCtx?.resize) return;`
     applyPreview(e.clientX, e.clientY);
   }
@@ -116,9 +117,10 @@ export function createPointerSession(deps) {
       overlays.showResizeCountBadge(active.liveEl, active.originalCount);
     }
 
-    // PC: document 레벨 mouse 이벤트 (터치는 보드 레벨에서 처리)
-    doc.addEventListener('mousemove', onMouseMove);
-    doc.addEventListener('mouseup', stop);
+    // document 레벨 포인터 이벤트 — 마우스·손가락 한 길(pointercancel 은 원본 touchcancel 처럼 stop 으로 간다)
+    doc.addEventListener('pointermove', onPointerMove);
+    doc.addEventListener('pointerup', stop);
+    doc.addEventListener('pointercancel', stop);
     return active;
   }
 
@@ -192,8 +194,9 @@ export function createPointerSession(deps) {
       overlays.clearResizePreview(r.boardId);
       finalize(r);
     }
-    doc.removeEventListener('mousemove', onMouseMove);
-    doc.removeEventListener('mouseup', stop);
+    doc.removeEventListener('pointermove', onPointerMove);
+    doc.removeEventListener('pointerup', stop);
+    doc.removeEventListener('pointercancel', stop);
     if (r) {
       getBoardEl(r.boardId)
         .querySelectorAll(SEL.placementResizing)
@@ -219,7 +222,7 @@ export function createPointerSession(deps) {
     isActive,
     applyPreview,
     stop,
-    /** 원본 stopTouchResize(3779-3781)는 stopMouseResize 를 그대로 부른다. */
+    /** 원본 stopTouchResize(3779-3781)는 stopMouseResize 를 그대로 불렀다 — 이제 한 길이라 같은 함수다. */
     stopTouch: stop,
     /** 읽기 전용 진단용. 호출부가 이걸 고쳐 쓰지 않게 하라. */
     current: () => active,

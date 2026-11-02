@@ -14,6 +14,7 @@ import { CLS } from './domContract.js';
 import { askText } from './inlinePrompt.js';
 import { DEFAULT_ROUTINE_COLOR } from '../domain/categories.js';
 import { ROUTINE_COLORS } from '../domain/routines.js';
+import { fill, str } from '../domain/strings.js';
 import { positionPopup } from './popup.js';
 import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
 
@@ -112,7 +113,7 @@ export function createRoutineListView(deps) {
       const sw = document.createElement('button');
       sw.type = 'button';
       sw.style.background = color;
-      sw.title = `색 ${i + 1}`;
+      sw.title = fill('routine.swatch.title', { n: i + 1 });
       sw.setAttribute('aria-label', `색 ${i + 1}`);
       const isCurrent = color.toLowerCase() === current;
       sw.setAttribute('aria-pressed', String(isCurrent));
@@ -167,7 +168,7 @@ export function createRoutineListView(deps) {
     // RM-34 — 칩을 누르면 색 견본판. 칩 영역에만 둔다(이름의 두 번 누르기 · 카드 끌기와 겹치지 않게).
     chip.setAttribute('role', 'button');
     chip.tabIndex = 0;
-    chip.title = '루틴 색 바꾸기';
+    chip.title = str('routine.color.title');
     chip.setAttribute('aria-label', '루틴 색 바꾸기');
     chip.draggable = false;
     chip.addEventListener('click', (e) => {
@@ -187,7 +188,7 @@ export function createRoutineListView(deps) {
     info.innerHTML = `<div class="${CLS.routineNameText}">${escapeHtml(routine.name)}</div><div class="${CLS.routineMetaText}">${routine.cols}박자 × ${routine.rows}행</div>`;
     info.style.minWidth = '0';                                      // 4720
     info.addEventListener('dblclick', (e) => {                      // 4721 — 이름은 그 카드 위에서 적는다(RM-04)
-      askText({ anchor: info, at: { x: e.clientX, y: e.clientY }, title: '루틴 이름', value: routine.name })
+      askText({ anchor: info, at: { x: e.clientX, y: e.clientY }, title: str('routine.name.title'), value: routine.name })
         .then((next) => render(commands.renameRoutine(routine.id, next)));
     });
 
@@ -199,14 +200,14 @@ export function createRoutineListView(deps) {
     const starBtn = makeInlineStarBtn(
       () => store.favorites.routineIds.has(routine.id),
       () => { render(commands.toggleFavorite(routine.id)); },
-      { title: '즐겨찾기', stopPropagation: true, toggleClass: false }
+      { title: str('routine.favorite.title'), stopPropagation: true, toggleClass: false }
     );
 
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.className = CLS.editBtn;                                // 4735
     editBtn.textContent = '✏';                                      // 4736
-    editBtn.title = '루틴 편집';                                     // 4737
+    editBtn.title = str('routine.edit.title');                      // 4737 — 글자는 문자열 표(RM-10)
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       render(commands.openRoutineEditor(routine.id));               // 4738
@@ -215,12 +216,12 @@ export function createRoutineListView(deps) {
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = CLS.iconBtn;                                 // 4742
-    delBtn.textContent = '×';                                       // 4743
-    delBtn.title = '루틴 삭제';                                      // 4744
+    delBtn.textContent = str('icon.delete');                        // 4743
+    delBtn.title = str('routine.delete.title');                     // 4744 — 글자는 문자열 표(RM-10)
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       // 4747 — 2초 안에 두 번 눌러야 지워진다. 되돌릴 라벨은 '×'.
-      confirmOnce(delBtn, '×', () => { render(commands.deleteRoutine(routine.id)); });
+      confirmOnce(delBtn, str('icon.delete'), () => { render(commands.deleteRoutine(routine.id)); });
     });
 
     actions.append(starBtn, editBtn, delBtn);                       // 4749

@@ -21,7 +21,7 @@ node tests/run.mjs                     # 격자 알고리즘 골든 150개
 node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스 단위 66개
 node tools/check-arch.mjs              # 계층 방향과 순수성
 node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지
-node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 여섯(U-11 · U-12 · D-5 · R-6 · R-10 · D-14)
+node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 일곱(U-11 · U-12 · D-5 · R-6 · R-10 · D-14 · U-15)
 ```
 
 둘의 역할이 다르다. 골든은 **격자 알고리즘의 현재 동작**을 기록한 것이라 undo·링크·영상처럼 격자 밖의 일은 지켜 주지 못한다. 그쪽 안전망이 단위 테스트다.
@@ -231,6 +231,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `boardGesture.js` | 보드 위 그리기·빠른 배치·더블탭의 **전이 함수**(2026-10-01, RM-08). `(상태, 이벤트, env) → (다음 상태, 할 일 목록)` 꼴이고 `input/boardController` 는 이벤트를 값으로 바꿔 넘긴 뒤 할 일을 차례대로 실행할 뿐이다. 측정(사각형 재기·포인터 밑 찾기)은 env 의 함수로 받아 원본이 부르던 그 자리에서만 부른다. 마우스와 터치의 다른 규칙이 그대로 들어 있다 — 시험은 `tests/unit/boardGesture.test.mjs` |
 | `popupPlacement.js` | 떠 있는 창 넷(빠른 배치 팝업 · 블록 동작 팝업 · 루틴 블록 팝업 · 동작 메뉴)의 자리 산술(2026-10-01, RM-08). 넷은 일부러 다르다 — **합치지 않고** 따로 떼어 지금 값을 시험에 굳혔다. 크기를 재는 일과 한 프레임 기다리는 순서는 화면 쪽에 남는다 |
 | `commands.js` | **명령 등록부**(2026-10-01, RM-09). 명령마다 한 줄 — id · 라벨 · 설명 · 기본 글쇠 · 버튼 글자 · 툴팁 몸말 · 글자를 치는 중에도 듣는가(`whileTyping`). 실행 함수는 없다 — 실행은 `app/main` 의 `COMMAND_RUNNERS` 가 같은 id 로 잇는다. id 는 바꾼 글쇠가 저장되는 이름이라 바꾸지 않는다 |
+| `strings.js` | **라벨 문자열 표**(2026-11-02, RM-10). 명령이 **아닌** 화면 글자 — 팝업 줄 · 목록의 지우기 단추 · 툴팁 · 플레이스홀더 · 그 글자를 인용하는 안내 문장 — 의 주인 하나. `str(키)` 는 없는 키에 던지고 `fill(키, {이름})` 은 `{이름}` 구멍을 채운다. 명령의 글자는 여기 없다(`commands.js` 가 주인) — 안내 문장이 명령 이름을 인용하면 구멍을 두고 부르는 쪽이 등록부의 `button` 을 채운다. ui · input 이 함께 읽게 domain 에 둔다. 낱말의 뜻은 [용어집](GLOSSARY.md) |
 | `keyboardEdit.js` | 키보드 편집의 **자리 계산**(2026-10-01, RM-13). 화살표 한 칸 · 한 행 · 한 마디의 목표 자리(`shiftedStart` — 표 끝에서 잘리기 전에 null), 고른 묶음의 이동 계획(`planNudge` — 하나라도 못 가면 null), 붙일 자리(`cellAfter`), 담기(`clipOf` — 이름 · 길이 · 서로의 간격)와 붙이기 계획(`pastePlan`). 옮기기 · 붙이기 자체는 `boardOps` 의 `moveGroup` · `pasteBlock`(= `copyGroup` 과 같은 규칙)이 한다 — 끌기와 층 규칙이 갈라지지 않게 |
 | `hotkeys.js` | 단축키 규칙. 단축키 표(`HOTKEY_ACTIONS`)는 등록부에서 글쇠가 있는 줄을 고른 것이다. 글쇠 이름 정규화 · 사용자가 바꾼 표의 정규화 · 충돌(한 글쇠는 한 명령) · 눌린 글쇠 → 명령(`commandForKey`) |
 | `links.js` | YouTube URL 정규화와 커스텀 링크 목록 규칙 |
@@ -314,7 +315,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `placementView.js` | placement 1개 → DOM, 그리고 비고 칸 문자열 |
 | `bpmBadge.js` | 오른쪽 위 기준 박자 배지(2026-09-22). 받아 적는 중에는 `domain/captureDrift` 의 판정을 꼬리말로 단다. **BPM 을 스스로 바꾸지 않는다** — 저절로 바꾸면 이미 놓인 블록이 통째로 어긋난다 |
 | `modeBar.js` | 앱바 아래 `채우기` 줄(2026-09-21). 줄 위의 버튼은 전부 이미 있던 진입점이다 |
-| `placementActionPopup.js` | 안무표의 블록을 눌렀을 때 뜨는 팝업(`✎ 동작 정하기` · `☐ 선택하기` · `× 지우기`). 폰에서 더블클릭이 안 맞아 만든 길이다 |
+| `placementActionPopup.js` | 안무표의 블록을 눌렀을 때 뜨는 팝업(`✎ 동작 정하기` · `☐ 선택하기` · `✂ 여기서 자르기` · `⊕ 옆과 합치기` · `× 지우기`). 폰에서 더블클릭이 안 맞아 만든 길이다. 자르기는 재생 헤드로 못 자르면 팝업 안에서 `몇 번째 카운트에서` 를 고르게 한다 |
 | `paletteView.js` | `동작 목록` 렌더와 카드 팩토리, 동작 컨텍스트 메뉴 |
 | `categoryView.js` | 범례·카테고리 관리 행·`<select>` 세 렌더 |
 | `toolbarView.js` | 메인 보드 툴바. `루틴으로 편성` 버튼의 선택 개수 표시를 갱신한다 |
@@ -323,6 +324,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `savedListsView.js` | 최근 프로젝트·동작목록·카테고리 세 목록 |
 | `linksBarView.js` | 보드 위 링크바. 입력 경로는 presenter 를 거치지 않는다 |
 | `quickPicker.js` | 빠른 배치 팝업 1벌. 노브 5개로 메인/루틴 차이를 표현 |
+| `rowActionPopup.js` | 메인 보드 행 라벨을 우클릭(터치는 길게 누르기)하면 뜨는 마디 메뉴 — 끼우기 · 지우기(`정말요?`) · 복제 · 위아래로 옮기기(RM-16). 제스처 판정은 `domain/boardGesture.rowLabelPress`, 행 연산은 `domain/boardOps` 의 `insertRow` · `deleteRow` · `duplicateRow` · `moveRow` |
 | `routineActionPopup.js` | 메인 보드 루틴 블록의 편집/삭제 팝업 |
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
 | `practiceBar.js` | 영상 패널의 연습 조작 줄(2026-10-01, RM-22) — `▶ 재생` · 배속 · `🔁 반복` · `⇋ 미러` · `🔔 카운트 소리` · 마디 반복. 재생기 · 소리 장치는 `app/main` 이 감싸 넘긴 함수로만 닿는다. 미러는 `#videoFrame` 의 `data-mirror` 속성 하나다 |
@@ -399,6 +401,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 놓기·이동·복사·리사이즈 동작을 바꾼다 | `src/domain/boardOps.js` 의 `*_POLICY` 상수 | 해당 골든 갱신. 반환값의 `renderRows` 와 `changedRows` 를 혼동하지 말 것 |
 | 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
 | 명령(글쇠 · 버튼 · 명령 찾기로 부르는 일)을 더한다 | `src/domain/commands.js` 한 줄 + `src/app/main.js` 의 `COMMAND_RUNNERS` 한 줄 + 버튼이면 마크업에 `data-command="<id>"` | 마크업 글자는 등록부의 `button` 과 같게, `title` 은 적지 않는다(시험이 본다). 셋이 어긋나면 원칙 검사 D-14 가 붉어진다 |
+| 명령이 아닌 화면 글자(팝업 줄 · 툴팁 · 플레이스홀더 · 안내 문장)를 바꾸거나 더한다 | `src/domain/strings.js` 의 `LABELS` 한 줄 + 부르는 자리의 `str` · `fill` | 마크업에 글자가 남은 정적 단추는 `data-label` · `data-title` 키를 달고 글자를 표와 같게 둔다(시험이 본다). 낱말은 [용어집](GLOSSARY.md)을 따르고, 바꿨으면 [기능 설명서](FEATURES.md) · [튜토리얼](TUTORIAL.md)을 같은 커밋에서 |
 | 화면이 안 다시 그려진다 | 그 조작의 커맨드가 돌려주는 `Dirty` | `dev: true` 로 `assertDirtyCovers` 를 켜 본다 |
 | 저장 파일 포맷을 바꾼다 | `src/domain/project/schema.js` | `serialize` `normalize` `merge` `migrations` 넷을 함께([개발 원칙 D-4](PRINCIPLES.md#d-4)) |
 | 저장 위치·최근 목록을 바꾼다 | `src/ports/storage.js` + `src/adapters/localStore.js` | 용량 상한을 먼저 확인한다 |

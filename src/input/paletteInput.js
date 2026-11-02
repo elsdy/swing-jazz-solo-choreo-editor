@@ -3,7 +3,7 @@
 // 원본 index.html 에서 옮긴 것:
 //   attachMoveMenuTrigger(3210-3245)        이름 더블클릭 / 우클릭 / 480ms 롱프레스(8px 이동 시 취소)
 //   buildCard 의 dragstart·dragend(3079-3092)  HTML5 드래그 — 두 보드의 drag 에 **같은 객체**를 대입
-//   attachTouchDragToPaletteChip(3931-3975)  180ms 롱프레스 터치 드래그(메인 보드에만 놓는다)
+//   attachTouchDragToPaletteChip(3931-3975)  180ms 롱프레스 손가락 드래그(메인 보드에만 놓는다) — 포인터 한 벌(RM-11)
 //   moveTouchGhost(3976-3984) / clearTouchGhost(3985-3988)  고스트 이동·정리(DOM 은 overlays)
 //
 // ⚠ ui/paletteView 는 이 파일을 import 하지 않는다 — app/main 이 attachCardInput/attachNameTrigger 를
@@ -60,7 +60,7 @@ export function createPaletteInput(deps) {
    * attachTouchDragToPaletteChip(3931-3975).
    *
    * ⚠ 호출 시점: ui/paletteView 가 card.draggable = true 를 세우고 click 리스너를 붙인 **직후**.
-   *   원본의 리스너 등록 순서(click → dragstart → dragend → touch*)가 그대로 유지된다.
+   *   원본의 리스너 등록 순서(click → dragstart → dragend → 롱프레스 → 끌기)가 그대로 유지된다.
    *
    * @param {HTMLElement} cardEl  원본은 chip 이 아니라 **card** 를 넘긴다(3103).
    * @param {{id: string, name: string, category: string}} move
@@ -69,6 +69,9 @@ export function createPaletteInput(deps) {
     // ── HTML5 드래그 ────────────────────────────────────────────────────────
     cardEl.addEventListener('dragstart', (e) => {
       if (e.target.closest(SEL.selectOrButton)) { e.preventDefault(); return; }
+      // ⚠ 손가락 끌기(롱프레스)가 도는 중의 네이티브 드래그(iOS 가 draggable 을 길게 누르면 끈다)는 막는다 —
+      //   한 누름이 두 경로로 처리되지 않게(RM-11).
+      if (dragSession.current()?.isTouchDragging) { e.preventDefault(); return; }
       // 3082: 활성 동작만 조용히 해제한다. renderPalette 를 부르지 않으므로 Dirty 를 **버린다**.
       commands.cancelActivePaletteMove();
       // 3083-3085: state.drag 와 reState.drag 에 **같은 객체**를 대입 = 두 보드가 받아들이는 한 세션.
@@ -87,8 +90,8 @@ export function createPaletteInput(deps) {
       overlays.clearPreview('routine');
     });
 
-    // ── 터치 드래그(180ms 롱프레스) ─────────────────────────────────────────
-    // ⚠ 이동 취소 없음(moveTolerancePx: null), touchstart 에서 이전 타이머를 지우지 않는다
+    // ── 손가락 드래그(180ms 롱프레스) — 포인터 한 벌(RM-11, 2026-11-02) ─────────────────────
+    // ⚠ 이동 취소 없음(moveTolerancePx: null), 누를 때 이전 타이머를 지우지 않는다
     //   (resetOnStart: false) — 원본 3934 가 pressTimer 를 그냥 덮어쓴다.
     longPress(cardEl, {
       delayMs: 180,
@@ -105,25 +108,33 @@ export function createPaletteInput(deps) {
       }
     });
 
-    // ⚠ passive:false — 드래그 중 스크롤을 막는다(3947).
-    cardEl.addEventListener('touchmove', (e) => {
+    /** 이 카드의 손가락 끌기가 도는 중인가(롱프레스가 세션을 열었나). */
+    const fingerDragging = () => {
       const drag = dragSession.current('main');
-      if (!drag?.isTouchDragging || drag.type !== 'palette') return;
-      e.preventDefault();
-      const touch = e.touches[0];
-      moveTouchGhost(touch.clientX, touch.clientY);
-      const hit = hitAt(touch.clientX, touch.clientY);
+      return !!drag?.isTouchDragging && drag.type === 'palette';
+    };
+
+    // ⚠ 스크롤 가드 — passive:false 의 touchmove 하나만 남긴다(3947 의 preventDefault 자리). 포인터 이벤트의
+    //   preventDefault 는 스크롤을 막지 못하고, 카드에 `touch-action: none` 을 주면 목록을 손가락으로 굴리는 흔한
+    //   조작이 죽는다. 끌기가 **시작된 뒤의** 첫 touchmove 를 막으면 브라우저가 스크롤을 열지 않아 포인터 이벤트가
+    //   끊기지(pointercancel) 않는다. 몸짓 자체는 아래 pointer* 가 듣는다 — 여기서는 아무 판단도 하지 않는다.
+    cardEl.addEventListener('touchmove', (e) => { if (fingerDragging()) e.preventDefault(); }, { passive: false });
+
+    cardEl.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'touch' || !fingerDragging()) return;
+      moveTouchGhost(e.clientX, e.clientY);
+      const hit = hitAt(e.clientX, e.clientY);
       if (hit.inBoard) {
         // 원본 3953: updatePreview(row, cellIdx, undefined, mainCtx) → 팔레트 드래그라 카운트는 DEFAULT_COUNT.
         overlays.updatePreview('main', hit.row, hit.col, defaultCount());
       }
-    }, { passive: false });
+    });
 
-    // ⚠ longPress 어댑터가 자기 touchend 로 타이머를 먼저 해제하고(3957 의 clearTimeout 자리),
+    // ⚠ longPress 어댑터가 자기 pointerup 으로 타이머를 먼저 해제하고(3957 의 clearTimeout 자리),
     //   그 다음 이 리스너가 드롭을 처리한다 — 등록 순서가 원본과 같다.
-    cardEl.addEventListener('touchend', () => {
+    cardEl.addEventListener('pointerup', (e) => {
+      if (e.pointerType !== 'touch' || !fingerDragging()) return;
       const drag = dragSession.current('main');
-      if (!drag?.isTouchDragging || drag.type !== 'palette') return;
       const hit = hitAt(drag.lastX, drag.lastY);
       if (hit.inBoard) {
         apply(commands.placeMoveOnMain({
@@ -139,8 +150,10 @@ export function createPaletteInput(deps) {
       dragSession.end();
     });
 
-    // ⚠ 드래그가 시작되지 않았어도 무조건 정리한다(3971-3975 그대로).
-    cardEl.addEventListener('touchcancel', () => {
+    // ⚠ 드래그가 시작되지 않았어도 무조건 정리한다(3971-3975 그대로). 손가락 누름의 취소만 — 마우스 포인터의
+    //   pointercancel(네이티브 드래그 시작)에 세션을 비우면 ⑥ dragstart 가 연 팔레트 드래그가 죽는다.
+    cardEl.addEventListener('pointercancel', (e) => {
+      if (e.pointerType !== 'touch') return;
       clearTouchGhost();
       overlays.clearPreview('main');
       dragSession.end();

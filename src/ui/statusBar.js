@@ -14,6 +14,8 @@
 // ⚠ RM-04 의 「참고(status)」 급 알림은 토스트가 아니라 이 줄의 오른쪽에 잠깐 선다(show). 막음 · 토스트
 //   급은 그대로 toastView 다 — 갈래는 app/noticeRouter 가 정한다.
 
+import { commandById } from '../domain/commands.js';
+
 /** 참고 급 알림이 상태줄에 떠 있는 시간(ms). 토스트(3.2초)보다 조금 길다 — 한 줄이라 눈에 덜 띈다. */
 export const STATUS_NOTICE_MS = 5000;
 
@@ -89,7 +91,7 @@ export function statusParts(state, deps = {}) {
   if (state.routine && state.routine.editing) parts.push({ id: 'routine', text: '루틴 편집 중', tone: 'on' });
 
   if (save.state === 'bound') parts.push({ id: 'save', text: `보관 폴더의 \`${save.bound}.json\` 에 담김`, tone: 'muted' });
-  else if (save.state === 'draft') parts.push({ id: 'save', text: '임시 칸에 담김 — `프로젝트 저장` 으로 이름을 붙이면 그 파일로', tone: 'muted' });
+  else if (save.state === 'draft') parts.push({ id: 'save', text: `임시 칸에 담김 — \`${commandById('saveProject').button}\` 로 이름을 붙이면 그 파일로`, tone: 'muted' });
   else if (save.state === 'browser') parts.push({ id: 'save', text: '이 브라우저에만 담김', tone: 'muted' });
 
   if (state.history && state.history.canUndo) parts.push({ id: 'undo', text: '되돌릴 수 있음 (Ctrl+Z)', tone: 'muted' });
