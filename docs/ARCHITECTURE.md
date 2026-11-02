@@ -258,6 +258,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `project/normalize.js` | 불러온 데이터의 정규화·클리핑 |
 | `project/merge.js` | `부분 불러오기` 의 전 알고리즘 |
 | `project/migrations.js` | 저장 포맷 마이그레이션 |
+| `project/versions.js` | 판본과 연습 기록의 값 규칙(2026-11-03, RM-29). 판본은 안무 본문을 **값으로 복제**한 전체 스냅샷(`versionDocOf` — 영상 · 링크는 빼고, `schema.VERSION_SKIP_FIELDS`)이고, 목록의 요약(`마디 · 블록` 수)은 저장하지 않고 본문에서 다시 만든다(`versionSummaries`). 연습 기록은 구간(`CountRef` 쌍) · 속도 · 깨끗/시도 · 별점을 접어 고르고 날짜 차례로 둔다. 「지금 안무표가 판본에 남았나」를 재는 서명(`stableJson`)도 여기 있다. 시계를 모른다 — 날짜는 인자로 온다 |
 | `project/snapshot.js` | undo 스냅샷과 문서 복제. `snapshotMain` `snapshotRoutine` `applySnapshot` `toLinkBundle`. 링크만 값 복제다 — 스냅샷이 store 와 `customLinks` 배열을 공유하면 안 된다 |
 
 ### `src/ports/` — 계약
@@ -300,6 +301,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `categoryCommands.js` | 카테고리 추가·색 미리보기/확정·이름 변경·삭제 |
 | `routineCommands.js` | 루틴 CRUD 와 편집기 세션(`openEditor` `syncFromEditor` `setRoutineSize`) |
 | `projectCommands.js` | 저장·불러오기·`부분 불러오기`·최근 목록 |
+| `versionCommands.js` | 판본 뜨기 · 열기 · 이름과 메모 · 삭제, 연습 기록 초안 · 적기 · 삭제(RM-29). 판본 열기는 `projectCommands.openDocBody` 로 전체 불러오기와 같은 길을 타고, 선택을 비우고, 주입받은 `resetHistory` 로 되돌리기의 바닥을 그 판으로 둔다. 「남았나」는 두 쪽을 **같은 정규화에 통과시킨 뒤** 견준다(`keptSignature` — 개발 원칙 D-17). 판본 · 기록은 되돌리기 스냅샷 밖이다 |
 | `sheetCommands.js` | 내보내기 셋 — 텍스트 시트 복사 · 읽기 전용 HTML 내려받기 · 인쇄(RM-21). 상태를 바꾸지 않고 알림만 돌려준다. 클립보드 · 내려받기 · 인쇄 창은 주입받은 `FileGateway` 가 한다 |
 | `docFields.js` | 필드 등록표의 store 쪽 한 줄씩 — 그 필드가 store 의 어디에 사는지(`library` · 보드 칸)와 바뀌면 무엇을 다시 그리나. `docView` · `writeDoc` · `docDirty` 를 되돌리기와 저장·열기가 같이 쓴다(2026-09-28) |
 | `linkCommands.js` | 링크바 상태 전이와 제목 조회 상태머신 |
@@ -335,6 +337,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
 | `practiceBar.js` | 영상 패널의 연습 조작 줄(2026-10-01, RM-22) — `▶ 재생` · 배속 · `🔁 반복` · `⇋ 미러` · `🔔 카운트 소리` · 마디 반복. 재생기 · 소리 장치는 `app/main` 이 감싸 넘긴 함수로만 닿는다. 미러는 `#videoFrame` 의 `data-mirror` 속성 하나다 |
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
+| `versionListView.js` | 사이드바 프로젝트 칸의 `판본` 목록(RM-29). 요약만 받아 그리고, `이 판 열기` 는 지금 것이 남지 않았으면 `confirmOnce` 로 묻는다. 날짜는 주입받은 `formatDate` 가 지역 날로 바꾼다 — 시계를 아는 것은 app 이다(개발 원칙 D-21) |
+| `practiceLogView.js` | 프로젝트 칸의 `연습 기록` 목록과 적는 칸(RM-29). 초안은 이 뷰가 들고 있다가 `기록 적기` 에서만 커맨드를 부른다. 구간 글자는 `domain/project/versions.parseScope` 로 읽고, 못 읽으면 칸 아래에 한 줄을 띄운다 |
 | `composeView.js` | 상단 `✨ 말로 채우기` 팝업. 음성 인식(webkitSpeechRecognition) → 다듬기 → 스키마 → 미리보기 → 채우기의 세 단. LLM 은 주입받은 어댑터로, 배치는 주입받은 유스케이스로 |
 | `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 절을 갈래(`data-cat`)로 묶어 옆단에서 고르고, 제목 옆 검색칸이 절의 글자와 `data-keywords` 를 함께 훑는다. **절의 `hidden` 을 정하는 자리는 `applyFilter` 하나다** — 쓸 수 있는가(`data-available`)와 갈래·검색에 걸리는가가 곱해진다 |
 | `phrasingView.js` | 도구 모음의 `🎵 프레이즈` 버튼과 팝업. 숫자를 받는 창이고, 칠하는 것은 `boardView.syncPhrasing` 이다 |
