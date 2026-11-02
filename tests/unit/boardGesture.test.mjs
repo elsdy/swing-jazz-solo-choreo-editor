@@ -277,6 +277,56 @@ test('더블탭: 루틴 블록은 기본 동작만 막고 지우지 않는다 �
   assert.deepEqual(third.effects, [{ kind: 'preventDefault' }]);
 });
 
+// ── 포인터 종류로 전이 고르기 (RM-11) ────────────────────────────────────────
+
+test('포인터 종류: touch 만 손가락이고 mouse · pen · 빈 값은 마우스다', () => {
+  assert.equal(G.pointerKind('touch'), 'touch');
+  for (const t of ['mouse', 'pen', '', undefined, null]) assert.equal(G.pointerKind(t), 'mouse');
+});
+
+test('포인터 종류로 고른 전이가 옛 리스너 차례 그대로다 — 마우스는 한 함수씩, 손가락은 그리기 뒤에 빠른 배치', () => {
+  const m = G.transitionsFor('mouse');
+  assert.deepEqual([m.down, m.move, m.up, m.cancel], [[G.mouseDown], [G.mouseMove], [G.mouseUp], [G.mouseCancel]]);
+  const f = G.transitionsFor('touch');
+  assert.deepEqual([f.down, f.move, f.up, f.cancel], [
+    [G.touchDrawStart, G.quickTouchStart], [G.touchDrawMove, G.quickTouchMove],
+    [G.touchDrawEnd, G.quickTouchEnd], [G.touchDrawCancel, G.quickTouchCancel],
+  ]);
+  assert.deepEqual(G.transitionsFor('pen'), m);
+});
+
+test('포인터 한 벌로 돌려도 마우스 그리기 · 손가락 그리기가 같은 할 일을 돌려준다(구조 커밋의 등가)', () => {
+  // 모든 전이가 같은 ev 모양 {x, y, track, row, onPlacement} 을 받는다 — 손가락 전이는 track·row 를 읽지 않는다.
+  const ev = (row, col) => mouse(row, col);
+  const run2 = (type, evs) => {
+    const T = G.transitionsFor(type);
+    let state = G.initialGestureState(); const out = [];
+    for (const [phase, e] of evs) for (const fn of T[phase]) { const r = fn(state, e, DRAW); state = r.state; out.push(...r.effects); }
+    return out;
+  };
+  const viaMouse = run2('mouse', [['down', ev(2, 3)], ['move', ev(2, 6)], ['up', ev(2, 6)]]);
+  const direct = [G.mouseDown, G.mouseMove, G.mouseUp].reduce((acc, fn, i) => {
+    const r = fn(acc.state, [ev(2, 3), ev(2, 6), ev(2, 6)][i], DRAW); return { state: r.state, fx: [...acc.fx, ...r.effects] };
+  }, { state: G.initialGestureState(), fx: [] }).fx;
+  assert.deepEqual(viaMouse, direct);
+  const viaFinger = run2('touch', [['down', ev(2, 3)], ['move', ev(2, 6)], ['up', ev(2, 6)]]);
+  assert.deepEqual(viaFinger, [
+    { kind: 'stopPropagation' }, { kind: 'preview', row: 2, startIndex: 3, count: 1 },
+    { kind: 'preview', row: 2, startIndex: 3, count: 4 },
+    { kind: 'place', moveId: 'm1', startRow: 2, startIndex: 3, totalCount: 4 }, { kind: 'commit' }, { kind: 'clearPreview' },
+  ]);
+});
+
+test('마우스 포인터의 취소는 그리기 · 빠른 배치 끌기를 지우고, 아무것도 없으면 아무 일도 없다', () => {
+  const d = G.mouseDown(G.initialGestureState(), mouse(2, 3), DRAW);
+  const r = G.mouseCancel(d.state, null, DRAW);
+  assert.deepEqual(kinds(r), ['clearPreview']);
+  assert.equal(r.state.draw, null);
+  const q = G.mouseDown(G.initialGestureState(), mouse(2, 3), QUICK);
+  assert.equal(G.mouseCancel(q.state, null, QUICK).state.quickDraw, null);
+  assert.deepEqual(G.mouseCancel(G.initialGestureState(), null, env()).effects, []);
+});
+
 // ── 전이 함수의 성질 ─────────────────────────────────────────────────────────
 
 test('전이 함수는 들어온 상태를 고치지 않는다(새 상태를 돌려준다)', () => {

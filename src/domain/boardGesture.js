@@ -38,6 +38,40 @@ import { resolveDragCount, isDoubleTap, exceedsThreshold, QUICK_DRAG_THRESHOLD_P
  * @property {(x:number, y:number) => {inBoard:boolean, track:any, row:number|null, col:number|null}} [hitAt]
  */
 
+/**
+ * 그 누름이 손가락인가 — 포인터 이벤트의 pointerType 으로 가른다(RM-11, 2026-11-02).
+ * 'touch' 만 손가락 규칙이고 'mouse' · 'pen' · 빈 값(모르는 기기)은 마우스 규칙이다 — 펜은 끝이 뾰족해
+ * 과녁이 마우스만큼 정확하고 hover 도 있어 마우스 쪽이 맞다.
+ * ⚠ 창 폭으로 가르지 않는다. 폭은 배치(사이드바 접기 · 팝업 자리)의 일이고 ui/layout 의 몫이다.
+ * @param {string|undefined|null} pointerType
+ * @returns {'touch'|'mouse'}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function pointerKind(pointerType) {
+  return pointerType === 'touch' ? 'touch' : 'mouse';
+}
+
+/**
+ * 포인터 종류에 따라 각 단계(down · move · up · cancel)에서 돌릴 전이 함수를 **원본 리스너 차례대로** 돌려준다.
+ * 리스너 한 벌(pointer*)이 이것을 읽어 옛 전이를 그대로 고른다 — 마우스는 그리기·빠른 배치 한 함수씩, 손가락은
+ * 그리기(⑱~㉑)가 먼저 돌고 빠른 배치(㉒~㉕)가 그 뒤에 돈다(같은 touchstart 에 셋이 걸려 있던 차례).
+ * 모든 전이는 같은 ev 모양 `{x, y, track, row, onPlacement}` 을 받고 필요한 것만 읽는다.
+ * @param {string|undefined|null} pointerType
+ * @returns {{down:Function[], move:Function[], up:Function[], cancel:Function[]}}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function transitionsFor(pointerType) {
+  if (pointerKind(pointerType) === 'touch') {
+    return {
+      down: [touchDrawStart, quickTouchStart],
+      move: [touchDrawMove, quickTouchMove],
+      up: [touchDrawEnd, quickTouchEnd],
+      cancel: [touchDrawCancel, quickTouchCancel],
+    };
+  }
+  return { down: [mouseDown], move: [mouseMove], up: [mouseUp], cancel: [mouseCancel] };
+}
+
 /** @returns {{draw:null, quickDraw:null, quickTouch:null, tap:{time:number, groupId:string|null}}} */
 export function initialGestureState() {
   return { draw: null, quickDraw: null, quickTouch: null, tap: { time: 0, groupId: null } };
@@ -136,6 +170,18 @@ export function mouseUp(state, ev, env) {
       { kind: 'clearPreview' },
     ],
   };
+}
+
+/**
+ * 마우스 포인터의 pointercancel — 그리던 것 · 빠른 배치 끌기를 지운다. 원본에는 없던 길이다(mouse 이벤트에는
+ * cancel 이 없다). 브라우저가 포인터를 빼앗을 때(네이티브 드래그 시작 등)만 오며, 빈 트랙에서 시작한 그리기 중에는
+ * 실제로 오지 않는다 — 와도 프리뷰만 지우고 아무것도 놓지 않는다.
+ * @param {object} state
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function mouseCancel(state) {
+  if (!state.draw && !state.quickDraw) return same(state);
+  return { state: { ...state, draw: null, quickDraw: null }, effects: [{ kind: 'clearPreview' }] };
 }
 
 /**
