@@ -694,6 +694,10 @@ const placementActionPopup = createPlacementActionPopup({
     removeGroup: (groupId) => withUndoToast(
       BoardCmd.removeGroup(store, { boardId: BOARD_MAIN, groupId }), '블록을 지웠습니다.'
     ),
+    // 복사와 히스토리 커밋 둘 다 — Alt+끌기 복사(copyGroupTo)와 같은 커맨드를 바로 뒤 칸으로 부른다(RM-11).
+    copyAfter: (groupId) => commitIfChanged(
+      BoardCmd.copyGroupAfter(store, { boardId: BOARD_MAIN, groupId }, { ids: browserEnv }), BOARD_MAIN
+    ),
     openPicker: (groupId, x, y) => quickPickers[BOARD_MAIN].openForGroup(groupId, x, y)
   }
 });

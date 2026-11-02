@@ -166,6 +166,23 @@ export function copyGroupTo(store, args, deps = {}) {
 }
 
 /**
+ * 그룹 하나를 **바로 뒤 칸에** 복사한다 — 블록 동작 팝업의 「⧉ 뒤에 복사」(RM-11). 손가락에는 Alt+끌기가 없어
+ * 같은 커맨드(copyGroupTo — RM-02 가 층 정리까지 맡긴 복사)를 놓을 자리만 정해 부른다. 자리는 붙여넣기와 같은
+ * 규칙(domain/keyboardEdit.cellAfter — 그 블록이 끝난 다음 칸)이다. 고른 것과 담아 둔 것은 건드리지 않는다.
+ * @param {object} store
+ * @param {{ boardId:'main'|'routine', groupId:string }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty — 표 끝이라 못 놓으면 상태줄 알림만
+ */
+// @complexity time=O(p) space=O(p) cc=2
+export function copyGroupAfter(store, args, deps = {}) {
+  const { boardId, groupId } = args;
+  const at = cellAfter(boardOf(store.get(), boardId), [groupId]);
+  if (!at) return { notify: notice('status', '표 끝이라 복사하지 않았습니다.') };
+  return copyGroupTo(store, { boardId, groupId, targetRow: at.row, targetStartIndex: at.startIndex }, deps);
+}
+
+/**
  * 리사이즈를 확정한다. finalizeResize(3828-3834) + rebuildGroup(3706-3726).
  *
  * ⚠ 카운트 결정(제스처 → 숫자)은 domain/gestureMath.resolveResizeCount 가 하고 input 이 부른다.

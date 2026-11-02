@@ -7,6 +7,7 @@
 //   · 지우기   = **두 번 탭** (정확히 두 번 치기가 어렵고, 첫 탭이 고르기라 화면이 먼저 바뀐다)
 //   · 이름 정하기 = 고른 뒤 나타나는 20px 짜리 `✎` (손끝보다 작다)
 // 이제 한 번 탭하면 이 팝업이 뜨고 셋이 나란히 보인다. 무엇을 할 수 있는지가 화면에 적힌다.
+// 2026-11-02(RM-11) 넷째 줄 「⧉ 뒤에 복사」가 붙었다 — 마우스의 Alt+끌기 복사를 손가락에도 연다.
 //
 // ⚠⚠ **마우스로 누르면 이것이 뜨지 않는다.** 거기서는 한 번 클릭이 고르기, 두 번이 지우기로
 //   이미 손에 익었고 과녁도 충분하다. 띄우는 판정은 domain/boardGesture.placementTapRoute 가 **그 누름의
@@ -22,7 +23,7 @@ import { CLS } from './domContract.js';
 import { bindOutsideClose } from './popup.js';
 import { placePlacementActionPopup } from '../domain/popupPlacement.js';
 
-// 자리 잡기(가정 크기 160×132 · 가장자리 8 · 누른 자리보다 10 아래 — 손가락이 첫 줄을 덮지 않게)는
+// 자리 잡기(가정 크기 160×152 · 가장자리 8 · 누른 자리보다 10 아래 — 손가락이 첫 줄을 덮지 않게)는
 // domain/popupPlacement.placePlacementActionPopup 에 있다(RM-08). 형제 팝업과 같은 방식이라 실제로 재지 않는다.
 
 /**
@@ -30,9 +31,10 @@ import { placePlacementActionPopup } from '../domain/popupPlacement.js';
  * @property {{
  *   toggleSelection: (groupId: string) => any,
  *   removeGroup: (groupId: string) => any,
+ *   copyAfter: (groupId: string) => any,
  *   openPicker: (groupId: string, clientX: number, clientY: number) => void
  * }} commands
- *   ⚠ removeGroup 은 **삭제와 히스토리 커밋 둘 다**여야 한다(형제 팝업과 같은 규약).
+ *   ⚠ removeGroup 은 **삭제와 히스토리 커밋 둘 다**여야 한다(형제 팝업과 같은 규약). copyAfter 도 커밋까지다.
  * @property {(groupId: string) => boolean} isSelected 지금 고른 블록인가
  * @property {(dirty: any) => void} render presenter
  */
@@ -87,6 +89,8 @@ export function createPlacementActionPopup(deps) {
     // ⚠ 차례가 뜻을 만든다: 가장 자주 하는 일이 맨 위, 되돌리기 어려운 일이 맨 아래다.
     row('✎ 동작 정하기', () => commands.openPicker(groupId, clientX, clientY));
     row(isSelected(groupId) ? '☑ 선택 풀기' : '☐ 선택하기', () => render(commands.toggleSelection(groupId)));
+    // 손가락에는 마우스의 Alt+끌기 복사가 없다 — 그 블록 바로 뒤에 같은 복사 커맨드로 놓는다(RM-11).
+    row('⧉ 뒤에 복사', () => render(commands.copyAfter(groupId)));
     row('× 지우기', () => render(commands.removeGroup(groupId)), CLS.danger);
 
     document.body.appendChild(popup);
