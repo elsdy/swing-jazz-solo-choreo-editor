@@ -131,7 +131,9 @@ test('정하기를 미룬 것의 번호가 로드맵 파일의 질문과 맞고,
   const qs = new Map(doc.questions.items.map(q => [q.id, q]));
   const deferred = mdText.slice(mdText.indexOf('## 정하기를 미룬 것'), mdText.indexOf('### 적응형 작업 차례'));
   const ids = [...deferred.matchAll(/^\| \*\*.+?\*\*\(.*?(Q\d+)\) \|/gm)].map(m => m[1]);
-  assert.ok(ids.length >= 5, '정하기를 미룬 것 표에서 질문 번호를 읽지 못했다');
+  // 표의 데이터 행 수와 읽은 번호 수가 같아야 한다 — 판이 답해 표가 줄어도(2026-11-02 Q3 · Q4 · Q6) 읽기가 깨진 것과 가른다.
+  const dataRows = (deferred.match(/^\| \*\*/gm) || []).length;
+  assert.ok(dataRows >= 1 && ids.length === dataRows, `정하기를 미룬 것 표에서 질문 번호를 읽지 못했다 — 행 ${dataRows} · 번호 ${ids.length}`);
   for (const id of ids) {
     assert.ok(qs.has(id), `${id} 가 로드맵 파일의 questions 에 없다`);
     assert.equal(qs.get(id).answer, null, `${id} 는 문서에서 미룬 것인데 파일에는 답이 있다`);
