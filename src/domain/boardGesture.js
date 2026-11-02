@@ -108,6 +108,20 @@ export function drawPreviewCount(startIndex, endIndex) {
 }
 
 /**
+ * 이 보드가 손가락 그리기를 받을 상태인가 — 그렇다면 트랙에서 손가락 끌기가 페이지 스크롤이 아니라 그리기다.
+ * 포인터 이벤트는 브라우저가 스크롤을 시작하면 pointercancel 로 그리기를 빼앗고, touch-action 은 누르는 순간에
+ * 정해지므로 리스너 안에서는 늦다. 그래서 렌더가 이 답을 보드에 미리 적어 두고 CSS 가 트랙의 스크롤을 막는다
+ * (RM-11 동작 ③ — 옛 「손가락으로 그리는 동안 페이지가 함께 스크롤된다」를 고쳤다).
+ * 동작을 고르지 않았고 빠른 배치도 꺼져 있으면 트랙 위에서도 손가락으로 스크롤한다.
+ * @param {{activeMove?:object|null, quickPlaceMode?:boolean}} s
+ * @returns {boolean}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function touchDrawArmed({ activeMove, quickPlaceMode }) {
+  return !!activeMove || !!quickPlaceMode;
+}
+
+/**
  * 보드 위 mousedown — 빠른 배치 끌기 또는 그리기 시작(원본 2606-2627).
  * ⚠ 빠른 배치가 먼저 이긴다. 다만 동작을 골라 둔 상태(activeMove)거나 이미 그리는 중이면 그리기로 간다.
  * @param {object} state

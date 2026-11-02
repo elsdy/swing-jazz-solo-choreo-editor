@@ -51,7 +51,8 @@ import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/medi
 import { createClockPlayer } from '../adapters/media/clockPlayer.js';
 import { createCountClicks } from '../adapters/audio/countClicks.js';
 
-import { createBoardView } from '../ui/boardView.js';
+import { createBoardView, syncTouchDraw } from '../ui/boardView.js';
+import { touchDrawArmed } from '../domain/boardGesture.js';
 import { createOverlays, ensureOverlaySingletons } from '../ui/overlays.js';
 import { createPaletteView } from '../ui/paletteView.js';
 import { createCategoryView } from '../ui/categoryView.js';
@@ -196,10 +197,23 @@ const renderCore = createRenderer(store, views, {
 let saveDraftSoon = () => {};
 
 /** @type {(d: import('../usecases/store.js').Dirty, opts?: object) => void} */
+// @complexity time=O(1) space=O(1) cc=1
 const render = (dirty, opts) => {
   renderCore(dirty, opts);
+  syncTouchDrawBoth();
   saveDraftSoon();
 };
+
+/**
+ * 두 보드에 「손가락 그리기를 받는다」를 적는다(RM-11 동작 ③). 동작 고르기 · 빠른 배치 켜기는 모두 커맨드를
+ * 거쳐 render 로 오므로 여기 한 곳이면 빠짐이 없다. 값이 같으면 DOM 을 건드리지 않는다.
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function syncTouchDrawBoth() {
+  const { activePaletteMove, quickPlaceMode } = store.session;
+  syncTouchDraw(boardEl, touchDrawArmed({ activeMove: activePaletteMove[BOARD_MAIN], quickPlaceMode: quickPlaceMode[BOARD_MAIN] }));
+  syncTouchDraw(reBoardEl, touchDrawArmed({ activeMove: activePaletteMove[BOARD_ROUTINE], quickPlaceMode: quickPlaceMode[BOARD_ROUTINE] }));
+}
 
 /**
  * 알림은 언제나 렌더 뒤다(app/render 의 마지막 단계). 급(block·toast·status)은 유스케이스가 정하고

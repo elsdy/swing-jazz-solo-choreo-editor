@@ -10,6 +10,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import * as G from '../../src/domain/boardGesture.js';
 
@@ -362,4 +363,20 @@ test('전이 함수는 들어온 상태를 고치지 않는다(새 상태를 돌
   const before = JSON.stringify(r.state);
   G.mouseMove(r.state, at(3, 3), QUICK);
   assert.equal(JSON.stringify(r.state), before);
+});
+
+// ── 손가락 그리기 중 스크롤 막기 (RM-11 동작 ③) ───────────────────────────────
+// 포인터 이벤트는 브라우저가 스크롤을 시작하면 pointercancel 로 그리기를 빼앗는다. 그리고 touch-action 은
+// 누르는 순간(pointerdown 전)에 정해지므로, 그 보드가 그리기를 받을 상태일 때 **미리** 트랙에 걸어 둔다.
+
+test('손가락 그리기 무장: 동작을 골랐거나 빠른 배치가 켜진 보드만 트랙의 스크롤을 막는다', () => {
+  assert.equal(G.touchDrawArmed({ activeMove: null, quickPlaceMode: false }), false);
+  assert.equal(G.touchDrawArmed({ activeMove: { moveId: 'm1' }, quickPlaceMode: false }), true);
+  assert.equal(G.touchDrawArmed({ activeMove: null, quickPlaceMode: true }), true);
+  assert.equal(G.touchDrawArmed({}), false);
+});
+
+test('손가락 그리기 무장: 무장한 보드의 트랙은 CSS 가 touch-action: none 이다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  assert.match(html, /\.board\[data-touch-draw="1"\] \.track\s*\{[^}]*touch-action:\s*none/);
 });
