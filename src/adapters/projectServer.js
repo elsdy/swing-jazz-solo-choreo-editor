@@ -17,7 +17,10 @@
 
 /** @typedef {{name:string, size:number, mtime:number}} ProjectEntry */
 /** 휴지통·이력의 한 항목. `file` 이 실제 파일 이름(`<이름>.<시각>.json`), `name` 이 안무표 이름이다. */
-/** @typedef {{file:string, name:string, stamp:string, size:number, mtime:number}} StampedEntry */
+/**
+ * @typedef {{file:string, name:string, stamp:string, kind:'manual'|'auto', size:number, mtime:number}} StampedEntry
+ * `kind` 는 그 판을 남긴 저장의 종류(RM-25) — 사람이 누른 저장 `manual` | 자동 담기 `auto`. 휴지통 항목은 언제나 `manual`.
+ */
 
 function defaultFetch() {
   return typeof fetch === 'function' ? (...a) => fetch(...a) : null;
@@ -35,7 +38,7 @@ function defaultFetch() {
  *   dirOf: () => Promise<string>,
  *   trash: () => Promise<StampedEntry[]>,
  *   history: (name: string) => Promise<StampedEntry[]>,
- *   restore: (file: string, from: 'trash'|'history') => Promise<{name:string}|null>
+ *   restore: (file: string, from: 'trash'|'history') => Promise<{name:string, size:number, mtimeNs:string}|null>
  * }}
  */
 export function createProjectServer(options = {}) {
@@ -165,14 +168,19 @@ export function createProjectServer(options = {}) {
     /**
      * 휴지통·이력의 파일 하나를 제자리로 되살린다. **복구는 무엇도 지우지 않는다** — 그 이름의 파일이
      * 있으면 서버가 먼저 이력에 남긴다.
+     * ⚠ 되살린 파일의 **표식(mtimeNs)을 돌려준다**(RM-25). 되살리면 파일의 판이 바뀌므로 자동 담기가 이것을
+     *   받아들여야 다음 담기가 409 로 멈추지 않는다. 문자열이다(D-15 — 나노초는 JS 안전 정수를 넘는다).
      * @param {string} file 목록 항목의 `file`
      * @param {'trash'|'history'} from
-     * @returns {Promise<{name:string}|null>}
+     * @returns {Promise<{name:string, size:number, mtimeNs:string}|null>}
      */
+    // @complexity time=O(1) space=O(1) cc=4
     async restore(file, from) {
       if (!String(file || '').trim()) return null;
       const data = await call('POST', '/api/projects/restore', JSON.stringify({ file, from }));
-      return data && data.ok ? { name: data.name } : null;
+      return data && data.ok
+        ? { name: data.name, size: Number(data.size) || 0, mtimeNs: String(data.mtimeNs || '') }
+        : null;
     },
 
     /** 지금 보관 폴더의 실제 경로. 설정 화면이 「어디에 쌓이는지」를 보여 줄 때 쓴다. */

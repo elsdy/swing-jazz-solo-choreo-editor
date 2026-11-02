@@ -21,6 +21,8 @@
 import { createRenderer } from './render.js';
 
 import { createStore, mergeDirty, notice, NONE, BOARD_MAIN, BOARD_ROUTINE } from '../usecases/store.js';
+import { adjacentPendingGroupId, isPending } from '../domain/placements.js';
+import { suggestMoves } from '../domain/moveMatch.js';
 import * as History from '../usecases/historyCommands.js';
 import * as BoardCmd from '../usecases/boardCommands.js';
 import * as PaletteCmd from '../usecases/paletteCommands.js';
@@ -51,18 +53,21 @@ import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/medi
 import { createClockPlayer } from '../adapters/media/clockPlayer.js';
 import { createCountClicks } from '../adapters/audio/countClicks.js';
 
-import { createBoardView } from '../ui/boardView.js';
+import { createBoardView, syncTouchDraw } from '../ui/boardView.js';
+import { touchDrawArmed } from '../domain/boardGesture.js';
 import { createOverlays, ensureOverlaySingletons } from '../ui/overlays.js';
 import { createPaletteView } from '../ui/paletteView.js';
 import { createCategoryView } from '../ui/categoryView.js';
 import { createQuickPicker, ROUTINE_OPTIONS } from '../ui/quickPicker.js';
 import { createToolbarView } from '../ui/toolbarView.js';
+import { createSelectionBar } from '../ui/selectionBar.js';
 import { createSavedListsView } from '../ui/savedListsView.js';
 import { createLinksBarView } from '../ui/linksBarView.js';
 import { createRoutineListView } from '../ui/routineListView.js';
 import { createRoutineEditorView } from '../ui/routineEditorView.js';
 import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createPlacementActionPopup } from '../ui/placementActionPopup.js';
+import { createRowActionPopup } from '../ui/rowActionPopup.js';
 import { createDocsHub } from '../ui/docsHub.js';
 import { createSettingsView } from '../ui/settingsView.js';
 import { createPhrasingView } from '../ui/phrasingView.js';
@@ -72,29 +77,43 @@ import { createProjectServer } from '../adapters/projectServer.js';
 import { createModelServer } from '../adapters/modelServer.js';
 import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
-import { createModeBar } from '../ui/modeBar.js';
+import { createModeBar, entryStates } from '../ui/modeBar.js';
+import { createCoachFlow, createCoachmarks } from '../ui/coachmarks.js';
+import { loadCoachSeen, saveCoachSeen } from '../adapters/localStore.js';
 import { createBpmBadge } from '../ui/bpmBadge.js';
 import { createTrashView } from '../ui/trashView.js';
+import { createHistoryView } from '../ui/historyView.js';
 import { createSpeechInput } from '../adapters/speechInput.js';
 import * as VoiceCmd from '../usecases/voiceNameCommands.js';
 import { createFileMenu } from '../ui/fileMenu.js';
 import { commandFace, syncCommandTitles } from '../ui/commandButtons.js';
 import { createCommandPalette } from '../ui/commandPalette.js';
 import { createDraftStore, debounceSave, DRAFT_NAME } from '../adapters/draftStore.js';
+import { createIdbSnapshots, draftSlotOf } from '../adapters/idbSnapshots.js';
 import { createThumbBar } from '../ui/thumbBar.js';
+import { thumbBarState } from './thumbState.js';
 import { flowTotal, nextAfter, noteTransition, topTransitions } from '../domain/flowStats.js';
 import * as TodoCmd from '../usecases/stepTodoCommands.js';
 import { loadFlowStats, saveFlowStats } from '../adapters/localStore.js';
 import { loadTheme, saveTheme } from '../adapters/localStore.js';
+// 이 환경(2026-11-02, RM-27). 탐지는 어댑터, 표와 판정은 도메인, 알림 여부는 이 브라우저의 설정이다.
+import { loadSupportNotice, saveSupportNotice } from '../adapters/localStore.js';
+import { detectCapabilities } from '../adapters/capabilities.js';
+import { fingerprintOf, shouldNotify, unsupportedFeatures, unsupportedMessage } from '../domain/supportMatrix.js';
 import { themeAttr, normalizeTheme } from '../domain/themes.js';
 import { createProjectPanel } from '../ui/projectPanel.js';
 import { clipsByProgress, clipsSummary, formatTakenAt } from '../domain/project/media.js';
 import * as PlanCmd from '../usecases/planCommands.js';
+import * as SheetCmd from '../usecases/sheetCommands.js';
 import * as PhrasingCmd from '../usecases/phrasingCommands.js';
 import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
 import { clipDirParts, findStoredClip } from '../domain/clips.js';
-import { createVideoPanel } from '../ui/videoPanel.js';
+import { createVideoPanel, formatClock } from '../ui/videoPanel.js';
+import { createStatusBar } from '../ui/statusBar.js';
+import { createOnceHints, createHintBubble } from '../ui/onceHint.js';
+import { loadOnceHints, saveOnceHints } from '../adapters/localStore.js';
+import { createNoticeRouter } from './noticeRouter.js';
 import { createPracticeBar } from '../ui/practiceBar.js';
 import { createPoseView } from '../ui/poseView.js';
 import { createPoseOverlay } from '../ui/poseOverlay.js';
@@ -104,7 +123,7 @@ import { createPlayhead } from '../ui/playhead.js';
 import { SEL, DATA } from '../ui/domContract.js';
 import { confirmOnce } from '../ui/widgets.js';
 import { createToastView } from '../ui/toastView.js';
-import { askText } from '../ui/inlinePrompt.js';
+import { askName, askText } from '../ui/inlinePrompt.js';
 import { readCellW } from '../ui/cssVars.js';
 import { initLayout, isStacked, syncCellSize } from '../ui/layout.js';
 
@@ -135,10 +154,19 @@ ensureOverlaySingletons();
 
 const store = createStore({ ids: browserEnv });
 
-// loadLocalMeta(1523) — 최근목록 3종 + 즐겨찾기 3종. 읽는 순서까지 원본과 같다.
+// loadLocalMeta(1523) — 최근목록 2종(동작 · 카테고리) + 즐겨찾기 3종. 읽는 순서는 원본과 같다.
+// ⚠ 프로젝트 최근 목록은 여기 없다(RM-33, 2026-11-02) — 아래 `snapshots` 가 IndexedDB 에서 비동기로 읽어
+//   `browserRecentsReady` 가 채운다. 안무표 10개의 내용을 첫 화면을 그리려고 파싱하던 일이 그것으로 끝났다.
 const meta = loadLocalMeta();
 store.patch('recents', meta.recents);
 store.patch('favorites', meta.favorites);
+
+/**
+ * 서버 없이 연 앱이 안무표를 브라우저 안에 담는 자리(RM-33) — 최근 프로젝트의 목록 · 내용과 작업 문서, IndexedDB 세 칸.
+ * IndexedDB 가 없거나 못 열면 안에서 옛 localStorage 두 키로 떨어진다(호출부는 모른다).
+ * ⚠ 서버가 있어도 이 칸은 산다 — 보관 폴더가 목록의 주인이지만, 서버가 생기기 전에 브라우저에만 저장해 둔 것을 합쳐 보인다.
+ */
+const snapshots = createIdbSnapshots();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. 어댑터 + storage 파사드
@@ -150,8 +178,8 @@ store.patch('favorites', meta.favorites);
 //   원본 saveFavorites(4227-4230)가 choreo_fav_moves 와 choreo_fav_cats 두 키를 함께 쓴다.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ⚠ 프로젝트 목록은 여기 없다 — `snapshots`(IndexedDB) 가 담는다(RM-33). 동작 · 카테고리 목록은 상한 3이라 작아 localStorage 그대로.
 const recentLists = {
-  projects: createRecentList(STORAGE_KEYS.savedFiles, ProjectCmd.RECENT_LIMITS.projects),
   moves: createRecentList(STORAGE_KEYS.savedMoves, ProjectCmd.RECENT_LIMITS.moves),
   categories: createRecentList(STORAGE_KEYS.savedCategories, ProjectCmd.RECENT_LIMITS.categories)
 };
@@ -160,8 +188,28 @@ const favoritesRepo = createFavoritesRepo();
 /** 원본 saveFavorites(4227-4230). 두 키를 함께 쓴다. */
 const saveFavorites = (fav) => favoritesRepo.save(fav);
 
+/**
+ * 프로젝트 최근 목록 한 벌을 IndexedDB 에 맞춘다(RM-33). 유스케이스는 동기처럼 부르고 Promise 를 돌려받는다 —
+ * projectCommands.persist 가 Promise 를 그대로 흘려보내므로 거부는 **여기서** 받는다. 불러오기의 try 로 들어가게
+ * 두면 안무표는 이미 열렸는데 「올바른 프로젝트 파일이 아닙니다」가 뜬다(옛 localStorage 경로의 실제 증상).
+ * ⚠ 구조 커밋에서는 받아서 기록만 한다 — 사용자에게 알리는 것은 동작 변경이라 따로 커밋한다.
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function persistProjectRecents(list) {
+  return snapshots.saveRecents(list).catch((err) => { onRecentsStoreFailed(err); });
+}
+/**
+ * 목록 담기가 거부됐을 때 — **조용히 넘어가지 않는다**(RM-33). 옛 localStorage 경로에서는 저장 경로는 미처리 예외,
+ * 불러오기 경로는 「올바른 프로젝트 파일이 아닙니다」로 뭉개졌다. 이제 무엇이 안 됐는지 그대로 알린다.
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function onRecentsStoreFailed(err) {
+  console.warn('[storage] 최근 프로젝트 목록을 브라우저에 담지 못했다', err);
+  render({ notify: ProjectCmd.recentsStoreFailedNotice(err) });
+}
+
 const storage = {
-  saveRecents: (kind, list) => recentLists[kind].save(list),
+  saveRecents: (kind, list) => (kind === 'projects' ? persistProjectRecents(list) : recentLists[kind].save(list)),
   saveRoutineFavorites: (ids) => favoritesRepo.saveRoutines({ routineIds: ids }), // 4639-4641
   saveLinks: (serialized) => saveLinksRaw(serialized),                            // 5100-5106
   saveFavorites
@@ -196,17 +244,30 @@ const renderCore = createRenderer(store, views, {
 let saveDraftSoon = () => {};
 
 /** @type {(d: import('../usecases/store.js').Dirty, opts?: object) => void} */
+// @complexity time=O(1) space=O(1) cc=1
 const render = (dirty, opts) => {
   renderCore(dirty, opts);
+  syncTouchDrawBoth();
   saveDraftSoon();
 };
 
 /**
+ * 두 보드에 「손가락 그리기를 받는다」를 적는다(RM-11 동작 ③). 동작 고르기 · 빠른 배치 켜기는 모두 커맨드를
+ * 거쳐 render 로 오므로 여기 한 곳이면 빠짐이 없다. 값이 같으면 DOM 을 건드리지 않는다.
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function syncTouchDrawBoth() {
+  const { activePaletteMove, quickPlaceMode } = store.session;
+  syncTouchDraw(boardEl, touchDrawArmed({ activeMove: activePaletteMove[BOARD_MAIN], quickPlaceMode: quickPlaceMode[BOARD_MAIN] }));
+  syncTouchDraw(reBoardEl, touchDrawArmed({ activeMove: activePaletteMove[BOARD_ROUTINE], quickPlaceMode: quickPlaceMode[BOARD_ROUTINE] }));
+}
+
+/**
  * 알림은 언제나 렌더 뒤다(app/render 의 마지막 단계). 급(block·toast·status)은 유스케이스가 정하고
- * 어디에 띄울지는 여기서 정한다(RM-04).
+ * 어디에 띄울지는 app/noticeRouter 가 정한다(RM-04 · RM-19).
  *   block  → 앱 안 모달(ui/toastView) — 브라우저 alert 는 더 쓰지 않는다
  *   toast  → 토스트
- *   status → 상태줄(RM-19)이 서기 전까지 토스트로 대신 띄운다
+ *   status → 창 맨 아래 상태줄(ui/statusBar, 21절에서 선다). 그 전에 오는 것은 토스트로 떨어진다
  *
  * ⚠ 「되돌리기」 버튼은 **그 지우기가 아직 맨 위 단계일 때만** 되돌린다. 토스트가 떠 있는 몇 초 사이에
  *   다른 것을 놓으면 Undo 가 그것을 되돌리게 된다 — 지운 것을 살리려다 방금 한 일을 잃는다.
@@ -224,13 +285,13 @@ const toastView = createToastView({
     render(undo(action.boardId));
   }
 });
-views.notify = (n) => {
-  if (n.action && n.action.command === 'undo') {
-    toastView.show({ ...n, action: { ...n.action, depth: hist.stack(n.action.boardId).past.length } });
-    return;
-  }
-  toastView.show(n);
-};
+views.notify = createNoticeRouter({
+  toast: toastView,
+  modal: toastView,                       // block 급은 toastView 가 앱 안 모달로 그린다
+  // 상태줄은 21절에서 선다 — 그 전(부팅 첫 렌더)에 오는 status 급은 토스트로 떨어진다.
+  statusBar: { show: (n) => { if (views.status) views.status.show(n); else toastView.show(n); } },
+  historyDepth: (boardId) => hist.stack(boardId).past.length
+});
 
 /**
  * 지우기 뒤에 「지웠습니다 · 되돌리기」 토스트를 붙인다(RM-04). 실제로 지운 것이 있을 때만 붙인다.
@@ -351,7 +412,17 @@ const overlays = {
     const capped = Math.min(count, Grid.totalCellsFrom(row, startIndex, board));   // 3906
     ov(boardId).showPreview(Grid.buildSegments(row, startIndex, capped, board), count);
   },
+  // 묶음 끌기(RM-14) — 블록마다의 놓일 자리를 한꺼번에 그리고, 첫 조각에 「N개 함께」를 적는다
+  updateBundlePreview: (boardId, items, label) => {
+    const board = store.board(boardId);
+    const segments = items.flatMap(it =>
+      Grid.buildSegments(it.row, it.startIndex, Math.min(it.count, Grid.totalCellsFrom(it.row, it.startIndex, board)), board));
+    ov(boardId).showPreview(segments, items.length, label);
+  },
   clearTrackHighlights: (boardId) => ov(boardId).clearTrackHighlights(),
+  // 네모 고르기(RM-14) — 끄는 동안 점선 네모만 그리고 행은 다시 그리지 않는다
+  showMarquee: (boardId, rect) => ov(boardId).showMarquee(rect),
+  clearMarquee: (boardId) => ov(boardId).clearMarquee(),
   markDraggingGroup: (boardId, groupId) => ov(boardId).markDraggingGroup(groupId),
   unmarkDraggingGroups: (boardId) => ov(boardId).unmarkDraggingGroups(),
   showFloatingTooltip: (placementEl) => ov(BOARD_MAIN).showFloatingTooltip(placementEl),
@@ -404,7 +475,16 @@ function boardCommandsFor(boardId) {
     }),
     copyGroup: (args) => BoardCmd.copyGroupTo(store, { boardId, ...args }, ids),
     removeGroup: (args) => withUndoToast(BoardCmd.removeGroup(store, { boardId, ...args }), '블록을 지웠습니다.', boardId),
+    // 고르기 셋(RM-14) — 그냥 클릭 · Ctrl/Cmd+클릭 · Shift+클릭. 네모와 묶음 끌기는 아래.
+    selectOnly: (args) => BoardCmd.selectOnly(store, { boardId, ...args }),
     toggleSelection: (args) => BoardCmd.toggleSelection(store, { boardId, ...args }),
+    selectRange: (args) => BoardCmd.selectRange(store, { boardId, ...args }),
+    selectInRect: (args) => BoardCmd.selectInRect(store, { boardId, ...args }),
+    // 고른 묶음을 같은 거리로 — 화살표(nudge)와 같은 규칙. 커밋은 컨트롤러가 옮겼을 때만 한 번.
+    moveSelection: (args) => BoardCmd.moveSelectionBy(store, { boardId, ...args }, {
+      ids: browserEnv,
+      unmarkDragging: () => overlays.unmarkDraggingGroups(boardId)
+    }),
     commitHistory: () => commitHistory(boardId)
   };
 }
@@ -510,15 +590,45 @@ views.toolbar = createToolbarView({ store, canUndo, canRedo });
  *   브라우저에만 저장해 둔 것이 있으면 덮어쓰기가 그것을 화면에서 지운다 — 파일은 살아 있는데
  *   사라진 것처럼 보이는 것이 이 기능에서 가장 나쁜 실패다. 같은 이름은 **폴더 쪽이 이긴다.**
  */
+/**
+ * 브라우저 칸(IndexedDB)의 최근 프로젝트 목록을 채운다(RM-33) — 부팅 때 한 번.
+ *   ① 옛 localStorage 두 키(choreo_saved_files · choreo_draft)를 옮긴다. 다시 읽어 맞을 때만 옛 키를 비운다.
+ *   ② 목록(이름 · 시각)만 읽어 `data: null` 로 세운다 — 내용은 열 때 이름으로 읽어 온다(openFromFolder).
+ * ⚠ 비동기라 첫 순간 목록이 비어 보이다가 채워진다. refreshProjectFolder(보관 폴더 목록)와 24절(작업 문서 되살리기)은
+ *   **이것이 끝난 뒤** 돈다 — 먼저 돌면 합칠 때 브라우저 쪽이 빠지거나, 옮기기 전의 빈 칸을 읽는다.
+ * ⚠ 부팅 중에 사용자가 이미 저장한 것이 있으면 그것을 앞에 둔다 — 담아 둔 목록이 방금 한 일을 덮으면 안 된다.
+ */
+// @complexity time=O(n) space=O(n) cc=5
+const browserRecentsReady = (async () => {
+  try {
+    const moved = await snapshots.migrateFromLocalStorage();
+    if (moved.moved && !moved.cleared) console.warn('[storage] 옛 localStorage 의 목록을 옮겼지만 확인이 어긋나 옛 키를 남겼다', moved.reason);
+    const list = await snapshots.listRecents();
+    if (!list.length) return;
+    const have = store.get().recents.projects || [];
+    const taken = new Set(have.map(p => p.fileName));
+    const fromBrowser = list
+      .filter(e => !taken.has(e.fileName))
+      .map(e => ({ fileName: e.fileName, savedAt: e.savedAt, data: null, from: 'browser' }));
+    store.patch('recents', { projects: [...have, ...fromBrowser] });
+    render({ savedLists: ['projects'] });
+  } catch (err) {
+    console.warn('[storage] 브라우저에 담긴 최근 프로젝트 목록을 읽지 못했다', err);
+  }
+})();
+
 function refreshProjectFolder() {
   views.trash?.render();                          // 휴지통도 폴더가 주인이다 — 같은 때 다시 읽는다
-  return projectServer.list().then((items) => {
+  views.history?.render();                        // 지난 판도(RM-25) — 저장 · 되살리기마다 이력이 는다
+  // ⚠ 브라우저 칸의 목록이 먼저 서야 합칠 수 있다(RM-33) — 그 전에 합치면 브라우저 쪽이 빠진다.
+  return browserRecentsReady.then(() => projectServer.list()).then((items) => {
     const fromFolder = items
       .filter(it => it.name.replace(/\.json$/i, '') !== DRAFT_NAME)
       .map(it => ({
         fileName: it.name.replace(/\.json$/i, ''),
         savedAt: new Date(it.mtime * 1000).toISOString(),
-        data: null
+        data: null,
+        from: 'folder'
       }));
     const taken = new Set(fromFolder.map(p => p.fileName));
     const fromBrowser = (store.get().recents.projects || [])
@@ -531,20 +641,29 @@ function refreshProjectFolder() {
 }
 
 /**
- * 최근 목록의 한 줄을 연다. 브라우저에 내용이 있으면 그대로, 폴더에서 온 것이면 읽어 와서.
- * @param {any} data 항목이 들고 있는 내용(폴더에서 온 것이면 null)
- * @param {{fileName?:string}} item 항목 전체
+ * 최근 목록의 한 줄을 연다. 이 세션에 저장 · 불러와 내용을 들고 있으면 그대로, 아니면 이름으로 읽어 와서 —
+ * 보관 폴더에서 온 줄은 서버에서, 브라우저 칸에서 온 줄(RM-33)은 IndexedDB 에서(없으면 서버도 한 번 본다).
+ * @param {any} data 항목이 들고 있는 내용(부팅 때 읽어 온 줄은 null)
+ * @param {{fileName?:string, from?:'folder'|'browser'}} item 항목 전체
  * @param {(deps:any, payload:any) => any} run 실제 커맨드
  * @returns {any} 동기로 열었으면 Dirty, 읽어 와야 하면 undefined(렌더는 여기서 한다)
  */
+// @complexity time=O(1) space=O(1) cc=7
 function openFromFolder(data, item, run) {
   // ⚠ 링크 줄 펴기를 **여기 안에서** 한다. 바깥에서 감싸면 폴더 경로는 읽기가 끝나기 전에
   //   재어 버려서, 링크가 든 파일인데도 접힌 채 열린다(둘 중 한 경로만 도는 것이 더 나쁘다).
   if (data) return openLinksIfAny(run(projectDeps, data));
   const name = item && item.fileName;
   if (!name) return undefined;
-  projectServer.read(name).then((payload) => {
-    if (!payload) { render({ notify: notice('toast', `보관 폴더에서 '${name}' 을 읽지 못했습니다.`) }); return; }
+  const fromFolder = item.from === 'folder';
+  const readBack = fromFolder
+    ? projectServer.read(name)
+    : snapshots.getRecent(name).then((payload) => payload || projectServer.read(name));
+  readBack.then((payload) => {
+    if (!payload) {
+      render({ notify: notice('toast', fromFolder ? `보관 폴더에서 '${name}' 을 읽지 못했습니다.` : `이 브라우저에 담긴 '${name}' 을 읽지 못했습니다.`) });
+      return;
+    }
     render(run(projectDeps, payload));
     openLinksIfAny(undefined);
     // 폴더에서 **연** 것은 그 파일이 곧 지금 보는 문서다 — 자동 담기를 거기로 돌린다(2026-09-22).
@@ -553,6 +672,44 @@ function openFromFolder(data, item, run) {
     if (run === ProjectCmd.loadProjectFromRecent) { draftStore.bind(name); syncSaveTargetNote(); }
   });
   return undefined;
+}
+
+/**
+ * 파일 서랍의 `지난 판` 에서 하나를 골라 **묶인 파일을 그 판으로 되돌리고 곧바로 다시 연다**(RM-25).
+ *
+ * 차례가 곧 안전이다 — 되살리면 파일의 표식(mtimeNs)이 바뀌므로:
+ *   ① 기다리던 담기를 버리고(1.2초 타이머에 걸린 옛 화면) ② 나가 있던 담기가 끝나기를 기다린 뒤
+ *   ③ 서버가 되살리고(지금 판은 서버가 먼저 이력에 남긴다) ④ 그 파일을 다시 읽어 ⑤ 전체 불러오기와 같은 길로
+ *   열고 ⑥ 되돌리기 스택을 새 문서 기준으로 비우고 ⑦ 자동 담기에 새 표식을 넣는다.
+ * ⑦ 이 빠지면 다음 담기가 409 로 멈추거나, 표식 없이 나가 **옛 화면으로 되살린 판을 덮어쓴다.**
+ * ①·② 가 빠지면 옛 화면을 실은 담기가 ⑦ 의 표식을 달고 끼어든다 — tests/unit/domain.test 의 draftStore 시험이 잰다.
+ * ⑥ — 되살림은 Undo 로 되돌리지 않는다(부팅 되살리기와 같은 까닭). 돌아가는 길은 ③ 이 남긴 이력 한 장이다.
+ *
+ * @param {string} file 이력 목록 항목의 `file`
+ * @returns {Promise<boolean>} 되살려 열었으면 true. 실패하면 토스트로 알리고 false — 뷰가 버튼을 되돌린다
+ */
+// @complexity time=O(n) space=O(n) cc=6
+async function restoreFromHistory(file) {
+  const fail = (why) => { render({ notify: notice('toast', why) }); return false; };
+  draftSaver.cancel();
+  await draftStore.settled();
+  const res = await projectServer.restore(file, 'history');
+  if (!res) return fail('지난 판으로 되살리지 못했습니다 — 서버가 응답하지 않았습니다.');
+  const name = String(res.name || '').replace(/\.json$/i, '');
+  const got = await projectServer.readWithMeta(name);
+  if (!got) return fail(`되살린 '${name}' 을 다시 읽지 못했습니다.`);
+  const dirty = ProjectCmd.loadProjectFromRecent(projectDeps, got.data);
+  render(dirty);
+  if (dirty.notify) return false;                 // 못 여는 판(깨졌거나 더 새 판의 앱이 담은 것) — 문구는 커맨드가 띄웠다
+  openLinksIfAny(undefined);
+  render(History.reset(hist, BOARD_MAIN));
+  draftStore.adopt(name, got.mtimeNs);
+  draftBlocked = false;
+  draftStopReason = '';
+  syncSaveTargetNote();
+  refreshProjectFolder();
+  render({ notify: notice('toast', `'${name}' 을 지난 판으로 되살렸습니다. 되살리기 전 판은 지난 판 목록에 남았습니다.`) });
+  return true;
 }
 
 /**
@@ -565,9 +722,11 @@ function openFromFolder(data, item, run) {
  * @param {T} dirty 그대로 돌려준다 — 호출부가 커맨드 결과를 잃지 않게
  * @returns {T}
  */
+// ⚠ 유튜브 주소만으로는 펴지 않는다(RM-20) — 그 칸은 링크 줄이 아니라 영상 패널 `① 영상 고르기` 에 있다.
+// @complexity time=O(1) space=O(1) cc=3
 function openLinksIfAny(dirty) {
   const l = store.links;
-  if (l.youtubeUrl || l.clickupUrl || l.customLinks.length) views.layout?.setLinksOpen(true);
+  if (l.clickupUrl || l.customLinks.length) views.layout?.setLinksOpen(true);
   return dirty;
 }
 
@@ -602,6 +761,14 @@ views.trash = createTrashView({
   onRestored: () => { refreshProjectFolder(); }
 });
 
+// 지난 판(RM-25) — 서버가 덮어쓰기 전에 남긴 묶인 안무표의 판을 고르는 자리. 묶인 이름은 게터로 준다 —
+// draftStore 는 아래(24절 앞)에서 서는데 render 는 그 뒤에야 불린다(refreshProjectFolder · syncSaveTargetNote).
+views.history = createHistoryView({
+  listHistory: (name) => projectServer.history(name),
+  boundName: () => draftStore.bound(),
+  restore: restoreFromHistory
+});
+
 views.linksBar = createLinksBarView({
   store,
   render,
@@ -609,7 +776,7 @@ views.linksBar = createLinksBarView({
   // 2026-09 — 링크 편집의 커밋 지점(change·✕·추가·삭제)은 뷰가 소유한다. 커맨드는 히스토리를
   // 쌓지 않는다(usecases 규약). Dirty.history 는 Undo/Redo 버튼만 건드리므로 입력 중에도 안전하다.
   commitHistory: () => render(commitHistory(BOARD_MAIN)),
-  // 2026-09 — 링크바의 YouTube 칸이 그대로 영상 소스다(새 입력창을 만들지 않는다).
+  // 2026-09 — YouTube 칸(RM-20 부터 영상 패널 `① 영상 고르기` 맨 위 — 소유는 그대로 linksBarView)이 그대로 영상 소스다.
   // ⚠ 확정(change · ✕)에만 불린다. 반환 Dirty 를 그려야 패널이 새 소스를 싣는다.
   onYoutubeUrlCommit: (rawUrl) => render(VideoCmd.setSource(store, { url: rawUrl })),
   debounce,
@@ -668,7 +835,7 @@ const routineActionPopup = createRoutineActionPopup({
   }
 });
 
-// 안무 블록의 동작 팝업(2026-09-21). 터치 폭에서 한 번 탭하면 뜨고, 마우스에서는 우클릭으로 닿는다.
+// 안무 블록의 동작 팝업(2026-09-21). 손가락으로 한 번 탭하면 뜨고(창 폭과 무관 — RM-11), 마우스에서는 우클릭으로 닿는다.
 // ⚠ `openPicker` 는 **같은 quickPicker 인스턴스**를 쓴다(`✎` 가 부르는 그것) — 동작을 고르는
 //   화면이 두 벌이 되면 한쪽만 고쳐진다.
 const placementActionPopup = createPlacementActionPopup({
@@ -680,7 +847,37 @@ const placementActionPopup = createPlacementActionPopup({
     removeGroup: (groupId) => withUndoToast(
       BoardCmd.removeGroup(store, { boardId: BOARD_MAIN, groupId }), '블록을 지웠습니다.'
     ),
-    openPicker: (groupId, x, y) => quickPickers[BOARD_MAIN].openForGroup(groupId, x, y)
+    // 복사와 히스토리 커밋 둘 다 — Alt+끌기 복사(copyGroupTo)와 같은 커맨드를 바로 뒤 칸으로 부른다(RM-11).
+    copyAfter: (groupId) => commitIfChanged(
+      BoardCmd.copyGroupAfter(store, { boardId: BOARD_MAIN, groupId }, { ids: browserEnv }), BOARD_MAIN
+    ),
+    openPicker: (groupId, x, y) => quickPickers[BOARD_MAIN].openForGroup(groupId, x, y),
+    // 분할 · 병합(RM-16). 재생 헤드가 이 블록 안에 없거나 박자가 없으면 null — 팝업이 카운트 고르기로 떨어진다.
+    splitAtPlayhead: (groupId) => {
+      const sec = playheadSec();
+      if (sec === null) return null;
+      const dirty = BoardCmd.splitGroupAt(store, { boardId: BOARD_MAIN, groupId, sec }, { ids: browserEnv });
+      return dirty.boards ? commitIfChanged(dirty, BOARD_MAIN) : null;
+    },
+    splitAtCount: (groupId, countInGroup) =>
+      commitIfChanged(BoardCmd.splitGroupAt(store, { boardId: BOARD_MAIN, groupId, countInGroup }, { ids: browserEnv }), BOARD_MAIN),
+    mergePartner: (groupId) => BoardCmd.mergePartnerOf(store, { boardId: BOARD_MAIN, groupId }),
+    mergeWithNeighbor: (groupId) =>
+      commitIfChanged(BoardCmd.mergeWithNeighbor(store, { boardId: BOARD_MAIN, groupId }, { ids: browserEnv }), BOARD_MAIN)
+  }
+});
+
+// 행 라벨의 마디 메뉴(2026-11-02, RM-16). 우클릭 · 길게 누르기로 뜬다 — 메인 보드만(루틴 보드의 행은 편집기 크기가 정한다).
+// ⚠ 다섯 줄 모두 커밋까지 끝낸다. 지우기는 블록 지우기와 같이 「되돌리기」 토스트를 붙인다.
+const rowActionPopup = createRowActionPopup({
+  render,
+  labelOf: (row) => `${store.board(BOARD_MAIN).cols}x${row}`,
+  commands: {
+    insertAbove: (row) => commitIfChanged(BoardCmd.insertRowAt(store, { boardId: BOARD_MAIN, row }, { ids: browserEnv }), BOARD_MAIN),
+    deleteRow: (row) => withUndoToast(BoardCmd.deleteRowAt(store, { boardId: BOARD_MAIN, row }, { ids: browserEnv }), '마디를 지웠습니다.'),
+    duplicateRow: (row) => commitIfChanged(BoardCmd.duplicateRowAt(store, { boardId: BOARD_MAIN, row }, { ids: browserEnv }), BOARD_MAIN),
+    moveUp: (row) => commitIfChanged(BoardCmd.moveRowBy(store, { boardId: BOARD_MAIN, row, delta: -1 }, { ids: browserEnv }), BOARD_MAIN),
+    moveDown: (row) => commitIfChanged(BoardCmd.moveRowBy(store, { boardId: BOARD_MAIN, row, delta: 1 }, { ids: browserEnv }), BOARD_MAIN)
   }
 });
 
@@ -725,8 +922,9 @@ function makeBoardController(boardId, extra = {}) {
 }
 
 // 원본 1525 bindBoardDelegatedEvents(mainCtx)
-// ⚠ 손가락 폭 판정은 ui/layout 의 isStacked 하나를 쓴다 — 브레이크포인트를 input 계층에 또 적지 않는다.
-makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup, isTouchLayout: () => isStacked() });
+// ⚠ 「손가락인가」는 컨트롤러가 그 누름의 pointerType 으로 안다(RM-11) — 창 폭(isStacked)은 넘기지 않는다.
+//   폭은 배치(사이드바 접기 · 영상 패널 · 팝업 자리)의 일이고 ui/layout 의 몫이다.
+makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup, rowActionPopup, longPress });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 12. bindControls (원본 1524) — ⚠ bindHotkeys 는 이 안에서 불린다
@@ -743,7 +941,7 @@ const CONTROL_IDS = [
   'fileNameInput', 'moveListFileNameInput', 'categoryFileNameInput',
   'boardColsInput', 'boardColsDec', 'boardColsInc',
   'defaultCountInput', 'defaultCountDec', 'defaultCountInc',
-  'quickPlaceBtn', 'addRoutineBtn', 'createRoutineFromSelectionBtn'
+  'quickPlaceBtn', 'addRoutineBtn'
 ];
 const els = Object.fromEntries(CONTROL_IDS.map(id => [id, byId(id)]));
 els.mainBoardEl = boardEl;   // 빈 영역 클릭 선택 해제(1527-1529)
@@ -812,6 +1010,26 @@ function nudge(board, dir) {
 
 /** 명령 하나의 지금 글쇠. 툴팁 · 일람이 읽는다. */
 const keysNow = (id) => hotkeyMap[id];
+// 선택 액션 바(RM-14) — 단추 글자 · 툴팁은 등록부에서, 누름은 bindCommandButtons 의 data-command 길로 간다.
+// ⚠ 연습 바는 이보다 뒤에 만들어진다 — canRun 은 누를 때마다 views.practice 를 다시 읽는다.
+views.selectionBar = createSelectionBar({
+  store,
+  keysOf: keysNow,
+  canRun: (id) => (id === 'practiceSelection' ? Boolean(views.practice?.canPracticeSelection?.()) : true),
+});
+
+/**
+ * 재생 헤드가 서 있는 초(RM-16 자르기). 세로선이 그려지는 조건(박자가 있고 영상이나 박자 시계가 돈다)과 같을 때만
+ * 값이고, 아니면 null — 그때는 블록 팝업의 「몇 번째 카운트에서」가 길이다.
+ * ⚠ 재생기 · 시계는 이 표보다 뒤에 만들어지므로 누르는 시점에 읽는다(영상 쪽 줄과 같은 까닭).
+ */
+// @complexity time=O(1) space=O(1) cc=5
+function playheadSec() {
+  if (!VideoCmd.isTempoReady(store)) return null;
+  if (!(hasMediaSource() || playerKind === 'clock')) return null;
+  const sec = currentVideoSec();
+  return Number.isFinite(sec) ? sec : null;
+}
 
 /**
  * 프로젝트 저장 — `프로젝트 저장` 버튼과 명령 팔레트가 같은 이 함수를 부른다(RM-09).
@@ -821,6 +1039,7 @@ const keysNow = (id) => hotkeyMap[id];
  */
 function saveProjectNow(options) {
   const dirty = ProjectCmd.saveProject(projectDeps, options);
+  // 방금 저장한 항목은 목록 맨 앞이고 **메모리에는** 내용을 들고 있다(pushRecent). 담기는 자리(IndexedDB)만 목록과 내용을 가른다(RM-33).
   const fileName = (store.get().recents.projects[0] || {}).fileName;
   const payload = (store.get().recents.projects[0] || {}).data;
   if (fileName && payload) {
@@ -845,6 +1064,9 @@ function saveProjectNow(options) {
 //   `node tools/check-principles.mjs`(D-14)가 글자로 맞춰 세어 붉어진다 — 이름으로 잇는 배선은 빠져도 조용하다.
 // ⚠ 반환값은 「기본 동작을 막을까」다(글쇠일 때만 쓴다). 그리기는 각 줄이 스스로 한다.
 // ⚠ 영상 쪽 줄은 **늦게 묶는다** — 이 표가 views.video 보다 먼저 만들어지므로 누르는 시점에 읽는다.
+/** 내보내기 유스케이스의 협력자(RM-21) — 글자는 store 에서, 클립보드 · 내려받기 · 인쇄 창은 브라우저 어댑터가. */
+const sheetDeps = Object.freeze({ store, files: browserFileIO, env: browserEnv });
+
 /** @type {Readonly<Record<string, (ctx: {board: string, source: string}) => boolean>>} */
 const COMMAND_RUNNERS = Object.freeze({
   capture: () => Boolean(views.video && views.video.captureToggle()),
@@ -883,6 +1105,14 @@ const COMMAND_RUNNERS = Object.freeze({
     render(withUndoToast(BoardCmd.removeSelection(store, { boardId }), count > 1 ? `블록 ${count}개를 지웠습니다.` : '블록을 지웠습니다.', boardId));
     return true;
   },
+  // ── 선택 액션 바(RM-14) — 바에만 단추가 있고 글쇠는 없다. 팔레트로도 부른다.
+  // 고른 블록 반복은 영상 패널의 `고른 블록 반복` 과 같은 길(ui/practiceBar)이다. 박자 · 재생기가 없으면 거짓.
+  practiceSelection: () => Boolean(views.practice?.practiceSelection?.()),
+  routineFromSelection: () => {
+    if (!store.selection.size) return false;
+    render(RoutineCmd.createFromSelection(routineDeps));
+    return true;
+  },
   copySelection: ({ board }) => {
     const clip = BoardCmd.copySelection(store, { boardId: boardIdOf(board) });
     if (!clip.length) return false;
@@ -906,12 +1136,22 @@ const COMMAND_RUNNERS = Object.freeze({
     render(commitIfChanged(BoardCmd.pasteClip(store, { boardId, clip, at }, { ids: browserEnv }), boardId));
     return true;
   },
+  // 재생 헤드에서 자르기(RM-16) — 메인 안무표만(세로선은 메인에만 선다). 박자가 없으면 알림만 뜬다.
+  // @complexity time=O(t·n log n) space=O(n) cc=2
+  splitAtPlayhead: () => {
+    const sec = playheadSec();
+    if (sec === null) { render({ notify: notice('status', '재생 헤드가 없습니다 — 박자를 맞추고 영상(또는 박자 시계)을 켜거나, 블록 팝업에서 몇 번째 카운트인지 고르세요.') }); return true; }
+    render(commitIfChanged(BoardCmd.splitAtPlayhead(store, { boardId: BOARD_MAIN, sec }, { ids: browserEnv }), BOARD_MAIN));
+    return true;
+  },
   selectAll: ({ board }) => {
     const dirty = BoardCmd.selectAll(store, { boardId: boardIdOf(board) });
     if (dirty === NONE) return false;
     render(dirty);
     return true;
   },
+  // 블록 위 이름 입력(RM-15) — Enter · F2 · 글자 한 자(initial) · 영상 패널의 `고른 블록에 이름 붙이기` 가 모두 여기로 온다.
+  nameBlock: (ctx) => openNaming(ctx),
   quickPlace: ({ board }) => {
     const boardId = board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN;
     render(BoardCmd.toggleQuickPlaceMode(store, { boardId }, { closeQuickPicker: () => quickPickers[boardId].close() }));
@@ -919,6 +1159,23 @@ const COMMAND_RUNNERS = Object.freeze({
   },
   saveProject: () => { render(saveProjectNow({ fileName: byId('fileNameInput').value })); return true; },
   rename: () => { views.fileMenu?.open(); return true; },
+  // ── 내보내기(RM-21) — 파일 메뉴의 버튼 셋. 누르면 메뉴를 닫는다(내려받기 · 인쇄 창이 메뉴 위로 뜨지 않게).
+  //   클립보드는 비동기라 알림을 then 으로 그린다. 글자 · 파일은 유스케이스가, 클립보드 · 내려받기 · 인쇄 창은 browserFileIO 가.
+  copySheet: () => {
+    views.fileMenu?.close();
+    SheetCmd.copySheetText(sheetDeps, { fileName: byId('fileNameInput').value }).then(render);
+    return true;
+  },
+  downloadSheetHtml: () => {
+    views.fileMenu?.close();
+    render(SheetCmd.downloadSheetHtml(sheetDeps, { fileName: byId('fileNameInput').value }));
+    return true;
+  },
+  printSheet: () => {
+    views.fileMenu?.close();
+    render(SheetCmd.printSheet(sheetDeps));
+    return true;
+  },
   // 명령을 찾는 두 화면 — 등록부를 읽기만 한다. 실행은 다시 이 표로 돌아온다.
   palette: () => { views.commandPalette?.openPalette(); return true; },
   shortcuts: () => { views.commandPalette?.openSheet(); return true; },
@@ -935,7 +1192,100 @@ const COMMAND_RUNNERS = Object.freeze({
 function runCommand(id, ctx = {}) {
   const run = COMMAND_RUNNERS[id];
   if (typeof run !== 'function') return false;
-  return Boolean(run({ board: ctx.board || BOARD_MAIN, source: ctx.source || '' }));
+  return Boolean(run({ board: ctx.board || BOARD_MAIN, source: ctx.source || '', initial: ctx.initial || '', anchor: ctx.anchor || null }));
+}
+
+// ── 블록 위 이름 입력 (RM-15) ─────────────────────────────────────────────────
+//
+// 고른 블록 위에 이름 입력(ui/inlinePrompt.askName)을 띄우고, 닫힌 방식에 따라 붙이고 · 되돌리기 한 단계를 쌓고 ·
+// Tab 이면 표 위 차례의 다음 `?` 로 선택을 옮겨 다시 연다. 추천은 domain/moveMatch.suggestMoves(동작 고르기 창과 같은 규칙).
+// ⚠ 메인 보드만이다 — 고르기는 메인 보드에만 있다. 루틴 편집기가 열려 있으면 거짓을 돌려줘 글쇠의 기본 동작을 막지 않는다.
+// ⚠ 한글 자모 · IME 글쇠(`Process`)로 열릴 때는 **빈 입력**으로 열고 기본 동작을 막지 않는다 — 첫 자모를 값으로 옮기면
+//   다음 글쇠가 그 자모와 합쳐지지 않아 「ㅈ아」처럼 깨진다. 막지 않으면 브라우저가 그 글쇠를 방금 포커스한 입력에서 조합한다.
+
+/** 한글 자모 · IME 글쇠인가 — 첫 자를 값으로 옮기지 않고 빈 입력에서 조합을 잇는다. */
+const isImeKey = (ch) => ch === 'Process' || /[\u3131-\u318e\u1100-\u11ff\ua960-\ua97f\ud7b0-\ud7ff]/.test(ch);
+
+/** 메인 보드에서 지금 고른 그룹 — 보드 위에 있는 것만, 루틴 블록은 뺀다(루틴 이름은 루틴 목록이 주인). */
+// @complexity time=O(n+s) space=O(n) cc=4
+function selectedGroupsOnMain() {
+  const state = store.get();
+  const heads = new Map();
+  for (const p of state.boards[BOARD_MAIN].placements) if (!heads.has(p.groupId)) heads.set(p.groupId, p);
+  return [...(state.selection || [])].filter(id => heads.has(id) && heads.get(id).type !== 'routine');
+}
+
+/** 그룹의 첫 조각 요소. 다시 그린 뒤에 찾아야 한다 — 행을 다시 그리면 요소가 바뀐다. */
+const blockElOf = (groupId) => boardEl.querySelector(SEL.placementsOfGroup(groupId));
+
+/** 고른 그룹들 가운데 표 위 차례로 맨 뒤의 것 — 여럿에 붙인 뒤 Tab 이 그 뒤부터 잇는다. */
+// @complexity time=O(s·n log n) space=O(n) cc=3
+function lastByOrder(groupIds) {
+  const placements = store.get().boards[BOARD_MAIN].placements;
+  const firstOf = (gid) => placements.filter(p => p.groupId === gid).sort((a, b) => a.row - b.row || a.startIndex - b.startIndex)[0];
+  return [...groupIds].sort((a, b) => { const x = firstOf(a), y = firstOf(b); return x.row - y.row || x.startIndex - y.startIndex; }).pop();
+}
+
+/**
+ * 이름 입력을 연다. @returns {boolean} 열었고 글쇠의 기본 동작을 막을까
+ * @param {{ board?: string, initial?: string, anchor?: Element|null }} ctx
+ */
+// @complexity time=O(n) space=O(n) cc=12
+function openNaming(ctx = {}) {
+  if (boardIdOf(ctx.board) !== BOARD_MAIN) return false;
+  const chosen = selectedGroupsOnMain();
+  if (!chosen.length) return false;
+  const placements = store.get().boards[BOARD_MAIN].placements;
+  const ime = isImeKey(ctx.initial || '');
+  const first = ime ? '' : (ctx.initial || '');
+  const suggest = (q) => suggestMoves(store.get().library, q, store.get().favorites.moveNames);
+  const after = (named, via, from) => {
+    if (named) render(commitHistory(BOARD_MAIN));          // 블록 하나(한 번)에 되돌리기 한 단계
+    views.video?.syncSelection();                            // `이름 붙일 것 N개` 가 줄어든다
+    if (via === 'tab' || via === 'shift-tab') stepToPending(from, via === 'tab' ? 'next' : 'prev');
+  };
+
+  if (chosen.length > 1) {
+    // 여럿을 골랐으면 그중 이름 없는 것에만 한 이름 — 영상 패널의 `고른 블록에 이름 붙이기` 와 같은 커맨드다.
+    const pending = chosen.filter(gid => placements.some(p => p.groupId === gid && isPending(p)));
+    if (!pending.length) { render({ notify: notice('status', '고른 블록은 모두 이름이 있습니다.') }); return true; }
+    const title = pending.length > 1 ? `고른 블록 ${pending.length}개의 이름` : '이 블록의 이름';
+    askName({ anchor: ctx.anchor || blockElOf(pending[0]), title, value: first, suggest }).then(({ value, via }) => {
+      const { named, ...dirty } = CaptureCmd.nameSelected(store, { label: value }) || {};
+      render(dirty);
+      after(named, via, lastByOrder(pending));
+    });
+    return !ime;
+  }
+
+  const gid = chosen[0];
+  const head = placements.find(p => p.groupId === gid);
+  askName({
+    anchor: ctx.anchor || blockElOf(gid),
+    title: '이 블록의 이름',
+    value: first || (isPending(head) ? '' : head.name),
+    selectAll: !first,                                       // 이름 있는 블록은 통째로 골라 갈아 끼운다
+    suggest
+  }).then(({ value, via }) => {
+    const { named, ...dirty } = CaptureCmd.nameGroupTo(store, { boardId: BOARD_MAIN, groupId: gid, label: value }) || {};
+    render(dirty);
+    after(named, via, gid);
+  });
+  return !ime;
+}
+
+/** 표 위 차례의 다음(앞) `?` 를 골라 보이고 입력을 다시 연다. 더 없으면 알린다. */
+// @complexity time=O(n log n) space=O(n) cc=4
+function stepToPending(fromGroupId, dir) {
+  const next = adjacentPendingGroupId(store.get().boards[BOARD_MAIN].placements, fromGroupId, dir);
+  if (!next) {
+    render({ notify: notice('status', dir === 'next' ? '이름 없는 블록을 다 채웠습니다.' : '앞에 이름 없는 블록이 없습니다.') });
+    return;
+  }
+  render(BoardCmd.selectOnly(store, { boardId: BOARD_MAIN, groupId: next }));
+  const el = blockElOf(next);
+  if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  openNaming({ board: BOARD_MAIN });
 }
 
 // 등록부와 실행 표가 어긋났는지 부팅 때 한 번 본다. ⚠ 던지지 않는다 — 명령 하나가 빠졌다고 앱이 안 뜨면 그게 더 나쁘다.
@@ -961,6 +1311,8 @@ bindControls({
   // 단축키가 먹는 보드(RM-13) — 루틴 편집기가 열려 있으면 루틴 보드다. 버튼은 `data-board` 로 따로 가른다.
   activeBoardId,
   rememberCell: rememberPasteCell,
+  // 글자 한 자로 이름 입력을 열지(RM-15) — 메인 보드에 고른 블록이 있을 때만.
+  hasSelection: () => selectedGroupsOnMain().length > 0,
   // ⚠ 게터다 — 설정에서 바꾸면 다음 입력부터 바로 들어야 한다(값으로 주면 묶은 시점에 갇힌다).
   hotkeys: () => hotkeyMap,
   commands: {
@@ -989,8 +1341,7 @@ bindControls({
     setBoardRows: (args) => BoardCmd.setBoardRows(store, { boardId: BOARD_MAIN, ...args }),
     setDefaultCount: (value) => BoardCmd.setDefaultCount(store, { value }),
     clearSelection: () => BoardCmd.clearSelection(store),
-    createRoutine: () => RoutineCmd.createRoutine(routineDeps),
-    createRoutineFromSelection: () => RoutineCmd.createFromSelection(routineDeps)
+    createRoutine: () => RoutineCmd.createRoutine(routineDeps)
   }
 });
 
@@ -1275,11 +1626,23 @@ let clipServerConfig = null;
 //   값으로 주면 서버가 있어도 영영 브라우저에 담는다(실측으로 그랬다).
 const draftStore = createDraftStore({
   getServer: () => (clipServerConfig ? projectServer : null),
+  // 브라우저 칸은 IndexedDB 의 작업 문서 칸이다(RM-33). 없으면 어댑터가 안에서 옛 localStorage 키로 떨어진다.
+  browserSlot: draftSlotOf(snapshots),
   // 다른 곳에서 그 파일이 바뀌었다 — 담기가 멈췄다는 것을 **화면이 말해야 한다.**
   // ⚠ 멈춘 줄 모르고 한 시간을 더 작업하는 것이 이 기능에서 가장 나쁜 실패다.
   onConflict: () => { draftBlocked = true; draftStopReason = 'conflict'; syncSaveTargetNote(); }
 });
-const draftSaver = debounceSave((payload) => draftStore.save(payload));
+/**
+ * 작업 문서 담기가 실패하고 있는가(RM-33). 쿼터 초과 · 저장소 막힘이면 참이 되고, 다음 담기가 되면 거짓으로 돌아온다.
+ * ⚠ 담기는 멈추지 않는다(편집을 막지 않는다) — 파일 메뉴의 「어디에 담기는가」 줄이 그 사실을 말할 뿐이다.
+ *   전에는 false 만 돌려주고 아무도 몰라, 새로고침 한 번에 그날의 일을 잃었다.
+ */
+let draftSaveFailed = false;
+// @complexity time=O(1) space=O(1) cc=2
+const draftSaver = debounceSave((payload) => draftStore.save(payload).then((ok) => {
+  if (Boolean(!ok) !== draftSaveFailed) { draftSaveFailed = !ok; syncSaveTargetNote(); }
+  return ok;
+}));
 
 /**
  * 담기가 막혔는가(2026-09-22). 더 새 판이 담아 둔 작업 문서를 만나면 참이 되고, 그때부터 이 세션은
@@ -1295,9 +1658,19 @@ let draftBlocked = false;
  */
 let draftStopReason = '';
 
-/** 묶인 파일이 바뀌었다 — 파일 메뉴의 「어디에 담기는가」 줄을 다시 적는다. */
+/**
+ * 지금 무엇에 담기고 있나 — 파일 메뉴의 「어디에 담기는가」 와 상태줄이 **같은 값**을 읽는다(RM-19).
+ * ⚠ 게터다. 묶임은 저장·열기로 세션 중에 바뀐다.
+ */
+const saveTarget = () => ({
+  bound: draftStore.bound(), kind: draftStore.kind, blocked: draftBlocked, reason: draftStopReason, failed: draftSaveFailed
+});
+
+/** 묶인 파일이 바뀌었다 — 파일 메뉴의 「어디에 담기는가」 줄 · 상태줄 · 서랍의 지난 판 목록을 다시 적는다. */
 function syncSaveTargetNote() {
   views.fileMenu?.syncName();
+  views.status?.render();
+  views.history?.render();                        // 묶인 이름이 바뀌면 목록도 바뀐다(RM-25) — 비면 감춘다
 }
 /** 서버에 있다고 확인한 경로. 소스가 바뀌면 다시 확인한다. */
 let serverClipOk = '';
@@ -1966,7 +2339,7 @@ const voiceInput = (() => {
       if (!u.final) return;
       render(VoiceCmd.hearUtterance(store, { text: u.text, atSec: u.startedAt }));
     },
-    onState: () => { views.video?.syncVoice(); views.thumb?.render(); }
+    onState: () => { views.video?.syncVoice(); views.thumb?.render(); views.status?.render(); }
   });
 
   return {
@@ -2100,6 +2473,8 @@ views.video = createVideoPanel({
     },
     markersToBlocks: () => CaptureCmd.markersToBlocks(store, {}, { ids: browserEnv }),
     nameSelected: (label) => CaptureCmd.nameSelected(store, { label }),
+    // `고른 블록에 이름 붙이기` 는 블록 위 이름 입력(RM-15)을 그 단추 위에 연다 — 추천 목록 · Tab 이 같다.
+    openNaming: (anchor) => openNaming({ board: BOARD_MAIN, anchor }),
     // 표 전체 옮기기(2026-09-20). 받아 적기와 같은 자리에 두지만 박자와는 무관하다 —
     // 놓인 블록을 카운트 축에서 통째로 민다.
     canShiftAll: () => store.board(BOARD_MAIN).placements.length > 0,
@@ -2229,8 +2604,55 @@ const llmServer = createLlmServer();
 // (ports/pose.js 계약과 domain/pose·rom·poseTracks 만 있다) — 설정에서 위치를 정해 두면 그것이 붙을 자리다.
 const modelServer = createModelServer();
 
+// ── 「처음 한 번」 안내(RM-19) ──────────────────────────────────────────────
+// 늘 떠 있던 안내 문장(사이드바 셋 · 영상 패널 열하나)을 걷은 자리다. 그 단계에 **처음 손을 대는 순간**(누름 · 포커스)
+// 한 번만 말풍선이 뜨고, 서랍은 처음 펼칠 때 뜬다. 본 기록은 이 브라우저에만 남는다(adapters/localStore).
+// ⚠ 영상 패널의 단계는 `details.vstep` 의 `data-step`(step1~step6)이 곧 열쇠다 — 차례 ①②③과 도구 탭 셋(RM-20)이 함께 쓴다.
+//   자리 차례가 아니라 열쇠로 찾는다 — 도구가 탭 줄로 옮겨 가도 말풍선이 엉뚱한 단계에 붙지 않게. 단계를 더하면 ONCE_HINTS 에 문장을 더한다.
+const hintBubble = createHintBubble({
+  resolveAnchor: (key) => {
+    if (/^step\d$/.test(key)) return document.querySelector(`details.vstep[data-step="${key}"]`);
+    if (key === 'practice') return byId('videoPractice');
+    const id = { routine: 'routineList', category: 'categoryManager', file: 'savedList' }[key];
+    return id ? (byId(id)?.closest('details.drawer') || null) : null;
+  }
+});
+const onceHints = createOnceHints({
+  load: loadOnceHints,
+  save: saveOnceHints,
+  present: (key, text) => hintBubble.show(key, text)
+});
+document.querySelectorAll('details.vstep[data-step]').forEach((step) => {
+  const key = step.dataset.step;
+  const first = () => { if (VideoCmd.panelState(store).open) onceHints.show(key); };
+  step.addEventListener('pointerdown', first, true);
+  step.addEventListener('focusin', first, true);
+  // 도구(RM-20)는 몸통 밖의 탭 단추로 펼친다 — 펼쳐지는 순간을 「처음 손을 댄 때」로 친다.
+  if (step.classList.contains('vtool')) step.addEventListener('toggle', () => { if (step.open) first(); });
+});
+byId('videoPractice')?.addEventListener('pointerdown', () => onceHints.show('practice'), true);
+for (const [key, id] of Object.entries({ routine: 'routineList', category: 'categoryManager', file: 'savedList' })) {
+  const drawer = byId(id)?.closest('details.drawer');
+  drawer?.addEventListener('toggle', () => { if (drawer.open) onceHints.show(key); });
+}
+
+/**
+ * 지금 이 환경의 능력(RM-27). 서버 응답은 probe 가 받아 둔 것을 다시 쓰고(두 번 두드리지 않는다), GPU 는 추정기가
+ * 섰을 때만 안다 — 켤 때 모델을 띄우지 않으므로 그 전에는 「모름」이다.
+ */
+// @complexity time=O(1) space=O(1) cc=2
+const currentCapabilities = () => detectCapabilities({
+  serverConfig: clipServerConfig,
+  poseDelegate: poseEstimator ? poseEstimator.getState().delegate : ''
+});
+
 views.settings = createSettingsView({
   container: document.querySelector('.top-actions'),
+  // 처음 한 번 안내의 본 기록을 비우는 단추(RM-19). 세는 것도 담는 것도 바깥(onceHints)이다.
+  hints: { reset: () => { onceHints.reset(); hintBubble.close(); }, count: () => onceHints.seenKeys().length },
+  getCapabilities: currentCapabilities,
+  getSupportNotify: () => loadSupportNotice().enabled,
+  setSupportNotify: (on) => saveSupportNotice({ enabled: !!on }),
   getClipSetting: loadClipSetting,
   saveClipSetting,
   clips: clipLibrary,
@@ -2257,8 +2679,11 @@ views.settings = createSettingsView({
   previewDirParts: clipDirParts,
   getHotkeys: () => hotkeyMap,
   saveHotkeys: applyHotkeys,
+  // 「안내 다시 보기」(RM-26). 코치마크는 아래 채우기 줄 뒤에 만들어지므로 부를 때 찾는다.
+  coach: { replay: () => coach?.replay() },
   // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
-  onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); }
+  // LLM 키를 넣거나 뺐으면 `✨ 말로 채우기` 의 막힘도 다시 잰다(RM-26).
+  onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); syncEntryStates(); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2329,14 +2754,75 @@ openLinksIfAny(undefined);
 
 views.fileMenu = createFileMenu({
   // 자동 담기가 「저장했다」는 착각을 주던 것을 끝내는 한 줄이다(2026-09-22) — 무엇에 담기는지를 적는다.
-  getSaveTarget: () => ({
-    bound: draftStore.bound(), kind: draftStore.kind, blocked: draftBlocked, reason: draftStopReason
-  })
+  getSaveTarget: saveTarget
+});
+
+// 상태줄(RM-19) — 창 맨 아래 한 줄. 판정을 새로 하지 않고 이미 있는 것을 모아 읽는다:
+//   받는 중 captureSec · 듣는 중 음성 어댑터 · 루틴 편집 중 session · 담기 자리 saveTarget · 되돌릴 수 있음 히스토리.
+// ⚠ app/render 가 video · history · routineEditor 에서 render() 를 부른다. 음성 · 담기는 Dirty 를 타지 않으므로
+//   speech.onState 와 syncSaveTargetNote 가 직접 부른다.
+views.status = createStatusBar({
+  getState: () => ({
+    capture: { startSec: CaptureCmd.captureStartSec(store) },
+    voice: views.video?.voiceState?.(),
+    routine: { editing: !!store.get().session.editingRoutineId },
+    save: saveTarget(),
+    history: { canUndo: canUndo(BOARD_MAIN) }
+  }),
+  formatClock
 });
 
 views.start = createModeBar({
-  hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
+  hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0,
+  openExample
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 처음 켠 사람의 첫 화면(2026-11-02, RM-26) — 예제 안무 · 코치마크 · 막힌 입구의 까닭
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 예제 안무표 파일. 저장소의 `examples/` 에 있고 정적 서버 · server.py 둘 다 그대로 내준다. */
+const EXAMPLE_URL = 'examples/shim-sham.json';
+
+/**
+ * `예제 열기` — 예제 안무표를 **최근 목록에서 여는 것과 같은 길**(loadProjectFromRecent)로 연다.
+ * 되돌리기 한 번이면 연 앞의 안무표로 돌아간다(applyProjectData 가 커밋 하나를 쌓는다).
+ * ⚠ 내용이 있으면 버튼이 `정말요?` 로 한 번 묻는다 — 지금 것은 되돌리기로 살지만, 묻지 않고 바꾸면 놀란다.
+ * ⚠ 자동 담기의 묶임을 푼다. 묶인 채 열면 예제가 1.2초 뒤 그 사용자 파일을 덮어쓴다(데이터 손실).
+ * @param {HTMLElement} btn 누른 버튼(확인 문구를 그 자리에 띄운다)
+ */
+// @complexity time=O(n) space=O(n) cc=3
+function openExample(btn) {
+  const run = async () => {
+    let data = null;
+    try {
+      const res = await fetch(EXAMPLE_URL);
+      if (res.ok) data = await res.json();
+    } catch { data = null; }
+    if (!data) { render({ notify: notice('toast', '예제 안무표를 읽지 못했습니다.') }); return; }
+    draftStore.unbind();
+    render(openLinksIfAny(ProjectCmd.loadProjectFromRecent(projectDeps, data)));
+    syncSaveTargetNote();
+  };
+  if (store.board(BOARD_MAIN).placements.length > 0) confirmOnce(btn, '예제 열기', run);
+  else run();
+}
+
+/** 처음 한 번 안내. 본 기록은 이 브라우저의 것이라 localStorage 어댑터가 읽고 쓴다. */
+const coach = createCoachmarks({
+  flow: createCoachFlow({
+    seen: { load: loadCoachSeen, save: saveCoachSeen },
+    context: () => ({ hasPlacements: store.board(BOARD_MAIN).placements.length > 0 })
+  })
+});
+
+/** 서버 · LLM 상태로 채우기 줄의 막힌 입구를 흐리게 두고 까닭을 적는다. 서버가 없으면 LLM 은 묻지 않는다. */
+// @complexity time=O(1) space=O(1) cc=2
+async function syncEntryStates() {
+  const server = !!clipServerConfig;
+  const llm = server ? await llmServer.getConfig().catch(() => null) : null;
+  views.start?.setEntryStates(entryStates({ server, llm }));
+}
 
 // 기준 박자 배지 — 오른쪽 위 고정석(2026-09-22). 누르면 박자를 정하는 자리로 보낸다.
 // ⚠ 새 커맨드를 만들지 않는다. `▶ 영상으로 채우기` 와 같은 진입점이다.
@@ -2391,16 +2877,14 @@ views.project = createProjectPanel({
 // ─────────────────────────────────────────────────────────────────────────────
 
 views.thumb = createThumbBar({
-  getState: () => ({
-    panelOpen: VideoCmd.panelState(store).open,
-    capturing: CaptureCmd.captureStartSec(store) !== null,
+  // store 에서 읽는 값은 app/thumbState 가 짓는다(RM-36) — 여기서는 뷰 · 문서에서만 아는 것을 넘긴다.
+  getState: () => thumbBarState(store, {
     // 넓은 화면에서는 이 줄이 화면 맨 아래가 아니라 **영상 띠 바로 아래**에 붙어 있다.
     // ⚠ app/render 가 영상 패널을 엄지 바보다 먼저 그리므로 이 값은 늘 이번 프레임의 것이다.
     docked: views.video?.detachMode?.() === 'band',
     taps: views.video?.tapCount?.() || 0,
     tapBpm: views.video?.tapBpm?.() ?? null,
-    canCapture: CaptureCmd.canCapture(store),
-    voice: views.video?.voiceState?.() || { available: false, wanted: false, listening: false },
+    voice: views.video?.voiceState?.(),
     sheetOpen: document.body.dataset.sheet === 'on'
   }),
   actions: {
@@ -2417,7 +2901,7 @@ views.thumb = createThumbBar({
     // 박자 잡기도 영상을 보면서 하는 일이다 — 영상 밑 조작 줄에서 바로 두드린다(2026-09-21).
     rewind: () => { flowLog.note('rewind'); views.video?.rewind(); views.thumb?.render(); },
     tap: () => { flowLog.note('tap'); views.video?.tap(); views.thumb?.render(); },
-    voice: () => { flowLog.note('voice'); views.video?.voiceToggle(); views.thumb?.render(); },
+    voice: () => { flowLog.note('voice'); views.video?.voiceToggle(); views.thumb?.render(); views.status?.render(); },
     toggleSheet: () => { byId('sidebarSheetBtn')?.click(); },
     quickPlace: () => { runCommand('quickPlace'); }
   },
@@ -2442,6 +2926,7 @@ views.thumb = createThumbBar({
 //   중에 「어디에 담기는가」를 읽기 때문이다. 여기서는 되살리고 담기를 켜는 것만 한다.
 (async () => {
   await clipServerReady;              // 서버인지 아닌지 정해진 뒤에 읽는다
+  await browserRecentsReady;          // 옛 localStorage 의 초안이 IndexedDB 로 옮겨진 뒤에 읽는다(RM-33) — 먼저 읽으면 빈 칸이다
   const saved = await draftStore.load();
   // ⚠ **비어 있을 때만** 되살린다. 부팅 중에 사용자가 이미 파일을 열었거나 동작을 놓았으면
   //   그쪽이 이긴다 — 담아 둔 것이 방금 한 일을 덮으면 그게 데이터 손실이다.
@@ -2452,7 +2937,7 @@ views.thumb = createThumbBar({
     // ⚠⚠ **더 새 판이 담은 것이면 담기를 켜지 않는다**(2026-09-22). 못 읽는 것을 읽은 척하고
     //   1.2초 뒤에 덮어쓰면 그것이 곧 데이터 손실이다 — 미래 스키마 거절이 실제로 막는 손실 경로가
     //   이 한 줄이다. 문구는 restoreDraft 가 notify 로 이미 띄웠다.
-    if (restored.blocked) { draftBlocked = true; draftStopReason = 'future'; syncSaveTargetNote(); return; }
+    if (restored.blocked) { draftBlocked = true; draftStopReason = 'future'; syncSaveTargetNote(); firstScreenReady(); return; }
     // ⚠⚠ **되살린 것은 되돌릴 일이 아니다.** 되살리기는 커밋을 하나 쌓는데(applyProjectData 의
     //   commitMainHistory), 그 앞에 있는 것은 **빈 안무표**다 — 새로고침한 직후 Ctrl+Z 를 한 번
     //   누르면 표가 통째로 비고, 그 빈 상태가 1.2초 뒤 초안으로 담긴다. 사용자가 한 적 없는 일을
@@ -2467,7 +2952,30 @@ views.thumb = createThumbBar({
     () => ProjectCmd.draftSnapshot(projectDeps, { fileName: projectNameForClips() })
   );
   syncSaveTargetNote();                 // 「어디에 담기는가」는 서버 판정이 끝난 지금이 참이다
+
+  // 이 환경에서 안 되는 것을 **한 번** 알린다(RM-27). 서버 판정이 끝난 뒤라야 「서버 없음」이 참이다.
+  // 환경 지문이 지난번과 같으면 조용하고, 설정의 「안 되는 것 알림」을 끄면 뜨지 않는다.
+  const caps = currentCapabilities();
+  const missing = unsupportedFeatures(caps);
+  const fingerprint = fingerprintOf(caps);
+  const pref = loadSupportNotice();
+  if (shouldNotify({ enabled: pref.enabled, fingerprint, lastFingerprint: pref.seen, anyUnsupported: missing.length > 0 })) {
+    views.notify(notice('toast', unsupportedMessage(missing)));
+    saveSupportNotice({ seen: fingerprint });
+  }
+  firstScreenReady();
 })();
+
+/**
+ * RM-26: 되살리기가 끝난 **뒤에** 예제를 열 수 있게 한다 — 그 전에 열면 되살릴 것을 예제가 이긴다.
+ * 안내도 되살린 뒤에 띄운다(되살린 안무표가 있으면 ① 채우기 줄은 건너뛴다).
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function firstScreenReady() {
+  views.start.setExampleReady(true);
+  syncEntryStates();
+  coach.start();
+}
 
 // 창을 닫거나 탭을 숨길 때는 기다리지 않고 담는다 — 묶는 시간(1.2초) 안에 닫으면 그만큼이 샌다.
 // ⚠ `beforeunload` 가 아니라 `visibilitychange` 다. 모바일 브라우저는 탭을 접을 때

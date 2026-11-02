@@ -21,6 +21,7 @@
 import { CLS } from './domContract.js';
 import { bindOutsideClose } from './popup.js';
 import { placeRoutineActionPopup } from '../domain/popupPlacement.js';
+import { str } from '../domain/strings.js';
 
 // 팝업 배치의 가정 크기 140×100 · 여백 8 · 커서 아래 6(원본 1759-1761)은
 // domain/popupPlacement.placeRoutineActionPopup 에 있다(RM-08). 실제로 재지 않는다.
@@ -76,7 +77,7 @@ export function createRoutineActionPopup(deps) {
 
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-    editBtn.textContent = '✏ 편집';                                  // 1738
+    editBtn.textContent = str('routineBlock.edit');                  // 1738 — 글자는 문자열 표(RM-10)
     editBtn.addEventListener('click', () => {
       close();                                                       // 1740 — 먼저 닫는다
       if (placement.routineId) render(commands.openRoutineEditor(placement.routineId));  // 1741
@@ -86,7 +87,7 @@ export function createRoutineActionPopup(deps) {
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = CLS.danger;                                   // 1747
-    delBtn.textContent = '× 삭제';                                   // 1748
+    delBtn.textContent = str('routineBlock.remove');                 // 1748 — 글자는 문자열 표(RM-10)
     // ⚠ 여기에는 confirmOnce 가 없다(원본 1749-1753). 한 번 누르면 바로 지워진다 — 오늘 동작이다.
     delBtn.addEventListener('click', () => {
       close();                                                       // 1750

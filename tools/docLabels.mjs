@@ -17,9 +17,12 @@
 //      `루틴으로 편성 (${count})` 와 맞게 한다. 기호뿐인 인용(`▾` `✕`)은 정규화하지 않은 글자에서 찾는다.
 //   5. 인용이 모은 글자 어딘가에 들어 있으면 통과. 두 글자 이하는 낱말 경계로만 맞춘다(`hi` 가 `this` 에 숨지 않게).
 //      없으면 「문서:줄 — 인용 — 비슷한 라벨」로 찍는다.
+//   6. **표를 먼저 본다**(2026-11-02, RM-10) — 문자열 표(domain/strings 의 LABELS)와 명령 등록부(domain/commands 의
+//      COMMANDS)의 글자를 `labelTableTexts` 로 받아, 인용을 거기서 먼저 찾는다. 표에서 찾은 인용과 긁은 화면 글자에서만
+//      찾은 인용을 갈라 센다(fromTable · scrapedOnly) — 표 밖에서만 찾은 수가 곧 아직 표로 옮기지 않은 글자의 수다.
 //
-// ⚠ 문자열 긁기라 영리하지 않다 — 주석이 아닌 죽은 코드에 남은 옛 라벨이 있으면 「있다」로 통과한다.
-//   라벨의 주인이 표 하나가 되면(RM-09 · RM-10) 긁기 대신 그 표를 읽도록 바꾼다.
+// ⚠ 긁기는 아직 남아 있다 — 긴 안내 · 오류 · 토스트 문구는 표 밖에 있다(RM-19 · RM-32 몫). 주석이 아닌 죽은 코드에 남은
+//   옛 라벨이 있으면 「있다」로 통과한다. 표 밖에서만 찾은 수가 0 이 되는 날 긁기를 걷는다.
 
 import { HOLE, scanJs } from './lib/js-text.mjs';
 
@@ -91,12 +94,32 @@ function stringTexts(text) {
   return /<[a-z!/]/i.test(t) ? htmlTexts(t) : [t];
 }
 
+/** 정규화한 글자 모음(겹침 없음)과 정규화 전 글자를 이은 것(기호뿐인 인용용). */
+const bundle = (raw) => ({ texts: [...new Set(raw.map(normalize).filter(Boolean))], raw: raw.join('\n') });
+
 /**
- * 화면에 뜰 수 있는 글자 한 벌.
- * @param {Record<string, string>} files { 상대경로: 원문 } — *.html · *.js · *.py
- * @returns {{ texts: string[], raw: string }} texts 는 정규화한 글자(겹침 없음), raw 는 정규화 전 글자를 이은 것(기호뿐인 인용용)
+ * 문자열 표와 명령 등록부의 글자 — `collectScreenTexts` · `checkDocLabels` 의 `tableTexts` 로 넘긴다. 파일을 읽지 않는다.
+ * 표의 구멍 `{이름}` 은 템플릿의 `${…}` 과 같은 「무엇이든」 자리(HOLE)다.
+ * @complexity time=O(n) space=O(n) cc=3
+ * @param {Record<string, string>} labels domain/strings 의 LABELS
+ * @param {readonly { label?: string, button?: string, title?: string, hint?: string }[]} commands domain/commands 의 COMMANDS
+ * @returns {string[]}
  */
-export function collectScreenTexts(files) {
+export function labelTableTexts(labels, commands) {
+  const out = Object.values(labels || {}).map(v => String(v).replace(/\{\w+\}/g, HOLE));
+  for (const c of commands || []) out.push(...[c.label, c.button, c.title, c.hint].filter(Boolean));
+  return out;
+}
+
+/**
+ * 화면에 뜰 수 있는 글자 한 벌 — 표의 것과 긁은 것을 갈라 돌려준다.
+ * @complexity time=O(n) space=O(n) cc=9
+ * @param {Record<string, string>} files { 상대경로: 원문 } — *.html · *.js · *.py
+ * @param {string[]} [tableTexts] 문자열 표 · 명령 등록부의 글자(labelTableTexts). 없으면 긁은 것뿐이다
+ * @returns {{ texts: string[], raw: string, table: { texts: string[], raw: string }, scraped: { texts: string[], raw: string } }}
+ *   texts · raw 는 둘을 합친 것(옛 호출부 그대로), table 은 표에서 온 것, scraped 는 긁은 것
+ */
+export function collectScreenTexts(files, tableTexts = []) {
   const raw = [];
   for (const [path, text] of Object.entries(files)) {
     if (path.endsWith('.html')) {
@@ -115,7 +138,9 @@ export function collectScreenTexts(files) {
       for (const s of scanJs(text).strings) raw.push(...stringTexts(s.text));
     }
   }
-  return { texts: [...new Set(raw.map(normalize).filter(Boolean))], raw: raw.join('\n') };
+  const table = bundle([...tableTexts]);
+  const scraped = bundle(raw);
+  return { ...bundle([...tableTexts, ...raw]), table, scraped };
 }
 
 // ── 정규화 ──────────────────────────────────────────────────────────────────
@@ -274,26 +299,33 @@ export function formatMiss(m) {
 
 /**
  * 문서들의 라벨 인용을 화면 글자와 대조한다. 파일을 읽지 않는다 — 글자만 받는다.
+ * 표(tableTexts)에서 먼저 찾고, 없으면 긁은 화면 글자에서 찾는다 — 조각 전부가 표에 있으면 fromTable, 하나라도 긁은
+ * 글자에서만 찾았으면 scrapedOnly 로 센다.
+ * @complexity time=O(q·t) space=O(q) cc=14
  * @param {Record<string, string>} docs { 문서 경로: 원문 }
  * @param {Record<string, string>} files 화면 쪽 { 경로: 원문 }
  * @param {{ quote: string, why: string }[]} [notLabels]
- * @returns {{ misses: { doc: string, line: number, quote: string, near: string[] }[], checked: number,
- *   filtered: Record<string, number>, skipped: number, badExclusions: string[], unusedExclusions: string[] }}
+ * @param {string[]} [tableTexts] 문자열 표 · 명령 등록부의 글자(labelTableTexts)
+ * @returns {{ misses: { doc: string, line: number, quote: string, near: string[] }[], checked: number, fromTable: number,
+ *   scrapedOnly: number, filtered: Record<string, number>, skipped: number, badExclusions: string[], unusedExclusions: string[] }}
  */
-export function checkDocLabels(docs, files, notLabels = NOT_LABELS) {
-  const { texts, raw } = collectScreenTexts(files);
+export function checkDocLabels(docs, files, notLabels = NOT_LABELS, tableTexts = []) {
+  const { texts, table, scraped } = collectScreenTexts(files, tableTexts);
   const exempt = new Set(notLabels.filter(n => n.why && n.why.trim()).map(n => n.quote));
   const badExclusions = notLabels.filter(n => !n.why || !n.why.trim()).map(n => n.quote);
   const misses = [];
   const filtered = {};
   const used = new Set();
-  let checked = 0; let skipped = 0;
+  let checked = 0; let skipped = 0; let fromTable = 0; let scrapedOnly = 0;
   const memo = new Map();
-  const found = (p) => {
+  const inside = (set, p) => (p.norm ? set.texts.some(t => contains(t, p.norm)) : set.raw.includes(p.raw));
+  /** 조각이 어디에 있나 — 'table' · 'scraped' · null(없다). */
+  const where = (p) => {
     const key = p.norm || `raw:${p.raw}`;
-    if (!memo.has(key)) memo.set(key, p.norm ? texts.some(t => contains(t, p.norm)) : raw.includes(p.raw));
+    if (!memo.has(key)) memo.set(key, inside(table, p) ? 'table' : inside(scraped, p) ? 'scraped' : null);
     return memo.get(key);
   };
+  const found = (p) => where(p) !== null;
   for (const [doc, md] of Object.entries(docs)) {
     for (const { quote, line } of docQuotes(md)) {
       const kind = notALabel(quote);
@@ -304,8 +336,10 @@ export function checkDocLabels(docs, files, notLabels = NOT_LABELS) {
       checked++;
       const miss = pieces.find(p => !found(p));
       if (miss) misses.push({ doc, line, quote, near: miss.norm ? nearest(miss.norm, texts) : [] });
+      else if (pieces.every(p => where(p) === 'table')) fromTable++;
+      else scrapedOnly++;
     }
   }
   const unusedExclusions = [...exempt].filter(q => !used.has(q));
-  return { misses, checked, filtered, skipped, badExclusions, unusedExclusions };
+  return { misses, checked, fromTable, scrapedOnly, filtered, skipped, badExclusions, unusedExclusions };
 }

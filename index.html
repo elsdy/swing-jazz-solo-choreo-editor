@@ -2,12 +2,12 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>안무 편집기</title>
   <style>
     :root {
       /* ── 디자인 토큰 한 벌(RM-17, 2026-11-02) ─────────────────────────────────────────
-         화면의 색 · 글자 · 간격 · 모서리 · 그림자는 이 토큰만 쓴다(개발 원칙 U-15 — 검사기가 잰다).
+         화면의 색 · 글자 · 간격 · 모서리 · 그림자는 이 토큰만 쓴다(개발 원칙 U-16 — 검사기가 잰다).
          테마(아래 「테마」 절)는 이 값만 갈아 끼운다. 색마다 `-rgb` 짝이 있어 `rgba(var(--이름-rgb), a)` 로 비친다.
          ⚠ 뜻을 담은 색(--danger · --warn · --now · --focus · --routine)은 정보라서 테마가 바꾸지 않는다 —
            밝은 테마는 같은 색상의 짙은 단계로 대비만 맞춘다. 카테고리 · 루틴 · 자세 메시 색은 데이터라
@@ -346,6 +346,15 @@
     /* 캔버스 바 — 안무표 자체를 만지는 것만. `.top-actions` 와 같은 모양이되 이름을 갈라
        `document.querySelector('.top-actions')` 가 앱바를 집게 한다(문서·설정이 거기 붙는다). */
     .canvas-actions { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    /* 선택 액션 바(RM-14) — 캔버스 바 바로 밑에 떠 있다(흐름에서 빠져 안무표를 밀지 않는다). 숨김은 hidden 속성(U-11). */
+    .canvas-bar { position: relative; }
+    .selection-bar { position: absolute; top: calc(100% + 4px); right: 8px; z-index: 30; max-width: calc(100% - 16px);
+      display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+      padding: 5px 8px; border-radius: var(--r-2); background: var(--panel);
+      border: 1px solid rgba(var(--now-rgb), 0.55); box-shadow: var(--shadow-sm); }
+    .selection-bar[hidden] { display: none; }
+    .selection-bar-count { font-weight: 700; font-size: var(--fs-2); margin-right: 4px; color: var(--now); }
+    .selection-bar button { font-size: var(--fs-1); padding: 4px 8px; }
 
     /* 사이드바 아래의 파일 서랍. 자주 안 쓰는 것은 접어 둔다(점진적 공개). */
     .drawer { border-top: 1px solid rgba(var(--muted-rgb), 0.12); margin-top: 6px; }
@@ -444,6 +453,25 @@
     .board-empty b { color: var(--text); }
     .board-empty span { font-size: var(--fs-1); opacity: 0.85; }
     .board-empty[hidden] { display: none; }
+    /* RM-26: 안내 한 걸음 밑에 `예제 열기` 하나. 글자는 짧게 — 네 갈래 나열은 채우기 줄이 이미 말한다. */
+    .board-empty .board-empty-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+    .board-empty .board-empty-actions button { font-size: var(--fs-2); }
+    /* 설명서의 그 절로 가는 작은 `?`(RM-26). 누름은 ui/docsHub 가 문서 전체에서 위임받는다. */
+    .help-q {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; padding: 0; margin-left: 6px; border-radius: 50%;
+      border: 1px solid rgba(var(--muted-rgb), 0.45); background: transparent; color: var(--muted);
+      font-size: var(--fs-1); font-weight: 800; line-height: 1; cursor: pointer; vertical-align: middle; flex: 0 0 auto;
+    }
+    .help-q:hover { border-color: rgba(var(--accent-rgb), 0.7); color: var(--text); transform: none; }
+    /* 도구 탭(RM-20)은 summary 를 숨기고 탭이 그 자리를 맡으므로, 그 도구의 `?` 는 펼친 도구의 맨 위 오른쪽에 둔다. */
+    .vtool-help { display: flex; justify-content: flex-end; margin-bottom: -18px; position: relative; z-index: 1; }
+    /* 아직 쓸 수 없는 입구는 흐리게 두고, 줄 끝에 까닭을 한 줄 적는다(RM-26). 끄지는 않는다 — 눌러도 같은 까닭을 말한다. */
+    .mode-bar button[data-blocked="1"] { opacity: 0.45; }
+    .mode-bar .mode-note { flex-basis: 100%; font-size: var(--fs-1); color: var(--muted); line-height: 1.4; }
+    .mode-bar .mode-note[hidden] { display: none; }
+    .quick-popup-header { gap: 6px; }
+    .quick-popup-header > :first-child { flex: 1; }
     .board-header, .board-row {
       display: grid;
       gap: var(--sp-3);
@@ -502,6 +530,9 @@
       background: linear-gradient(90deg, rgba(var(--white-rgb), 0.03) 0, rgba(var(--white-rgb), 0.03) calc(var(--cellW) - 1px), rgba(var(--white-rgb), 0.08) calc(var(--cellW) - 1px), rgba(var(--white-rgb), 0.08) var(--cellW));
       background-size: var(--cellW) 100%;
     }
+    /* 동작을 골랐거나 빠른 배치가 켜진 보드에서는 트랙 위 손가락 끌기가 스크롤이 아니라 그리기다(RM-11).
+       touch-action 은 누르는 순간에 정해지므로 렌더가 data-touch-draw 를 미리 적어 둔다(ui/boardView.syncTouchDraw). */
+    .board[data-touch-draw="1"] .track { touch-action: none; }
     /* 병합 충돌로 레이어가 2개 이상인 행: 레이어 경계선 표시 */
     .track[data-layers]::after {
       content: '';
@@ -743,6 +774,15 @@
       background: linear-gradient(180deg, rgba(var(--focus-rgb), 0.18), rgba(var(--focus-rgb), 0.10));
     }
     .track.draw-hover { cursor: crosshair; }
+    /* 빈 칸 끌기의 점선 네모(RM-14). 행마다 한 조각이 트랙 안에 서고 누를 수 없다 — 놓는 순간 사라진다. */
+    .track .marquee-rect {
+      position: absolute; top: 1px; bottom: 1px;
+      border: 1px dashed rgba(var(--now-rgb), 0.9);
+      background: rgba(var(--now-rgb), 0.10);
+      border-radius: var(--r-1);
+      pointer-events: none;
+      z-index: 6;
+    }
     .move-chip {
       width: 22px;
       height: 22px;
@@ -936,6 +976,14 @@
     .saved-trash-head { font-size: var(--fs-1); color: var(--muted); }
     .saved-trash-item { opacity: .82; }
     .saved-trash-item:hover { opacity: 1; }
+    /* 지난 판(RM-25) — 휴지통과 같은 꼴. 손 저장 판과 자동 담기 판은 12+20 장까지라 칸 안에서 스크롤한다. */
+    .saved-history { display: grid; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(var(--muted-rgb), 0.22); max-height: 240px; overflow: auto; }
+    .saved-history[hidden] { display: none; }   /* 위 휴지통과 같은 까닭(U-12) */
+    .saved-history-head { font-size: var(--fs-1); color: var(--muted); }
+    .saved-history-item { opacity: .82; }
+    .saved-history-item:hover { opacity: 1; }
+    .saved-history-item[data-kind="auto"] { opacity: .62; }   /* 자동 담기 판은 한 단 더 흐리다 — 「내가 저장한 자리」가 먼저 보이게 */
+    .saved-history-item[data-kind="auto"]:hover { opacity: 1; }
     .saved-item {
       display: flex;
       justify-content: space-between;
@@ -980,7 +1028,7 @@
 
     /* ── 좁은 화면 전용 조작 (2026-09-12) ──
        넓은 화면에서는 **없는 것과 같다**. 자리를 차지하지 않고 탭 순서에도 들어가지 않는다. */
-    /* `:not(#_)` 는 ID 하나의 무게다 — 도우미 · 상태 클래스가 컴포넌트 규칙을 !important 없이 이긴다(개발 원칙 U-15). */
+    /* `:not(#_)` 는 ID 하나의 무게다 — 도우미 · 상태 클래스가 컴포넌트 규칙을 !important 없이 이긴다(개발 원칙 U-16). */
     .only-stacked:not(#_) { display: none; }   /* 사이드바가 위로 접히는 폭(≤1040)에서만 보인다 */
     .sheet-backdrop { display: none; }
 
@@ -1064,7 +1112,12 @@
       .resize-divider.active {
         background: rgba(var(--muted-rgb), 0.08);
       }
-      /* viewport maximum-scale=1 로 iOS 줌 방지 처리됨 — 별도 font-size 강제 불필요 */
+      /* iOS 는 16px 미만 글자의 입력칸에 포커스가 가면 화면을 저절로 확대한다. 확대를 전면 차단하지 않고
+         입력칸 글자를 16px 로 두어 그 확대가 애초에 일어나지 않게 한다(2026-11-02, RM-27 · 개발 원칙 U-10). */
+      /* 원칙-예외(U-16): 16px 는 글자 단계가 아니라 iOS 의 확대 문턱이고, 입력칸마다 적힌 크기를 모두 이겨야 한다 */
+      input, select, textarea {
+        font-size: 16px !important;
+      }
       /* 워크스페이스 락 시 터치 줌/스크롤 완전 차단 */
       .board-wrap[data-locked="1"] {
         touch-action: none;
@@ -1587,6 +1640,12 @@
     }
     .routine-action-popup button:hover { background: rgba(var(--routine-rgb), 0.25); }
     .routine-action-popup button.danger:hover { background: rgba(var(--danger-rgb), 0.25); color: var(--danger); }
+    .routine-action-popup button:disabled { opacity: 0.4; cursor: default; }
+    .routine-action-popup button:disabled:hover { background: transparent; }
+    /* 블록 팝업의 「몇 번째 카운트에서」(RM-16) — 2..N 단추를 가로로 늘어놓는다. */
+    .routine-action-popup .rap-counts { display: flex; flex-wrap: wrap; gap: var(--sp-1); max-width: 220px; }
+    .routine-action-popup .rap-counts button { min-width: 32px; text-align: center; padding: 5px 6px; border: 1px solid rgba(var(--routine-rgb), 0.35); }
+    .row-label { cursor: context-menu; }
     /* 루틴 색 견본판(RM-34) — 틀과 테마는 위 루틴 팝업 것을 그대로 쓰고, 여덟 색을 4×2 격자로 놓는다.
        색 자체는 domain/routines.js 의 ROUTINE_COLORS(데이터 색이라 토큰 밖 — RM-17)에서 온다. */
     .routine-color-popup .rcp-swatches { display: grid; grid-template-columns: repeat(4, 28px); gap: 6px; padding: var(--sp-1); }
@@ -1618,9 +1677,9 @@
       white-space: nowrap; flex-shrink: 0; letter-spacing: .3px;
       width: 96px; text-align: center; box-sizing: border-box;
     }
-    /* 원칙-예외(U-15): 유튜브 · ClickUp 배지는 그 서비스의 상표 색이다 — 테마가 바꾸면 알아보지 못한다 */
+    /* 원칙-예외(U-16): 유튜브 · ClickUp 배지는 그 서비스의 상표 색이다 — 테마가 바꾸면 알아보지 못한다 */
     .link-badge.yt { background: #ff0000; color: var(--white); }
-    /* 원칙-예외(U-15): 상표 색(위와 같다) */
+    /* 원칙-예외(U-16): 상표 색(위와 같다) */
     .link-badge.clickup { background: #7b68ee; color: var(--white); }
     .link-badge.custom { background: rgba(var(--routine-rgb), 0.22); color: var(--routine); border: 1px solid rgba(var(--routine-rgb), 0.3); }
     .link-row input[type="url"], .link-row input[type="text"] {
@@ -1868,25 +1927,66 @@
       background: rgba(var(--muted-rgb), 0.18);
     }
     .video-progress > span { display: block; height: 100%; background: rgba(var(--accent-rgb), 0.85); width: 0; }
-    /* ── 영상 패널의 단계 묶음 (2026-09-12) ──
-       버튼 서른한 개가 한 화면에 평평하게 있던 것을 **하는 순서**로 묶었다(①영상 → ②박자 → ③구간 → ④마커 → ⑤자세).
-       자주 안 쓰는 것(탭 템포·직접 입력·보정점)은 `고급` 뒤로 접었다 — 점진적 공개.
+    /* ── 영상 패널의 단계 묶음 (2026-09-12 · RM-20 으로 2026-11-02 에 둘로 가름) ──
+       버튼 서른한 개가 한 화면에 평평하게 있던 것을 **하는 순서**로 묶었다. 지금은 차례(①영상 → ②박자 → ③받아 적기)와
+       도구(구간 자르기 · 마커 · 자세 분석 — 아래 `.video-tools`)가 갈려 있다.
+       자주 안 쓰는 것(두 점 앵커·직접 입력·보정점)은 ② 의 「세로선이 어긋날 때」 뒤로 접었다 — 점진적 공개.
        ⚠ `<details>` 라 JS 가 없다. 여는 상태는 브라우저가 들고 있고 마크업의 `open` 이 기본값이다. */
     .vstep { border-top: 1px solid rgba(var(--accent-rgb), 0.16); padding-top: 6px; }
-    .vstep > summary {
+    .vstep > summary, .vsub > summary {
       cursor: pointer; list-style: none; user-select: none; padding: 2px 0;
       font-size: var(--fs-1); font-weight: 800; color: rgba(var(--accent-rgb), 0.92); letter-spacing: 0.02em;
     }
-    .vstep > summary::-webkit-details-marker { display: none; }
-    .vstep > summary::before { content: '▸ '; color: var(--muted); font-weight: 400; }
-    .vstep[open] > summary::before { content: '▾ '; }
+    .vstep > summary::-webkit-details-marker, .vsub > summary::-webkit-details-marker { display: none; }
+    .vstep > summary::before, .vsub > summary::before { content: '▸ '; color: var(--muted); font-weight: 400; }
+    .vstep[open] > summary::before, .vsub[open] > summary::before { content: '▾ '; }
     /* ⚠ **열렸을 때만** display 를 준다. `.vstep > .vstep-body { display: grid }` 로 두면 그 규칙이
        `<details>` 의 기본 숨김을 이겨서, 접어도 안이 그대로 보인다(2026-09-12 에 실제로 그랬다 —
        개발 원칙 U-12 가 경고하는 바로 그것이다). 닫힌 동안에는 어떤 display 도 주지 않는다. */
     .vstep[open] > .vstep-body, .vsub[open] > .vstep-body { display: grid; gap: 6px; padding: 4px 0 2px; }
-    /* 고급은 한 단 더 들어간다 — 같은 꼴이되 색을 낮춰 단계와 구별한다. */
+    /* 「세로선이 어긋날 때」는 한 단 더 들어간다 — 같은 꼴이되 색을 낮춰 단계와 구별한다. */
     .vsub > summary { color: var(--muted); font-weight: 700; }
     .vsub { border-top: none; padding-top: 0; }
+
+    /* ── 도구 탭 (RM-20 · 2026-11-02) ──
+       구간 자르기 · 마커 · 자세 분석은 차례가 아니라 연장이다. 번호 없는 탭 줄(ui/videoPanel.renderToolTabs 가
+       `.vtool` 의 summary 를 읽어 그린다) 아래로 **누른 하나만** 펼쳐진다.
+       ⚠ `.vtool` 의 `<summary>` 는 숨긴다 — 손잡이는 탭 줄이다. 닫힌 `.vtool` 은 자리를 차지하지 않는다
+         (details 의 열림 규칙이라 U-12 의 [hidden] 짝 대상이 아니다). */
+    .video-tools { border-top: 1px solid rgba(var(--accent-rgb), 0.16); padding-top: 6px; display: grid; gap: 6px; }
+    .video-tools-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .video-tools-label {
+      font-size: var(--fs-1); font-weight: 800; color: var(--muted); letter-spacing: 0.02em; flex-shrink: 0;
+    }
+    .vtool-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+    .vtool-tab {
+      position: relative;
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; font-size: var(--fs-1); font-weight: 700;
+      border: 1px solid rgba(var(--muted-rgb), 0.22); border-radius: var(--r-pill);
+      background: rgba(var(--white-rgb), 0.03); color: var(--muted);
+    }
+    .vtool-tab:hover { color: var(--text); border-color: rgba(var(--accent-rgb), 0.35); }
+    /* 열린 탭 — 「지금 여기」일 뿐 끝남(✓)이 아니다. 차례 줄의 now 와 같은 초록. */
+    .vtool-tab[data-state="now"] {
+      color: rgba(var(--accent-rgb), 0.95); border-color: rgba(var(--accent-rgb), 0.45); background: rgba(var(--accent-rgb), 0.12);
+    }
+    .vtool-icon { font-size: var(--fs-1); line-height: 1; }
+    /* 남은 할 일 배지 — 차례 줄과 같은 주황 숫자. 값이 있을 때만 그린다. */
+    .vtool-tab[data-todo]::after {
+      content: attr(data-todo);
+      position: absolute; top: -7px; right: -6px;
+      min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+      border-radius: var(--r-1); background: var(--warn); color: var(--bg-2);
+      font-size: var(--fs-1); font-weight: 800; line-height: 16px; text-align: center;
+    }
+    .video-tools > .vtool { border-top: none; padding-top: 0; }
+    .video-tools > .vtool > summary { display: none; }
+    .video-tools > .vtool:not([open]) { display: none; }
+    .video-tools > .vtool[open] {
+      border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: var(--r-2);
+      padding: 6px 10px 8px; background: rgba(var(--accent-rgb), 0.05);
+    }
 
     .video-tempo { display: grid; gap: 6px; }
     .video-bpm { font-size: var(--fs-2); font-weight: 800; color: var(--text); line-height: 1.4; }
@@ -2280,6 +2380,11 @@
         padding: 5px 8px;
         gap: var(--sp-2);
       }
+      /* 버튼은 줄지 않는다 — 줄면 `✨ 말로 채우기` 가 글자 하나씩 세로로 선다(RM-26 브라우저 시험에서 본 것). */
+      .mode-bar > * { flex-shrink: 0; }
+      /* 막힌 입구의 까닭(RM-26)은 폰에 툴팁이 없어 글로 보여야 한다 — 그 한 줄이 있을 때만 줄을 바꿔 아래에 둔다. */
+      .mode-bar:has(> .mode-note:not([hidden])) { flex-wrap: wrap; }
+      .mode-bar .mode-note { white-space: normal; }
       .mode-bar-label { display: none; }
       #videoPanelBtn {
         order: -1;
@@ -2974,31 +3079,18 @@
        "지금 무엇을 누르나"를 색으로만 말하면 읽어야 안다. **숨 쉬는 빛**은 읽지 않아도 눈이 먼저
        간다 — 그 순간의 주 동작 하나만 그렇게 두고 나머지는 가만히 있는다.
 
-       ⚠ **꺼진 버튼은 숨 쉬지 않는다**(`:not(:disabled)`). 못 누르는 것이 부르면 그건 거짓말이다.
+       2026-11-02(RM-26)부터 숨 쉬는 것은 **처음 한 번 안내(코치마크)가 가리키는 대상** 하나뿐이다
+       (`[data-coach="1"]` — ui/coachmarks 가 붙이고 뗀다). 그전에는 띠의 주 버튼 · 펼친 단계의 주 버튼이
+       늘 숨 쉬어, 안내가 끝난 뒤에도 화면 두세 자리가 계속 불렀다. @keyframes btnInvite 는 그 하나를 위해 남긴다.
+
        ⚠ 숨은 `box-shadow` 로만 쉰다. 크기·자리를 건드리면 옆 버튼이 밀리고, 손이 겨눈 과녁이
          움직인다(이번 작업 내내 지킨 선).
        ⚠ 부르는 색은 `--t-hot` 이다 — 길에서 "지금 여기"를 태우는 그 색이라, 화면의 두 자리가
          같은 뜻으로 읽힌다. 빛의 세 자리 중 「지금 자리」(지금 누를 것)다.
        ⚠ 움직임은 `prefers-reduced-motion` 에서 꺼진다. 빛은 남는다. */
-    @media (min-width: 1041px) {
-      :root[data-theme] body[data-videoband="on"] .thumb-bar button[data-main="1"]:not(:disabled),
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button.primary:not(:disabled),
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button.warn:not(:disabled) {
-        animation: btnInvite 2.6s ease-in-out infinite;
-      }
-
-    }
     @keyframes btnInvite {
       0%, 100% { box-shadow: 0 0 0 0 rgba(var(--t-hot), 0), 0 0 14px rgba(var(--t-hot), 0.25); }
       50%      { box-shadow: 0 0 0 5px rgba(var(--t-hot), 0.10), 0 0 26px rgba(var(--t-hot), 0.55); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      :root[data-theme] body[data-videoband="on"] .thumb-bar button[data-main="1"]:not(:disabled),
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button.primary:not(:disabled),
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button.warn:not(:disabled) {
-        animation: none;
-        box-shadow: 0 0 0 3px rgba(var(--t-hot), 0.12), 0 0 18px rgba(var(--t-hot), 0.4);
-      }
     }
 
     /* 영상 띠와 조작 줄도 같은 어휘로. */
@@ -3011,10 +3103,14 @@
       border-color: rgba(var(--t-glow), 0.35);
       box-shadow: var(--shadow);
     }
-    :root[data-theme] body[data-videoband="on"] .video-body > .vstep[open] {
+    :root[data-theme] body[data-videoband="on"] .video-body > .vstep[open],
+    :root[data-theme] body[data-videoband="on"] .video-tools > .vtool[open] {
       border-color: rgba(var(--t-glow), 0.22);
       background: var(--t-card);
     }
+    :root[data-theme] .video-tools-label { color: var(--t-dim); }
+    :root[data-theme] .vtool-tab { color: var(--t-dim); border-color: rgba(var(--t-glow), 0.18); background: var(--t-card); }
+    :root[data-theme] .vtool-tab[data-state="now"] { color: var(--text); border-color: rgba(var(--t-glow), 0.5); background: rgba(var(--t-glow), 0.14); }
 
     /* ── 오른쪽 칸을 **눕힌다** — 영상 아래 한 줄의 작업 차례 (2026-09-21) ──────────────────
        영상이 안무표 위로 올라오자 그 영상으로 하는 일(①~⑥)은 화면의 **반대편**에 남았다.
@@ -3083,17 +3179,35 @@
         padding: 8px 12px 10px;
         background: rgba(var(--accent-rgb), 0.09);
       }
+      /* 도구 칸(RM-20)은 차례 줄 밑, 열린 차례 카드 뒤에 선다. 탭 줄은 늘 보이고 열린 도구만 카드로 펼쳐진다 —
+         「하나만 연다」 규칙은 videoPanel 의 toggle 리스너가 차례와 도구를 합쳐 지킨다. */
+      body[data-videoband="on"] .video-tools {
+        flex: 1 1 100%;
+        order: 1;
+        border-top: 0;
+        padding-top: 0;
+      }
+      body[data-videoband="on"] .video-tools > .vtool[open] {
+        border: 1px solid rgba(var(--accent-rgb), 0.22);
+        border-radius: var(--r-2);
+        padding: 8px 12px 10px;
+        background: rgba(var(--accent-rgb), 0.09);
+      }
       /* 열린 단계의 조작도 한 단계 키운다 — 이 폭에서는 띠가 주 작업면이다.
          ⚠ **띠일 때만**이다. 오른쪽 세로 칸으로 돌아가면 좁은 폭에 이 크기가 들어가지 않는다.
          ⚠ 높이가 늘면 영상이 그만큼 작아진다 — placeBand 가 이 칸을 실측해 남는 세로로 영상을
            정하므로 저절로 맞는다(수를 두 곳에 적지 않는다). */
-      body[data-videoband="on"] .video-body > .vstep[open] button {
+      body[data-videoband="on"] .video-body > .vstep[open] button,
+      body[data-videoband="on"] .video-tools > .vtool[open] button {
         font-size: var(--fs-3);
         padding: 6px 13px;
       }
       body[data-videoband="on"] .video-body > .vstep[open] .helper,
-      body[data-videoband="on"] .video-body > .vstep[open] .video-label { font-size: var(--fs-2); }
+      body[data-videoband="on"] .video-tools > .vtool[open] .helper,
+      body[data-videoband="on"] .video-body > .vstep[open] .video-label,
+      body[data-videoband="on"] .video-tools > .vtool[open] .video-label { font-size: var(--fs-2); }
       body[data-videoband="on"] .video-body > .vstep[open] .video-bpm { font-size: var(--fs-3); }
+      body[data-videoband="on"] .vtool-tab { font-size: var(--fs-2); padding: 5px 12px; }
       /* 상태줄과 빈 자리 안내는 칩이 아니다 — 줄 전체를 쓰고 맨 아래로 간다.
          ⚠ 빈 자리 안내(`영상은 … 떠 있습니다`)는 여기서 숨긴다. 영상이 바로 위에 보이는데
            어디로 갔는지 말하는 줄은 거짓말이다. */
@@ -3139,6 +3253,7 @@
        ───────────────────────────────────────────────────────────────────── */
     @media (max-width: 1040px) {
       body[data-capturing="on"] .video-body .vstep,
+      body[data-capturing="on"] .video-body .video-tools,
       body[data-capturing="on"] .video-status,
       body[data-capturing="on"] .video-head-actions { display: none; }
       body[data-capturing="on"] .video-body { max-height: none; padding-bottom: 0; }
@@ -3258,6 +3373,15 @@
     .inline-prompt-title { font-size: var(--fs-1); font-weight: 800; color: var(--muted); }
     .inline-prompt-input { width: 100%; box-sizing: border-box; font-size: var(--fs-4); }
     .inline-prompt-hint { font-size: var(--fs-1); color: var(--muted); }
+    /* 블록 위 이름 입력의 추천 목록(RM-15) — ui/inlinePrompt.askName. 동작 고르기 창과 같은 규칙으로 추린다. */
+    .inline-prompt-list { display: grid; max-height: 200px; overflow-y: auto; margin: 0 -4px; }
+    .inline-prompt-item {
+      display: flex; justify-content: space-between; gap: var(--sp-2); align-items: baseline;
+      padding: var(--sp-1) var(--sp-2); border-radius: var(--r-1); font-size: var(--fs-3); cursor: pointer;
+    }
+    .inline-prompt-item:hover { background: rgba(var(--text-rgb), 0.06); }
+    .inline-prompt-item.is-active { background: rgba(var(--accent-rgb), 0.22); }
+    .inline-prompt-item-cat { font-size: var(--fs-1); color: var(--muted); }
 
     /* 명령 팔레트(Ctrl+K)와 단축키 일람(?) — ui/commandPalette 가 열 때 만들고 닫을 때 없앤다(RM-09). */
     .command-layer {
@@ -3333,8 +3457,102 @@
       box-shadow: var(--shadow);
     }
     :root[data-theme] .inline-prompt { border-color: rgba(var(--t-glow), 0.55); }
+    :root[data-theme] .inline-prompt-item.is-active { background: rgba(var(--t-glow), 0.22); }
     :root[data-theme] .toast-status { border-left-color: rgb(var(--t-glow)); }
 
+
+    /* ── 상태줄 (RM-19) ──────────────────────────────────────────────────────
+       창 맨 아래 한 줄. 받는 중 · 듣는 중 · 루틴 편집 중 · 담기 자리 · 되돌릴 수 있음을 기존 판정에서 읽어
+       적고(ui/statusBar.js), 참고(status) 급 알림도 토스트 대신 여기 오른쪽에 몇 초 뜬다.
+       ⚠ 앱 높이를 상태줄만큼 줄인다 — 위의 `.app` 규칙들(폭마다 100vh)보다 **뒤에** 있어야 이긴다.
+       ⚠ 폰 · 태블릿(≤1040)에서 엄지 바가 떠 있으면 그 바로 위로 올라간다(엄지 바는 bottom:0 고정). */
+    :root { --status-h: 22px; }
+    .app { height: calc(100vh - var(--status-h)); min-height: 0; }
+    .status-bar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 2440;              /* 엄지 바(2450) 바로 아래, 배경막(2400) 위 */
+      height: var(--status-h);
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+      font-size: var(--fs-1);
+      color: var(--muted);
+      background: rgba(var(--bg-rgb), 0.92);
+      border-top: 1px solid rgba(var(--muted-rgb), 0.14);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .status-bar-parts { display: flex; gap: 12px; min-width: 0; overflow: hidden; flex: 1 1 auto; }
+    .status-part { overflow: hidden; text-overflow: ellipsis; }
+    .status-part[data-tone="on"] { color: var(--accent); font-weight: 700; }
+    .status-part[data-tone="warn"] { color: var(--now); font-weight: 700; }
+    .status-bar-notice { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+    /* ⚠ 개발 원칙 U-12 — display 를 준 클래스에는 [hidden] 짝을 붙인다. */
+    .status-bar-notice[hidden] { display: none; }
+    .helper[hidden] { display: none; }
+    .toast-stack { bottom: calc(16px + var(--status-h)); }
+    @media (max-width: 720px) {
+      .toast-stack { bottom: calc(12px + var(--status-h)); }
+    }
+    @media (max-width: 1040px) {
+      body:has(.thumb-bar:not([hidden])) .status-bar { bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+    }
+
+    /* ── 처음 한 번 안내 (RM-19) ── ui/onceHint.js 의 말풍선. 단계 머리 바로 아래에 끼워진다. */
+    .once-hint {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin: 6px 0;
+      padding: 8px 10px;
+      font-size: var(--fs-1);
+      line-height: 1.5;
+      color: var(--text);
+      background: rgba(var(--accent-rgb), 0.10);
+      border: 1px solid rgba(var(--accent-rgb), 0.35);
+      border-radius: var(--r-1);
+    }
+    .once-hint-text { flex: 1 1 auto; }
+    .once-hint-ok { flex: 0 0 auto; font-size: var(--fs-1); padding: 3px 8px; }
+
+    /* ── 인쇄 (2026-11-02, RM-21) ──
+       종이에는 안무표만 간다. 앱바 · 채우기 줄 · 동작 목록 · 영상 · 엄지 바 · 편집 버튼을 숨기고, 화면용 고정 높이 ·
+       스크롤 · 어두운 배경을 걷어 격자가 A4 너비에 맞춰 여러 장으로 흐르게 한다. 행 중간에서 쪽이 넘어가지 않는다.
+       흑백 인쇄에서 루틴 색이 사라지므로 루틴 블록은 테두리(이중선)로도 가른다 — 글자의 `▶` 는 뷰가 붙인다. */
+    /* 원칙-예외(U-16): 종이는 테마를 따르지 않는 흰 바탕 · 검은 글자이고, JS 가 요소에 직접 적은 높이 · 색까지 이겨야 해서 !important 를 쓴다 */
+    @media print {
+      html, body { background: #fff !important; color: #111 !important; height: auto !important; overflow: visible !important; }
+      .app { display: block !important; height: auto !important; overflow: visible !important; padding: 0 !important; }
+      .appbar, .mode-bar, .sidebar, .video-panel, .thumb-bar, .scroll-lock-btn, .canvas-bar, .links-bar,
+      .board-empty, .routine-editor-panel, .file-menu-panel, .toast, .top-actions,
+      .status-bar, .once-hint, .toast-stack { display: none !important; }
+      /* ⚠ `.panel` 을 여기 두지 않는다 — 사이드바도 `panel sidebar` 라, 같은 무게의 뒤 규칙이 위의 숨김을 이긴다(RM-21 브라우저 시험). */
+      .workspace, .boards-container, .main-board-area, .board-wrap {
+        display: block !important; height: auto !important; min-height: 0 !important; max-height: none !important;
+        overflow: visible !important; background: #fff !important; border: none !important; box-shadow: none !important;
+        padding: 0 !important; backdrop-filter: none !important;
+      }
+      .board { min-width: 0 !important; gap: 4px !important; width: 100% !important; }
+      .board-header, .board-row { break-inside: avoid; page-break-inside: avoid; gap: 4px !important; }
+      .corner, .row-label, .note-header, .note-cell {
+        background: #fff !important; color: #111 !important; border: 1px solid #999 !important; border-radius: 4px !important; min-height: 0 !important;
+      }
+      .note-cell, .note-cell * { color: #333 !important; }
+      .header-cells { background: #fff !important; }
+      .header-cells > div { background: #fff !important; color: #111 !important; }
+      .header-cells > div, .cell-overlay > div { border-color: #ccc !important; }
+      .track { background: #fff !important; }
+      .placement {
+        color: #08111f !important; box-shadow: none !important; border: 1.5px solid #333 !important; border-radius: 4px !important;
+        print-color-adjust: exact; -webkit-print-color-adjust: exact;
+      }
+      .placement.is-selected { outline: none !important; }
+      .placement[data-routine-id], .placement.is-routine { border: 3px double #333 !important; }
+      .placement .resize-handle, .placement .move-handle { display: none !important; }
+    }
   </style>
 </head>
 <body data-sheet="off" data-links="off" data-notes="off">
@@ -3357,17 +3575,27 @@
                **어느 파일에 담기는지**가 적혀 있어야 한다. 앱바가 아니라 이 패널에 두는 까닭:
                앱바에 상태 글자를 넣으면 길이가 변해 옆의 Undo 가 밀린다(기준 박자 배지와 같은 교훈). -->
           <div class="file-menu-save" id="fileMenuSaveNote"></div>
-          <label class="file-menu-label" for="fileNameInput">안무표 이름</label>
+          <label class="file-menu-label" for="fileNameInput">안무표 이름 <button class="help-q" type="button" data-help="file-menu" aria-label="파일 메뉴 설명 보기" title="설명서의 이 절로">?</button></label>
           <div class="appbar-file">
             <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
-            <button id="saveBtn" class="primary" data-command="saveProject">프로젝트 저장</button>
+            <button id="saveBtn" class="primary" data-command="saveProject">파일로 내보내기</button>
           </div>
           <div class="file-menu-row">
             <button id="loadFileBtn" class="ghost">전체 불러오기</button>
             <button id="mergeFileBtn" class="ghost accent">부분 불러오기</button>
+            <!-- 내용이 있어도 여는 길(RM-26) — 그때는 `정말요?` 확인을 거친다. 빈 안무표 안내의 것과 같은 일이다. -->
+            <button id="openExampleMenuBtn" class="ghost" type="button" disabled title="Shim Sham 8마디 예제를 엽니다. 지금 안무표를 갈아치우므로 한 번 더 묻습니다">예제 열기</button>
           </div>
           <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
           <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
+          <!-- 내보내기(2026-11-02, RM-21) — 남에게 줄 수 있는 꼴 셋. 저장 · 불러오기는 「나를 위한 파일」(다시 열기용
+               JSON)이고 이 줄은 「남을 위한 한 장」이라 줄을 갈라 둔다. 누름은 data-command 로 명령 등록부가 듣는다. -->
+          <div class="file-menu-label">내보내기 — 남에게 줄 한 장</div>
+          <div class="file-menu-row file-menu-export">
+            <button id="copySheetBtn" class="ghost" type="button" data-command="copySheet">📋 텍스트 시트 복사</button>
+            <button id="downloadSheetHtmlBtn" class="ghost" type="button" data-command="downloadSheetHtml">⬇ 읽기 전용 HTML</button>
+            <button id="printSheetBtn" class="ghost" type="button" data-command="printSheet">🖨 인쇄 · PDF</button>
+          </div>
           <!-- 되돌릴 수 없는 것은 자주 쓰는 것과 같은 줄에 두지 않는다(Fitts). 전에는 앱바 맨
                오른쪽에 늘 떠 있었다 — `✨ 말로 채우기` 바로 옆이었다. -->
           <div class="file-menu-danger">
@@ -3392,8 +3620,8 @@
       </div>
 
       <div class="appbar-group">
-        <button id="undoBtn" class="ghost" data-command="undo">Undo</button>
-        <button id="redoBtn" class="ghost" data-command="redo">Redo</button>
+        <button id="undoBtn" class="ghost" data-command="undo">되돌리기</button>
+        <button id="redoBtn" class="ghost" data-command="redo">다시 하기</button>
       </div>
 
       <!-- main.js 가 여기에 `문서`·`⚙ 설정`·`✨ 말로 채우기` 를 붙인다.
@@ -3404,6 +3632,7 @@
     <!-- 채우기 줄 — 안무표를 **무엇으로 채울까**. 위 CSS 의 `.mode-bar` 주석이 이 줄의 규칙이다. -->
     <nav class="mode-bar" id="modeBar" aria-label="안무표를 채우는 길">
       <span class="mode-bar-label">채우기</span>
+      <button class="help-q" type="button" data-help="fill-bar" aria-label="채우기 줄 설명 보기" title="설명서의 이 절로">?</button>
       <!-- app/main.js 가 여기에 `✨ 말로 채우기` 를 붙인다(전에는 앱바였다). -->
       <span class="mode-slot" id="modeComposeSlot"></span>
       <button id="videoPanelBtn" class="ghost" type="button" data-command="videoPanel">▶ 영상으로 채우기</button>
@@ -3412,6 +3641,8 @@
       <span class="mode-sep"></span>
       <!-- app/main.js 가 여기에 `🎵 프레이즈` 를 붙인다(전에는 캔버스 바였다). -->
       <span class="mode-slot" id="phrasingSlot"></span>
+      <!-- 아직 쓸 수 없는 입구의 까닭 한 줄(RM-26). ui/modeBar.setEntryStates 가 채운다 — 막힌 것이 없으면 숨는다. -->
+      <span class="mode-note" id="modeBarNote" hidden></span>
     </nav>
 
     <aside class="panel sidebar">
@@ -3466,9 +3697,8 @@
         <summary>루틴 목록 — 동작 여러 개를 한 덩이로</summary>
         <div class="stack">
           <div class="row wrap" style="justify-content:flex-end;">
-            <button id="addRoutineBtn" class="warn" style="font-size:var(--fs-1);padding:var(--sp-1) var(--sp-2);">+ 새 루틴</button>
+            <button id="addRoutineBtn" class="warn" style="font-size:var(--fs-1);padding:var(--sp-1) var(--sp-2);" title="루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.">+ 새 루틴</button>
           </div>
-          <div class="helper">루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.</div>
           <div class="palette-list" id="routineList"></div>
         </div>
       </details>
@@ -3477,19 +3707,20 @@
         <summary>카테고리 관리 — 색과 이름</summary>
         <div class="stack">
           <div id="categoryManager" class="stack"></div>
-          <div class="helper">동작 카테고리는 팔레트에서 바로 수정되고, 카테고리 이름을 바꾸면 전체 UI에 반영됩니다.</div>
         </div>
       </details>
 
       <details class="drawer">
         <summary>파일 — 최근 프로젝트 · 동작 · 카테고리</summary>
         <div class="stack">
-          <div class="helper">프로젝트 저장에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다. 저장·열기 버튼은 맨 위 줄에 있습니다.</div>
           <div class="row" style="gap:var(--sp-1);">
             <button id="savedSortRecentBtn" class="sort-mode-btn active" title="최근 작업순">최근순</button>
             <button id="savedSortAlphaBtn" class="sort-mode-btn" title="이름순">이름순</button>
           </div>
           <div class="saved-list" id="savedList"></div>
+          <!-- 지난 판(RM-25, 2026-11-02). 서버가 덮어쓰기 전에 .history/ 에 남긴 묶인 안무표의 판을 고르는 자리 —
+               `되살리기` 한 번으로 그 판으로 돌아가 바로 연다. 묶인 파일이 없거나 비면 ui/historyView 가 감춘다. -->
+          <div class="saved-history" id="savedHistory" hidden></div>
           <!-- 휴지통(2026-09-22). 위 목록의 `삭제` 는 영구 삭제가 아니라 서버의 .trash/ 로 옮기는 일이고,
                되살리는 자리가 여기다 — 지우는 버튼과 같은 서랍 안. 비어 있으면 ui/trashView 가 감춘다. -->
           <div class="saved-trash" id="savedTrash" hidden></div>
@@ -3541,19 +3772,17 @@
               <!-- ⚠ `🎵 프레이즈` · `+ 빠른 배치` · `▶ 영상으로 채우기` 는 2026-09-21 에 **채우기 줄**
                    (앱바 바로 아래)로 옮겼다. 여기 남은 것은 이 안무표의 **표시 설정**뿐이다.
                    같은 버튼을 두 곳에 두지 마라 — 라벨을 고칠 때마다 두 곳을 같이 고쳐야 한다. -->
-              <button id="createRoutineFromSelectionBtn" class="primary special" style="font-size:var(--fs-1);padding:var(--sp-1) var(--sp-2);display:none;">루틴으로 편성</button>
-              <button id="linksToggleBtn" class="ghost" type="button" title="링크 줄(YouTube · ClickUp)을 보이거나 숨깁니다">🔗 링크</button>
+              <button id="linksToggleBtn" class="ghost" type="button" title="링크 줄(ClickUp · 직접 더한 링크)을 보이거나 숨깁니다">🔗 링크</button>
               <button id="notesToggleBtn" class="ghost only-stacked" type="button" title="비고 칸을 보이거나 숨깁니다">비고</button>
             </div>
+            <!-- 선택 액션 바(RM-14) — 고른 블록이 있을 때만 이 줄 바로 밑에 **떠서** 뜬다(아래 줄을 밀지 않는다 —
+                 고른 직후 손 밑의 칸이 움직이지 않게). 안은 ui/selectionBar 가 명령 등록부의 글자로 채운다.
+                 ⚠ 단추를 여기 손으로 적지 마라. 도구 모음의 「루틴으로 편성 (N)」 단추도 이 바 안으로 옮겼다. -->
+            <div id="selectionBar" class="selection-bar" role="toolbar" aria-label="고른 블록에 할 일" hidden></div>
           </div>
           <div class="links-bar" id="linksBar">
-            <div class="link-row" id="youtubeLinkRow">
-              <span class="link-badge yt">▶ YouTube</span>
-              <div class="yt-url-group" id="ytUrlGroup">
-                <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
-              </div>
-              <button id="ytResetBtn" class="ghost link-reset-btn" type="button" title="초기화">✕</button>
-            </div>
+            <!-- ⚠ 유튜브 주소 칸은 여기 없다(RM-20 · 2026-11-02) — 영상 패널 `① 영상 고르기` 맨 위로 옮겼다.
+                 영상을 넣는 입구는 그 한 자리다. 여기는 ClickUp 과 직접 더한 참고 링크만 둔다. -->
             <div class="link-row" id="clickupLinkRow">
               <span class="link-badge clickup">☑ ClickUp</span>
               <input type="url" id="clickupUrlInput" placeholder="ClickUp 태스크 URL 입력..." autocomplete="off" spellcheck="false" />
@@ -3564,10 +3793,15 @@
           </div>
           <!-- 놓인 블록이 하나도 없을 때만 보인다(ui/modeBar.js 가 켜고 끈다).
                ⚠ 방향(`왼쪽`)으로 가리키지 않는다 — 좁은 화면(≤1040)에서는 줄이 옆으로 밀리므로
-               거짓말이 된다. 줄 이름(`채우기`)으로 가리킨다. -->
+               거짓말이 된다. 줄 이름(`채우기`)으로 가리킨다.
+               2026-11-02(RM-26): 네 갈래 나열 대신 **한 걸음**만 말하고 곁에 `예제 열기` 를 둔다. 단추는 부팅의
+               「작업 중 문서 되살리기」가 끝나야 켜진다(app/main) — 그 전에 열면 되살릴 것을 예제가 이긴다. -->
           <div class="board-empty" id="boardEmpty" hidden>
-            <span>아직 놓인 동작이 없습니다 — 화면 위 <b>채우기</b> 줄에서 시작하세요.</span>
-            <span>✨ 말로 채우기 · ▶ 영상으로 채우기 · + 빠른 배치 · ✋ 직접 놓기</span>
+            <span>아직 놓인 동작이 없습니다 — <b>예제를 열어 보거나, 영상을 넣으세요.</b></span>
+            <div class="board-empty-actions">
+              <button id="openExampleBtn" class="ghost accent" type="button" disabled title="Shim Sham 8마디 예제를 엽니다 — 영상 링크와 박자까지">예제 열기</button>
+              <button class="help-q" type="button" data-help="example" aria-label="예제 설명 보기" title="설명서의 이 절로">?</button>
+            </div>
           </div>
           <div class="board-wrap" id="mainBoardWrap"><div class="board" id="board"></div></div>
         </div>
@@ -3583,8 +3817,8 @@
               <span style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><span class="size-pill-label">박자</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="reColsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><input id="reColsInput" type="number" min="1" max="64" value="8" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reColsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
               <span style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><span class="size-pill-label">행</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="reRowsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><input id="reRowsInput" type="number" min="1" max="32" value="4" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reRowsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
               <button id="reQuickPlaceBtn" class="ghost" data-command="quickPlace" data-board="routine">+ 빠른 배치</button>
-              <button id="reUndoBtn" class="ghost" data-command="undo" data-board="routine" disabled>Undo</button>
-              <button id="reRedoBtn" class="ghost" data-command="redo" data-board="routine" disabled>Redo</button>
+              <button id="reUndoBtn" class="ghost" data-command="undo" data-board="routine" disabled>되돌리기</button>
+              <button id="reRedoBtn" class="ghost" data-command="redo" data-board="routine" disabled>다시 하기</button>
               <button id="reClearBtn" class="danger">초기화</button>
               <button id="closeRoutineEditorBtn" class="re-close-btn">✕ 닫기</button>
             </div>
@@ -3595,7 +3829,8 @@
         <!-- 영상 패널 (기본 숨김 — 캔버스 바의 `▶ 영상으로 채우기` 로 켠다)
              ⚠ 이 자리를 옮기지 마라. iframe 은 DOM 에서 부모가 바뀌면 리로드되어 재생이 끊긴다.
                "데스크톱은 안무표 오른쪽, 좁은 화면은 위"는 CSS(flex-direction + order)로만 만든다.
-             ⚠ URL 입력창을 여기 만들지 않는다. 위 링크바의 `YouTube URL 입력...` 칸이 그대로 소스다. -->
+             ⚠ 유튜브 주소 칸(#youtubeUrlInput)은 `① 영상 고르기` 맨 위 **한 곳**이다(RM-20 · 2026-11-02 에 링크 줄에서
+               옮겼다). 같은 엘리먼트를 옮긴 것이라 ui/linksBarView 가 그대로 소유한다 — 칸을 하나 더 만들지 않는다. -->
         <aside class="video-panel" id="videoPanel" hidden>
           <div class="video-head">
             <div class="video-head-main">
@@ -3644,55 +3879,75 @@
               </div>
               <div class="helper" id="practiceHelp"></div>
             </div>
-            <!-- 작업 차례(2026-09-21). 눕힌 띠에서만 보인다 — ui/videoPanel 이 아래 `.vstep` 들을
+            <!-- ── 차례(RM-20 · 2026-11-02) ──
+                 영상 패널은 두 묶음이다. 위는 **차례** — 반드시 이 순서로 하는 ①영상 → ②박자 → ③받아 적기 셋만 번호와
+                 완료 표시(✓ · 색)를 받는다. 아래는 **도구**(`.video-tools`) — 구간 자르기 · 마커 · 자세 분석은 차례가 아니라
+                 필요할 때 여는 연장이라 번호도 ✓ 도 없고, 탭으로 한 번에 하나만 펼친다.
+                 ⚠ 단계 열쇠는 `data-step` 이다(기록 `⚙ 설정 → 작업 차례` 와 단계별 할 일 `stepTodos` 가 이 이름으로 쌓인다).
+                   도구를 다른 그릇으로 옮기면서 마크업 **위치 차례**(step{i+1})에 기대던 것을 글자로 박았다 — 자리를 바꿔도
+                   이미 저장된 할 일이 갈 곳을 잃지 않는다. 열쇠를 바꾸지 마라.
+                 ⚠ 영상 프레임(#videoFrame)은 위에 그대로다 — iframe 은 부모가 바뀌면 다시 읽혀 재생이 끊긴다. -->
+            <!-- 작업 차례(2026-09-21). 눕힌 띠에서만 보인다 — ui/videoPanel 이 아래 차례 `.vstep` 들(도구는 빼고)을
                  **읽어서** 채우므로 이름과 순서의 주인은 여전히 그 `<summary>` 들이다.
-                 ⚠ 여기에 버튼을 손으로 적지 마라. 단계를 하나 더하면 `<details>` 만 더하면 된다. -->
+                 ⚠ 여기에 버튼을 손으로 적지 마라. 차례를 하나 더하면 `<details data-step>` 만 더하면 된다. -->
             <nav class="flow-steps" id="videoFlowSteps" aria-label="작업 차례"></nav>
-            <details class="vstep" open data-icon="▶">
-              <summary>① 영상 고르기</summary>
+            <details class="vstep" open data-icon="▶" data-step="step1">
+              <summary>① 영상 고르기<button class="help-q" type="button" data-help="video-pick" aria-label="영상 고르기 설명 보기" title="설명서의 이 절로">?</button></summary>
               <div class="vstep-body">
+            <!-- 유튜브 주소 칸 — 영상을 넣는 첫 입구라 ① 맨 위다(RM-20). 안무표 위 링크 줄에서 **같은 엘리먼트를** 옮겼다 —
+                 저장 · 제목 조회 · 영상 소스 확정은 ui/linksBarView 가 id 로 묶어 그대로 한다. 칸을 둘 두지 마라(상태를 두 곳에 두지 않는다). -->
+            <div class="link-row" id="youtubeLinkRow">
+              <span class="link-badge yt">▶ YouTube</span>
+              <div class="yt-url-group" id="ytUrlGroup">
+                <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
+              </div>
+              <button id="ytResetBtn" class="ghost link-reset-btn" type="button" title="초기화">✕</button>
+            </div>
             <div class="video-field video-source">
               <input id="videoFileInput" type="file" accept="video/*" hidden />
               <button id="videoFileBtn" class="ghost" type="button" data-command="videoFile">📁 영상 파일 열기</button>
               <span class="video-file-name" id="videoFileName" hidden></span>
               <button id="videoFileLibBtn" class="ghost accent" type="button" title="설정에서 지정한 보관 폴더에서 이 안무표의 영상을 다시 읽어 옵니다" hidden>📂 보관 폴더에서 불러오기</button>
-              <button id="videoFileClearBtn" class="ghost" type="button" title="영상 파일을 놓고 링크바의 유튜브 주소로 돌아갑니다" hidden>✕ 파일 놓기</button>
+              <button id="videoFileClearBtn" class="ghost" type="button" title="영상 파일을 놓고 위 칸의 유튜브 주소로 돌아갑니다" hidden>✕ 파일 놓기</button>
             </div>
             <!-- 이 안무에 달린 영상들(2026-09-12). 같은 안무를 여러 번 찍으면 여기 쌓인다. -->
             <div class="helper" id="videoClipHelp"></div>
             <ul class="video-clips" id="videoClipList"></ul>
               </div>
             </details>
-            <details class="vstep" id="videoTempoStep" open data-icon="♪">
-              <summary>② 박자 맞추기</summary>
+            <details class="vstep" id="videoTempoStep" open data-icon="♪" data-step="step2">
+              <summary>② 박자 맞추기<button class="help-q" type="button" data-help="video-tempo" aria-label="박자 맞추기 설명 보기" title="설명서의 이 절로">?</button></summary>
               <div class="vstep-body">
             <div class="video-tempo">
               <div class="video-bpm" id="videoBpmText"></div>
 
+              <!-- 처음 보이는 것은 한 줄 — 탭 → BPM 확인 → 첫 박(RM-20 · 2026-11-02). 박자를 아는 가장 빠른 길이고
+                   (두 점을 찍으려면 영상을 두 번 정확히 멈춰야 한다) 처음 오는 사람이 먼저 찾는 것이 이쪽이다.
+                   정확도는 아래 도움줄이 **카운트 단위로** 말해 준다. 두 점 앵커 · 직접 입력 · 보정점은 아래 접힌 칸으로 내렸다. -->
+              <div class="video-field">
+                <button id="videoTapBtn" class="warn" type="button" title="박자에 맞춰 네 번 이상 두드린 뒤 탭으로 BPM 정하기">탭</button>
+                <button id="videoTapCommitBtn" class="ghost accent" type="button">탭으로 BPM 정하기</button>
+                <button id="videoTapClearBtn" class="ghost" type="button">탭 지우기</button>
+              </div>
+              <div class="helper" id="videoTapHelp"></div>
+
+
+              <!-- 세로선이 어긋날 때 — 두 점 앵커 · 직접 입력 · 보정점. 옛 `고급` 칸을 넓힌 것이다(RM-20).
+                   ⚠ 마커의 `이 마디에 맵핑` 은 여기의 `여기가` 칸을 읽지 않는다 — 마커 탭에 제 마디 칸이 있다. -->
+              <details class="vsub" id="videoTempoAdvanced">
+                <summary>세로선이 어긋날 때 — 두 점 앵커 · 직접 입력 · 보정점</summary>
+                <div class="vstep-body">
               <div class="video-field">
                 <span class="video-label">여기가</span>
                 <select id="videoAnchorRow" class="video-pick"></select>
                 <span class="video-label">의</span>
                 <input id="videoAnchorCount" class="video-num" type="number" min="1" value="1" />
                 <span class="video-label">카운트</span>
-                <button id="videoMarkBtn" class="primary" type="button">지금 여기</button>
+                <button id="videoMarkBtn" class="primary" type="button" title="박자가 딱 떨어지는 순간에 누릅니다. 두 지점을 찍으면 그 사이로 BPM 을 정합니다 — 멀수록 정확합니다">지금 여기</button>
                 <button id="videoMarkCancelBtn" class="ghost" type="button">취소</button>
               </div>
               <div class="helper" id="videoMarkHelp"></div>
 
-              <!-- 탭 템포 — 2026-09-21 에 `고급` 안에서 꺼냈다. 박자를 아는 가장 빠른 길이고
-                   (두 점을 찍으려면 영상을 두 번 정확히 멈춰야 한다) 처음 오는 사람이 먼저 찾는 것이
-                   이쪽이다. 정확도는 아래 도움줄이 **카운트 단위로** 말해 준다. -->
-              <div class="video-field">
-                <button id="videoTapBtn" class="warn" type="button">탭</button>
-                <button id="videoTapCommitBtn" class="ghost accent" type="button">탭으로 BPM 정하기</button>
-                <button id="videoTapClearBtn" class="ghost" type="button">탭 지우기</button>
-              </div>
-              <div class="helper" id="videoTapHelp"></div>
-
-              <details class="vsub">
-                <summary>고급 — 직접 입력 · 보정점</summary>
-                <div class="vstep-body">
 
               <div class="video-field">
                 <span class="video-label">BPM</span>
@@ -3719,8 +3974,8 @@
             </details>
 
             <!-- 받아 적기(2026-09-12). 영상을 보면서 표에 바로 놓는 길 — docs/EDITING_FLOWS.md 1단계. -->
-            <details class="vstep" open data-icon="✎">
-              <summary>③ 받아 적기 — 보면서 표에 놓기</summary>
+            <details class="vstep" open data-icon="✎" data-step="step3">
+              <summary>③ 받아 적기 — 보면서 표에 놓기<button class="help-q" type="button" data-help="video-capture" aria-label="받아 적기 설명 보기" title="설명서의 이 절로">?</button></summary>
               <div class="vstep-body">
             <div class="video-cut" style="border-top:none; padding-top:0;">
               <!-- 받아 적기는 **두 걸음**이다(2026-09-22). ② 박자 맞추기는 영상의 **일부**로 싱크를
@@ -3764,14 +4019,24 @@
               </div>
             </details>
 
+            <!-- ── 도구(RM-20 · 2026-11-02) ──
+                 탭 줄(#videoToolTabs)은 ui/videoPanel 이 아래 `.vtool` 의 `<summary>` 를 **읽어서** 그린다 — 이름 · 아이콘(data-icon) ·
+                 순서의 주인은 마크업이고, 버튼을 여기 손으로 적지 않는다(작업 차례 줄과 같은 규약). `<summary>` 는 CSS 가 숨긴다.
+                 한 번에 하나만 열린다(toggle 리스너가 나머지를 닫는다). 눕힌 띠에서는 차례와도 하나만 — 안무표가 밀려나지 않게. -->
+            <section class="video-tools" id="videoTools" aria-label="도구">
+              <div class="video-tools-head">
+                <span class="video-tools-label">도구</span>
+                <nav class="vtool-tabs" id="videoToolTabs" aria-label="도구 탭"></nav>
+              </div>
             <!-- 구간 자르기와 마커(2026-09-10). In/Out 은 확정 전 값이라 화면 상태이고, 마커와 잘라 낸 클립은 안무의 일부다. -->
-            <details class="vstep" open data-icon="✂">
-              <summary>④ 구간 잡고 잘라내기</summary>
+            <details class="vstep vtool" data-icon="✂" data-step="step4">
+              <summary>구간 잡고 잘라내기</summary>
+              <div class="vtool-help"><button class="help-q" type="button" data-help="video-trim" aria-label="구간 잡고 잘라내기 설명 보기" title="설명서의 이 절로">?</button></div>
               <div class="vstep-body">
             <div class="video-cut">
               <div class="video-field">
-                <button id="videoInBtn" class="ghost accent" type="button" title="지금 영상 시각을 구간의 시작(In)으로 찍습니다">[ In 지금 여기</button>
-                <button id="videoOutBtn" class="ghost accent" type="button" title="지금 영상 시각을 구간의 끝(Out)으로 찍습니다">Out ] 지금 여기</button>
+                <button id="videoInBtn" class="ghost accent" type="button" data-label="video.in" data-title="video.in.title" title="지금 영상 시각을 구간의 시작점으로 찍습니다">[ 시작점 지금 여기</button>
+                <button id="videoOutBtn" class="ghost accent" type="button" data-label="video.out" data-title="video.out.title" title="지금 영상 시각을 구간의 끝점으로 찍습니다">끝점 ] 지금 여기</button>
                 <button id="videoInGoBtn" class="ghost" type="button" title="영상을 In 지점으로 옮깁니다">In 으로</button>
                 <button id="videoOutGoBtn" class="ghost" type="button" title="영상을 Out 지점으로 옮깁니다">Out 으로</button>
                 <button id="videoLoopBtn" class="ghost" type="button" title="재생이 Out 에 닿으면 In 으로 되감습니다">구간 반복</button>
@@ -3792,13 +4057,16 @@
               </div>
             </details>
 
-            <details class="vstep" open data-icon="⚑">
-              <summary>⑤ 마커 — 영상 구간 ↔ 안무표 구간</summary>
+            <details class="vstep vtool" data-icon="⚑" data-step="step5">
+              <summary>마커 — 영상 구간 ↔ 안무표 구간</summary>
+              <div class="vtool-help"><button class="help-q" type="button" data-help="video-markers" aria-label="마커 설명 보기" title="설명서의 이 절로">?</button></div>
               <div class="vstep-body">
             <div class="video-cut" style="border-top:none; padding-top:0;">
               <div class="video-field">
                 <button id="videoMarkerSelBtn" class="ghost accent" type="button" title="In~Out 구간을 안무표에서 선택한 블록들의 카운트 구간에 맵핑하는 마커를 만듭니다">선택한 블록에 맵핑</button>
-                <button id="videoMarkerRowBtn" class="ghost accent" type="button" title="In~Out 구간을 위 '여기가' 칸에서 고른 마디 전체에 맵핑하는 마커를 만듭니다">이 마디에 맵핑</button>
+                <span class="video-label">마디</span>
+                <select id="videoMarkerRow" class="video-pick" title="`이 마디에 맵핑` 이 쓸 마디. ② 의 앵커 칸과는 다른 값이다 — 첫 박이 어느 마디인가와 이 구간이 어느 마디인가는 다른 물음이다"></select>
+                <button id="videoMarkerRowBtn" class="ghost accent" type="button" title="In~Out 구간을 왼쪽 칸에서 고른 마디 전체에 맵핑하는 마커를 만듭니다">이 마디에 맵핑</button>
                 <button id="videoMarkerClearBtn" class="ghost" type="button">마커 지우기</button>
               </div>
               <div class="helper" id="videoMarkerHelp"></div>
@@ -3808,8 +4076,9 @@
             </details>
 
             <!-- 자세 분석(2026-09-12). 영상에서 관절을 찾아 영상 위에 몸을 겹쳐 그린다. -->
-            <details class="vstep" data-icon="◎">
-              <summary>⑥ 자세 분석</summary>
+            <details class="vstep vtool" data-icon="◎" data-step="step6">
+              <summary>자세 분석</summary>
+              <div class="vtool-help"><button class="help-q" type="button" data-help="video-pose" aria-label="자세 분석 설명 보기" title="설명서의 이 절로">?</button></div>
               <div class="vstep-body">
             <div class="video-pose-section" style="border-top:none; padding-top:0;">
               <div class="video-field">
@@ -3830,6 +4099,7 @@
             </div>
               </div>
             </details>
+            </section>
           </div>
         </aside>
 
@@ -3850,6 +4120,12 @@
        그래서 **지금 할 일 서넛**을 화면 맨 아래, 엄지가 닿는 자리에 고정한다.
        ⚠ 여기에만 있는 기능은 없다. 전부 이미 있는 버튼을 대신 누르는 자리다(ui/thumbBar.js). -->
   <nav class="thumb-bar" id="thumbBar" hidden aria-label="빠른 조작"></nav>
+
+  <!-- 상태줄(RM-19) — 지금 무엇이 켜져 있고 어디에 담기는지 한 줄. 안내 문장 대신 여기를 본다(ui/statusBar.js). -->
+  <footer class="status-bar" id="statusBar" aria-label="상태줄" aria-live="polite">
+    <span class="status-bar-parts" id="statusBarParts"></span>
+    <span class="status-bar-notice" id="statusBarNotice" role="status" hidden></span>
+  </footer>
 
   <!-- 스크롤 락 버튼 (모바일용, 항상 화면에 고정) -->
   <div class="scroll-locks" id="scrollLocks">

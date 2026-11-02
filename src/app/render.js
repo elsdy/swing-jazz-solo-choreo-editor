@@ -16,7 +16,8 @@
 //   ③ selection 은 행을 다시 그리지 않는다. 클래스만 토글하고(boardView.setSelected),
 //      재렌더 시 복원은 placementView 가 store.selection 을 읽어 따로 한다 — 오늘의 두 경로다.
 //   ④ notify(알림 — block·toast·status 세 급, RM-04)는 **맨 마지막**이다. 부분 불러오기의 '병합 완료…' 가
-//      렌더 뒤에 떠야 원본 mergeProjectData(4174-4179)와 같은 순서가 된다. 어디에 띄울지는 views.notify(조립부)가 정한다.
+//      렌더 뒤에 떠야 원본 mergeProjectData(4174-4179)와 같은 순서가 된다. 어디에 띄울지는 views.notify(조립부 —
+//      app/noticeRouter)가 정한다: block → 모달 · toast → 토스트 · status → 상태줄(RM-19).
 //
 // ⚠ 이 파일은 커맨드를 부르지 않는다. store 는 **읽기만** 한다.
 
@@ -37,7 +38,8 @@ import { phraseMark } from '../domain/phrasing.js';
  * @param {{
  *   layout?: { syncCellSize(): void },
  *   board?: { main?: object, routine?: object },
- *   toolbar?: { render(): void, syncHistory(): void, syncSelection(): void },
+ *   toolbar?: { render(): void, syncHistory(): void },
+ *   selectionBar?: { render(): void },
  *   palette?: { render(): void },
  *   category?: { renderOptions(): void, renderManager(): void, renderLegend(): void },
  *   routineList?: { render(): void },
@@ -51,6 +53,7 @@ import { phraseMark } from '../domain/phrasing.js';
  *   thumb?: { render(): void },
  *   project?: { render(): void },
  *   bpm?: { render(): void },
+ *   status?: { render(): void, show(n: import('../usecases/store.js').Notice): void },
  *   notify?: (n: import('../usecases/store.js').Notice) => void
  * }} views
  * @param {{ dev?: boolean, paranoid?: boolean }} [options]
@@ -114,7 +117,8 @@ export function createRenderer(store, views, options = {}) {
     //   (policy.allowsSelection === false).
     if (d.selection) {
       views.board?.main?.setSelected(store.selection);
-      views.toolbar?.syncSelection();
+      // 선택 액션 바(RM-14) — 「N개 고름」과 고른 것에 할 일. 도구 모음의 `루틴으로 편성 (N)` 이 여기로 왔다.
+      views.selectionBar?.render();
       // 영상 패널의 `선택한 블록이 여기서 시작` 은 선택에 따라 켜지고 꺼진다. 패널 전체가 아니라 템포 구획만 다시 그린다.
       views.video?.syncSelection();
     }
@@ -136,7 +140,11 @@ export function createRenderer(store, views, options = {}) {
     // ⚠ 재생 헤드는 이 경로를 타지 **않는다**. 초당 60회 재렌더가 된다(ui/playhead.js 채널 B).
     if (d.video || d.routineEditor) { views.video?.render(); views.pose?.render(); }
     // 연습 조작 줄(RM-22)은 영상 패널의 상태와 **고른 블록**(`고른 블록 반복` 의 켜짐) · 보드 모양(마디 칸)을 따른다.
-    if (d.video || d.routineEditor || d.selection || d.boards?.[BOARD_MAIN]) views.practice?.render();
+    if (d.video || d.routineEditor || d.selection || d.boards?.[BOARD_MAIN]) {
+      views.practice?.render();
+      // 바의 `고른 블록 반복` 은 연습 바와 같은 판정(박자 · 재생기)으로 켜진다 — 박자만 바뀌어도 다시 본다(RM-14).
+      if (!d.selection) views.selectionBar?.render();
+    }
     // 엄지 바는 「지금 할 일」을 보이므로 영상 패널의 상태(열림·받는 중)를 따라간다(2026-09-20).
     // ⚠ 보드가 바뀌어도 부른다 — `+ 빠른 배치` 의 켜짐이 그쪽을 본다.
     if (d.video || d.boards?.[BOARD_MAIN] || d.toolbar) views.thumb?.render();
@@ -158,6 +166,11 @@ export function createRenderer(store, views, options = {}) {
       views.routineEditor?.syncHistory();
     }
     if (d.toolbar) views.toolbar?.render();
+    // 상태줄(RM-19)은 보드와 무관하다 — 받는 중(video) · 되돌릴 수 있음(history) · 루틴 편집 중(routineEditor)이
+    // 바뀌는 사건만 따른다. 음성 상태 · 담기 판정은 Dirty 를 타지 않으므로 조립부가 render() 를 직접 부른다.
+    // ⚠ boards 에 걸지 않는다 — 받아 적으며 블록이 놓일 때마다 상태줄까지 그릴 까닭이 없고, 뒤집어 상태줄 때문에
+    //   보드를 그리는 일은 더더욱 없다(받는 중 터치 끌기가 끊긴다).
+    if (d.video || d.history || d.routineEditor) views.status?.render();
 
     // ── ⑤ notify — 언제나 마지막(원본 mergeProjectData 4174-4179 의 순서) ──
     if (d.notify) views.notify?.(d.notify);

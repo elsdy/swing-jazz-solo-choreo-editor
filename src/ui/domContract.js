@@ -53,6 +53,7 @@ export const CLS = Object.freeze({
   previewBlock: 'preview-block',              // 3914 · 3810
   resizePreviewBlock: 'resize-preview-block', // 3810 — preview-block 과 **함께** 붙는다
   snapIndicator: 'snap-indicator',            // 3909
+  marqueeRect: 'marquee-rect',                // RM-14 — 빈 칸 끌기의 점선 네모(행마다 한 조각, data-marquee="1")
   floatingTooltip: 'floating-tooltip',        // 2777 — ⚠ CSS 규칙이 없다(전부 인라인 스타일)
   resizeCountBadge: 'resize-count-badge',     // 2783
   ghostDrag: 'ghost-drag',                    // 3842 · 3938 — 터치 드래그 고스트
@@ -95,6 +96,7 @@ export const CLS = Object.freeze({
   isEditing: 'is-editing',                    // 4702 — 편집 중인 루틴 카드
   routineActionPopup: 'routine-action-popup', // 1728
   rapTitle: 'rap-title',                      // 1732
+  rapCounts: 'rap-counts',                    // 2026-11-02 RM-16 — 「몇 번째 카운트에서」 단추 격자
   routineEditorPanel: 'routine-editor-panel',
   reToolbar: 're-toolbar',
   reCloseBtn: 're-close-btn',
@@ -167,6 +169,7 @@ export const CLS = Object.freeze({
 /** @type {Readonly<Record<string, string|((groupId: string) => string)>>} */
 export const SEL = Object.freeze({
   // ── 보드 히트테스트 ──
+  rowLabel: '.row-label',          // 2026-11-02 RM-16 — 행 라벨 우클릭 · 길게 누르기의 과녁
   track: '.track',                 // closest 12곳(2395·2404·2412·2609·2619·2631·2647·2668·2688·2729·2744·3789 …)
   placement: '.placement',         // 1529 · 2439 · 2468 · 2533 · 2586 · 2591 · 3382
   moveHandle: '.move-handle',      // 2477 · 2490 · 2523
@@ -190,6 +193,7 @@ export const SEL = Object.freeze({
 
   // ── 오버레이 정리용 속성 셀렉터. ⚠ 값 '1' 까지 포함한 문자열이다 ──
   previewNodes: '[data-preview="1"]',              // 3924
+  marqueeNodes: '[data-marquee="1"]',              // RM-14
   resizePreviewNodes: '[data-resize-preview="1"]', // 3825
 
   // ── 문서 전역 ──
@@ -198,7 +202,6 @@ export const SEL = Object.freeze({
   app: '.app',                           // 1600
   sidebar: '.sidebar',                   // 1601
   sidebarScroll: '.sidebar-scroll',      // 1546
-  viewportMeta: 'meta[name="viewport"]', // 1668 — focusout 줌 리셋
 
   // ── 링크바 ──
   linkTitleChips: '.link-title-chip, .link-title-fetching', // 5134 — 복합, 순서 그대로
@@ -262,6 +265,11 @@ export const DATA = Object.freeze({
   routineId: 'routineId',
   routineIdAttr: 'data-routine-id',
 
+  // 보드가 손가락 그리기를 받을 상태인가(RM-11). ui/boardView.syncTouchDraw 가 '1'|'0' 으로 쓰고,
+  // CSS 가 `.board[data-touch-draw="1"] .track { touch-action: none }` 으로 트랙의 스크롤을 막는다.
+  touchDraw: 'touchDraw',
+  touchDrawAttr: 'data-touch-draw',
+
   // ── 프레이즈·코러스 표시(2026-09-13). ui/boardView.syncPhrasing 이 쓰고 CSS 가 읽는다.
   //    ⚠ 값은 보여 주기용이 아니라 **CSS 선택자용**이다 — 번호는 dataset, 색은 CSS 변수로 간다.
   phrase: 'phrase',
@@ -287,6 +295,7 @@ export const DATA = Object.freeze({
 
   // 비영속 오버레이 표식. 값은 언제나 문자열 '1'(FLAG_ON).
   preview: 'preview',
+  marquee: 'marquee',               // RM-14 — data-marquee
   previewAttr: 'data-preview',
   resizePreview: 'resizePreview',
   resizePreviewAttr: 'data-resize-preview',

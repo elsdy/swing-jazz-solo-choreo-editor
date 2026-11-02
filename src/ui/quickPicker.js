@@ -36,6 +36,7 @@ import { CLS } from './domContract.js';
 import { makeInlineStarBtn } from './widgets.js';
 import { positionPopup, qDivider, qLabel, bindOutsideClose } from './popup.js';
 import { categoryNames, categoryColor, deriveKey } from '../domain/categories.js';
+import { matchMoves, suggestMoves } from '../domain/moveMatch.js';
 
 /**
  * 노브 기본값 = **메인 판**(원본 1842·2057). 루틴 인스턴스만 값을 뒤집는다.
@@ -244,6 +245,15 @@ export function createQuickPicker(deps, options = {}) {
     const header = document.createElement('div');
     header.className = CLS.quickPopupHeader;
     header.appendChild(qLabel(target.kind === 'group' ? '동작 정하기' : opts.title));
+    // 설명서의 그 절로 가는 작은 `?`(RM-26). 누름은 docsHub 가 문서 전체에서 위임받는다 — 여기서 걸지 않는다.
+    const helpBtn = document.createElement('button');
+    helpBtn.className = 'help-q';
+    helpBtn.type = 'button';
+    helpBtn.dataset.help = 'quick-place';
+    helpBtn.setAttribute('aria-label', '빠른 배치 설명 보기');
+    helpBtn.title = '설명서의 이 절로';
+    helpBtn.textContent = '?';
+    header.appendChild(helpBtn);
     const closeBtn = document.createElement('button');
     closeBtn.className = CLS.iconBtn;
     closeBtn.type = 'button';
@@ -306,7 +316,8 @@ export function createQuickPicker(deps, options = {}) {
 
       if (!ql) {
         addBtn.style.display = 'none';
-        const favs = library.filter(m => favNames.has(m.name));         // 1898
+        // 추리기 규칙은 domain/moveMatch 의 것이다(RM-15) — 블록 위 이름 입력과 같은 차례(즐겨찾기 → 나머지).
+        const favs = suggestMoves(library, '', favNames).filter(m => favNames.has(m.name));   // 1898
         const others = library.filter(m => !favNames.has(m.name));      // 1899
         if (favs.length) {
           resultList.appendChild(qLabel('즐겨찾기'));
@@ -317,7 +328,7 @@ export function createQuickPicker(deps, options = {}) {
         return;
       }
 
-      const matches = library.filter(m => m.name.toLowerCase().includes(ql));   // 1918
+      const matches = matchMoves(library, ql);                                   // 1918 — 규칙은 domain/moveMatch
       if (matches.length === 0) {
         addBtn.style.display = '';
         if (opts.addBtnKbActive) addBtn.classList.add(CLS.kbActive);    // 1923
@@ -437,7 +448,7 @@ export function createQuickPicker(deps, options = {}) {
     newCatForm.style.cssText = 'display:none;align-items:center;gap:6px;padding:var(--sp-1) 0;';
     const catColorInput = document.createElement('input');
     catColorInput.type = 'color';
-    catColorInput.value = '#22c55e'; // 원칙-예외(U-15): 새 카테고리의 기본 색 — 색 고르개의 데이터 값이다(var() 를 못 넣는다)
+    catColorInput.value = '#22c55e'; // 원칙-예외(U-16): 새 카테고리의 기본 색 — 색 고르개의 데이터 값이다(var() 를 못 넣는다)
     catColorInput.style.cssText = 'width:28px;height:28px;padding:0;border:1px solid rgba(var(--muted-rgb), 0.2);border-radius:var(--r-1);cursor:pointer;background:none;flex:0 0 auto;';
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';

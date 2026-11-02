@@ -85,7 +85,7 @@ export function createPlacementEl(placement, visualSubRow, deps) {
   // 색을 계산만 하고 칠하지 않아 CSS 의 보라 하나로만 보였다), 글자색은 대비비로 고른 값이다.
   const color = resolvePlacementColor(placement, { categories, routines: routines || [] });
   // ⚠ 인라인 background/color 가 아니라 변수로 넘긴다 — 그래야 CSS 의 상태(.is-pending 같은)가
-  //   !important 없이 이긴다(개발 원칙 U-15, RM-17).
+  //   !important 없이 이긴다(개발 원칙 U-16, RM-17).
   el.style.setProperty('--block-bg', color.background);
   el.style.setProperty('--block-ink', color.textColor);
   const cnt = groupCount(board.placements, placement.groupId);

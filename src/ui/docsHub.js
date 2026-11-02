@@ -7,6 +7,7 @@
 // → index.html 의 마크업·CSS 를 건드리지 않는다(골든·셀렉터 계약 보호).
 
 import { DOCS, DOC_GROUPS, DEFAULT_DOC_ID, docsByGroup, resolveDoc, idForFileName } from './docsRegistry.js';
+import { helpLinkFor } from './helpLinks.js';
 
 const STYLE_ID = 'docs-hub-style';
 const CSS = `
@@ -27,6 +28,10 @@ const CSS = `
 .docs-group { margin-bottom: 12px; }
 .docs-group > .docs-group-label { font-size: var(--fs-1); font-weight: 800; letter-spacing: .04em;
   color: var(--muted); padding: var(--sp-1) var(--sp-2); text-transform: none; }
+/* 숨긴 갈래(개발)는 접힌 <details> 다 — 평소엔 제목 한 줄, 누르면 편다. 링크로 그 문서를 열면 스스로 펴진다(RM-26). */
+details.docs-group > summary.docs-group-label { cursor: pointer; list-style: none; }
+details.docs-group > summary.docs-group-label::before { content: '▸ '; }
+details.docs-group[open] > summary.docs-group-label::before { content: '▾ '; }
 .docs-item { display: block; width: 100%; text-align: left; border: 0; cursor: pointer;
   background: transparent; color: var(--text); font-size: var(--fs-2); padding: 6px 8px;
   border-radius: var(--r-1); line-height: 1.35; }
@@ -361,11 +366,15 @@ export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
     const frag = doc.createDocumentFragment();
     for (const g of groups) {
       if (!g.docs.length) continue;
-      const box = doc.createElement('div');
+      // 숨긴 갈래는 접힌 <details> — 지금 읽는 문서가 그 안에 있으면 편다(링크 · 주소로 들어온 경우).
+      const hidden = !!g.hidden;
+      const box = doc.createElement(hidden ? 'details' : 'div');
       box.className = 'docs-group';
-      const label = doc.createElement('div');
+      if (hidden) { box.dataset.group = g.id; box.open = g.docs.some(d => d.id === currentId); }
+      const label = doc.createElement(hidden ? 'summary' : 'div');
       label.className = 'docs-group-label';
       label.textContent = g.label;
+      label.title = g.hint || '';
       box.appendChild(label);
       for (const d of g.docs) {
         const btn = doc.createElement('button');
@@ -576,6 +585,18 @@ export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
   }
 
   openBtn.addEventListener('click', () => open());
+
+  // 화면 곳곳의 작은 `?`(RM-26) — `data-help="<키>"` 를 helpLinks 표로 풀어 그 절을 연다.
+  // ⚠ 문서 전체에서 위임받는다. 단추가 <summary> · 메뉴 · 팝업 안에 있어도, 여기서 기본 동작(접기)과 전파를 끊는다.
+  doc.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-help]') : null;
+    if (!btn) return;
+    const link = helpLinkFor(btn.dataset.help);
+    if (!link) return;
+    e.preventDefault();
+    e.stopPropagation();
+    open(link.doc, link.anchor);
+  }, true);
 
   // ?doc=<id> 로 들어오면 바로 그 문서를 편다
   const fromUrl = pickFromUrl();

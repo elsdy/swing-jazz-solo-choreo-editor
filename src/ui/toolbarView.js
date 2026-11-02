@@ -4,7 +4,7 @@
 // updateCreateRoutineFromSelectionBtn(4519-4529) · 툴바 요소 참조(1510-1514)를 옮겼다.
 //
 // 화면 구성(마크업 1315-1327): boardTitle · '안무표 크기' 알약 · '기본 카운트' 알약 ·
-//   '+ 빠른 배치' · '루틴으로 편성 (N)' · Undo · Redo · '전체 초기화'.
+//   '+ 빠른 배치' · Undo · Redo · '전체 초기화'. (「루틴으로 편성 (N)」은 2026-11-02 RM-14 에 선택 액션 바 — ui/selectionBar — 로 옮겼다.)
 //
 // ⚠⚠ **#boardColsInput 은 이름과 달리 state.rows(행 수)를 담는다.** 원본 2939 가
 //   `boardColsInput.value = state.rows` 이고 2953 이 그 값을 rows 로 되읽는다. 열(cols)은 8 고정이라
@@ -17,7 +17,7 @@
 //
 // ⚠⚠ **이 파일은 리스너를 하나도 걸지 않는다.** 툴바 입력 8종(#boardColsInput change/keydown,
 //   #boardColsDec/Inc, #defaultCountInput/Dec/Inc, #quickPlaceBtn, #undoBtn, #redoBtn,
-//   #addRoutineBtn, #createRoutineFromSelectionBtn, #clearBtn)은 전부 input/controls.js 가 건다.
+//   #addRoutineBtn, #clearBtn)은 전부 input/controls.js 가 건다.
 //   #clearBtn 의 confirmOnce 는 app/main 이 ui/widgets.confirmOnce 를 controls 에 **주입**해서
 //   해결한다(input 은 ui 를 import 할 수 없다) — 여기서 다시 걸면 확인이 두 번 뜨고
 //   clearBoard 가 두 번 돈다. 원본에도 리스너는 2360 한 곳뿐이다.
@@ -40,7 +40,7 @@ const BOARD_MAIN = 'main';
  * 메인 툴바 뷰를 만든다.
  *
  * @param {ToolbarDeps} deps
- * @returns {{ render(): void, syncHistory(): void, syncSelection(): void }}
+ * @returns {{ render(): void, syncHistory(): void }}
  */
 export function createToolbarView(deps) {
   const { store, canUndo, canRedo, elements = {} } = deps;
@@ -52,7 +52,6 @@ export function createToolbarView(deps) {
   const rowsInput = byId('boardColsInput');                  // 1510
   const defaultCountInput = byId('defaultCountInput');       // 1511
   const quickPlaceBtn = byId('quickPlaceBtn');
-  const createRoutineFromSelectionBtn = byId('createRoutineFromSelectionBtn');
   const undoBtn = byId('undoBtn');                           // 1513
   const redoBtn = byId('redoBtn');                           // 1514
 
@@ -60,22 +59,6 @@ export function createToolbarView(deps) {
   // 없다. 이 뷰는 **읽고 그리기만** 한다(위 경고 참조).
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────
-
-  /**
-   * '루틴으로 편성 (N)' 버튼. 원본 updateCreateRoutineFromSelectionBtn(4519-4529).
-   * ⚠ 선택이 0개면 display:'none' 으로 숨기기만 하고 **라벨은 되돌리지 않는다**(원본에 else 가 그뿐이다).
-   */
-  function syncSelection() {
-    const btn = createRoutineFromSelectionBtn;
-    if (!btn) return;                                        // 4521
-    const count = store.selection.size;                      // 4522
-    if (count >= 1) {                                        // 4523
-      btn.style.display = '';                                // 4524
-      btn.textContent = `루틴으로 편성 (${count})`;            // 4525
-    } else {
-      btn.style.display = 'none';                            // 4527
-    }
-  }
 
   /** 원본 updateHistoryButtons(2888-2892). 스택 길이를 세지 말고 canUndo/canRedo 를 쓴다. */
   function syncHistory() {
@@ -99,9 +82,7 @@ export function createToolbarView(deps) {
       const on = !!store.session.quickPlaceMode[BOARD_MAIN];
       quickPlaceBtn.className = on ? CLS.quickBtnActive : CLS.ghost;
     }
-
-    syncSelection();
   }
 
-  return { render: renderToolbar, syncHistory, syncSelection };
+  return { render: renderToolbar, syncHistory };
 }

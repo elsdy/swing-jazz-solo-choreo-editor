@@ -109,7 +109,7 @@ function parseCssRules(css, file, offset, fullText) {
         rules.push({
           selectors: splitTop(top.prelude),
           body: clean.slice(top.open + 1, i),
-          bodyAt: offset + top.open + 1, // fullText 안에서 몸통이 시작하는 자리(U-15 가 선언마다 줄을 잰다)
+          bodyAt: offset + top.open + 1, // fullText 안에서 몸통이 시작하는 자리(U-16 가 선언마다 줄을 잰다)
           file,
           line: lineAt(fullText, offset + top.at + Math.max(0, lead)),
         });
@@ -268,7 +268,7 @@ function collectCss(files) {
 }
 
 
-// ── U-15 디자인 토큰: 선언 하나하나를 본다 ───────────────────────────────────
+// ── U-16 디자인 토큰: 선언 하나하나를 본다 ───────────────────────────────────
 
 /** 토큰 밖 색 글자 — hex · rgb() · hsl() · 이름 색. transparent · currentColor 는 색이 아니라 뜻이라 넘긴다. */
 const COLOR_RE = /(?<![\w&-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])|\b(?:rgba?|hsla?)\(\s*[\d.]|(?<![\w-])(?:white|black|red|green|blue|yellow|orange|gray|grey|silver|pink|purple|gold)(?![\w-])/;
@@ -304,7 +304,7 @@ function declarations(body) {
   return out;
 }
 
-/** 선언 하나가 U-15 를 어기면 그 까닭을 돌려준다(어기지 않으면 null). */
+/** 선언 하나가 U-16 를 어기면 그 까닭을 돌려준다(어기지 않으면 null). */
 function tokenBreach(prop, value, selectors) {
   if (/!\s*important/i.test(value)) return '!important — 규칙 순서로 이긴다';
   if (prop.startsWith('--')) {
@@ -318,15 +318,20 @@ function tokenBreach(prop, value, selectors) {
   return null;
 }
 
-/** 줄 · 윗줄 · 그 줄이 든 블록의 머리 줄(들여쓰기가 더 얕은 첫 윗줄)과 그 윗줄에 표식이 있나 — 여러 줄 규칙 · 객체를 한 표식이 덮는다. */
+/** 줄 · 윗줄 · 그 줄을 감싼 블록의 머리 줄들(들여쓰기가 한 단씩 얕아지는 윗줄 — 규칙 · @media · 객체)과 그 윗줄에 표식이 있나.
+ *  여러 줄 규칙 · 객체 · @media 묶음 하나를 한 표식이 덮는다(인쇄 묶음처럼 통째로 이유가 같은 것). */
+// @complexity time=O(n) space=O(n) cc=6
 function excusedBlock(text, line, principle) {
   if (excused(text, line, principle)) return true;
   const lines = text.split('\n');
   const indent = (s) => s.search(/\S/);
-  const own = indent(lines[line - 1] || '');
-  for (let i = line - 2; i >= 0; i--) {
+  let own = indent(lines[line - 1] || '');
+  for (let i = line - 2; i >= 0 && own > 0; i--) {
     if (!lines[i].trim()) continue;
-    if (indent(lines[i]) < own) return excused(text, i + 1, principle);
+    if (indent(lines[i]) < own) {
+      if (excused(text, i + 1, principle)) return true;
+      own = indent(lines[i]);
+    }
   }
   return false;
 }
@@ -386,6 +391,45 @@ export function commandRunnerTable(mainText) {
 /** @typedef {{ file: string, line: number, principle: string, what: string, fix: string }} Violation */
 
 export const RULES = [
+  {
+    principle: 'U-10',
+    what: '폰 확대를 전면 차단한다 — viewport 의 user-scalable=no · maximum-scale=1, 또는 입력을 마칠 때(focusout) scrollTo(0, 0)',
+    fix: '확대를 막지 말고 좁은 화면의 input · select · textarea 글자를 16px 로 둔다(iOS 자동 확대가 애초에 안 일어난다). 편집 중 핀치는 잠금 중 차단으로만 막는다',
+    scan(files) {
+      const out = [];
+      const blocks = /user-scalable\s*=\s*(?:no|0)\b|maximum-scale\s*=\s*1(?:\.0*)?(?![\d.])/;
+      // ① 마크업의 viewport 메타
+      const html = files['index.html'] || '';
+      for (const m of html.matchAll(/<meta\b[^>]*name\s*=\s*["']viewport["'][^>]*>/gi)) {
+        if (!blocks.test(m[0])) continue;
+        const line = lineAt(html, m.index);
+        if (!excused(html, line, 'U-10')) out.push({ file: 'index.html', line, snippet: m[0].trim() });
+      }
+      for (const f of jsFiles(files)) {
+        const raw = files[f];
+        const { blanked, strings } = scanJs(raw);
+        // ② JS 가 viewport 에 다시 박는 글자(문자열 속 — 주석은 보지 않는다)
+        for (const str of strings) {
+          if (!blocks.test(str.text)) continue;
+          const line = lineAt(raw, str.offset);
+          if (!excused(raw, line, 'U-10')) out.push({ file: f, line, snippet: raw.split('\n')[line - 1].trim() });
+        }
+        // ③ focusout 처리기 안의 scrollTo(0, 0) — 입력을 마칠 때마다 화면이 꼭대기로 튄다
+        for (const str of strings) {
+          if (str.text !== 'focusout') continue;
+          const open = blanked.indexOf('{', str.offset);
+          if (open < 0) continue;
+          const close = matchBrace(blanked, open);
+          const body = blanked.slice(open, close < 0 ? blanked.length : close);
+          const hit = body.search(/scrollTo\(\s*0\s*,\s*0\s*\)/);
+          if (hit < 0) continue;
+          const line = lineAt(raw, open + hit);
+          if (!excused(raw, line, 'U-10')) out.push({ file: f, line, snippet: raw.split('\n')[line - 1].trim() });
+        }
+      }
+      return out;
+    },
+  },
   {
     principle: 'U-11',
     what: '속성을 빈 문자열로 끈다 — `[data-x]` 선택자는 값이 비어도 걸린다',
@@ -596,11 +640,31 @@ export const RULES = [
   },
   {
     principle: 'U-15',
-    what: '스타일이 디자인 토큰 밖의 값을 쓴다 — 색 글자 · 단계 밖 글자 크기 · !important · 테마 블록의 토큰 아닌 속성 · 빠진 단계 토큰',
-    fix: 'index.html :root 의 토큰을 쓴다 — 색은 var(--…) · rgba(var(--…-rgb), a), 글자는 var(--fs-1…5). 테마는 :root[data-theme] 에서 토큰 값만 바꾼다. 데이터 색(캔버스 · 고르개 값)은 이유를 단 표식으로 가린다',
+    what: '팝업 자리 함수에 붙인 뒤 잰 높이를 주지 않는다 — 줄이 늘면 가정 높이가 낡아 창 밖으로 넘친다',
+    fix: '팝업을 body 에 붙인 뒤 `height: popup.offsetHeight` 를 함께 준다',
+    // @complexity time=O(n) space=O(n) cc=5
     scan(files) {
       const out = [];
-      const hit = (file, line, snippet) => { if (!excusedBlock(files[file] || '', line, 'U-15')) out.push({ file, line, snippet }); };
+      for (const f of [...jsFiles(files, 'src/ui/'), ...jsFiles(files, 'src/input/')]) {
+        const code = blankJs(files[f]);
+        for (const m of code.matchAll(/placePlacementActionPopup\(\s*\{/g)) {
+          const open = m.index + m[0].length - 1;
+          if (topLevelKeys(code, open).has('height')) continue;
+          const line = lineAt(files[f], m.index);
+          if (!excused(files[f], line, 'U-15')) out.push({ file: f, line, snippet: 'placePlacementActionPopup({ … }) 에 height 가 없다' });
+        }
+      }
+      return out;
+    },
+  },
+  {
+    principle: 'U-16',
+    what: '스타일이 디자인 토큰 밖의 값을 쓴다 — 색 글자 · 단계 밖 글자 크기 · !important · 테마 블록의 토큰 아닌 속성 · 빠진 단계 토큰',
+    fix: 'index.html :root 의 토큰을 쓴다 — 색은 var(--…) · rgba(var(--…-rgb), a), 글자는 var(--fs-1…5). 테마는 :root[data-theme] 에서 토큰 값만 바꾼다. 데이터 색(캔버스 · 고르개 값)은 이유를 단 표식으로 가린다',
+    // @complexity time=O(n) space=O(n) cc=20?
+    scan(files) {
+      const out = [];
+      const hit = (file, line, snippet) => { if (!excusedBlock(files[file] || '', line, 'U-16')) out.push({ file, line, snippet }); };
 
       // ① CSS 규칙(index.html <style> + 뷰의 CSS 템플릿) — 선언마다
       const rules = collectCss(files);
