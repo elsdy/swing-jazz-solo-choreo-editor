@@ -10,7 +10,9 @@ import {
   DOUBLE_TAP_MS, QUICK_DRAG_THRESHOLD_PX, LONGPRESS_MOVE_THRESHOLD_PX,
   resolveDragCount, resolveResizeCount, isDoubleTap, exceedsThreshold,
   resolveHitCell, dragPreviewCount, resizeHitKind, rectCellRange, MARQUEE_THRESHOLD_PX, resizeBlocked,
+  EDGE_GRAB_PX, BODY_DRAG_THRESHOLD_PX, resolveGrabZone, grabEdgeWidth, resolveTrimStart,
 } from '../../src/domain/gestureMath.js';
+import { readFileSync } from 'node:fs';
 
 const BOARD = { rows: 8, cols: 8 };   // 마지막 행 인덱스 8
 
@@ -136,4 +138,50 @@ test('늘이기 가드: 메인 보드의 루틴 블록은 마우스·손가락 �
   assert.equal(resizeBlocked({ isRoutine: false, allowsRoutineBlocks: true }), false);  // 메인 보드의 동작 블록
   assert.equal(resizeBlocked({ isRoutine: true, allowsRoutineBlocks: false }), false);  // 루틴 보드(루틴 블록이 없다)
   assert.equal(resizeBlocked.length, 1);   // 인자 하나 — pointerType 갈래가 다시 생기지 않게
+});
+
+// ── 블록을 잡는 자리 · 시작점 트리밍 (RM-12, 2026-11-03) ──────────────────────────────────────
+
+test('잡은 자리: 가장자리 폭 안이면 왼쪽·오른쪽, 그 사이는 몸통, 블록이 가장자리 두 배보다 좁으면 몸통을 남긴다', () => {
+  // 넓은 블록(200px) — 가장자리는 EDGE_GRAB_PX(14) 그대로
+  assert.equal(EDGE_GRAB_PX, 14);
+  assert.equal(resolveGrabZone(0, 200), 'left');
+  assert.equal(resolveGrabZone(13.9, 200), 'left');
+  assert.equal(resolveGrabZone(14, 200), 'body');
+  assert.equal(resolveGrabZone(100, 200), 'body');
+  assert.equal(resolveGrabZone(185.9, 200), 'body');
+  assert.equal(resolveGrabZone(186, 200), 'right');
+  assert.equal(resolveGrabZone(199, 200), 'right');
+  // 블록 바깥으로 넓힌 손가락 과녁(index.html 의 ::before)을 짚어도 그 쪽 가장자리다
+  assert.equal(resolveGrabZone(-8, 200), 'left');
+  assert.equal(resolveGrabZone(208, 200), 'right');
+  // 1카운트 블록(50px) — 가장자리가 폭의 1/4(12.5px)로 줄어 가운데 절반이 몸통으로 남는다
+  assert.equal(grabEdgeWidth(50), 12.5);
+  assert.deepEqual([0, 12, 13, 25, 37, 38, 49].map(x => resolveGrabZone(x, 50)), ['left', 'left', 'body', 'body', 'body', 'right', 'right']);
+  // 가장자리 두 배(28px)보다 좁아도 몸통이 남는다 — 20px 블록은 5px 씩
+  assert.deepEqual([4, 5, 10, 14, 15].map(x => resolveGrabZone(x, 20)), ['left', 'body', 'body', 'body', 'right']);
+  // 몸통 끌기 임계는 마우스의 작은 떨림보다 크고 손가락 길게 누르기 허용(8px)보다 작다
+  assert.ok(BODY_DRAG_THRESHOLD_PX > 0 && BODY_DRAG_THRESHOLD_PX < LONGPRESS_MOVE_THRESHOLD_PX);
+});
+
+test('잡은 자리: 화면이 그리는 손잡이 폭(index.html 의 --edge-grab · 블록 폭 25%)이 계산의 가장자리 폭과 같다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const token = html.match(/--edge-grab:\s*(\d+)px/);
+  assert.ok(token, ':root 에 --edge-grab 이 있다');
+  assert.equal(Number(token[1]), EDGE_GRAB_PX, '--edge-grab 과 EDGE_GRAB_PX 가 어긋나면 보이는 손잡이와 잡히는 자리가 다르다');
+  assert.match(html, /width:\s*min\(var\(--edge-grab\),\s*25%\)/, '손잡이 폭도 grabEdgeWidth 처럼 블록 폭의 1/4 에서 멈춘다');
+});
+
+test('시작점 트리밍: 포인터 밑 칸이 새 시작이고 끝 칸은 그대로, 끝을 넘지 못하고 보드 앞 끝에서 멈춘다', () => {
+  // 블록 r2 [3..5] = 선형 11..13
+  const trim = { originStart: 11, originEnd: 13, startX: 100 };
+  assert.deepEqual(resolveTrimStart(trim, { kind: 'cross', row: 2, col: 1 }, BOARD, -8), { start: 9, count: 5 });
+  assert.deepEqual(resolveTrimStart(trim, { kind: 'sameRow', row: 2, col: 5 }, BOARD, -8), { start: 13, count: 1 });
+  assert.deepEqual(resolveTrimStart(trim, { kind: 'cross', row: 3, col: 7 }, BOARD, -8), { start: 13, count: 1 }, '끝을 넘으면 1카운트');
+  assert.deepEqual(resolveTrimStart(trim, { kind: 'cross', row: 1, col: 0 }, BOARD, -8), { start: 0, count: 14 }, '행을 넘겨 센다');
+  assert.deepEqual(resolveTrimStart({ originStart: 1, originEnd: 2, startX: 0 }, { kind: 'cross', row: 0, col: 0 }, BOARD, 0),
+    { start: 0, count: 3 }, '인트로 행이 없는 보드는 1행 첫 칸(0)에서 멈춘다');
+  // 잴 트랙이 없으면 이동거리 ÷ 칸 폭을 반올림해 시작에 더한다
+  assert.deepEqual(resolveTrimStart(trim, { kind: 'step', clientX: 100 - 58 * 2, stepWidth: 58 }, BOARD, -8), { start: 9, count: 5 });
+  assert.deepEqual(resolveTrimStart(trim, { kind: 'step', clientX: 100 + 58 * 9, stepWidth: 58 }, BOARD, -8), { start: 13, count: 1 });
 });

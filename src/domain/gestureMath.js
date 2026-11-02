@@ -4,7 +4,7 @@
 // 리사이즈 카운트 3단 폴백(3785-3801), 더블탭 300ms(2523·2540), 이동 임계 8px/12px(2726·3241)을 모았다.
 // elementFromPoint · getBoundingClientRect · 현재 시각 조회는 여기 들어오지 않는다 — 호출부(input/*)의 몫이다.
 
-import { calcCrossRowCount, totalCellsFrom, clamp, cellIndexFromRatio } from './grid.js';
+import { calcCrossRowCount, totalCellsFrom, clamp, cellIndexFromRatio, linearOf } from './grid.js';
 import { groupCount } from './placements.js';
 
 /** 더블탭 판정 간격(ms). @see index.html:2523 */
@@ -15,6 +15,44 @@ export const QUICK_DRAG_THRESHOLD_PX = 12;
 export const LONGPRESS_MOVE_THRESHOLD_PX = 8;
 /** 빈 칸 끌기가 네모 고르기(마퀴)가 되는 이동 임계(px) — 이만큼 움직이기 전까지는 빈 곳 누름(선택 풀기)이다(RM-14). */
 export const MARQUEE_THRESHOLD_PX = 4;
+/**
+ * 블록 양쪽 가장자리의 잡는 폭(px) — 이 안을 누르면 트리밍(왼쪽은 시작점 · 오른쪽은 길이), 그 사이는 몸통이다(RM-12).
+ * ⚠ CSS 가 아니라 여기가 주인이다. 손잡이 장식(ui/placementView)은 이 값을 `--edge-grab` 으로 받아 같은 폭으로 그린다 —
+ *   장식이 숨어 있어도(마우스를 올리지 않은 블록) 판정은 이 값으로 한다.
+ */
+export const EDGE_GRAB_PX = 14;
+/** 몸통을 누른 마우스가 이만큼 움직여야 클릭이 끌기(옮기기)가 된다(px, RM-12). 그 전에 떼면 클릭 — 고르기다. */
+export const BODY_DRAG_THRESHOLD_PX = 4;
+/** 손가락으로 몸통을 이만큼 누르고 있어야 옮기기가 된다(ms, RM-12 결정 「길게 눌러야 옮기기」). 그 전에 움직이면 화면 넘기기다. */
+export const BODY_LONG_PRESS_MS = 400;
+
+/**
+ * 블록 안에서 누른 자리가 어디인가 — 왼쪽 가장자리 · 몸통 · 오른쪽 가장자리(RM-12).
+ * 가장자리 폭은 EDGE_GRAB_PX 지만 블록 폭의 1/4 을 넘지 않는다 — 1카운트 블록(약 50px)에도 몸통이 절반 남아
+ * 옮기기를 잡을 자리가 있다.
+ * @param {number} offsetX  블록 왼쪽 끝에서 누른 자리까지(px)
+ * @param {number} width    블록 폭(px)
+ * @param {number} [edge=EDGE_GRAB_PX]
+ * @returns {'left'|'body'|'right'}
+ */
+// @complexity time=O(1) space=O(1) cc=3
+export function resolveGrabZone(offsetX, width, edge = EDGE_GRAB_PX) {
+  const e = grabEdgeWidth(width, edge);
+  if (offsetX < e) return 'left';
+  if (offsetX >= width - e) return 'right';
+  return 'body';
+}
+
+/**
+ * 그 폭의 블록에서 가장자리 하나의 잡는 폭(px) — EDGE_GRAB_PX 와 블록 폭의 1/4 가운데 작은 것.
+ * @param {number} width
+ * @param {number} [edge=EDGE_GRAB_PX]
+ * @returns {number}
+ */
+// @complexity time=O(1) space=O(1) cc=1
+export function grabEdgeWidth(width, edge = EDGE_GRAB_PX) {
+  return Math.max(0, Math.min(edge, width / 4));
+}
 
 /**
  * 그리기/빠른배치 드래그의 카운트를 정한다. 행을 넘겨 세고, 시작 자리에서 보드 끝까지의 칸에서 자른다.
@@ -183,8 +221,32 @@ export function rectCellRange(a, b) {
 }
 
 /**
+ * 시작점 트리밍(왼쪽 가장자리, RM-12) 프리뷰의 새 시작과 길이 — 끝 칸은 그대로 두고 시작만 옮긴다. 선형 카운트로 셈한다.
+ * 포인터 밑 칸이 새 시작이고, 끝을 넘을 수 없으며(최소 1카운트) 보드 앞 끝(firstLinear)보다 앞으로 갈 수 없다.
+ *
+ * 포인터 밑 칸을 어떻게 재는지는 늘이기(resolveResizeCount)의 세 갈래와 같다 — 호출부가 hit.kind 로 고른다:
+ *   'cross' / 'sameRow'  재어 낸 칸(row, col)
+ *   'step'               잴 트랙이 없다 → 시작 칸 + 이동거리/셀폭 반올림
+ *
+ * @param {{originStart:number, originEnd:number, startX:number}} trim   선형 카운트(끝은 포함)와 누른 x
+ * @param {{kind:'cross'|'sameRow', row:number, col:number}|{kind:'step', clientX:number, stepWidth:number}} hit
+ * @param {{cols:number}} board
+ * @param {number} firstLinear  보드 첫 칸의 선형 카운트(인트로 행이 있으면 -cols)
+ * @returns {{start:number, count:number}}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function resolveTrimStart(trim, hit, board, firstLinear) {
+  const target = hit.kind === 'step'
+    ? trim.originStart + Math.round((hit.clientX - trim.startX) / hit.stepWidth)
+    : linearOf(hit.row, hit.col, board.cols);
+  const start = clamp(target, firstLinear, trim.originEnd);
+  return { start, count: trim.originEnd - start + 1 };
+}
+
+/**
  * 늘이기 손잡이를 눌렀을 때 늘이기를 막는가. 메인 보드(루틴 블록을 받는 보드)의 루틴 블록은 길이가 루틴의 것이라
- * 손으로 늘이지 않는다(원본 2503 `ctx === mainCtx`). ⚠ 포인터 종류를 묻지 않는다 — 원본은 이 가드가 mousedown 에만
+ * 손으로 늘이지 않는다(원본 2503 `ctx === mainCtx`). RM-12 부터 왼쪽 가장자리(시작점 트리밍)도 같은 판정이다.
+ * ⚠ 포인터 종류를 묻지 않는다 — 원본은 이 가드가 mousedown 에만
  * 있고 touchstart(2513)에는 없어 손가락으로는 늘어났다. RM-11(2026-11-02)이 손가락도 막았다(계획서의 결정 「손가락도 막는다」).
  * @param {{isRoutine:boolean, allowsRoutineBlocks:boolean}} a
  * @returns {boolean}

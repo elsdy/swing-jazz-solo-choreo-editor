@@ -5,7 +5,7 @@
 //
 // ⚠ 이 파일은 **커맨드를 부르지 않는다.** 상태를 읽어 DOM 을 만들 뿐이다.
 //   클릭·드래그 배선은 input/boardController 의 몫이고, 그쪽은 여기서 만든
-//   `.placement` / `.move-handle` / `.resize-handle` 을 el 위임으로 되읽는다
+//   `.placement` / `.trim-handle` / `.resize-handle` 을 el 위임으로 되읽는다
 //   (그 암묵 계약이 ui/domContract.js 다).
 //
 // ⚠⚠ 보존 대상 결함 하나가 이 파일에 남아 있다 — 고치지 마라:
@@ -17,6 +17,7 @@
 
 import { CLS, DATA } from './domContract.js';
 import { escapeHtml } from './widgets.js';
+import { str } from '../domain/strings.js';
 import { readCellH } from './cssVars.js';
 import { resolvePlacementColor } from '../domain/categories.js';
 import { groupCount, placementRangeLabel } from '../domain/placements.js';
@@ -98,10 +99,14 @@ export function createPlacementEl(placement, visualSubRow, deps) {
   const nameBtn = policy?.allowsSelection
     ? `<button class="${CLS.nameBtn}" type="button" title="동작 정하기">✎</button>`
     : '';
+  // 양쪽 가장자리 손잡이(RM-12) — 왼쪽은 시작점, 오른쪽은 길이. **장식일 뿐**이다: 누른 자리가 가장자리인지는
+  // domain/gestureMath.resolveGrabZone 이 블록 폭으로 잰다(손잡이가 숨어 있어도 같다). 손잡이는 자리를 차지하지 않아
+  // (CSS absolute) 짧은 블록의 이름을 밀지 않고, 마우스를 올렸거나 고른 블록에만 보인다.
+  // ⚠ draggable 이 없다 — 옮기기는 네이티브 드래그가 아니라 몸통 포인터 끌기다(input/boardController).
   el.innerHTML = `<div class="${CLS.tooltip}">${placement.pending ? '이름 없는 블록' : escapeHtml(placement.name)} ${cnt}c</div>`
-    + `<div class="${CLS.moveHandle}" draggable="true" title="위치 이동"></div>`
+    + `<div class="${CLS.trimHandle}" title="${str('block.trimStart.title')}"></div>`
     + `<div class="${CLS.label}">${shown} <span style="opacity:.72; font-size:var(--fs-1);">${cnt}c</span></div>`
-    + `<div class="${CLS.resizeHandle}" title="길이 조절"></div>`
+    + `<div class="${CLS.resizeHandle}" title="${str('block.resize.title')}"></div>`
     + nameBtn;
   return el;
 }

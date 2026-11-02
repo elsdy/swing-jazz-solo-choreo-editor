@@ -31,7 +31,8 @@ export const CLS = Object.freeze({
   // ── 배치 블록 (createPlacementEl 3420-3444) ──
   placement: 'placement',
   tooltip: 'tooltip',
-  moveHandle: 'move-handle',
+  /** 왼쪽 가장자리 — 시작점 트리밍(RM-12). 2026-11-03 전에는 `move-handle`(끌면 옮기기)이었다 — 옮기기는 이제 몸통 끌기다. */
+  trimHandle: 'trim-handle',
   label: 'label',
   resizeHandle: 'resize-handle',
   /** 고른 블록에만 뜨는 `✎`(2026-09-20). 누르면 동작 고르기 팝업이 열린다. */
@@ -172,14 +173,16 @@ export const SEL = Object.freeze({
   rowLabel: '.row-label',          // 2026-11-02 RM-16 — 행 라벨 우클릭 · 길게 누르기의 과녁
   track: '.track',                 // closest 12곳(2395·2404·2412·2609·2619·2631·2647·2668·2688·2729·2744·3789 …)
   placement: '.placement',         // 1529 · 2439 · 2468 · 2533 · 2586 · 2591 · 3382
-  moveHandle: '.move-handle',      // 2477 · 2490 · 2523
+  trimHandle: '.trim-handle',      // RM-12 — 원본 2477 · 2490 · 2523 의 `.move-handle` 자리
   resizeHandle: '.resize-handle',  // 2498 · 2514
   nameBtn: '.name-btn',            // 2026-09-20 — 클릭·더블클릭·터치가 모두 이것을 먼저 비켜 간다
   /**
    * ⚠ 원본 2608·2621·2690·2727 이 한 덩어리로 쓰는 복합 셀렉터. **순서까지 그대로**다.
    * 그리기 시작 전에 "블록/핸들 위면 그만둔다"를 한 번에 판정한다.
    */
-  placementOrHandles: '.placement, .resize-handle, .move-handle',
+  placementOrHandles: '.placement, .resize-handle, .trim-handle',
+  /** 블록 양쪽 가장자리 손잡이 둘(RM-12) — 클릭 · 영상 이동이 비켜 가는 과녁. */
+  edgeHandles: '.trim-handle, .resize-handle',
   /** ⚠ 팔레트 카드의 dblclick/dragstart 가드(3068·3080). 카드 안의 폼 요소를 걸러낸다. */
   selectOrButton: 'select, button',
 
