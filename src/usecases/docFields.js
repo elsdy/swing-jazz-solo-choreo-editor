@@ -33,7 +33,9 @@ const STORE_OPS = byField({
   media:       { get: s => s.media, top: 'media', dirty: { video: true } },
   // ⚠ boards.skeleton 이 행 dataset 을 날리므로 보드를 다시 그릴 때는 프레이즈 표시도 반드시 다시 입힌다
   phrasing:    { get: s => s.phrasing, top: 'phrasing', dirty: { phrasing: true } },
-  stepTodos:   { get: s => s.stepTodos, top: 'stepTodos', dirty: { video: true } }
+  stepTodos:   { get: s => s.stepTodos, top: 'stepTodos', dirty: { video: true } },
+  // 파트(RM-23) — 띠는 행 dataset 이라 프레이즈와 같이 skeleton 뒤에 다시 입힌다(app/render 가 boards 에도 건다)
+  parts:       { get: s => s.parts, top: 'parts', dirty: { parts: true } }
 }, 'usecases/docFields.js');
 
 /**

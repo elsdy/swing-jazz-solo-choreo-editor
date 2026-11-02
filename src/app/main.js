@@ -25,6 +25,7 @@ import { adjacentPendingGroupId, isPending } from '../domain/placements.js';
 import { suggestMoves } from '../domain/moveMatch.js';
 import * as History from '../usecases/historyCommands.js';
 import * as BoardCmd from '../usecases/boardCommands.js';
+import * as PartCmd from '../usecases/partCommands.js';
 import * as PaletteCmd from '../usecases/paletteCommands.js';
 import * as CategoryCmd from '../usecases/categoryCommands.js';
 import * as RoutineCmd from '../usecases/routineCommands.js';
@@ -68,6 +69,8 @@ import { createRoutineEditorView } from '../ui/routineEditorView.js';
 import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createPlacementActionPopup } from '../ui/placementActionPopup.js';
 import { createRowActionPopup } from '../ui/rowActionPopup.js';
+import { createPartView } from '../ui/partView.js';
+import { str } from '../domain/strings.js';
 import { createDocsHub } from '../ui/docsHub.js';
 import { createSettingsView } from '../ui/settingsView.js';
 import { createPhrasingView } from '../ui/phrasingView.js';
@@ -886,11 +889,35 @@ function makePlacementActionPopup(boardId) {
 }
 const placementActionPopup = makePlacementActionPopup(BOARD_MAIN);
 
+// 파트(섹션) 팝업(2026-11-03, RM-23). 마디 이름을 누르면 범위 고르기 · 접고 펴기, 마디 메뉴에서 긋기 · 고치기.
+// ⚠ 긋기 · 고치기 · 지우기 · 옮기기 · 한 번 더는 커밋까지 끝낸다(블록과 파트가 한 스냅샷 — 되돌리기 한 단계).
+//   접기 · 펴기는 화면의 일이라 커밋하지 않는다.
+const partView = createPartView({
+  render,
+  boardEl: () => boardEl,
+  partOf: (row) => PartCmd.partOf(store, row),
+  draftOf: (row) => PartCmd.draftPart(store, row),
+  maxEndOf: (part) => PartCmd.partMaxEnd(store, part),
+  isFolded: (startRow) => PartCmd.foldedStarts(store).has(startRow),
+  commands: {
+    add: (args) => commitIfChanged(PartCmd.addPart(store, args), BOARD_MAIN),
+    update: (args) => commitIfChanged(PartCmd.updatePart(store, args), BOARD_MAIN),
+    remove: (args) => withUndoToast(PartCmd.removePart(store, args), str('part.removed')),
+    fold: (args) => PartCmd.togglePartFold(store, args),
+    move: (args) => commitIfChanged(PartCmd.movePart(store, args, { ids: browserEnv }), BOARD_MAIN),
+    repeat: (args) => commitIfChanged(PartCmd.repeatPart(store, args, { ids: browserEnv }), BOARD_MAIN)
+  }
+});
+
 // 행 라벨의 마디 메뉴(2026-11-02, RM-16). 우클릭 · 길게 누르기로 뜬다 — 메인 보드만(루틴 보드의 행은 편집기 크기가 정한다).
 // ⚠ 다섯 줄 모두 커밋까지 끝낸다. 지우기는 블록 지우기와 같이 「되돌리기」 토스트를 붙인다.
 const rowActionPopup = createRowActionPopup({
   render,
   labelOf: (row) => `${store.board(BOARD_MAIN).cols}x${row}`,
+  // 맨 아래 한 줄 — 파트 안이면 `파트 고치기…`, 아니면 `파트로 묶기…`(RM-23)
+  extraItem: (row) => (PartCmd.partOf(store, row)
+    ? { label: str('part.menu.edit'), run: (x, y) => partView.openEdit(row, x, y) }
+    : { label: str('part.menu.new'), run: (x, y) => partView.openNew(row, x, y) }),
   commands: {
     insertAbove: (row) => commitIfChanged(BoardCmd.insertRowAt(store, { boardId: BOARD_MAIN, row }, { ids: browserEnv }), BOARD_MAIN),
     deleteRow: (row) => withUndoToast(BoardCmd.deleteRowAt(store, { boardId: BOARD_MAIN, row }, { ids: browserEnv }), '마디를 지웠습니다.'),
@@ -943,7 +970,7 @@ function makeBoardController(boardId, extra = {}) {
 // 원본 1525 bindBoardDelegatedEvents(mainCtx)
 // ⚠ 「손가락인가」는 컨트롤러가 그 누름의 pointerType 으로 안다(RM-11) — 창 폭(isStacked)은 넘기지 않는다.
 //   폭은 배치(사이드바 접기 · 영상 패널 · 팝업 자리)의 일이고 ui/layout 의 몫이다.
-makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup, rowActionPopup, longPress });
+makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup, rowActionPopup, longPress, rowLabelTap: partView.tapLabel });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 12. bindControls (원본 1524) — ⚠ bindHotkeys 는 이 안에서 불린다
@@ -1966,7 +1993,13 @@ const currentVideoSec = () => projectTime(player.getTimeSample(), performance.no
 
 const playhead = createPlayhead({
   scrollRoot: byId('mainBoardWrap'),
-  getTrack: (row) => boardViews[BOARD_MAIN].rowRefs.get(row)?.track || null,
+  // ⚠ 접힌 파트가 감춘 행(RM-23)은 null — 숨은 트랙은 크기가 0 이라 따라가기가 안무표를 맨 위로 튕긴다.
+  //   헤드는 접힌 파트를 지나는 동안 숨는다(파트의 첫 줄은 요약이 덮고 있어 거기에도 그리지 않는다).
+  getTrack: (row) => {
+    const ref = boardViews[BOARD_MAIN].rowRefs.get(row);
+    if (!ref || ref.rowEl.dataset[DATA.partHidden] || ref.rowEl.dataset[DATA.partFolded]) return null;
+    return ref.track;
+  },
   getCols: () => store.board(BOARD_MAIN).cols,
   getTempo: () => VideoCmd.mediaState(store).tempo,
   // ⚠ 템포가 준비되지 않았으면 **아예 그리지 않는다**. bpm 0 에서 그리면 거짓 위치가 선다.
