@@ -2651,6 +2651,41 @@ test('flowTrack: 마디는 고르게 놓이고 길은 닫힌 리본을 함께 �
   assert.equal(Track.flowTrack({ width: NaN, height: 96, count: 6 }), null);
 });
 
+/**
+ * 테마의 마디(지름 34px)와 그 아래 이름(여백 4 + 줄 14)이 띠 높이를 넘으면 `overflow:hidden` 인 띠가 잘라
+ * 이름이 사라진다(RM-58). 띠가 낮으면 활을 낮춰서라도 띠 안에 넣는다 — 띠는 늘이지 않는다(결정 2026-11-03).
+ */
+test('[RM-58 요구 1] flowTrack: 마디와 이름이 띠 높이 안에 든다', () => {
+  const cases = [
+    { height: 104 }, { height: 60 },
+    // 40 에는 기본 마디(34) + 이름(18) 이 들어갈 수 없다 — 작은 마디로 셈만 잰다.
+    { height: 40, nodeR: 8, labelH: 12 }
+  ];
+  for (const c of cases) {
+    const nodeR = c.nodeR ?? Track.FLOW_NODE_R;
+    const labelH = c.labelH ?? Track.FLOW_LABEL_H;
+    for (let count = 2; count <= 6; count++) {
+      const t = Track.flowTrack({ width: 1068, count, ...c });
+      for (const p of t.points) {
+        assert.ok(p.y - nodeR >= 0, `높이 ${c.height} · 마디 ${count}: 마디 위가 띠 위로 나갔다(y=${p.y})`);
+        assert.ok(p.y + nodeR + labelH <= c.height, `높이 ${c.height} · 마디 ${count}: 이름이 띠 아래로 나갔다(y=${p.y})`);
+      }
+    }
+  }
+  // 104(지금 테마 띠)에서는 그림이 그대로다 — 끝 마디가 가운데 마디보다 아래, 활 26px.
+  const t = Track.flowTrack({ width: 1068, height: 104, count: 3 });
+  assert.deepEqual(t.points.map(p => Math.round(p.y)), [65, 39, 65]);
+  // 60 에서는 활이 낮아질 뿐 여전히 가운데가 솟는다.
+  const low = Track.flowTrack({ width: 1068, height: 60, count: 3 });
+  assert.ok(low.points[1].y < low.points[0].y, '낮은 띠에서도 가운데 마디가 솟아야 한다');
+  // 마디와 이름이 아예 안 들어가는 띠는 마디를 띠 위에 붙인다 — 마디가 보이는 것이 이름보다 먼저다.
+  const tiny = Track.flowTrack({ width: 1068, height: 30, count: 3 });
+  assert.ok(tiny.points.every(p => p.y === Track.FLOW_NODE_R), '못 담는 띠에서는 마디를 위에 붙인다');
+  // 기본 테마(마디 · 이름 몫 0)는 RM-58 전과 같은 좌표다 — 낮은 줄(43px)에서도 활이 그대로다(요구 4).
+  const basic = Track.flowTrack({ width: 1068, height: 43, count: 3, nodeR: 0, labelH: 0 });
+  assert.deepEqual(basic.points.map(p => Math.round(p.y * 100) / 100), [27.95, 15.05, 27.95]);
+});
+
 test('themes: 모르는 값은 기본으로 떨어지고, 기본은 표식이 없다', () => {
   assert.equal(Themes.normalizeTheme('neon'), 'neon');
   assert.equal(Themes.normalizeTheme('없는테마'), Themes.DEFAULT_THEME);
