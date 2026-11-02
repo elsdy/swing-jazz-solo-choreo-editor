@@ -559,6 +559,24 @@ export const RULES = [
     },
   },
   {
+    principle: 'D-22',
+    what: '`…Iso().slice(0, 10)` · `toISOString().slice(0, 10)` — UTC 시각을 잘라 날짜로 쓴다(한국 00:00~08:59 에는 어제)',
+    fix: '사람에게 보이는 날짜는 지역 날짜로 — usecases 는 `env.localDate()`, adapters 는 `getFullYear · getMonth · getDate`. UTC 날짜가 정말 맞는 자리면 그 줄에 `// 원칙-예외(D-22): 이유` 를 단다',
+    // @complexity time=O(n) space=O(n) cc=4
+    scan(files) {
+      const out = [];
+      for (const f of jsFiles(files)) {
+        const code = blankJs(files[f]); // 주석 · 문자열 속은 지운다 — 템플릿의 `${…}` 안은 코드라 남는다
+        for (const m of code.matchAll(/(?:Iso\([^()]*\)|toISOString\(\))\s*\.slice\(\s*0\s*,\s*10\s*\)/g)) {
+          const line = lineAt(files[f], m.index);
+          if (excused(files[f], line, 'D-22')) continue;
+          out.push({ file: f, line, snippet: files[f].split('\n')[line - 1].trim() });
+        }
+      }
+      return out;
+    },
+  },
+  {
     principle: 'R-6',
     what: '마크업이 클래스를 둘 이상 준 요소에 `className =` 통째 대입 — 남이 붙인 클래스가 지워진다',
     fix: '상태 클래스만 `classList.toggle(이름, 켬)` 으로 더하고 뺀다',
