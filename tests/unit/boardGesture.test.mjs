@@ -327,6 +327,19 @@ test('마우스 포인터의 취소는 그리기 · 빠른 배치 끌기를 지�
   assert.deepEqual(G.mouseCancel(G.initialGestureState(), null, env()).effects, []);
 });
 
+// ── 블록 탭의 갈래 (RM-11 동작 커밋 ①) ──────────────────────────────────────
+
+test('탭 팝업 갈래: 창 폭이 아니라 pointerType 으로 — 넓은 폭의 touch 는 팝업, 좁은 폭의 mouse 는 선택 토글', () => {
+  // 창 폭은 인자에 없다 — 넓은 태블릿의 손가락도, 좁힌 데스크톱 창의 마우스도 종류로만 갈린다.
+  assert.equal(G.placementTapRoute({ pointerType: 'touch', isRoutine: false, hasActionPopup: true }), 'action-popup');
+  assert.equal(G.placementTapRoute({ pointerType: 'mouse', isRoutine: false, hasActionPopup: true }), 'toggle');
+  assert.equal(G.placementTapRoute({ pointerType: 'pen', isRoutine: false, hasActionPopup: true }), 'toggle');
+  // 팝업이 없는 보드(루틴 편집)는 손가락도 토글이고, 루틴 블록은 종류와 상관없이 루틴 팝업이다.
+  assert.equal(G.placementTapRoute({ pointerType: 'touch', isRoutine: false, hasActionPopup: false }), 'toggle');
+  assert.equal(G.placementTapRoute({ pointerType: 'touch', isRoutine: true, hasActionPopup: true }), 'routine-popup');
+  assert.equal(G.placementTapRoute({ pointerType: 'mouse', isRoutine: true, hasActionPopup: false }), 'routine-popup');
+});
+
 // ── 전이 함수의 성질 ─────────────────────────────────────────────────────────
 
 test('전이 함수는 들어온 상태를 고치지 않는다(새 상태를 돌려준다)', () => {

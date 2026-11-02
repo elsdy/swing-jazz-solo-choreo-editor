@@ -668,7 +668,7 @@ const routineActionPopup = createRoutineActionPopup({
   }
 });
 
-// 안무 블록의 동작 팝업(2026-09-21). 터치 폭에서 한 번 탭하면 뜨고, 마우스에서는 우클릭으로 닿는다.
+// 안무 블록의 동작 팝업(2026-09-21). 손가락으로 한 번 탭하면 뜨고(창 폭과 무관 — RM-11), 마우스에서는 우클릭으로 닿는다.
 // ⚠ `openPicker` 는 **같은 quickPicker 인스턴스**를 쓴다(`✎` 가 부르는 그것) — 동작을 고르는
 //   화면이 두 벌이 되면 한쪽만 고쳐진다.
 const placementActionPopup = createPlacementActionPopup({
@@ -725,8 +725,9 @@ function makeBoardController(boardId, extra = {}) {
 }
 
 // 원본 1525 bindBoardDelegatedEvents(mainCtx)
-// ⚠ 손가락 폭 판정은 ui/layout 의 isStacked 하나를 쓴다 — 브레이크포인트를 input 계층에 또 적지 않는다.
-makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup, isTouchLayout: () => isStacked() });
+// ⚠ 「손가락인가」는 컨트롤러가 그 누름의 pointerType 으로 안다(RM-11) — 창 폭(isStacked)은 넘기지 않는다.
+//   폭은 배치(사이드바 접기 · 영상 패널 · 팝업 자리)의 일이고 ui/layout 의 몫이다.
+makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 12. bindControls (원본 1524) — ⚠ bindHotkeys 는 이 안에서 불린다

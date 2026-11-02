@@ -72,6 +72,23 @@ export function transitionsFor(pointerType) {
   return { down: [mouseDown], move: [mouseMove], up: [mouseUp], cancel: [mouseCancel] };
 }
 
+/**
+ * 블록을 한 번 눌렀을 때(click) 무엇을 하나 — 창 폭이 아니라 **그 누름의 pointerType** 으로 가른다(RM-11, 2026-11-02).
+ * 2026-09-21 부터는 「팝업이 뜨는 폭(≤1040)」이었다 — 넓은 태블릿에서 손가락으로 눌러도 선택 토글이 되고, 좁힌 데스크톱 창에서
+ * 마우스로 눌러도 팝업이 떴다. 이제 손가락이면 팝업, 마우스(펜)면 선택 토글이다 — 우클릭 길은 그대로 남는다.
+ *   'routine-popup'  루틴 블록 — 종류와 상관없이 루틴 팝업(원본 2448)
+ *   'action-popup'   손가락 · 블록 동작 팝업이 있는 보드
+ *   'toggle'         그 밖 — 선택 토글(원본 2461)
+ * @param {{pointerType:string|undefined, isRoutine:boolean, hasActionPopup:boolean}} ev
+ * @returns {'routine-popup'|'action-popup'|'toggle'}
+ */
+// @complexity time=O(1) space=O(1) cc=3
+export function placementTapRoute({ pointerType, isRoutine, hasActionPopup }) {
+  if (isRoutine) return 'routine-popup';
+  if (hasActionPopup && pointerKind(pointerType) === 'touch') return 'action-popup';
+  return 'toggle';
+}
+
 /** @returns {{draw:null, quickDraw:null, quickTouch:null, tap:{time:number, groupId:string|null}}} */
 export function initialGestureState() {
   return { draw: null, quickDraw: null, quickTouch: null, tap: { time: 0, groupId: null } };

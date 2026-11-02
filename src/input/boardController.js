@@ -42,9 +42,8 @@ import { groupCount } from '../domain/placements.js';
  * @param {Object} deps.touchDrag            input/touchDrag 인스턴스(이 보드의 것)
  * @param {Object} deps.quickPicker          ui/quickPicker 인스턴스(이 보드의 것)
  * @param {Object} [deps.routineActionPopup] ui/routineActionPopup (메인 보드만 쓴다)
- * @param {Object} [deps.placementActionPopup] ui/placementActionPopup (2026-09-21, 터치 폭에서만 뜬다)
- * @param {() => boolean} [deps.isTouchLayout] 손가락으로 쓰는 폭인가(기본 false).
- *   ⚠ 여기서 폭을 재지 않는다 — 브레이크포인트의 주인은 ui/layout 하나이고 app/main 이 이어 준다.
+ * @param {Object} [deps.placementActionPopup] ui/placementActionPopup (2026-09-21 — 손가락으로 한 번 누르면 뜬다.
+ *   2026-11-02 RM-11 까지는 창 폭(isTouchLayout)으로 갈랐고, 이제 그 누름의 pointerType 으로 가른다)
  * @param {Object} [deps.policy]             기본값 store.policy(boardId)
  * @param {Document} [deps.doc]              기본값 document (document pointerup 등록 대상)
  * @returns {{ boardId: string, el: HTMLElement }}
@@ -72,7 +71,6 @@ export function createBoardController(deps) {
     touchDrag,
     quickPicker,
     placementActionPopup = null,
-    isTouchLayout = () => false,
     routineActionPopup = null,
     policy = store.policy(boardId),
     doc = document
@@ -166,6 +164,13 @@ export function createBoardController(deps) {
     return { endRow: hit.row, endCol: hit.col };
   }
 
+  /**
+   * 마지막 pointerdown 의 종류. click(④)이 PointerEvent 라 pointerType 을 들고 오는 브라우저(Chrome 90+ · Firefox 97+ ·
+   * Safari 17+)에서는 그것을 쓰고, 아니면 이것으로 가른다 — click 은 언제나 그 누름의 pointerdown 뒤에 온다.
+   */
+  let lastPointerType = 'mouse';
+  const clickPointerType = (e) => e.pointerType || lastPointerType;
+
   // ── ① dragover (2394-2401) ─────────────────────────────────────────────────
   // ⚠ 여기만 elementFromPoint 가 아니라 e.target.closest 를 쓴다 — hitTest 로 바꾸지 마라.
   el.addEventListener('dragover', (e) => {
@@ -234,8 +239,16 @@ export function createBoardController(deps) {
       return;
     }
 
+    // 무엇을 하나 — 루틴 팝업 · 블록 동작 팝업 · 선택 토글. 갈림은 domain/boardGesture.placementTapRoute 가 **그 누름의
+    // pointerType** 으로 정한다(RM-11, 2026-11-02 — 그전에는 창 폭 isTouchLayout 이었다).
+    const route = gesture.placementTapRoute({
+      pointerType: clickPointerType(e),
+      isRoutine: placementEl.classList.contains(CLS.isRoutine),
+      hasActionPopup: !!placementActionPopup,
+    });
+
     // 루틴 배치 단일 클릭 → 편집/삭제 팝업
-    if (placementEl.classList.contains(CLS.isRoutine)) {
+    if (route === 'routine-popup') {
       const placement = board().placements.find(p => p.groupId === groupId);
       if (!placement) return;
       e.stopPropagation();
@@ -243,12 +256,12 @@ export function createBoardController(deps) {
       return;
     }
 
-    // ── 터치 폭: 한 번 탭하면 **무엇을 할 수 있는지**가 팝업으로 뜬다 (2026-09-21) ──
+    // ── 손가락: 한 번 탭하면 **무엇을 할 수 있는지**가 팝업으로 뜬다 (2026-09-21) ──
     // 그전에는 탭 = 고르기, 두 번 탭 = 지우기였는데 둘 다 손가락에게 불친절했다(팝업 파일의 주석).
-    // ⚠ 여기 `click` 에서 연다. touchstart 에서 열면 preventDefault 로 **스크롤을 막아야** 하고,
-    //   블록을 짚고 표를 굴리는 흔한 동작이 죽는다. 합성 click 은 손가락이 움직이면 아예 안 온다 —
-    //   브라우저가 이미 "탭인가 스크롤인가"를 가려 주는 셈이라 그 판정을 다시 만들지 않는다.
-    if (placementActionPopup && isTouchLayout()) {
+    // ⚠ 여기 `click` 에서 연다. pointerdown 에서 열면 블록을 짚고 표를 굴리는 흔한 동작이 죽는다.
+    //   합성 click 은 손가락이 움직이면 아예 안 온다 — 브라우저가 이미 "탭인가 스크롤인가"를 가려 주는 셈이라
+    //   그 판정을 다시 만들지 않는다.
+    if (route === 'action-popup') {
       e.stopPropagation();
       const placement = board().placements.find(p => p.groupId === groupId);
       if (!placement) return;
@@ -329,8 +342,6 @@ export function createBoardController(deps) {
   //   (`.move-handle` · `.resize-handle`)이 막는다 — 포인터 이벤트의 preventDefault 는 스크롤을 막지 못한다.
   // ⚠ click 은 PointerEvent 가 아닌 브라우저가 있어 pointerdown 의 종류를 기억해 둔다(lastPointerType).
 
-  /** 마지막 pointerdown 의 종류. click(④) · contextmenu 가 손가락인지 가릴 때 읽는다. */
-  let lastPointerType = 'mouse';
   const isFinger = (e) => gesture.pointerKind(e.pointerType) === 'touch';
 
   /** 포인터 이벤트 → 전이 함수가 읽는 값. 트랙과 블록 위인지는 e.target 으로 본다(마우스 전이가 쓴다 — elementFromPoint 아님). */
@@ -372,10 +383,11 @@ export function createBoardController(deps) {
         return;
       }
       // 더블탭으로 배치 삭제 (move-handle, resize-handle, ✎ 외 영역 터치 시)
-      // ⚠ **팝업이 뜨는 폭에서는 이 길을 닫는다**(2026-09-21). 지우기는 팝업 안에 있고, 그대로 두면
+      // ⚠ **블록 동작 팝업이 있는 보드에서는 이 길을 닫는다**(2026-09-21 — 그때는 「팝업이 뜨는 폭」이었고, 2026-11-02 부터
+      //   손가락이면 언제나 팝업이 뜨므로 팝업이 있는 보드 전부다). 지우기는 팝업 안에 있고, 그대로 두면
       //   첫 탭이 연 팝업 **위로** 둘째 탭이 떨어져 엉뚱한 줄이 눌린다(팝업이 누른 자리에 뜬다).
       if (e.target.closest(SEL.nameBtn)) return;
-      if (!(placementActionPopup && isTouchLayout())) {
+      if (!placementActionPopup) {
         const placementEl = e.target.closest(SEL.placement);
         if (placementEl) {
           // ⚠ 루틴 가드는 preventDefault 뒤에 온다(2539) — 그 차례는 gesture.placementTap 이 지킨다.
