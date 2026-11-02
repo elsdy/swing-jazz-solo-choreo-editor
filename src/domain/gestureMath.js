@@ -163,3 +163,15 @@ export function resizeHitKind(inBoard, hasOriginTrack) {
   if (hasOriginTrack) return 'sameRow';
   return 'step';
 }
+
+/**
+ * 늘이기 손잡이를 눌렀을 때 늘이기를 막는가. 메인 보드(루틴 블록을 받는 보드)의 루틴 블록은 길이가 루틴의 것이라
+ * 손으로 늘이지 않는다(원본 2503 `ctx === mainCtx`). ⚠ 포인터 종류를 묻지 않는다 — 원본은 이 가드가 mousedown 에만
+ * 있고 touchstart(2513)에는 없어 손가락으로는 늘어났다. RM-11(2026-11-02)이 손가락도 막았다(계획서의 결정 「손가락도 막는다」).
+ * @param {{isRoutine:boolean, allowsRoutineBlocks:boolean}} a
+ * @returns {boolean}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function resizeBlocked({ isRoutine, allowsRoutineBlocks }) {
+  return !!isRoutine && !!allowsRoutineBlocks;
+}

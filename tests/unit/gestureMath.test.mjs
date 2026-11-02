@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {
   DOUBLE_TAP_MS, QUICK_DRAG_THRESHOLD_PX, LONGPRESS_MOVE_THRESHOLD_PX,
   resolveDragCount, resolveResizeCount, isDoubleTap, exceedsThreshold,
-  resolveHitCell, dragPreviewCount, resizeHitKind,
+  resolveHitCell, dragPreviewCount, resizeHitKind, resizeBlocked,
 } from '../../src/domain/gestureMath.js';
 
 const BOARD = { rows: 8, cols: 8 };   // 마지막 행 인덱스 8
@@ -119,4 +119,13 @@ test('이동 임계: 어느 한 축이라도 임계를 **넘어야** 한다(같�
   assert.equal(exceedsThreshold(12, -12, 12), false);
   assert.equal(exceedsThreshold(-13, 0, 12), true);
   assert.equal(exceedsThreshold(0, 9, 8), true);
+});
+
+// ── 늘이기 가드 (RM-11 동작 ④) ───────────────────────────────────────────────
+
+test('늘이기 가드: 메인 보드의 루틴 블록은 마우스·손가락 모두 같은 답 — 포인터 종류를 묻지 않는다', () => {
+  assert.equal(resizeBlocked({ isRoutine: true, allowsRoutineBlocks: true }), true);    // 메인 보드의 루틴 블록
+  assert.equal(resizeBlocked({ isRoutine: false, allowsRoutineBlocks: true }), false);  // 메인 보드의 동작 블록
+  assert.equal(resizeBlocked({ isRoutine: true, allowsRoutineBlocks: false }), false);  // 루틴 보드(루틴 블록이 없다)
+  assert.equal(resizeBlocked.length, 1);   // 인자 하나 — pointerType 갈래가 다시 생기지 않게
 });

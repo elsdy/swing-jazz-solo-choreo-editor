@@ -21,7 +21,7 @@
 //      import 하는 것은 domContract(같은 rank 3 의 유일한 예외)와 domain 순수 함수뿐이다.
 
 import { SEL, CLS, DATA } from '../ui/domContract.js';
-import { dragPreviewCount } from '../domain/gestureMath.js';
+import { dragPreviewCount, resizeBlocked } from '../domain/gestureMath.js';
 import * as gesture from '../domain/boardGesture.js';
 import { groupCount } from '../domain/placements.js';
 
@@ -366,8 +366,9 @@ export function createBoardController(deps) {
       e.preventDefault();
       const placementEl = resizeHandle.closest(SEL.placement);
       if (!placementEl) return;
-      // 2503: 메인 보드의 루틴 블록은 리사이즈 금지 (`ctx === mainCtx`) — 마우스에만 있던 가드다(원본 2513 터치에는 없다).
-      if (!finger && placementEl.classList.contains(CLS.isRoutine) && policy.allowsRoutineBlocks) return;
+      // 2503: 메인 보드의 루틴 블록은 리사이즈 금지 (`ctx === mainCtx`). 원본은 마우스에만 있던 가드였고(2513 터치에는
+      //   없었다) RM-11 이 손가락도 막았다 — 판정은 포인터 종류를 묻지 않는 gestureMath.resizeBlocked 하나다.
+      if (resizeBlocked({ isRoutine: placementEl.classList.contains(CLS.isRoutine), allowsRoutineBlocks: !!policy.allowsRoutineBlocks })) return;
       if (finger) overlays.hideFloatingTooltip();
       pointerSession.start(boardId, placementEl.dataset[DATA.groupId], e.clientX);
       return;
