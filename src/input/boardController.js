@@ -55,7 +55,9 @@ import { groupCount } from '../domain/placements.js';
  *   moveGroup({ groupId, targetRow, targetStartIndex })     -> Dirty
  *   copyGroup({ groupId, targetRow, targetStartIndex })     -> Dirty
  *   removeGroup({ groupId })                                -> Dirty
- *   toggleSelection({ groupId })                            -> Dirty
+ *   selectOnly({ groupId })                                 -> Dirty   그냥 클릭(RM-14)
+ *   toggleSelection({ groupId })                            -> Dirty   Ctrl/Cmd+클릭
+ *   selectRange({ groupId })                                -> Dirty   Shift+클릭
  *   commitHistory()                                         -> Dirty|void   (saveHistory / saveHistoryRe)
  */
 export function createBoardController(deps) {
@@ -256,11 +258,14 @@ export function createBoardController(deps) {
       return;
     }
 
-    // 일반 배치 클릭 → 선택 토글
+    // 일반 배치 클릭 → 고르기(RM-14 · Q84 편집기 관습). 그냥 클릭은 **그것만**, Ctrl/Cmd+클릭은 더하기/빼기, Shift+클릭은 범위.
+    // 2026-11-02 전에는 클릭이 더하기/빼기였다(원본 2453-2465). 뜻의 판정은 domain/selection 이 하고 여기는 글쇠만 읽는다.
     // ⚠ 클래스 토글(2461-2463)은 Dirty.selection → boardView.setSelected 가 한다.
     //   행을 다시 그리는 것으로 대체하지 마라(드래그·툴팁·포커스가 끊긴다).
     e.stopPropagation();
-    apply(commands.toggleSelection({ groupId }));
+    if (e.shiftKey) apply(commands.selectRange({ groupId }));
+    else if (e.ctrlKey || e.metaKey) apply(commands.toggleSelection({ groupId }));
+    else apply(commands.selectOnly({ groupId }));
   });
 
   // ── ④-b contextmenu — 마우스에서도 같은 팝업에 닿는 길 (2026-09-21) ───────

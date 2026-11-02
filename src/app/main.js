@@ -404,7 +404,16 @@ function boardCommandsFor(boardId) {
     }),
     copyGroup: (args) => BoardCmd.copyGroupTo(store, { boardId, ...args }, ids),
     removeGroup: (args) => withUndoToast(BoardCmd.removeGroup(store, { boardId, ...args }), '블록을 지웠습니다.', boardId),
+    // 고르기 셋(RM-14) — 그냥 클릭 · Ctrl/Cmd+클릭 · Shift+클릭. 네모와 묶음 끌기는 아래.
+    selectOnly: (args) => BoardCmd.selectOnly(store, { boardId, ...args }),
     toggleSelection: (args) => BoardCmd.toggleSelection(store, { boardId, ...args }),
+    selectRange: (args) => BoardCmd.selectRange(store, { boardId, ...args }),
+    selectInRect: (args) => BoardCmd.selectInRect(store, { boardId, ...args }),
+    // 고른 묶음을 같은 거리로 — 화살표(nudge)와 같은 규칙. 커밋은 컨트롤러가 옮겼을 때만 한 번.
+    moveSelection: (args) => BoardCmd.moveSelectionBy(store, { boardId, ...args }, {
+      ids: browserEnv,
+      unmarkDragging: () => overlays.unmarkDraggingGroups(boardId)
+    }),
     commitHistory: () => commitHistory(boardId)
   };
 }
