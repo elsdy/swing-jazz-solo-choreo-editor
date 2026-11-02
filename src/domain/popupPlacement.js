@@ -45,11 +45,15 @@ export const PLACEMENT_ACTION_POPUP = Object.freeze({ width: 160, height: 152, g
 
 /**
  * 블록 동작 팝업(터치 폭에서 블록을 탭하면 뜨는 것). 네 변을 모두 막는다.
- * @param {{clientX:number, clientY:number, viewW:number, viewH:number}} a
+ * ⚠ `height` 를 주면 그 높이로 아래 변을 막는다(2026-11-02 RM-16) — 줄이 다섯이 된 블록 팝업 · 마디 메뉴는
+ *   가정 높이 132 보다 커서, 창 아래쪽에서 열면 마지막 줄이 화면 밖으로 나갔다. 호출부가 붙인 뒤 잰 값을 준다.
+ * @param {{clientX:number, clientY:number, viewW:number, viewH:number, height?:number}} a
  * @returns {{left:number, top:number}}
  */
-export function placePlacementActionPopup({ clientX, clientY, viewW, viewH }) {
-  const { width, height, gap, drop } = PLACEMENT_ACTION_POPUP;
+// @complexity time=O(1) space=O(1) cc=3
+export function placePlacementActionPopup({ clientX, clientY, viewW, viewH, height: measured }) {
+  const { width, gap, drop } = PLACEMENT_ACTION_POPUP;
+  const height = Number.isFinite(measured) && measured > 0 ? measured : PLACEMENT_ACTION_POPUP.height;
   return {
     left: Math.max(gap, Math.min(clientX, viewW - width - gap)),
     top: Math.max(gap, Math.min(clientY + drop, viewH - height - gap)),

@@ -2,19 +2,22 @@
 //
 //   node tools/check-docs.mjs
 //
-// 눈으로 훑으면 반드시 빠뜨린다. 검사하는 것은 다섯이다.
+// 눈으로 훑으면 반드시 빠뜨린다. 검사하는 것은 여섯이다.
 //   ① 등록부에 있는데 파일이 없는 항목 — 목록에서 눌렀을 때 빈 화면이 뜬다
 //   ② 파일은 있는데 등록부에 없는 문서 — 사용자 눈에는 문서가 늘지 않은 것과 같다
 //   ③ 문서끼리 거는 링크의 앵커가 뷰어가 만드는 id 와 맞는지
 //   ④ 뷰어 렌더 결과의 제목·목록·표·코드블록 개수가 원문과 맞는지
 //   ⑤ 튜토리얼·기능 설명서가 백틱으로 인용한 화면 라벨이 지금 화면 코드에 있는지(tools/docLabels.mjs)
 //      — 라벨을 바꾸고 두 문서를 빠뜨린 커밋이 여기서 붉어진다
+//   ⑥ 화면의 `?` 단추(data-help)가 가리키는 문서 · 앵커가 있는지, 단추 키와 표(src/ui/helpLinks.js)가 짝이 맞는지(RM-26)
+//      — 제목을 고쳐 앵커가 바뀌면 `?` 가 문서 맨 위로 떨어진다. 그것을 여기서 붉게 한다
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderMarkdown, buildToc } from '../src/ui/docsHub.js';
-import { DOCS, DOC_GROUPS, idForFileName } from '../src/ui/docsRegistry.js';
+import { DOCS, DOC_GROUPS, idForFileName, resolveDoc } from '../src/ui/docsRegistry.js';
+import { HELP_LINKS, missingHelpAnchors, unmatchedHelpKeys } from '../src/ui/helpLinks.js';
 import { LABEL_DOCS, NOT_LABELS, checkDocLabels, formatMiss } from './docLabels.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -130,9 +133,21 @@ for (const q of labels.badExclusions) problems.push(`tools/docLabels.mjs NOT_LAB
 for (const q of labels.unusedExclusions) problems.push(`tools/docLabels.mjs NOT_LABELS: '${q}' 를 인용한 곳이 이제 없다 — 목록에서 지운다`);
 const filteredTotal = Object.values(labels.filtered).reduce((a, b) => a + b, 0);
 
+// ── ⑥ 도움말 `?` 단추 ───────────────────────────────────────────────────────
+// 키는 화면 원문(index.html · src JS)의 data-help="…" 에서 긁는다 — ⑤가 읽은 그 글자를 그대로 쓴다.
+const screenFiles = readScreenFiles();
+const helpKeys = new Set();
+// 마크업의 data-help="키" 와 JS 의 dataset.help = '키' 두 꼴. 키는 영문 소문자 kebab 이라 주석 속 `<키>` 같은 설명은 걸리지 않는다.
+for (const text of Object.values(screenFiles)) {
+  for (const m of text.matchAll(/data-help="([a-z0-9-]+)"|dataset\.help\s*=\s*'([a-z0-9-]+)'/g)) helpKeys.add(m[1] || m[2]);
+}
+for (const p of missingHelpAnchors(HELP_LINKS, anchorsOf, resolveDoc)) problems.push(p);
+for (const p of unmatchedHelpKeys(HELP_LINKS, helpKeys)) problems.push(p);
+
 // ── 보고 ────────────────────────────────────────────────────────────────────
 console.log(stats.join('\n'));
 console.log(`\n등록 문서 ${DOCS.length}건 / 갈래 ${DOC_GROUPS.length}개 / 문서 간 링크 ${links.length}개`);
+console.log(`도움말 ? 단추 ${helpKeys.size}종 / 표 ${HELP_LINKS.length}줄`);
 console.log(`라벨 인용 ${labels.checked}개 대조(${LABEL_DOCS.join(' · ')}) / 꼴로 거른 것 ${filteredTotal}개(${Object.entries(labels.filtered).map(([k, n]) => `${k} ${n}`).join(' · ')}) / 라벨 아님 목록 ${NOT_LABELS.length}개`);
 for (const n of notes) console.log('  · ' + n);
 

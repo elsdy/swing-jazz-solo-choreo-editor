@@ -375,3 +375,26 @@ export function placementTap(state, ev) {
     effects: [{ kind: 'preventDefault' }, { kind: 'remove', groupId: ev.groupId }, { kind: 'commit' }],
   };
 }
+
+/**
+ * 행 라벨의 우클릭 · 길게 누르기(2026-11-02, RM-16) — 마디 메뉴를 열지 판정한다.
+ *
+ * 몸통 행(1..rows)의 라벨에서만 연다. 인트로 행(0)은 마디가 아니라 끼우거나 지울 수 없으므로 메뉴가 없고,
+ * 라벨이 아닌 곳(트랙 · 비고)은 블록 팝업과 브라우저 메뉴의 몫이다. 상태는 바꾸지 않는다.
+ *
+ * @param {object} state
+ * @param {{row:number|null, x:number, y:number}} ev  라벨이 아니면 row 가 null
+ * @param {{board:{rows:number}}} env
+ */
+// @complexity time=O(1) space=O(1) cc=4
+export function rowLabelPress(state, ev, env) {
+  const row = ev.row;
+  if (!Number.isInteger(row) || row < 1 || row > env.board.rows) return { state, effects: [] };
+  return {
+    state,
+    effects: [
+      { kind: 'preventDefault' },
+      { kind: 'openRowMenu', row, clientX: ev.x, clientY: ev.y, first: row === 1, last: row === env.board.rows },
+    ],
+  };
+}

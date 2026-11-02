@@ -8,7 +8,9 @@
 //
 // 판 파일이 원본이다(2026-10-11, B949). 보드의 판은 항목을 더하고 지우며 JSON 만 main 에 올린다 — 두 쪽이
 // 같아야 한다고 재면 판이 고칠 때마다 main 이 붉어졌다. 그래서 문서 ⊆ 판 파일로 잰다: 문서의 번호는 판에 있어야
-// 하고, 둘 다에 있으면 칸·규모·선행이 같아야 한다. 판에만 있는 항목은 계획서가 있을 때만 문서에 없어도 된다.
+// 하고, 둘 다에 있으면 칸·규모·선행이 같아야 한다. 판에만 있는 항목은 계획서나 설명(what)이 있으면 문서에 없어도 된다 —
+// 보드가 found 로 더한 버그 항목은 계획서 없이 설명만 갖는다(2026-11-02, RM-40). 문서가 「정하기를 미룬 것」에 둔 질문에
+// 판이 답을 적은 것도 붉히지 않고 「문서에서 거둘 것」으로 알리기만 한다 — 판이 원본이라 답이 틀린 것이 아니라 문서 줄이 묵은 것이다.
 //
 // 규모는 문서의 두 자리 — 추적 표의 칸과 세 칸 항목 줄의 「(규모)」 — 에 적힌다. 판이 다시 다듬으며 규모만 바꿨을 때
 // 표만 고치고 본문 괄호를 빠뜨리지 않게 두 자리 모두 판과 잰다(2026-10-20, RM-38).
@@ -34,9 +36,13 @@ for (const t of doc.tracks) for (const it of t.items) items.set(it.id, { ...it, 
 
 // 세 칸 항목 줄: - **RM-nn · 이름** (규모) — … · 괄호 규모가 없는 줄은 번호만 읽는다(규모는 null)
 const inBody = new Map([...mdText.matchAll(/^- \*\*(RM-\d+) · .*?\*\*(?: \((S|M|L|XL)\))?/gm)].map(m => [m[1], m[2] ?? null]));
-const hasPlan = it => Boolean(it.plan) || existsSync(new URL(`docs/roadmap/plans/${it.id}.md`, ROOT));
+/** 판에만 있는 항목이 어딘가 적힌 것인가 — 계획서(`plan` 필드 · 계획서 파일)나 비지 않은 설명(`what`). 이름만 있는 빈 항목은 거짓이다. */
+// @complexity time=O(1) space=O(1) cc=4
+const described = (it, planExists) => Boolean(it.plan) || planExists(it.id) || Boolean(it.what && it.what.trim());
+const hasPlan = it => described(it, id => existsSync(new URL(`docs/roadmap/plans/${id}.md`, ROOT)));
 
 /** 문서(추적 표 rows · 세 칸 inBody — 번호 → 본문 규모)와 판 파일(items)의 어긋남을 말로 돌려준다 — 빈 배열이면 맞다. */
+// @complexity time=O(n) space=O(n) cc=19
 function mismatches({ rows, inBody, items, hasPlan }) {
   const out = [];
   const inTable = new Set(rows.map(r => r.id));
@@ -57,9 +63,25 @@ function mismatches({ rows, inBody, items, hasPlan }) {
     if (it && size && it.size !== size) out.push(`${id} 의 본문 규모: 판 ${it.size} · 문서 ${size}`);
   }
   for (const it of items.values()) {
-    if (!inTable.has(it.id) && !hasPlan(it)) out.push(`${it.id} 는 판 파일에만 있고 계획서도 없다 — 문서에 적거나 계획서를 둔다`);
+    if (!inTable.has(it.id) && !hasPlan(it)) out.push(`${it.id} 는 판 파일에만 있고 계획서도 설명도 없다 — 문서에 적거나 계획서 · 설명을 둔다`);
   }
   return out;
+}
+
+/**
+ * 문서가 「정하기를 미룬 것」에 둔 질문 번호(ids)를 판의 questions(번호 → 질문)와 대조한다.
+ * red 는 판에 없는 번호(붉힌다), stale 은 판이 답을 적은 번호(문서에서 거둘 것으로 알리기만 한다) — 판이 원본이다.
+ */
+// @complexity time=O(k) space=O(k) cc=4
+function deferredMismatches({ ids, questions }) {
+  const red = [];
+  const stale = [];
+  for (const id of ids) {
+    const q = questions.get(id);
+    if (!q) red.push(`${id} 가 로드맵 파일의 questions 에 없다`);
+    else if (q.answer) stale.push(`${id} 는 문서에서 미룬 것인데 판이 답했다(「${q.answer}」) — 문서의 미룬 것 표에서 거두고 결정 기록에 적는다`);
+  }
+  return { red, stale };
 }
 
 test('로드맵 파일은 factoriel/1(옛 이름 roadmap-board/1)이고, 보드가 쓰는 꼴(두 칸 들여쓰기 · 한글 그대로)이다', () => {
@@ -70,7 +92,7 @@ test('로드맵 파일은 factoriel/1(옛 이름 roadmap-board/1)이고, 보드�
   assert.equal(jsonText, JSON.stringify(doc, null, 2) + '\n');
 });
 
-test('추적 표와 로드맵 파일의 항목이 같다 — 번호·칸·규모·선행', () => {
+test('[RM-40 요구 4] 추적 표와 로드맵 파일의 항목이 같다 — 번호·칸·규모·선행', () => {
   assert.ok(rows.length >= 30, `추적 표에서 읽은 줄이 ${rows.length}개뿐이다 — 표의 꼴이 바뀌었나`);
   assert.deepEqual(mismatches({ rows, inBody: new Map(rows.map(r => [r.id, null])), items, hasPlan }), []);
 });
@@ -88,10 +110,10 @@ test('문서의 세 칸에 있는 항목이 로드맵 파일에도 있다', () =
   assert.deepEqual(mismatches({ rows, inBody, items, hasPlan }), []);
 });
 
-test('판에서만 더한 항목은 계획서가 있으면 문서에 없어도 된다', () => {
+test('[RM-40 요구 1] 판에서만 더한 항목은 계획서가 있으면 문서에 없어도 된다', () => {
   const row = (id, lane = 'next', size = 'S', after = []) => ({ id, lane, size, after });
   const item = (id, extra = {}) => [id, { id, lane: 'next', size: 'S', after: [], ...extra }];
-  const plan = it => Boolean(it.plan);
+  const plan = it => described(it, () => false); // 계획서 파일은 없다고 친다 — plan 필드와 what 만 본다
   const docRows = [row('RM-01'), row('RM-02', 'then', 'M', ['RM-01'])];
   const body = new Map([['RM-01', 'S'], ['RM-02', 'M']]);
   const base = [item('RM-01'), item('RM-02', { lane: 'then', size: 'M', after: ['RM-01'] })];
@@ -100,9 +122,15 @@ test('판에서만 더한 항목은 계획서가 있으면 문서에 없어도 �
   const added = new Map([...base, item('RM-03', { plan: 'docs/roadmap/plans/RM-03.md' })]);
   assert.deepEqual(mismatches({ rows: docRows, inBody: body, items: added, hasPlan: plan }), []);
 
-  // 계획서도 없이 판에만 있으면 붉다
-  const bare = new Map([...base, item('RM-03')]);
-  assert.match(mismatches({ rows: docRows, inBody: body, items: bare, hasPlan: plan }).join('\n'), /RM-03 는 판 파일에만 있고 계획서도 없다/);
+  // 계획서 없이 설명(what)만 있어도 통과 — 보드가 found 로 더한 버그 항목의 꼴(RM-40)
+  const found = new Map([...base, item('RM-03', { what: '푸시 훅이 막는다', kind: 'bug' })]);
+  assert.deepEqual(mismatches({ rows: docRows, inBody: body, items: found, hasPlan: plan }), []);
+
+  // 계획서도 설명도 없이 판에만 있으면 붉다 — 빈 설명도 없는 것이다
+  for (const extra of [{}, { what: '' }, { what: '  ' }]) {
+    const bare = new Map([...base, item('RM-03', extra)]);
+    assert.match(mismatches({ rows: docRows, inBody: body, items: bare, hasPlan: plan }).join('\n'), /RM-03 는 판 파일에만 있고 계획서도 설명도 없다/);
+  }
 
   // 판에서 지운 번호가 문서에 남아 있으면 붉다
   const removed = new Map([base[0]]);
@@ -127,17 +155,33 @@ test('판에서만 더한 항목은 계획서가 있으면 문서에 없어도 �
   assert.match(mismatches({ rows: docRows, inBody: new Map([['RM-01', 'S']]), items: added, hasPlan: plan }).join('\n'), /RM-02 는 추적 표에만 있고 세 칸에 없다/);
 });
 
-test('정하기를 미룬 것의 번호가 로드맵 파일의 질문과 맞고, 아직 답이 없다', () => {
-  const qs = new Map(doc.questions.items.map(q => [q.id, q]));
+test('[RM-40 요구 2] 미룬 질문에 판이 답했으면 거둘 것으로 알리되 붉히지 않는다', () => {
+  const questions = new Map([
+    ['Q1', { id: 'Q1', answer: null }],
+    ['Q2', { id: 'Q2', answer: 'RM-11 첫 커밋을 졸업일로 한다' }],
+    ['Q3', { id: 'Q3', answer: '' }],
+  ]);
+  const { red, stale } = deferredMismatches({ ids: ['Q1', 'Q2', 'Q3', 'Q9'], questions });
+  // 판에 없는 번호만 붉다 — 문서가 판에 없는 질문을 들고 있다
+  assert.deepEqual(red, ['Q9 가 로드맵 파일의 questions 에 없다']);
+  // 답이 있는 번호는 알리기만 한다 — 답을 그대로 보여 결정 기록에 옮길 수 있게. 답이 비면 아직 미룬 것이다
+  assert.equal(stale.length, 1);
+  assert.match(stale[0], /^Q2 는 문서에서 미룬 것인데 판이 답했다\(「RM-11 첫 커밋을 졸업일로 한다」\) — 문서의 미룬 것 표에서 거두고 결정 기록에 적는다$/);
+  // 모두 답이 없으면 둘 다 비어 있다
+  assert.deepEqual(deferredMismatches({ ids: ['Q1'], questions }), { red: [], stale: [] });
+});
+
+test('[RM-40 요구 3] 정하기를 미룬 것의 번호가 로드맵 파일의 질문과 맞고, 판이 답한 것은 거둘 것으로 알린다', t => {
+  const questions = new Map(doc.questions.items.map(q => [q.id, q]));
   const deferred = mdText.slice(mdText.indexOf('## 정하기를 미룬 것'), mdText.indexOf('### 적응형 작업 차례'));
   const ids = [...deferred.matchAll(/^\| \*\*.+?\*\*\(.*?(Q\d+)\) \|/gm)].map(m => m[1]);
-  // 표의 데이터 행 수와 읽은 번호 수가 같아야 한다 — 판이 답해 표가 줄어도(2026-11-02 Q3 · Q4 · Q6) 읽기가 깨진 것과 가른다.
-  const dataRows = (deferred.match(/^\| \*\*/gm) || []).length;
-  assert.ok(dataRows >= 1 && ids.length === dataRows, `정하기를 미룬 것 표에서 질문 번호를 읽지 못했다 — 행 ${dataRows} · 번호 ${ids.length}`);
-  for (const id of ids) {
-    assert.ok(qs.has(id), `${id} 가 로드맵 파일의 questions 에 없다`);
-    assert.equal(qs.get(id).answer, null, `${id} 는 문서에서 미룬 것인데 파일에는 답이 있다`);
-  }
+  // 표의 줄 수와 읽은 번호 수가 같아야 한다 — 줄은 있는데 번호를 못 읽으면 표의 꼴이 바뀐 것이다(2026-11-02 세 줄을 결정 기록으로 옮겨 넷이 남았다)
+  const tableRows = (deferred.match(/^\| \*\*/gm) || []).length;
+  assert.ok(ids.length >= 1 && ids.length === tableRows, `정하기를 미룬 것 표 ${tableRows}줄에서 질문 번호를 ${ids.length}개 읽었다 — 표의 꼴이 바뀌었나`);
+  const { red, stale } = deferredMismatches({ ids, questions });
+  assert.deepEqual(red, []);
+  // 판이 답한 미룬 질문은 문서 줄이 묵은 것이다 — 붉히지 않고 알린다. 문서를 다음에 손대는 PR 이 거둔다(docs/ROADMAP.md 「판 파일이 원본이다」)
+  for (const line of stale) t.diagnostic(`문서에서 거둘 것: ${line}`);
 });
 
 test('트랙이 가리키는 문서 앵커가 문서 뷰어에서 실제로 걸린다', () => {

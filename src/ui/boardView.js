@@ -136,6 +136,8 @@ export function createBoardView(options) {
       const label = document.createElement('div');
       label.className = CLS.rowLabel;
       label.textContent = labelText;
+      // ⚠ 행 메뉴(RM-16)가 되읽는 행 번호. 트랙과 같은 키 · 같은 문자열 규약이다.
+      label.dataset[DATA.row] = row;
       const track = document.createElement('div');
       track.className = CLS.track;
       // ⚠ dataset 은 문자열이 된다 — 읽는 쪽(input)이 Number() 해야 한다.
