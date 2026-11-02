@@ -198,6 +198,28 @@ test('지금 저장소: 계기였던 옛 라벨과 없어진 단추는 붉어진
     ['동작 팔레트', '어떻게 채울까', '서버 보관 루트', '프로젝트 저장 / 불러오기', '☰']);
 });
 
+test('지금 저장소: 파일 메뉴의 저장 안내와 튜토리얼 · 기능 설명서의 저장 · 복구 대목이 「파일 서랍의 지난 판」을 가리키고 .history 폴더를 뒤지라는 옛 말은 없다', () => {
+  // RM-25(2026-11-02). 되돌릴 길이 화면에 생겼는데 안내가 「폴더에 남습니다」로 남으면 폴더를 뒤지라는 말이 된다.
+  const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+  // ① 파일 메뉴의 saveNote 문장 — 화면 글자(JS 문자열)로 읽는다. RM-10 부터 글자는 문자열 표(`file.note.bound`)에 산다.
+  const strings = scanJs(read('src/domain/strings.js')).strings.map(s => s.text);
+  const note = strings.find(t => t.includes('자동으로 담기고 있습니다'));
+  assert.ok(note, '저장 안내 문장을 못 찾았다');
+  assert.ok(note.includes('지난 판'), `저장 안내가 지난 판을 가리키지 않는다: ${note}`);
+  assert.ok(!strings.some(t => /\.history 에 남습니다/.test(t)), '옛 말(「폴더의 .history 에 남습니다」)이 남았다');
+  // ② 두 문서의 저장 · 복구 대목 — 새 라벨을 백틱으로 인용한다(그래서 위 「라벨 인용이 모두 화면에 있다」가 화면까지 잰다).
+  for (const docPath of LABEL_DOCS) {
+    const quotes = docQuotes(read(docPath)).map(q => q.quote);
+    assert.ok(quotes.includes('지난 판'), `${docPath} 가 \`지난 판\` 을 인용하지 않는다`);
+    assert.ok(quotes.includes('되살리기'), `${docPath} 가 \`되살리기\` 를 인용하지 않는다`);
+    // ③ .history 폴더를 직접 뒤지라는 문장이 없다.
+    const text = read(docPath);
+    for (const old of [/폴더에서 직접 꺼낸다/, /고르는 자리는 아직 없/, /`\.history\/?` ?에 남으므로/]) {
+      assert.ok(!old.test(text), `${docPath} 에 옛 말이 남았다: ${old}`);
+    }
+  }
+});
+
 test('RM-16 새 라벨이 기능 설명서와 튜토리얼에 백틱으로 적혀 있고 화면 글자와 맞는다', () => {
   const labels = ['여기서 자르기', '옆과 합치기', '위에 한 마디 끼우기', '이 마디 지우기', '이 마디 복제', '위로 옮기기', '아래로 옮기기'];
   const docs = repoDocs();

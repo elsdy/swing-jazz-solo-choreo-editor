@@ -71,6 +71,7 @@ export function createFileMenu(options = {}) {
     }
     if (state === 'bound') {
       saveNote.dataset.bound = 'on';
+      // 되돌릴 길을 같은 문장에 둔다(RM-25) — 「남습니다」만 적으면 폴더를 뒤지라는 말이 된다.
       saveNote.textContent = fill('file.note.bound', { bound });
       return;
     }

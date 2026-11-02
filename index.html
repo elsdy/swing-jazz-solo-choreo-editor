@@ -933,6 +933,14 @@
     .saved-trash-head { font-size: 11px; color: var(--muted); }
     .saved-trash-item { opacity: .82; }
     .saved-trash-item:hover { opacity: 1; }
+    /* 지난 판(RM-25) — 휴지통과 같은 꼴. 손 저장 판과 자동 담기 판은 12+20 장까지라 칸 안에서 스크롤한다. */
+    .saved-history { display: grid; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(148, 163, 184, 0.22); max-height: 240px; overflow: auto; }
+    .saved-history[hidden] { display: none; }   /* 위 휴지통과 같은 까닭(U-12) */
+    .saved-history-head { font-size: 11px; color: var(--muted); }
+    .saved-history-item { opacity: .82; }
+    .saved-history-item:hover { opacity: 1; }
+    .saved-history-item[data-kind="auto"] { opacity: .62; }   /* 자동 담기 판은 한 단 더 흐리다 — 「내가 저장한 자리」가 먼저 보이게 */
+    .saved-history-item[data-kind="auto"]:hover { opacity: 1; }
     .saved-item {
       display: flex;
       justify-content: space-between;
@@ -3748,6 +3756,9 @@
             <button id="savedSortAlphaBtn" class="sort-mode-btn" title="이름순">이름순</button>
           </div>
           <div class="saved-list" id="savedList"></div>
+          <!-- 지난 판(RM-25, 2026-11-02). 서버가 덮어쓰기 전에 .history/ 에 남긴 묶인 안무표의 판을 고르는 자리 —
+               `되살리기` 한 번으로 그 판으로 돌아가 바로 연다. 묶인 파일이 없거나 비면 ui/historyView 가 감춘다. -->
+          <div class="saved-history" id="savedHistory" hidden></div>
           <!-- 휴지통(2026-09-22). 위 목록의 `삭제` 는 영구 삭제가 아니라 서버의 .trash/ 로 옮기는 일이고,
                되살리는 자리가 여기다 — 지우는 버튼과 같은 서랍 안. 비어 있으면 ui/trashView 가 감춘다. -->
           <div class="saved-trash" id="savedTrash" hidden></div>
