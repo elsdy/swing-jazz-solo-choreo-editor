@@ -142,6 +142,7 @@ export function createRenderer(store, views, options = {}) {
     // 연습 조작 줄(RM-22)은 영상 패널의 상태와 **고른 블록**(`고른 블록 반복` 의 켜짐) · 보드 모양(마디 칸)을 따른다.
     if (d.video || d.routineEditor || d.selection || d.boards?.[BOARD_MAIN]) {
       views.practice?.render();
+      views.pendingTray?.render();                       // `?` 정리함(RM-24) — 줄은 보드의 `?` 와 고른 줄 · 박자를 따른다
       // 바의 `고른 블록 반복` 은 연습 바와 같은 판정(박자 · 재생기)으로 켜진다 — 박자만 바뀌어도 다시 본다(RM-14).
       if (!d.selection) views.selectionBar?.render();
     }

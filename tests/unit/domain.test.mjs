@@ -5350,6 +5350,44 @@ test('applyLlmNames: 모르겠다는 답과 사람이 고친 블록은 그대로
   assert.equal(store.board(BOARD_MAIN).placements[0].name, '내가 고친 이름');
 });
 
+test('hearForTray: 정리함이 열려 있고 받아 적는 중이 아니면 들은 말이 고른 ? 에 붙는다', () => {
+  const store = voiceStore();
+  const ids = counterEnv();
+  // 받아 적기로 ? 셋을 쌓는다 — 0~4초 · 4~8초 · 8~10초(120bpm 이라 앞 둘은 같은 모양의 한 마디, 셋째는 4카운트)
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 8 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 10 }, { ids });
+
+  // ① 받아 적는 중이면 물러선다 — 들은 말은 열린 구간(hearUtterance)만 받는다
+  const [g1, g2, g3] = [...new Set(store.board(BOARD_MAIN).placements.map(p => p.groupId))];
+  assert.equal(VoiceCmd.hearForTray(store, { text: '찰스턴', groupId: g3 }), NONE, '받아 적는 중이면 NONE');
+  assert.ok(store.board(BOARD_MAIN).placements.every(p => p.pending), '아무것도 붙지 않았다');
+  CaptureCmd.stopCapture(store);
+
+  // ② 분명히 맞는 말 — 정식 이름과 그 동작의 갈래로 붙고, LLM 은 부르지 않는다
+  const cat = store.get().library.find(m => m.name === '찰스턴').category;
+  const sure = VoiceCmd.hearForTray(store, { text: '어 찰스톤', groupId: g3 });
+  assert.equal(sure.name, '찰스턴');
+  assert.equal(sure.needsLlm, false);
+  assert.equal(sure.groupId, g3);
+  assert.ok(store.board(BOARD_MAIN).placements.filter(p => p.groupId === g3).every(p => p.name === '찰스턴' && p.category === cat && !p.pending));
+
+  // ③ 헷갈리는 말 — 들은 대로 붙이고 needsLlm 으로 알린다. 같은 모양의 ? 무리(g1 · g2)에 함께 붙는다
+  const unsure = VoiceCmd.hearForTray(store, { text: '킥볼체인지', groupId: g1 });
+  assert.equal(unsure.needsLlm, true);
+  assert.equal(unsure.heard, '킥볼체인지');
+  assert.equal(unsure.groupId, g1);
+  assert.deepEqual(unsure.groupIds, [g1, g2], '무리에도 붙인 그룹을 모두 돌려준다 — LLM 줄은 그룹마다');
+  assert.ok(store.board(BOARD_MAIN).placements.filter(p => p.groupId !== g3).every(p => p.name === '킥볼체인지' && !p.pending));
+  assert.equal(store.get().library.some(m => m.name === '킥볼체인지'), false, '들은 대로의 이름은 동작 목록에 넣지 않는다');
+
+  // ④ 이미 이름이 있는 블록 · 없는 그룹 · 빈 말은 아무 일도 없다
+  assert.equal(VoiceCmd.hearForTray(store, { text: '찰스턴', groupId: g1 }), NONE, '이름 있는 블록은 덮지 않는다');
+  assert.equal(VoiceCmd.hearForTray(store, { text: '찰스턴', groupId: '없음' }), NONE);
+  assert.equal(VoiceCmd.hearForTray(store, { text: '  ', groupId: g1 }), NONE);
+});
+
 test('받아 적기를 끝내면 들어 둔 이름은 비우고 LLM 줄은 남긴다', () => {
   const store = voiceStore();
   const ids = counterEnv();

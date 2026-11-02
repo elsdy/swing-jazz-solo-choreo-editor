@@ -85,6 +85,7 @@ import { createTrashView } from '../ui/trashView.js';
 import { createHistoryView } from '../ui/historyView.js';
 import { createSpeechInput } from '../adapters/speechInput.js';
 import * as VoiceCmd from '../usecases/voiceNameCommands.js';
+import * as TrayCmd from '../usecases/pendingTrayCommands.js';
 import { createFileMenu } from '../ui/fileMenu.js';
 import { commandFace, syncCommandTitles } from '../ui/commandButtons.js';
 import { createCommandPalette } from '../ui/commandPalette.js';
@@ -115,6 +116,7 @@ import { createOnceHints, createHintBubble } from '../ui/onceHint.js';
 import { loadOnceHints, saveOnceHints } from '../adapters/localStore.js';
 import { createNoticeRouter } from './noticeRouter.js';
 import { createPracticeBar } from '../ui/practiceBar.js';
+import { createPendingTray } from '../ui/pendingTray.js';
 import { createPoseView } from '../ui/poseView.js';
 import { createPoseOverlay } from '../ui/poseOverlay.js';
 import { createMediapipePose } from '../adapters/pose/mediapipePose.js';
@@ -2358,6 +2360,8 @@ const voiceInput = (() => {
     onUtterance: (u) => {
       // 중간 결과는 흘려보낸다 — 쓰는 것은 확정된 한마디와 그것이 **시작된** 시각뿐이다.
       if (!u.final) return;
+      // `?` 정리함이 열려 있으면 들은 말은 고른 `?` 의 이름이다(RM-24). 받아 적는 중이면 hearForTray 가 마다해 아래 길로 간다.
+      if (views.pendingTray?.isOpen() && views.pendingTray.hear(u.text)) return;
       render(VoiceCmd.hearUtterance(store, { text: u.text, atSec: u.startedAt }));
     },
     onState: () => { views.video?.syncVoice(); views.thumb?.render(); views.status?.render(); }
@@ -2446,8 +2450,12 @@ views.video = createVideoPanel({
     poseOverlay.invalidate();
   },
   commands: {
-    togglePanel: () => VideoCmd.togglePanel(store),
-    closePanel: () => VideoCmd.closePanel(store),
+    // 패널을 닫으면 `?` 정리함도 닫는다 — 열어 둔 채 숨으면 마디 반복이 정리함의 것으로 남는다(RM-24).
+    togglePanel: () => mergeDirty(closeTrayIfOpen(), VideoCmd.togglePanel(store)),
+    closePanel: () => mergeDirty(closeTrayIfOpen(), VideoCmd.closePanel(store)),
+    pendingCount: () => CaptureCmd.pendingCount(store),
+    trayOpen: () => TrayCmd.trayState(store).open,
+    openTray: () => { views.pendingTray?.open(); return NONE; },
     setCollapsed: (args) => VideoCmd.setCollapsed(store, args),
     // 큰 창으로 띄우기(2026-09-13). 자리·폭은 끌기를 **놓는 순간** 한 번만 들어온다.
     setFloating: (args) => VideoCmd.setFloating(store, args),
@@ -2549,6 +2557,52 @@ views.practice = createPracticeBar({
     }
   }
 });
+
+// `?` 정리함(RM-24 · 2026-11-03) — 받아 적기로 쌓인 이름 없는 블록을 영상 패널 ③ 안의 목록으로 몰아 붙인다.
+// 줄을 고르면 그 블록의 대목(앞뒤 한 카운트 여유)을 마디 반복으로 되풀이하고, 닫으면 열 때의 반복으로 되돌린다.
+// 영상을 옮기는 일 · 마이크 · LLM 줄은 어댑터에 닿으므로 여기서 감싸 넘긴다(뷰는 명령도 어댑터도 모른다).
+views.pendingTray = createPendingTray({
+  render,
+  commitHistory: () => render(commitHistory(BOARD_MAIN)),
+  suggest: (q) => suggestMoves(store.get().library, q, store.get().favorites.moveNames),
+  notify: (text) => render({ notify: notice('status', text) }),
+  onPicked: (groupId, info) => {
+    const el = blockElOf(groupId);
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (!info.looped) return;
+    const span = VideoCmd.loopSpan(store);
+    if (!span) return;
+    resetClicks();
+    seekVideoTo(span.startSec, { play: true });
+  },
+  onClosed: () => voiceInput.stop(),
+  onHeard: (info) => {
+    for (const gid of info.groupIds || []) voiceInput.notePlaced({ needsLlm: info.needsLlm, voiceGroupId: gid, heard: info.heard });
+  },
+  commands: {
+    state: () => TrayCmd.trayState(store),
+    queue: () => TrayCmd.trayQueue(store),
+    tempoReady: () => VideoCmd.isTempoReady(store),
+    categories: () => Object.entries(store.get().categories || {}).map(([key, c]) => ({ key, label: (c && c.label) || key })),
+    selectedPending: () => {
+      const pending = new Set(TrayCmd.trayQueue(store).map(r => r.groupId));
+      return BoardCmd.selectedOn(store, BOARD_MAIN).find(gid => pending.has(gid)) || null;
+    },
+    open: () => TrayCmd.openTray(store),
+    close: () => TrayCmd.closeTray(store),
+    pick: (args) => TrayCmd.pickPending(store, args),
+    name: (args) => TrayCmd.namePending(store, args, { ids: browserEnv }),
+    hear: (args) => VoiceCmd.hearForTray(store, args),
+    setCategory: (args) => TrayCmd.setTrayCategory(store, args)
+  }
+});
+
+/** 영상 패널을 닫기 전에 정리함부터 닫는다 — 마디 반복을 열 때로 되돌리고 마이크를 끈다. */
+// @complexity time=O(1) space=O(1) cc=2
+function closeTrayIfOpen() {
+  if (views.pendingTray && views.pendingTray.isOpen()) views.pendingTray.close();
+  return NONE;
+}
 
 /**
  * 배치 시작 카운트로 영상을 옮기고 그 자리에서 재생한다.
@@ -3002,6 +3056,8 @@ function firstScreenReady() {
 // ⚠ `beforeunload` 가 아니라 `visibilitychange` 다. 모바일 브라우저는 탭을 접을 때
 //   beforeunload 를 부르지 않고 그대로 죽이는 일이 있다.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') draftSaver.flush();
+  if (document.visibilityState !== 'hidden') return;
+  draftSaver.flush();
+  if (views.pendingTray?.isOpen()) voiceInput.stop();       // 정리함의 마이크는 탭을 숨기면 끈다(RM-24)
 });
 window.addEventListener('pagehide', () => { draftSaver.flush(); });

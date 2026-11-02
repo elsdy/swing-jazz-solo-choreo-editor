@@ -3394,6 +3394,28 @@
     .inline-prompt-item.is-active { background: rgba(var(--accent-rgb), 0.22); }
     .inline-prompt-item-cat { font-size: var(--fs-1); color: var(--muted); }
 
+    /* `?` 정리함(RM-24) — ③ 받아 적기 안의 이름 없는 블록 목록(ui/pendingTray). 줄을 고르면 그 줄 위에 위의 이름 입력이 뜬다. */
+    .pending-tray {
+      display: grid;
+      gap: var(--sp-1);
+      margin-top: var(--sp-2);
+      padding: var(--sp-2);
+      border-radius: var(--r-2);
+      border: 1px dashed rgba(var(--accent-rgb), 0.5);
+      background: rgba(var(--accent-rgb), 0.06);
+    }
+    .pending-tray[hidden] { display: none; }
+    .pending-tray-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+    .pending-tray-title { font-weight: 800; font-size: var(--fs-3); }
+    .pending-tray-basis { font-size: var(--fs-1); color: var(--muted); }
+    .pending-tray-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); max-height: 240px; overflow-y: auto; }
+    .pending-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); padding: 2px var(--sp-1); border-radius: var(--r-1); }
+    .pending-row.is-current { background: rgba(var(--accent-rgb), 0.18); }
+    .pending-row-pick { font-variant-numeric: tabular-nums; }
+    .pending-row-same,
+    .pending-row-note { font-size: var(--fs-1); color: var(--muted); }
+    .pending-row-cat { font-size: var(--fs-2); width: auto; flex: 0 0 auto; }   /* 전역 select 의 100% 폭을 풀어 줄 안에 둔다 */
+
     /* 명령 팔레트(Ctrl+K)와 단축키 일람(?) — ui/commandPalette 가 열 때 만들고 닫을 때 없앤다(RM-09). */
     .command-layer {
       position: fixed;
@@ -4003,8 +4025,22 @@
                 <button id="videoCaptureCancelBtn" class="ghost" type="button" data-command="stop">■ 그만</button>
                 <button id="videoMarkerBlocksBtn" class="ghost accent" type="button" title="찍어 둔 마커를 전부 안무표의 블록으로 옮깁니다. 마커는 그대로 남습니다">마커를 블록으로</button>
                 <button id="videoNameSelBtn" class="ghost accent" type="button" title="안무표에서 고른 이름 없는 블록에 이름을 붙입니다">고른 블록에 이름 붙이기</button>
+                <button id="videoPendingBtn" class="ghost accent" type="button" title="받아 적은 이름 없는 블록(?)만 모아 차례로 이름을 붙이는 목록을 엽니다. 줄을 고르면 영상이 그 대목을 되풀이합니다">이름 붙일 것 0개</button>
               </div>
               <div class="helper" id="videoCaptureHelp"></div>
+
+              <!-- `?` 정리함(RM-24 · 2026-11-03) — 편집 흐름 2단계 「나중에 이름 붙이기」. 받아 적은 `?` 를 표 위 차례로 모으고,
+                   줄을 고르면 그 블록을 고르고 영상이 그 대목을 마디 반복으로 되풀이한다. 줄은 ui/pendingTray 가 그린다.
+                   ⚠ 닫으면 열 때의 마디 반복으로 되돌리고 마이크를 끈다. -->
+              <section class="pending-tray" id="videoPendingTray" hidden aria-label="이름 붙일 것">
+                <div class="pending-tray-head">
+                  <span class="pending-tray-title" id="videoPendingTitle">이름 붙일 것 0개</span>
+                  <button id="videoPendingCloseBtn" class="ghost" type="button" data-label="tray.close" data-title="tray.close.title" title="목록을 닫고 열기 전의 마디 반복으로 되돌립니다. 마이크도 끕니다">닫기</button>
+                </div>
+                <div class="pending-tray-basis" id="videoPendingBasis"></div>
+                <ol class="pending-tray-list" id="videoPendingList"></ol>
+                <div class="helper" id="videoPendingHelp"></div>
+              </section>
 
               <!-- 말로 이름 붙이기 (2026-09-22) — 받아 적는 동안 마이크에 동작 이름을 말하면
                    **그때 열려 있던 구간**의 이름이 된다. 끊기 바로 아래에 두는 까닭: 둘이 한 손짓의
