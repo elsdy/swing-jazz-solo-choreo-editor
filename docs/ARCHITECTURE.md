@@ -21,7 +21,7 @@ node tests/run.mjs                     # 격자 알고리즘 골든 150개
 node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스 단위 66개
 node tools/check-arch.mjs              # 계층 방향과 순수성
 node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지
-node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 아홉(U-10 · U-11 · U-12 · D-5 · R-6 · R-10 · D-14 · U-15 · U-16)
+node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 열(U-10 · U-11 · U-12 · D-5 · R-6 · R-10 · D-14 · U-15 · U-16 · U-17)
 ```
 
 둘의 역할이 다르다. 골든은 **격자 알고리즘의 현재 동작**을 기록한 것이라 undo·링크·영상처럼 격자 밖의 일은 지켜 주지 못한다. 그쪽 안전망이 단위 테스트다.
@@ -348,6 +348,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `commandButtons.js` | `data-command` 버튼의 툴팁을 등록부에서 단다 — 지금 글쇠가 괄호로 붙는다. 엄지 바처럼 JS 로 버튼을 그리는 뷰는 `commandFace` 로 글자 · 툴팁을 받는다(RM-09) |
 | `commandPalette.js` | `Ctrl+K` 명령 찾기와 `?` 단축키 일람(RM-09). 등록부를 읽기만 하고 실행은 주입받는다. 열 때 요소를 만들고 닫을 때 없앤다 |
 | `widgets.js` | `escapeHtml` `confirmOnce` `makeInlineStarBtn` |
+| `icon.js` | 아이콘 한 벌(`index.html` 의 SVG 스프라이트)을 단추에 붙인다 — `iconLabel`(아이콘 + 글자 칸, 몇 번 불러도 같다) · `setLabel`(글자 칸만) · `iconOnly`(이름 없으면 던진다) · `installIconMasks`(스타일시트 `::before` 용 `--icon-이름` 마스크). 쓰는 법은 [아이콘 한 벌](ICONS.md)(RM-18) |
 | `docsRegistry.js` | 앱에서 읽을 문서 목록의 유일한 주인 |
 | `docsHub.js` | 앱 안에서 문서를 읽는 화면과 마크다운 렌더러 |
 
@@ -405,7 +406,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 격자 규칙(카운트 분할·클램프)을 바꾼다 | `src/domain/grid.js` | 골든 재생성. `grid-*` 20개가 먼저 깨진다 |
 | 겹침·쌓기 규칙을 바꾼다 | `src/domain/lanes.js` | `repack-*` `clear-*` 갱신. 네 조작(놓기·이동·복사·리사이즈)이 같은 규칙을 쓰므로 `boardOps` 의 네 정책 상수를 나란히 고친다 |
 | 놓기·이동·복사·리사이즈 동작을 바꾼다 | `src/domain/boardOps.js` 의 `*_POLICY` 상수 | 해당 골든 갱신. 반환값의 `renderRows` 와 `changedRows` 를 혼동하지 말 것 |
-| 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
+| 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 그림은 [아이콘 한 벌](ICONS.md)에서(라벨 앞에 이모지를 붙이지 않는다 — U-17). 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
 | 명령(글쇠 · 버튼 · 명령 찾기로 부르는 일)을 더한다 | `src/domain/commands.js` 한 줄 + `src/app/main.js` 의 `COMMAND_RUNNERS` 한 줄 + 버튼이면 마크업에 `data-command="<id>"` | 마크업 글자는 등록부의 `button` 과 같게, `title` 은 적지 않는다(시험이 본다). 셋이 어긋나면 원칙 검사 D-14 가 붉어진다 |
 | 명령이 아닌 화면 글자(팝업 줄 · 툴팁 · 플레이스홀더 · 안내 문장)를 바꾸거나 더한다 | `src/domain/strings.js` 의 `LABELS` 한 줄 + 부르는 자리의 `str` · `fill` | 마크업에 글자가 남은 정적 단추는 `data-label` · `data-title` 키를 달고 글자를 표와 같게 둔다(시험이 본다). 낱말은 [용어집](GLOSSARY.md)을 따르고, 바꿨으면 [기능 설명서](FEATURES.md) · [튜토리얼](TUTORIAL.md)을 같은 커밋에서 |
 | 화면이 안 다시 그려진다 | 그 조작의 커맨드가 돌려주는 `Dirty` | `dev: true` 로 `assertDirtyCovers` 를 켜 본다 |
