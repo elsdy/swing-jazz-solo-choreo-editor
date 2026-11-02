@@ -2977,6 +2977,8 @@
 
        ⚠ 좌표는 ui/videoPanel 이 domain/flowTrack 에서 받아 인라인으로 쓴다. 여기 CSS 는
          **색과 빛만** 정한다 — 자리를 두 곳에서 정하면 창 크기가 바뀔 때 서로 어긋난다.
+       ⚠ 띠 높이(104px) · 마디 지름(34px) · 이름 여백(4px)은 domain/flowTrack 의 FLOW_NODE_R · FLOW_LABEL_H 와
+         같은 수다 — 마디와 이름이 띠 안에 들게 셈한다(RM-58). 바꾸면 videoPanelMarkup 시험이 맞대 본다.
        ⚠ SVG 는 `pointer-events:none` 이다. 누를 수 있는 것은 버튼뿐이고 길은 보여 주기만 한다.
        ⚠ 크기는 상태와 무관하다(기본 테마와 같은 규칙) — 색과 빛만 달라진다. */
     :root[data-theme] .flow-steps {

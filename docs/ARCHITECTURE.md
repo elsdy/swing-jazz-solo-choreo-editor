@@ -53,13 +53,14 @@ node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 아�
 
 ## 자동 검사 — `node tools/check-arch.mjs`
 
-이 스크립트가 잡는 것은 다섯 가지다.
+이 스크립트가 잡는 것은 여섯 가지다.
 
 - **방향이 거꾸로인 import** — 안쪽 rank 가 바깥 rank 를 부르면 실패한다.
 - **금지된 같은 rank 쌍** — `ports → adapters`, `ports → ports`, `usecases → adapters`, `domain → ports`.
 - **rank 3 교차** — `ui ↔ input`. 예외 목록은 `src/ui/domContract.js` 한 줄뿐이다.
 - **순수성** — `domain`·`ports`·`usecases` 안에서 `document` `window` `localStorage` `fetch` `alert` `prompt` `confirm` `navigator` `setTimeout` `Date` `Math.random` `crypto` `performance` 등을 쓰면 실패한다. 주석·문자열·정규식 리터럴은 먼저 지우고 검사하므로 오탐이 없다.
 - **외부 패키지 import** — 상대 경로가 아니면 실패한다. 이 프로젝트는 npm 의존성이 0이다.
+- **포장 폴더를 아는 것** — `src/` 와 `server.py` 에 `packaging/` 라는 글자가 있으면(주석 포함) 실패한다(2026-11-03, RM-28). 설치형 앱의 런처 · 빌드 스크립트는 바깥 껍데기라 화살표가 `packaging → 앱` 한쪽이다. 규칙 함수는 `tests/unit/checkArch.test.mjs` 가 일부러 어긴 조각으로 잰다.
 
 리뷰가 아니라 스크립트가 지켜야 하는 이유는 위반이 **눈에 안 띄기 때문**이다. `domain` 에 `Date.now()` 한 줄이 들어가면 코드는 잘 돌고 리뷰도 통과한다. 대신 골든 테스트가 실행 시각에 따라 조용히 흔들리기 시작하고, 그때는 원인이 어느 줄인지 알 수 없다. 방향 위반도 마찬가지다 — `ui` 가 `input` 을 한 번 import 하는 순간 그 다음 사람은 두 번 하고, 두 계층은 다시 한 덩어리가 된다. `--list` 를 붙이면 각 파일의 계층과 import 를 그대로 나열한다.
 
@@ -436,4 +437,16 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 
 경계는 HTTP 뿐이다. `server.py` 는 `src/` 를 모르고 `src/` 는 서버 코드를 모른다(`adapters/clipServer.js` 가 URL 만 안다). 서버는 `ffmpeg` 을 **선택 의존성**으로 자식 프로세스로 띄워 클립을 잘라 다시 인코딩한다(`POST /api/clips/trim`) — 없으면 `/api/health` 의 `ffmpeg:false` 로 알리고 그 기능만 501 이다. 자세 분석 모델도 같은 모양이다(2026-09-11): 서버가 파일을 한 번 받아 두고(`/api/models/*`) `/models/<이름>` 으로 내주기만 하며, 없으면 `/api/health` 의 `pose:false` 다. 어디에 받아 둘지는 **서버가 띄우는 네이티브 폴더 고르기 창**으로 고른다(`POST /api/models/choose`, 맥은 `osascript`) — 브라우저의 `showDirectoryPicker` 는 절대 경로를 주지 않아 서버가 쓸 수 없기 때문이다. 창을 하나만 띄우도록 잠그고 5분 상한을 둔다. **계산은 브라우저가 하므로 서버에 파이썬 패키지가 하나도 늘지 않는다.** 잘라 낸 결과를 소스로 삼고 시간축을 당기는 것은 `usecases/videoCommands.applyTrim` 이라, 유스케이스는 여전히 fetch 도 ffmpeg 도 모른다. 두 가지가 겹친다. **경로 규칙** — `<subdir>/<프로젝트>/<파일>`, 못 쓰는 글자는 `_`, 앞의 점 제거, 빈 조각은 대체 이름 — 은 `src/domain/clips.js` 와 `server.py` 상단에 같은 규칙이 두 번 적혀 있고, **안무표 스키마** — `{title, moves:[{bar,count,length,name,category,note}], notes}` — 는 `server.py` 의 `PLAN_SCHEMA` 와 `src/domain/choreoPlan.js` 가 같은 모양을 두 번 안다. 그래서 프로젝트 파일의 `media.source.path` 가 서버 방식과 브라우저 폴더 방식 사이에서 그대로 통한다. 한쪽을 고치면 다른 쪽도 고친다.
 
-`tools/check-arch.mjs` 는 `src/` 만 본다. 서버는 `tests/server.test.mjs` 가 실제로 띄워 검사한다(업로드 → 번호 붙이기 → Range → 루트 탈출 거부 → 숨김 파일 거부).
+`tools/check-arch.mjs` 의 계층 규칙은 `src/` 만 본다(서버는 「포장 폴더를 모른다」 한 줄만 잰다). 서버는 `tests/server.test.mjs` 가 실제로 띄워 검사한다(업로드 → 번호 붙이기 → Range → 루트 탈출 거부 → 숨김 파일 거부).
+
+### 설치형 앱 — 서버를 두르는 껍데기 (2026-11-03, RM-28)
+
+맥 `.app`/`.dmg` 와 윈도우 설치 파일은 `server.py` · 파이썬 실행 환경 · 앱 파일 · (있으면) ffmpeg 를 한 묶음으로 싼 것이다. 앱 코드는 한 글자도 바뀌지 않는다 — 포장은 `packaging/` 에만 있고, 서버와 앱은 그 폴더를 모른다(위 검사의 여섯째).
+
+| 자리 | 하는 일 |
+|---|---|
+| `packaging/launcher.py` | 두 번 눌러 켜면 도는 것. 묶음 안의 앱 파일(`--static`) · ffmpeg(`--ffmpeg`)를 찾아 `server.main` 을 `--port 0 --open` 으로 부르고, 「켜져 있음」 창(맥 `osascript` · 윈도우 PowerShell)에 「끄기」를 둔다. 이미 켜 둔 것이 있으면 그 창만 다시 연다 |
+| `packaging/build.py` | PyInstaller 로 얼리고 맥은 `.dmg`, 윈도우는 Inno Setup 설치 파일(없으면 zip)로 싼다. 실을 ffmpeg 가 LGPL · 정적 빌드인지 잰다 |
+| `packaging/make_icon.py` | 아이콘을 코드로 그린다(그림 파일을 저장소에 넣지 않는다) |
+
+서버 쪽에 더한 것은 포장된 채 돌 때 필요한 것뿐이다 — 정적 뿌리 인자(`--static`, 얼린 실행에서 `__file__` 자리는 임시 압축 해제 폴더다), 포트 기억(`--port 0` 이면 지난번 포트를 먼저 — 포트가 브라우저 출처라 바뀌면 localStorage 가 비어 보인다), 포트 충돌을 한 문장으로 알리고 코드 1 로 물러나기, 윈도우의 보관 자리(`%APPDATA%` · `%LOCALAPPDATA%`), 포장 표시(`sys.frozen` · `CHOREO_PACKAGED`)가 있으면 옛 자리(저장소 안) 판정 끄기, libx264 가 없는 ffmpeg(LGPL)에서 OS 하드웨어 인코더로 자르기.

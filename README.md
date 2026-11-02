@@ -8,6 +8,12 @@
 
 ## 실행
 
+### 앱으로 받기 (맥 · 윈도우)
+
+터미널 없이 쓰려면 설치형 앱을 받는다(2026-11-03, RM-28). 맥은 `.dmg` 를 열어 앱을 「Applications」 로 끌어 넣고, 윈도우는 설치 파일(`…-setup.exe`)을 돌린다. 켜면 기본 브라우저에 안무표가 열리고 「켜져 있음」 창이 하나 뜬다 — 다 쓰면 그 창의 「끄기」를 누른다. 영상 자르기에 쓰는 ffmpeg 도 앱 안에 들어 있다. 첫 판은 서명하지 않아서 처음 한 번은 OS 가 경고한다 — 넘기는 법은 [튜토리얼](docs/TUTORIAL.md#설치형-앱으로-켠다)에 있다. 앱을 짓는 법은 `packaging/README.md` 에 있다.
+
+### 저장소에서 바로 켜기
+
 ```
 git clone https://github.com/elsdy/swing-jazz-solo-choreo-editor.git
 cd swing-jazz-solo-choreo-editor
@@ -18,7 +24,7 @@ python3 server.py
 
 `index.html` 을 더블클릭해도 열리기는 하지만 **화면이 뜨지 않는다.** `file://` 에서는 브라우저가 ES 모듈 로딩과 문서 `fetch` 를 모두 막기 때문이다. 서버로 열어야 한다. GitHub Pages 같은 정적 호스팅에 올려도 그대로 동작한다.
 
-설치할 것이 없다. Node 도 npm 도 필요 없고, 위 명령의 `python3` 자리에는 정적 파일을 내주는 무엇을 써도 된다.
+저장소에서 켤 때는 설치할 것이 없다. Node 도 npm 도 필요 없고, 위 명령의 `python3` 자리에는 정적 파일을 내주는 무엇을 써도 된다. (설치형 앱을 **짓는** 단계만 PyInstaller 를 쓴다 — 앱 코드와 서버는 그대로다.)
 
 ## 무엇을 할 수 있나
 
@@ -50,7 +56,7 @@ src/testing/    골든 러너가 쓰는 어댑터 (앱은 쓰지 않는다)
 ## 고칠 때
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 643개 (도메인·어댑터·유스케이스·뷰 589 + 원칙 검사기 자기 시험 20 + 문서 검사 자기 시험 18 + server.py 실물 16)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 655개 (도메인·어댑터·유스케이스·뷰 592 + 원칙 검사기 자기 시험 20 + 문서 검사 자기 시험 18 + 계층 검사 자기 시험 3 + server.py 실물 22)
 node tests/run.mjs                # 격자 알고리즘 골든 173개
 node tools/check-arch.mjs         # 계층 방향과 순수성
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지
