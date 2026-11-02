@@ -105,6 +105,7 @@ export function createComposeView(deps) {
     <div class="compose-shell" role="dialog" aria-modal="true" aria-label="말로 채우기">
       <div class="compose-head">
         <h2>말로 채우기</h2>
+        <button class="help-q" type="button" data-help="compose" aria-label="말로 채우기 설명 보기" title="설명서의 이 절로">?</button>
         <span class="compose-model" data-role="model"></span>
         <span class="compose-spacer"></span>
         <button class="ghost" data-act="close" type="button">✕ 닫기</button>

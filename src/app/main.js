@@ -72,7 +72,9 @@ import { createProjectServer } from '../adapters/projectServer.js';
 import { createModelServer } from '../adapters/modelServer.js';
 import { createLlmServer } from '../adapters/llmServer.js';
 import { createComposeView } from '../ui/composeView.js';
-import { createModeBar } from '../ui/modeBar.js';
+import { createModeBar, entryStates } from '../ui/modeBar.js';
+import { createCoachFlow, createCoachmarks } from '../ui/coachmarks.js';
+import { loadCoachSeen, saveCoachSeen } from '../adapters/localStore.js';
 import { createBpmBadge } from '../ui/bpmBadge.js';
 import { createTrashView } from '../ui/trashView.js';
 import { createSpeechInput } from '../adapters/speechInput.js';
@@ -2257,8 +2259,11 @@ views.settings = createSettingsView({
   previewDirParts: clipDirParts,
   getHotkeys: () => hotkeyMap,
   saveHotkeys: applyHotkeys,
+  // 「안내 다시 보기」(RM-26). 코치마크는 아래 채우기 줄 뒤에 만들어지므로 부를 때 찾는다.
+  coach: { replay: () => coach?.replay() },
   // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
-  onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); }
+  // LLM 키를 넣거나 뺐으면 `✨ 말로 채우기` 의 막힘도 다시 잰다(RM-26).
+  onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); syncEntryStates(); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2335,8 +2340,56 @@ views.fileMenu = createFileMenu({
 });
 
 views.start = createModeBar({
-  hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0
+  hasPlacements: () => store.board(BOARD_MAIN).placements.length > 0,
+  openExample
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 처음 켠 사람의 첫 화면(2026-11-02, RM-26) — 예제 안무 · 코치마크 · 막힌 입구의 까닭
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 예제 안무표 파일. 저장소의 `examples/` 에 있고 정적 서버 · server.py 둘 다 그대로 내준다. */
+const EXAMPLE_URL = 'examples/shim-sham.json';
+
+/**
+ * `예제 열기` — 예제 안무표를 **최근 목록에서 여는 것과 같은 길**(loadProjectFromRecent)로 연다.
+ * 되돌리기 한 번이면 연 앞의 안무표로 돌아간다(applyProjectData 가 커밋 하나를 쌓는다).
+ * ⚠ 내용이 있으면 버튼이 `정말요?` 로 한 번 묻는다 — 지금 것은 되돌리기로 살지만, 묻지 않고 바꾸면 놀란다.
+ * ⚠ 자동 담기의 묶임을 푼다. 묶인 채 열면 예제가 1.2초 뒤 그 사용자 파일을 덮어쓴다(데이터 손실).
+ * @param {HTMLElement} btn 누른 버튼(확인 문구를 그 자리에 띄운다)
+ */
+// @complexity time=O(n) space=O(n) cc=3
+function openExample(btn) {
+  const run = async () => {
+    let data = null;
+    try {
+      const res = await fetch(EXAMPLE_URL);
+      if (res.ok) data = await res.json();
+    } catch { data = null; }
+    if (!data) { render({ notify: notice('toast', '예제 안무표를 읽지 못했습니다.') }); return; }
+    draftStore.unbind();
+    render(openLinksIfAny(ProjectCmd.loadProjectFromRecent(projectDeps, data)));
+    syncSaveTargetNote();
+  };
+  if (store.board(BOARD_MAIN).placements.length > 0) confirmOnce(btn, '예제 열기', run);
+  else run();
+}
+
+/** 처음 한 번 안내. 본 기록은 이 브라우저의 것이라 localStorage 어댑터가 읽고 쓴다. */
+const coach = createCoachmarks({
+  flow: createCoachFlow({
+    seen: { load: loadCoachSeen, save: saveCoachSeen },
+    context: () => ({ hasPlacements: store.board(BOARD_MAIN).placements.length > 0 })
+  })
+});
+
+/** 서버 · LLM 상태로 채우기 줄의 막힌 입구를 흐리게 두고 까닭을 적는다. 서버가 없으면 LLM 은 묻지 않는다. */
+// @complexity time=O(1) space=O(1) cc=2
+async function syncEntryStates() {
+  const server = !!clipServerConfig;
+  const llm = server ? await llmServer.getConfig().catch(() => null) : null;
+  views.start?.setEntryStates(entryStates({ server, llm }));
+}
 
 // 기준 박자 배지 — 오른쪽 위 고정석(2026-09-22). 누르면 박자를 정하는 자리로 보낸다.
 // ⚠ 새 커맨드를 만들지 않는다. `▶ 영상으로 채우기` 와 같은 진입점이다.
@@ -2452,7 +2505,7 @@ views.thumb = createThumbBar({
     // ⚠⚠ **더 새 판이 담은 것이면 담기를 켜지 않는다**(2026-09-22). 못 읽는 것을 읽은 척하고
     //   1.2초 뒤에 덮어쓰면 그것이 곧 데이터 손실이다 — 미래 스키마 거절이 실제로 막는 손실 경로가
     //   이 한 줄이다. 문구는 restoreDraft 가 notify 로 이미 띄웠다.
-    if (restored.blocked) { draftBlocked = true; draftStopReason = 'future'; syncSaveTargetNote(); return; }
+    if (restored.blocked) { draftBlocked = true; draftStopReason = 'future'; syncSaveTargetNote(); firstScreenReady(); return; }
     // ⚠⚠ **되살린 것은 되돌릴 일이 아니다.** 되살리기는 커밋을 하나 쌓는데(applyProjectData 의
     //   commitMainHistory), 그 앞에 있는 것은 **빈 안무표**다 — 새로고침한 직후 Ctrl+Z 를 한 번
     //   누르면 표가 통째로 비고, 그 빈 상태가 1.2초 뒤 초안으로 담긴다. 사용자가 한 적 없는 일을
@@ -2467,7 +2520,19 @@ views.thumb = createThumbBar({
     () => ProjectCmd.draftSnapshot(projectDeps, { fileName: projectNameForClips() })
   );
   syncSaveTargetNote();                 // 「어디에 담기는가」는 서버 판정이 끝난 지금이 참이다
+  firstScreenReady();
 })();
+
+/**
+ * RM-26: 되살리기가 끝난 **뒤에** 예제를 열 수 있게 한다 — 그 전에 열면 되살릴 것을 예제가 이긴다.
+ * 안내도 되살린 뒤에 띄운다(되살린 안무표가 있으면 ① 채우기 줄은 건너뛴다).
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function firstScreenReady() {
+  views.start.setExampleReady(true);
+  syncEntryStates();
+  coach.start();
+}
 
 // 창을 닫거나 탭을 숨길 때는 기다리지 않고 담는다 — 묶는 시간(1.2초) 안에 닫으면 그만큼이 샌다.
 // ⚠ `beforeunload` 가 아니라 `visibilitychange` 다. 모바일 브라우저는 탭을 접을 때
