@@ -13,6 +13,8 @@ export const DOUBLE_TAP_MS = 300;
 export const QUICK_DRAG_THRESHOLD_PX = 12;
 /** 롱프레스 취소 이동 임계(px). @see index.html:3241 */
 export const LONGPRESS_MOVE_THRESHOLD_PX = 8;
+/** 빈 칸 끌기가 네모 고르기(마퀴)가 되는 이동 임계(px) — 이만큼 움직이기 전까지는 빈 곳 누름(선택 풀기)이다(RM-14). */
+export const MARQUEE_THRESHOLD_PX = 4;
 
 /**
  * 그리기/빠른배치 드래그의 카운트를 정한다.
@@ -165,4 +167,20 @@ export function resizeHitKind(inBoard, hasOriginTrack) {
   if (inBoard) return 'cross';
   if (hasOriginTrack) return 'sameRow';
   return 'step';
+}
+
+/**
+ * 두 칸을 꼭지점으로 하는 네모의 행 · 칸 범위(양끝 포함). 끌기 시작 칸과 지금 칸을 어느 쪽으로 끌어도 정규화한다(RM-14 마퀴).
+ * ⚠ 칸이 null(트랙을 못 잰 자리)이면 null — 호출부는 그때 네모를 바꾸지 않는다.
+ * @param {{row:number|null, col:number|null}} a
+ * @param {{row:number|null, col:number|null}} b
+ * @returns {{rowFrom:number, rowTo:number, colFrom:number, colTo:number}|null}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function rectCellRange(a, b) {
+  if (!a || !b || a.row == null || b.row == null || a.col == null || b.col == null) return null;
+  return {
+    rowFrom: Math.min(a.row, b.row), rowTo: Math.max(a.row, b.row),
+    colFrom: Math.min(a.col, b.col), colTo: Math.max(a.col, b.col),
+  };
 }

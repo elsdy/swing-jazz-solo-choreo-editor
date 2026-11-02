@@ -122,10 +122,18 @@ export function createBoardController(deps) {
   // ⚠ 같은 touchstart 에 리스너가 셋 걸려 있다(⑨ → ⑱ → ㉒). 앞 리스너가 바꾼 상태를 뒤 리스너가 본다 —
   //   그래서 상태는 리스너마다가 아니라 이 한 변수에 둔다.
   let gestureState = gesture.initialGestureState();
+  /**
+   * 네모 고르기를 놓은 뒤 따라오는 합성 click 을 한 번 삼킨다(RM-14). mousedown(빈 칸)과 mouseup(다른 칸)의 공통 조상에 click 이
+   * 오고, 그것이 보드의 「빈 곳 누름 = 선택 풀기」(input/controls) 로 가 방금 고른 것을 풀어 버리기 때문이다.
+   * ⚠ 다음 mousedown 에서 되돌린다 — 보드 밖에서 뗀 끌기는 click 이 오지 않아 그대로 두면 다음 진짜 클릭을 삼킨다.
+   * ⚠ 보드 click 리스너 가운데 이 컨트롤러의 것이 먼저 등록된다(app/main 의 차례) — stopImmediatePropagation 이 그래서 먹는다.
+   */
+  let swallowClick = false;
 
   /** 전이 함수가 이벤트마다 읽는 세션 값과 측정 함수. 측정은 전이 함수가 부를 때만 일어난다. */
   const gestureEnv = () => ({
     quickPlaceMode: !!quickPlaceMode(),
+    marquee: !!policy.allowsSelection,
     activeMove: activePaletteMove() || null,
     defaultCount: defaultCount(),
     board: board(),
@@ -153,6 +161,13 @@ export function createBoardController(deps) {
         case 'remove': apply(commands.removeGroup({ groupId: fx.groupId })); break;
         case 'commit': commit(); break;
         case 'openPicker': quickPicker.open(fx.row, fx.startIndex, fx.clientX, fx.clientY, fx.count); break;
+        // RM-14 네모 고르기 — 끄는 동안은 점선 네모만, 뗄 때 한 번 고른다(커밋 없음 — 선택은 히스토리에 들지 않는다)
+        case 'marquee': overlays.showMarquee(boardId, fx.rect); break;
+        case 'clearMarquee': overlays.clearMarquee(boardId); break;
+        case 'selectRect':
+          if (typeof commands.selectInRect === 'function') apply(commands.selectInRect({ rect: fx.rect }));
+          swallowClick = true;
+          break;
         default: throw new Error(`boardController: 모르는 할 일 ${fx.kind}`);
       }
     }
@@ -219,6 +234,8 @@ export function createBoardController(deps) {
 
   // ── ④ click — 선택 토글 / 루틴 팝업 (2435-2465) ────────────────────────────
   el.addEventListener('click', (e) => {
+    // 네모 고르기 · 묶음 끌기 뒤의 합성 click — 방금 고른 것을 풀지 않게 한 번 삼킨다(RM-14)
+    if (swallowClick) { swallowClick = false; e.stopImmediatePropagation(); e.preventDefault(); return; }
     // 핸들 클릭은 무시 (드래그/리사이즈 용도)
     if (e.target.closest(SEL.moveHandle) || e.target.closest(SEL.resizeHandle)) return;
     const placementEl = e.target.closest(SEL.placement);
@@ -442,8 +459,8 @@ export function createBoardController(deps) {
     return { x: t.clientX, y: t.clientY, onPlacement: !!e.target.closest(SEL.placementOrHandles) };
   };
 
-  // ── ⑮ mousedown — 그리기 / 빠른 배치 시작 (2606-2627) ──────────────────────
-  el.addEventListener('mousedown', (e) => step(gesture.mouseDown, e, mouseEv(e)));
+  // ── ⑮ mousedown — 그리기 / 빠른 배치 / 네모 고르기 시작 (2606-2627 · RM-14) ──
+  el.addEventListener('mousedown', (e) => { swallowClick = false; step(gesture.mouseDown, e, mouseEv(e)); });
 
   // ── ⑯ mousemove — 그리기 카운트 추적 (2629-2656) ───────────────────────────
   el.addEventListener('mousemove', (e) => step(gesture.mouseMove, e, { x: e.clientX, y: e.clientY }));

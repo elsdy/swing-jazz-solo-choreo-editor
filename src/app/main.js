@@ -352,6 +352,9 @@ const overlays = {
     ov(boardId).showPreview(Grid.buildSegments(row, startIndex, capped, board), count);
   },
   clearTrackHighlights: (boardId) => ov(boardId).clearTrackHighlights(),
+  // 네모 고르기(RM-14) — 끄는 동안 점선 네모만 그리고 행은 다시 그리지 않는다
+  showMarquee: (boardId, rect) => ov(boardId).showMarquee(rect),
+  clearMarquee: (boardId) => ov(boardId).clearMarquee(),
   markDraggingGroup: (boardId, groupId) => ov(boardId).markDraggingGroup(groupId),
   unmarkDraggingGroups: (boardId) => ov(boardId).unmarkDraggingGroups(),
   showFloatingTooltip: (placementEl) => ov(BOARD_MAIN).showFloatingTooltip(placementEl),

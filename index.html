@@ -718,6 +718,15 @@
       background: linear-gradient(180deg, rgba(126,184,247,0.18), rgba(126,184,247,0.10));
     }
     .track.draw-hover { cursor: crosshair; }
+    /* 빈 칸 끌기의 점선 네모(RM-14). 행마다 한 조각이 트랙 안에 서고 누를 수 없다 — 놓는 순간 사라진다. */
+    .track .marquee-rect {
+      position: absolute; top: 1px; bottom: 1px;
+      border: 1px dashed rgba(250,204,21,0.9);
+      background: rgba(250,204,21,0.10);
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 6;
+    }
     .move-chip {
       width: 22px;
       height: 22px;

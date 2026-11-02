@@ -150,6 +150,40 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 네모 고르기(마퀴) — 빈 칸 끌기의 점선 네모 (RM-14, 2026-11-02)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * 행 · 칸 범위에 점선 네모를 그린다. 트랙이 행마다 따로이고(overflow:hidden) 보드 루트에는 position 이 없으므로
+   * **행마다 한 조각**을 그 트랙 안에 둔다 — 프리뷰 블록과 같은 자리 잡기(`calc(칸 * var(--cellW))`)다.
+   * ⚠ 매 움직임마다 지우고 다시 그린다. 행을 다시 그리지 않는다 — 배치 엘리먼트는 그대로다.
+   * @param {{rowFrom:number, rowTo:number, colFrom:number, colTo:number}} rect
+   * @returns {void}
+   */
+  // @complexity time=O(r) space=O(r) cc=3
+  function showMarquee(rect) {
+    clearMarquee();
+    if (!rect) return;
+    const rowRefs = refs();
+    for (let row = rect.rowFrom; row <= rect.rowTo; row++) {
+      const ref = rowRefs.get(row);
+      if (!ref) continue;
+      const piece = document.createElement('div');
+      piece.className = CLS.marqueeRect;
+      piece.dataset[DATA.marquee] = DATA.FLAG_ON;
+      piece.style.left = `calc(${rect.colFrom} * var(--cellW))`;
+      piece.style.width = `calc(${rect.colTo - rect.colFrom + 1} * var(--cellW))`;
+      ref.track.appendChild(piece);
+    }
+  }
+
+  /** 점선 네모를 전부 지운다. */
+  // @complexity time=O(r) space=O(1) cc=1
+  function clearMarquee() {
+    el.querySelectorAll(SEL.marqueeNodes).forEach(node => node.remove());
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 리사이즈 프리뷰
   // ───────────────────────────────────────────────────────────────────────────
 
@@ -483,6 +517,9 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
     // 배치 프리뷰
     showPreview,
     clearPreview,
+    // 네모 고르기(RM-14)
+    showMarquee,
+    clearMarquee,
     // 리사이즈 프리뷰
     showResizePreview,
     clearResizePreview,
