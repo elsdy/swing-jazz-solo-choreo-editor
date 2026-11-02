@@ -4,7 +4,7 @@
 
 ## 2026-11-03 — 못 읽는 재생 헤드 초가 「0초」로 읽히지 않는다
 
-병합 전 — `rm-60-number-null-is-finite-check`
+PR #72 (`rm-60-number-null-is-finite-check`)
 
 - **사용자 화면은 그대로다.** 재생 헤드 · 받아 적기가 초를 카운트 경계로 읽는 자리(`boundaryCount`)가 이제 수만 받는다. 전에는 `null` · 빈 글처럼 못 읽는 초가 `Number()` 를 지나 0 이 되어 「0초 = 카운트 0」으로 통과했고, 재생 헤드 자르기를 그런 값으로 부르면 카운트 0 을 가로지르는 블록(인트로 행 끝 → 1행 머리)이 그 자리에서 잘렸다. 앱의 `S` 글쇠는 재생 헤드가 없으면 그 전에 알림으로 멈추므로 화면에서 겪은 일은 없다. 0 은 그대로 0초다.
 - 원칙 검사기(`node tools/check-principles.mjs`)의 D-5 규칙이 `Number.isFinite(Number(x))` · `isFinite(Number(x))` 꼴도 파일:줄로 잡는다. 이 일을 [버그 기록](BUG_REPORTS.md#못-읽는-재생-헤드-초null가-0초로-읽혀-카운트-0-에서-블록을-자름)과 [개발 원칙 D-5](PRINCIPLES.md#d-5)에 적었다(로드맵 RM-60, 단위 시험 651 → 655).
