@@ -24,8 +24,9 @@ import { getGroup, groupCount, affectedRowsByGroup, makeSegmentPlacements } from
 //                              인데 remove-03(존재하지 않는 그룹 삭제)은 "main:rows:[]" 다.
 //                              [] 로 뭉개면 골든이 깨진다.
 //   changedRows: 실제로 데이터가 바뀐 행만(중복 제거, 등장 순). **진단·최적화용이다.**
-//                이동/복사가 전 행을 그리는 과잉(a3d5d5c 가 stale DOM 회피로 도입)을 지금 고치지
-//                않으므로, 이 값을 renderRows 대신 렌더에 쓰면 그 시점에 동작이 바뀐다.
+//                이동/복사는 전 행을 그린다 — a3d5d5c 가 stale DOM 회피로 도입했고, 2026-11-02 에 규모를 재어
+//                **원칙으로 정했다**(docs/PRINCIPLES.md D-20, RM-35). 이 값을 renderRows 대신 렌더에 쓰면 동작이
+//                바뀐다 — 좁힐 일이 생기면 동작 변경 커밋으로 따로 낸다(tests/unit/boardScale.test.mjs 가 이 값의 정직성을 지킨다).
 //                repackLanes 의 Phase2 스코프 누수(보존 대상 결함)도 여기에만 드러난다.
 //
 // 공통 시그니처: (board, args, ids, opt) => { placements, renderRows, changedRows }
@@ -52,7 +53,7 @@ export const PLACE_POLICY = Object.freeze({
 export const MOVE_POLICY = Object.freeze({
   clamp: true,          // 3640: 보드 끝으로 밀면 길이가 줄어든다
   repack: true,         // 3664: 이동 후 이전 행 + 새 행 재정렬(병합 보장)
-  renderAllRows: true   // 3667-3670: ⚠ 전 행 렌더(a3d5d5c). changedRows 가 정직한 범위를 따로 알려준다
+  renderAllRows: true   // 3667-3670: 전 행 렌더 — 원칙 D-20(RM-35 에서 재어 정함). changedRows 가 정직한 범위를 따로 알려준다
 });
 
 /**
@@ -67,7 +68,7 @@ export const MOVE_POLICY = Object.freeze({
 export const COPY_POLICY = Object.freeze({
   clamp: true,          // 3676
   repack: true,         // 2026-09-29 — 원본은 false(RM-02)
-  renderAllRows: true   // 3700-3703
+  renderAllRows: true   // 3700-3703 — 원칙 D-20(이동과 같다)
 });
 
 /**
