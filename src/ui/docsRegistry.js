@@ -7,14 +7,14 @@
 //    임의 경로를 허용하면 같은 출처의 아무 파일이나 화면에 띄우는 창이 된다.
 
 /**
- * 갈래는 코드 구조가 아니라 **읽는 사람**으로 나눈다.
- * @typedef {'start'|'usage'|'changes'|'dev'} DocGroup
+ * 갈래는 코드 구조가 아니라 **읽는 사람**으로 나눈다. 둘뿐이다(2026-11-02, RM-26) — 쓰는 사람이 읽는 「도움말」과
+ * 만드는 사람이 읽는 「개발」. 「개발」은 `hidden` 이라 문서 창 목록에서 평소에 접혀 있고, 문서끼리의 링크 · 주소로는 열린다.
+ * 그전의 넷(시작하기 · 기능과 사용법 · 바뀐 것 · 만드는 사람을 위해)은 사용자가 읽을 글을 개발용 글 사이에 묻었다.
+ * @typedef {'help'|'dev'} DocGroup
  */
 export const DOC_GROUPS = [
-  { id: 'start',   label: '시작하기',        hint: '처음 켰다면 여기부터' },
-  { id: 'usage',   label: '기능과 사용법',   hint: '그 버튼이 무슨 일을 하는지' },
-  { id: 'changes', label: '바뀐 것',         hint: '언제부터 이렇게 됐는지' },
-  { id: 'dev',     label: '만드는 사람을 위해', hint: '고치기 전에 읽는 것' },
+  { id: 'help', label: '도움말', hint: '쓰는 사람이 읽는 것 — 튜토리얼 · 기능 · 바뀐 것' },
+  { id: 'dev',  label: '개발',   hint: '만드는 사람이 읽는 것 — 고치기 전에', hidden: true },
 ];
 
 /**
@@ -25,56 +25,56 @@ export const DOC_GROUPS = [
 export const DOCS = [
   {
     id: 'tutorial',
-    group: 'start',
+    group: 'help',
     title: '튜토리얼',
     path: 'docs/TUTORIAL.md',
     desc: '처음 켜서 안무 한 곡을 끝낼 때까지',
   },
   {
     id: 'readme',
-    group: 'start',
+    group: 'help',
     title: '프로젝트 소개',
     path: 'README.md',
     desc: '이 도구가 무엇이고 어떻게 실행하는지',
   },
   {
     id: 'features',
-    group: 'usage',
+    group: 'help',
     title: '기능 설명서',
     path: 'docs/FEATURES.md',
     desc: '기능마다 무엇을 하는지·어디에 있는지·어떻게 쓰는지',
   },
   {
     id: 'history',
-    group: 'changes',
+    group: 'help',
     title: '개발 이력',
     path: 'docs/HISTORY.md',
     desc: 'PR 마다 사용자 눈에 무엇이 달라졌는지',
   },
   {
     id: 'roadmap',
-    group: 'changes',
+    group: 'dev',
     title: '로드맵',
     path: 'docs/ROADMAP.md',
     desc: '다음·그다음·나중 — 무엇을 왜 만들고, 지금 어디까지 왔는지',
   },
   {
     id: 'decisions',
-    group: 'changes',
+    group: 'dev',
     title: '결정 기록',
     path: 'docs/DECISIONS.md',
     desc: '사람이 정해야 했던 것과 그 까닭 · 버린 선택지',
   },
   {
     id: 'editing-flows',
-    group: 'changes',
+    group: 'dev',
     title: '편집 흐름',
     path: 'docs/EDITING_FLOWS.md',
     desc: '안무표를 채우는 길 스무 가지와, 그중 막힌 것을 여는 계획',
   },
   {
     id: 'video-to-chart',
-    group: 'changes',
+    group: 'dev',
     title: '영상에서 안무표로',
     path: 'docs/VIDEO_TO_CHART.md',
     desc: '영상을 연 뒤의 순서 — 간격·기준·범위 셋을 가르는 계획',
@@ -121,6 +121,13 @@ export const DOCS = [
     path: 'CLAUDE.md',
     desc: '이 저장소에서 작업할 때의 규칙',
   },
+  {
+    id: 'examples',
+    group: 'dev',
+    title: '예제 안무',
+    path: 'examples/README.md',
+    desc: '`예제 열기` 가 여는 안무표 파일과 그 모양(RM-26)',
+  },
 ];
 
 const BY_ID = new Map(DOCS.map(d => [d.id, d]));
@@ -134,7 +141,8 @@ export function resolveDoc(id) {
   return BY_ID.get(String(id)) || null;
 }
 
-/** 갈래별로 묶은 목록. 등록부의 순서를 그대로 지킨다. */
+/** 갈래별로 묶은 목록. 등록부의 순서를 그대로 지킨다. 숨긴 갈래도 돌려준다 — 접을지는 뷰가 `hidden` 을 보고 정한다. */
+// @complexity time=O(g·d) space=O(d) cc=1
 export function docsByGroup() {
   return DOC_GROUPS.map(g => ({ ...g, docs: DOCS.filter(d => d.group === g.id) }));
 }

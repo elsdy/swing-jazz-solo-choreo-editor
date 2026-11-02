@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "savedAt": "2026-11-02T00:00:00.000Z",
+  "fileName": "Shim Sham 예제",
+  "rows": 8,
+  "cols": 8,
+  "categories": {
+    "fall": {
+      "label": "fall",
+      "color": "#38bdf8"
+    },
+    "jump": {
+      "label": "jump",
+      "color": "#ef4444"
+    },
+    "rotate": {
+      "label": "rotate",
+      "color": "#3b82f6"
+    },
+    "shimmy": {
+      "label": "shimmy",
+      "color": "#facc15"
+    },
+    "step": {
+      "label": "step",
+      "color": "#22c55e"
+    },
+    "turn": {
+      "label": "turn",
+      "color": "#94a3b8"
+    }
+  },
+  "moveLibrary": [
+    {
+      "id": "ex-m05",
+      "name": "Air Step",
+      "category": "jump"
+    },
+    {
+      "id": "ex-m10",
+      "name": "Boogie Back",
+      "category": "step"
+    },
+    {
+      "id": "ex-m03",
+      "name": "Charleston",
+      "category": "step"
+    },
+    {
+      "id": "ex-m07",
+      "name": "Fall Off Log",
+      "category": "fall"
+    },
+    {
+      "id": "ex-m01",
+      "name": "Jazz Square",
+      "category": "step"
+    },
+    {
+      "id": "ex-m04",
+      "name": "Pivot Turn",
+      "category": "turn"
+    },
+    {
+      "id": "ex-m13",
+      "name": "Push & Cross-over",
+      "category": "step"
+    },
+    {
+      "id": "ex-m11",
+      "name": "Shim Sham",
+      "category": "shimmy"
+    },
+    {
+      "id": "ex-m12",
+      "name": "Shim Sham Break",
+      "category": "jump"
+    },
+    {
+      "id": "ex-m06",
+      "name": "Shimmy",
+      "category": "shimmy"
+    },
+    {
+      "id": "ex-m08",
+      "name": "Spin Out",
+      "category": "rotate"
+    },
+    {
+      "id": "ex-m02",
+      "name": "Suzie Q",
+      "category": "step"
+    },
+    {
+      "id": "ex-m09",
+      "name": "Tacky Annie",
+      "category": "step"
+    }
+  ],
+  "placements": [
+    {
+      "id": "ex-p1",
+      "groupId": "ex-g1",
+      "name": "Shim Sham",
+      "category": "shimmy",
+      "row": 1,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+    },
+    {
+      "id": "ex-p2",
+      "groupId": "ex-g2",
+      "name": "Shim Sham",
+      "category": "shimmy",
+      "row": 2,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+    },
+    {
+      "id": "ex-p3",
+      "groupId": "ex-g3",
+      "name": "Shim Sham",
+      "category": "shimmy",
+      "row": 3,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+    },
+    {
+      "id": "ex-p4",
+      "groupId": "ex-g4",
+      "name": "Shim Sham Break",
+      "category": "jump",
+      "row": 4,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+    },
+    {
+      "id": "ex-p5",
+      "groupId": "ex-g5",
+      "name": "Push & Cross-over",
+      "category": "step",
+      "row": 5,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+    },
+    {
+      "id": "ex-p6",
+      "groupId": "ex-g6",
+      "name": "Push & Cross-over",
+      "category": "step",
+      "row": 6,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+    },
+    {
+      "id": "ex-p7",
+      "groupId": "ex-g7",
+      "name": "Push & Cross-over",
+      "category": "step",
+      "row": 7,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+    },
+    {
+      "id": "ex-p8",
+      "groupId": "ex-g8",
+      "name": "Shim Sham Break",
+      "category": "jump",
+      "row": 8,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+    }
+  ],
+  "routines": [],
+  "youtubeUrl": "https://www.youtube.com/watch?v=KhnNhr1spoM",
+  "youtubeTitle": "Frankie Manning, Chazz Young perform the Shim Sham",
+  "clickupUrl": "",
+  "customLinks": [],
+  "media": {
+    "activeId": "yt:https://www.youtube.com/watch?v=KhnNhr1spoM",
+    "clips": [
+      {
+        "id": "yt:https://www.youtube.com/watch?v=KhnNhr1spoM",
+        "name": "Frankie Manning · Shim Sham",
+        "source": {
+          "kind": "youtube",
+          "url": "https://www.youtube.com/watch?v=KhnNhr1spoM"
+        },
+        "tempo": {
+          "bpm": 172,
+          "beatsPerCount": 1,
+          "anchorSec": 0,
+          "anchorCount": 0
+        }
+      }
+    ]
+  },
+  "phrasing": {
+    "on": true,
+    "rowsPerPhrase": 4,
+    "phrasesPerChorus": 2,
+    "startRow": 1
+  }
+}
