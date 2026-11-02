@@ -159,3 +159,87 @@ test('안내 문구가 가리키는 단계 이름이 마크업에 있다', () =>
   }
   assert.deepEqual(misses, [], `단계 이름 인용이 화면의 summary 와 맞지 않는다:\n  ${misses.join('\n  ')}`);
 });
+
+// ── RM-61 — 테마 띠의 흐름 길 띠는 본문 스크롤 칸 맨 위에 선다 ─────────────────────────────────
+// 테마 길 띠(.flow-steps)는 104px 이고 본문(.video-body)은 띠일 때 26vh 로 끊겨 안에서 굴린다. 길 띠가 연습 줄
+// (.video-practice) 밑에 서면 1440×723 에서 스크롤 칸 바닥(634)에 걸려 아래 30px 와 마디 이름(646~660)이 잘렸다.
+// 고침은 띠일 때의 CSS order 만이다 — 마크업을 옮기면 영상 iframe 이 다시 읽혀 재생이 처음으로 돌아간다.
+// 브라우저 배치는 node 로 못 재니 index.html 의 CSS **글**을 읽어 order 를 잰다.
+
+/** CSS 주석을 같은 길이의 공백으로 지운 원문 — 주석 속 `{` · `}` 가 짝을 흐트리지 않게. */
+const CSS_TEXT = readFileSync(join(ROOT, 'index.html'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+
+/** `@media <조건> {` 블록들의 안쪽 글. 괄호 짝을 세어 닫는 자리까지. */
+// @complexity time=O(n) space=O(n) cc=5
+function mediaBlocks(css, cond) {
+  const out = [];
+  const head = new RegExp(`@media\\s*${cond.replace(/[()]/g, '\\$&').replace(/\s+/g, '\\s*')}\\s*\\{`, 'g');
+  for (let m; (m = head.exec(css));) {
+    let depth = 1, i = m.index + m[0].length;
+    for (; i < css.length && depth > 0; i++) {
+      if (css[i] === '{') depth++;
+      else if (css[i] === '}') depth--;
+    }
+    out.push(css.slice(m.index + m[0].length, i - 1));
+  }
+  return out;
+}
+
+/** 블록 안 규칙 중 선택자 목록에 `sel` 이 **그대로** 든 것의 `order` 값들(없으면 빈 배열). */
+// @complexity time=O(n) space=O(n) cc=4
+function ordersFor(block, sel) {
+  const norm = (s) => s.replace(/\s+/g, ' ').trim();
+  const out = [];
+  for (const m of block.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const sels = m[1].split(',').map(norm);
+    if (!sels.includes(norm(sel))) continue;
+    const o = m[2].match(/(?:^|;|\s)order\s*:\s*(-?\d+)/);
+    if (o) out.push(Number(o[1]));
+  }
+  return out;
+}
+
+const BAND = 'body[data-videoband="on"]';
+const THEME_BAND = `:root[data-theme] ${BAND}`;
+
+test('[RM-61 요구 1] 테마 띠에서 흐름 길 띠가 연습 줄보다 먼저 선다', () => {
+  const wide = mediaBlocks(CSS_TEXT, '(min-width: 1041px)').join('\n');
+  const flow = ordersFor(wide, `${THEME_BAND} .flow-steps`);
+  assert.equal(flow.length, 1, `넓은 화면 블록에 「${THEME_BAND} .flow-steps」 의 order 가 하나 있어야 한다 — ${flow.length}개`);
+  // 연습 줄의 order — 테마 규칙이 있으면 그것, 없으면 띠 규칙, 그것도 없으면 flex 기본값 0.
+  const practice = ordersFor(wide, `${THEME_BAND} .video-practice`).at(-1)
+    ?? ordersFor(wide, `${BAND} .video-practice`).at(-1) ?? 0;
+  assert.ok(flow[0] < practice, `테마 띠의 길 띠 order(${flow[0]})가 연습 줄 order(${practice})보다 작아야 한다`);
+  // 열린 차례 카드 · 도구 칸 · 상태줄보다도 앞이다 — 길 띠가 스크롤 칸 맨 위에 통째로 남는다.
+  for (const other of ['.video-body > .vstep[open]', '.video-tools', '.video-status']) {
+    const o = ordersFor(wide, `${BAND} ${other}`).at(-1) ?? 0;
+    assert.ok(flow[0] < o, `길 띠 order(${flow[0]})가 ${other} order(${o})보다 작아야 한다`);
+  }
+  // 마크업은 옮기지 않는다 — 길 띠와 영상 프레임이 같은 #videoBody 안에 그대로 있다.
+  for (const id of ['videoFlowSteps', 'videoFrame', 'videoPractice']) {
+    const hits = idIndex(id);
+    assert.equal(hits.length, 1, `#${id} 가 하나여야 한다`);
+    assert.ok(within(hits[0], body), `#${id} 는 #videoBody 안에 있어야 한다`);
+  }
+  assert.ok(idIndex('videoPractice')[0] < idIndex('videoFlowSteps')[0],
+    '마크업 차례(연습 줄 → 길 띠)는 그대로다 — 자리는 CSS order 만 바꾼다');
+});
+
+test('[RM-61 요구 2] 길 띠를 올리는 order 는 테마를 켠 넓은 띠에만 걸린다', () => {
+  // 테마 없는 띠 규칙 · 좁은 화면에는 길 띠를 앞으로 당기는 order 가 없다(기본 테마의 차례 줄은 RM-55 의 몫).
+  const wide = mediaBlocks(CSS_TEXT, '(min-width: 1041px)').join('\n');
+  const plain = ordersFor(wide, `${BAND} .flow-steps`);
+  assert.ok(plain.every(o => o >= 0), `테마 없는 띠의 길 띠 order 는 음수가 아니어야 한다 — ${plain.join(',')}`);
+  const narrow = mediaBlocks(CSS_TEXT, '(max-width: 1040px)').join('\n');
+  for (const sel of [`${THEME_BAND} .flow-steps`, `:root[data-theme] .flow-steps`, `${BAND} .flow-steps`]) {
+    assert.deepEqual(ordersFor(narrow, sel), [], `좁은 화면에는 「${sel}」 의 order 가 없어야 한다`);
+  }
+  // 미디어 밖(모든 폭)에서 테마 길 띠의 order 를 바꾸지 않는다 — 띄운 창 · 좁은 화면의 배치를 건드리지 않게.
+  let outside = CSS_TEXT;
+  for (const cond of ['(min-width: 1041px)', '(max-width: 1040px)']) {
+    for (const b of mediaBlocks(CSS_TEXT, cond)) outside = outside.replace(b, '');
+  }
+  assert.deepEqual(ordersFor(outside, `:root[data-theme] .flow-steps`), [], '미디어 밖 테마 길 띠 규칙에는 order 가 없어야 한다');
+  assert.deepEqual(ordersFor(outside, `${THEME_BAND} .flow-steps`), [], '테마 띠의 길 띠 order 는 넓은 화면 블록 안에만 둔다');
+});
