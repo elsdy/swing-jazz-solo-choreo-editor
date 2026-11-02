@@ -56,7 +56,7 @@ src/testing/    골든 러너가 쓰는 어댑터 (앱은 쓰지 않는다)
 ## 고칠 때
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 622개 (도메인·어댑터·유스케이스·뷰 570 + 원칙 검사기 자기 시험 18 + 문서 검사 자기 시험 18 + server.py 실물 16)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 655개 (도메인·어댑터·유스케이스·뷰 592 + 원칙 검사기 자기 시험 20 + 문서 검사 자기 시험 18 + 계층 검사 자기 시험 3 + server.py 실물 22)
 node tests/run.mjs                # 격자 알고리즘 골든 173개
 node tools/check-arch.mjs         # 계층 방향과 순수성
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지

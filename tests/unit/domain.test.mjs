@@ -63,7 +63,7 @@ import {
 } from '../../src/domain/project/schema.js';
 import { applySnapshot, pickUndoFields, toLinkBundle } from '../../src/domain/project/snapshot.js';
 import * as History from '../../src/usecases/historyCommands.js';
-import { clearBoard, setBoardRows, shiftAllCounts } from '../../src/usecases/boardCommands.js';
+import { clearBoard, setBoardRows, shiftAllCounts, splitAtPlayhead } from '../../src/usecases/boardCommands.js';
 import { serializeLinks } from '../../src/domain/links.js';
 import { CLEAR_BOARD_BTN_LABEL, CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
@@ -2675,6 +2675,41 @@ test('flowTrack: 마디는 고르게 놓이고 길은 닫힌 리본을 함께 �
   assert.equal(Track.flowTrack({ width: NaN, height: 96, count: 6 }), null);
 });
 
+/**
+ * 테마의 마디(지름 34px)와 그 아래 이름(여백 4 + 줄 14)이 띠 높이를 넘으면 `overflow:hidden` 인 띠가 잘라
+ * 이름이 사라진다(RM-58). 띠가 낮으면 활을 낮춰서라도 띠 안에 넣는다 — 띠는 늘이지 않는다(결정 2026-11-03).
+ */
+test('[RM-58 요구 1] flowTrack: 마디와 이름이 띠 높이 안에 든다', () => {
+  const cases = [
+    { height: 104 }, { height: 60 },
+    // 40 에는 기본 마디(34) + 이름(18) 이 들어갈 수 없다 — 작은 마디로 셈만 잰다.
+    { height: 40, nodeR: 8, labelH: 12 }
+  ];
+  for (const c of cases) {
+    const nodeR = c.nodeR ?? Track.FLOW_NODE_R;
+    const labelH = c.labelH ?? Track.FLOW_LABEL_H;
+    for (let count = 2; count <= 6; count++) {
+      const t = Track.flowTrack({ width: 1068, count, ...c });
+      for (const p of t.points) {
+        assert.ok(p.y - nodeR >= 0, `높이 ${c.height} · 마디 ${count}: 마디 위가 띠 위로 나갔다(y=${p.y})`);
+        assert.ok(p.y + nodeR + labelH <= c.height, `높이 ${c.height} · 마디 ${count}: 이름이 띠 아래로 나갔다(y=${p.y})`);
+      }
+    }
+  }
+  // 104(지금 테마 띠)에서는 그림이 그대로다 — 끝 마디가 가운데 마디보다 아래, 활 26px.
+  const t = Track.flowTrack({ width: 1068, height: 104, count: 3 });
+  assert.deepEqual(t.points.map(p => Math.round(p.y)), [65, 39, 65]);
+  // 60 에서는 활이 낮아질 뿐 여전히 가운데가 솟는다.
+  const low = Track.flowTrack({ width: 1068, height: 60, count: 3 });
+  assert.ok(low.points[1].y < low.points[0].y, '낮은 띠에서도 가운데 마디가 솟아야 한다');
+  // 마디와 이름이 아예 안 들어가는 띠는 마디를 띠 위에 붙인다 — 마디가 보이는 것이 이름보다 먼저다.
+  const tiny = Track.flowTrack({ width: 1068, height: 30, count: 3 });
+  assert.ok(tiny.points.every(p => p.y === Track.FLOW_NODE_R), '못 담는 띠에서는 마디를 위에 붙인다');
+  // 기본 테마(마디 · 이름 몫 0)는 RM-58 전과 같은 좌표다 — 낮은 줄(43px)에서도 활이 그대로다(요구 4).
+  const basic = Track.flowTrack({ width: 1068, height: 43, count: 3, nodeR: 0, labelH: 0 });
+  assert.deepEqual(basic.points.map(p => Math.round(p.y * 100) / 100), [27.95, 15.05, 27.95]);
+});
+
 test('themes: 모르는 값은 기본으로 떨어지고, 기본은 표식이 없다', () => {
   assert.equal(Themes.normalizeTheme('neon'), 'neon');
   assert.equal(Themes.normalizeTheme('없는테마'), Themes.DEFAULT_THEME);
@@ -5092,6 +5127,32 @@ test('boundaryCount: 격자에 붙이고 남은 거리를 버리지 않고 돌�
   assert.equal(b.snapped, 8);
   assert.ok(b.offset < 0, '미리 눌렀으면 offset 이 음수다');
   assert.equal(boundaryCount(Number.NaN, T120, 2), null, '읽을 수 없으면 null 이다');
+});
+
+// RM-60 — `Number(null)`·`Number('')` 은 0 이라 `Number.isFinite(Number(sec))` 로 거르면 못 읽는 초가 「0초」로 통과했다.
+test('[RM-60 요구 0] boundaryCount: null · undefined · 빈 글 초는 읽을 수 없어 null 이고 0 은 0초다', () => {
+  for (const sec of [null, undefined, '', '4.5', '  ', true, [], {}]) {
+    assert.equal(boundaryCount(sec, T120, 2), null, `${JSON.stringify(sec)} 는 초가 아니다`);
+  }
+  const zero = boundaryCount(0, T120, 2);
+  assert.ok(zero, '0 은 0초다 — 읽을 수 있다');
+  assert.equal(zero.raw, timeToCount(0, T120));
+});
+
+test('[RM-60 요구 1] splitAtPlayhead 는 sec 가 null 이면 카운트 0 에서 자르지 않는다', () => {
+  // 0초 = 카운트 0. 블록 「a」 는 intro 행 7카운트(-2)에서 1행 2카운트(1)까지 — 카운트 0 경계를 가로지른다.
+  const store = createStore();
+  const seg = (row, startIndex, length) => ({ id: `a-${row}`, groupId: 'a', name: 'a', category: 'basic', row, startIndex, length, subRow: 0 });
+  store.setBoard(BOARD_MAIN, { rows: 4, cols: 8, hasIntroRow: true, placements: [seg(0, 6, 2), seg(1, 0, 2)] });
+  VideoCmd.setTempo(store, { tempo: { bpm: 120, beatsPerCount: 1, anchorSec: 0, anchorCount: 0, points: [] } });
+  const before = JSON.stringify(store.get().boards[BOARD_MAIN].placements);
+  for (const sec of [null, undefined, '']) {
+    const dirty = splitAtPlayhead(store, { boardId: BOARD_MAIN, sec }, { ids: () => 'n1' });
+    assert.equal(dirty.boards, undefined, `sec=${JSON.stringify(sec)} 로 자르면 안 된다`);
+    assert.equal(JSON.stringify(store.get().boards[BOARD_MAIN].placements), before, '배치가 그대로다');
+  }
+  // 대조 — 0 은 0초라서 같은 자리에서 자른다(수 0 은 그대로 읽는다)
+  assert.ok(splitAtPlayhead(store, { boardId: BOARD_MAIN, sec: 0 }, { ids: () => 'n1' }).boards, '0초는 카운트 0 에서 자른다');
 });
 
 test('noteDriftSample: 최근 것만 들고, 읽을 수 없는 값에는 같은 배열을 그대로 돌려준다', () => {
