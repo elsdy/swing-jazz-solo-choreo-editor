@@ -45,6 +45,13 @@ export const DOCS = [
     desc: '기능마다 무엇을 하는지·어디에 있는지·어떻게 쓰는지',
   },
   {
+    id: 'glossary',
+    group: 'help',
+    title: '용어집',
+    path: 'docs/GLOSSARY.md',
+    desc: '화면 낱말의 뜻 — 지우기와 삭제, 구간과 마디 반복, 내보내기와 저장을 가른다',
+  },
+  {
     id: 'history',
     group: 'help',
     title: '개발 이력',
@@ -98,7 +105,7 @@ export const DOCS = [
     group: 'dev',
     title: '개발 원칙',
     path: 'docs/PRINCIPLES.md',
-    desc: '버그 기록에서 뽑아낸 재발 방지 규칙 25개',
+    desc: '버그 기록에서 뽑아낸 재발 방지 규칙 44개',
   },
   {
     id: 'bugs',

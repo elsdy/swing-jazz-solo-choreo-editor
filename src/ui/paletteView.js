@@ -24,6 +24,7 @@ import { askText, anchorOf } from './inlinePrompt.js';
 import { categoryNames, categoryColor } from '../domain/categories.js';
 import { selectPaletteMoves } from '../domain/moves.js';
 import { placeContextMenu } from '../domain/popupPlacement.js';
+import { fill, str } from '../domain/strings.js';
 
 /** 동작 CRUD 는 전부 메인 보드 스냅샷에 커밋된다(원본 saveHistory). */
 const MAIN = 'main';
@@ -113,11 +114,11 @@ export function createPaletteView(deps) {
 
     const renameBtn = document.createElement('button');
     renameBtn.type = 'button';
-    renameBtn.textContent = '이름 변경';
+    renameBtn.textContent = str('move.menu.rename');                  // 글자는 문자열 표(RM-10)
     renameBtn.addEventListener('click', () => {
       const anchor = anchorOf(menu);            // 메뉴가 있던 자리에 입력이 뜬다
       closeContextMenu();                       // 3257: 메뉴를 먼저 닫고 묻는다
-      askText({ anchor, title: '동작 이름 변경', value: move.name }).then((next) => {
+      askText({ anchor, title: str('move.rename.title'), value: move.name }).then((next) => {
         const dirty = commands.renameMove(moveId, next);
         render(dirty);
         // 3187·3189 의 취소/빈 이름 조기 반환에서는 saveHistory 가 없다.
@@ -127,11 +128,11 @@ export function createPaletteView(deps) {
 
     const categoryBtn = document.createElement('button');
     categoryBtn.type = 'button';
-    categoryBtn.textContent = `카테고리: ${store.categories[move.category]?.label || move.category}`;
+    categoryBtn.textContent = fill('move.menu.category', { label: store.categories[move.category]?.label || move.category });
     categoryBtn.addEventListener('click', () => {
       const anchor = anchorOf(menu);
       closeContextMenu();                       // 3264
-      askText({ anchor, title: '카테고리 키 변경', value: move.category }).then((next) => {
+      askText({ anchor, title: str('move.categoryKey.title'), value: move.category }).then((next) => {
         const dirty = commands.setMoveCategoryKey(moveId, next);
         render(dirty);
         if (changed(dirty)) render(commit(MAIN));  // 3267·3269 의 조기 반환에서는 커밋하지 않는다
@@ -140,8 +141,8 @@ export function createPaletteView(deps) {
 
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
-    deleteBtn.textContent = '삭제';
-    deleteBtn.addEventListener('click', () => confirmOnce(deleteBtn, '삭제', () => {
+    deleteBtn.textContent = str('move.menu.delete');
+    deleteBtn.addEventListener('click', () => confirmOnce(deleteBtn, str('move.menu.delete'), () => {
       // ⚠ 이 경로만 deleteMove(3198-3208) 를 타서 **상태를 바꾼 뒤** 메뉴를 닫는다(3204).
       //   카드의 × 버튼(3134-3145)에는 메뉴 닫기가 없다.
       const dirty = commands.deleteMove(moveId);
@@ -214,7 +215,7 @@ export function createPaletteView(deps) {
     const chip = document.createElement('div');
     chip.className = CLS.moveChip;
     chip.style.background = categoryColor(categories, move.category);
-    chip.title = `${move.name} 드래그`;
+    chip.title = fill('move.card.drag', { name: move.name });
     card.draggable = true;                                // 3078
 
     const meta = document.createElement('div');
@@ -222,7 +223,7 @@ export function createPaletteView(deps) {
     const nameEl = document.createElement('div');
     nameEl.className = CLS.moveName;
     nameEl.textContent = move.name;
-    nameEl.title = '더블클릭, 우클릭 또는 길게 눌러 메뉴 열기';
+    nameEl.title = str('move.card.menuHint');
     meta.appendChild(nameEl);
 
     const actions = document.createElement('div');
@@ -251,10 +252,10 @@ export function createPaletteView(deps) {
     const del = document.createElement('button');
     del.className = CLS.iconBtn;
     del.type = 'button';
-    del.textContent = '×';
-    del.title = '삭제';
+    del.textContent = str('icon.delete');
+    del.title = str('move.card.delete.title');                       // 글자는 문자열 표(RM-10)
     del.addEventListener('click', () => {
-      confirmOnce(del, '×', () => {
+      confirmOnce(del, str('icon.delete'), () => {
         // 3136-3140. ⚠ 이 경로에는 closeMoveContextMenu 가 없다(메뉴 경로에만 있다).
         render(commands.deleteMove(move.id));
         render(commit(MAIN));
@@ -266,7 +267,7 @@ export function createPaletteView(deps) {
     const starBtn = makeInlineStarBtn(
       () => store.favorites.moveNames.has(move.name),
       () => { render(commands.toggleMoveFavorite(move.name)); },
-      { title: '즐겨찾기 (빠른 배치에 표시)', stopPropagation: false, toggleClass: false }
+      { title: str('favorite.quickPlace.title'), stopPropagation: false, toggleClass: false }
     );
 
     actions.append(shell, starBtn, del);

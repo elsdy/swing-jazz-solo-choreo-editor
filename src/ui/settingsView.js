@@ -15,6 +15,8 @@ import {
   checkKey, eventKey, keysLabel, normalizeHotkeys, ownerOf, setKeys
 } from '../domain/hotkeys.js';
 import { DEFAULT_THEME, THEMES, normalizeTheme } from '../domain/themes.js';
+import { commandById } from '../domain/commands.js';
+import { escapeHtml } from './widgets.js';
 
 const STYLE_ID = 'settings-view-style';
 const CSS = `
@@ -265,7 +267,7 @@ export function createSettingsView(deps) {
         <section class="settings-section" data-role="projects-section" data-cat="storage"
           data-keywords="프로젝트 안무표 json 저장 최근 목록 폴더 경로 백업 보관">
           <h3>프로젝트 보관 폴더</h3>
-          <div class="helper"><code>프로젝트 저장</code> 을 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
+          <div class="helper"><code>${escapeHtml(commandById('saveProject').button)}</code> 를 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
           <div class="settings-row">
             <span class="settings-label">하위 폴더</span>
             <input class="settings-text" data-role="projects-subdir" type="text" placeholder="projects" disabled />

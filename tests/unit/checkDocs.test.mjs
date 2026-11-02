@@ -12,8 +12,10 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  LABEL_DOCS, NOT_LABELS, checkDocLabels, collectScreenTexts, contains, docQuotes, formatMiss, normalize, notALabel,
+  LABEL_DOCS, NOT_LABELS, checkDocLabels, collectScreenTexts, contains, docQuotes, formatMiss, labelTableTexts, normalize, notALabel,
 } from '../../tools/docLabels.mjs';
+import { LABELS } from '../../src/domain/strings.js';
+import { COMMANDS } from '../../src/domain/commands.js';
 import { scanJs, HOLE } from '../../tools/lib/js-text.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -121,6 +123,38 @@ test('지금 두 문서의 라벨 인용이 모두 화면에 있다', () => {
   const cli = spawnSync(process.execPath, [join(ROOT, 'tools', 'check-docs.mjs')], { encoding: 'utf8' });
   assert.equal(cli.status, 0, cli.stderr);
   assert.match(cli.stdout, /라벨 인용 불일치 0 · 라벨 아님 \d+개/);
+});
+
+// ── RM-10 「요구 ↔ 시험」 표 7 ─────────────────────────────────────────────
+
+test('라벨 인용을 문자열 표와 명령 등록부에서 먼저 찾고, 표 밖에서만 찾은 것은 따로 센다', () => {
+  const tables = labelTableTexts({ 'block.remove': '× 지우기', 'video.inout.range': 'In {in} · Out {out}' }, [{ label: '되돌리기', button: 'Undo', hint: '방금 한 일을 하나' }]);
+  assert.deepEqual(tables, ['× 지우기', `In ${HOLE} · Out ${HOLE}`, '되돌리기', 'Undo', '방금 한 일을 하나'], '표의 구멍은 HOLE, 등록부는 라벨 · 단추 · 툴팁 · 설명');
+
+  // 표 출처와 긁은 출처가 갈라져 온다 — 합친 것(texts · raw)은 옛 호출부 그대로
+  const r = collectScreenTexts(SCREEN, tables);
+  assert.ok(r.table.texts.includes(normalize('× 지우기')) && !r.scraped.texts.includes(normalize('× 지우기')));
+  assert.ok(r.scraped.texts.includes(normalize('동작 목록')) && !r.table.texts.includes(normalize('동작 목록')));
+  assert.ok(r.texts.includes(normalize('× 지우기')) && r.texts.includes(normalize('동작 목록')));
+  assert.equal(r.table.raw, tables.join('\n'));
+
+  // 표에 있는 인용은 표 출처로, 긁은 글자에서만 찾은 것은 따로, 어디에도 없으면 실패
+  const c = checkDocLabels(doc('× 지우기', 'Undo', 'In 0:12.3 · Out 0:45.0', '동작 목록', '프로젝트 파일 이름', '동작 팔레트'), SCREEN, [], tables);
+  assert.deepEqual(c.misses.map(m => m.quote), ['동작 팔레트']);
+  assert.equal(c.fromTable, 3);
+  assert.equal(c.scrapedOnly, 2);
+  assert.equal(c.checked, 6);
+  // 표를 주지 않으면 전부 긁은 쪽이다
+  const none = checkDocLabels(doc('동작 목록'), SCREEN, []);
+  assert.deepEqual([none.fromTable, none.scrapedOnly], [0, 1]);
+
+  // 지금 저장소 — 표 · 등록부에서 찾는 인용이 실제로 있고, 보고 줄에 두 수가 난다
+  const real = checkDocLabels(repoDocs(), repoScreenFiles(), NOT_LABELS, labelTableTexts(LABELS, COMMANDS));
+  assert.deepEqual(real.misses, []);
+  assert.ok(real.fromTable >= 30, `표 · 등록부에서 찾은 인용이 ${real.fromTable}개뿐이다`);
+  assert.equal(real.fromTable + real.scrapedOnly, real.checked);
+  const cli = spawnSync(process.execPath, [join(ROOT, 'tools', 'check-docs.mjs')], { encoding: 'utf8' });
+  assert.match(cli.stdout, new RegExp(`문자열 표·명령 등록부에서 ${real.fromTable}개, 표 밖 화면 글자에서만 ${real.scrapedOnly}개`));
 });
 
 // ── 표 밖에서 덧댄 것 ───────────────────────────────────────────────────────

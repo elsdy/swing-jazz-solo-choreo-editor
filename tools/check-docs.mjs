@@ -8,7 +8,8 @@
 //   ③ 문서끼리 거는 링크의 앵커가 뷰어가 만드는 id 와 맞는지
 //   ④ 뷰어 렌더 결과의 제목·목록·표·코드블록 개수가 원문과 맞는지
 //   ⑤ 튜토리얼·기능 설명서가 백틱으로 인용한 화면 라벨이 지금 화면 코드에 있는지(tools/docLabels.mjs)
-//      — 라벨을 바꾸고 두 문서를 빠뜨린 커밋이 여기서 붉어진다
+//      — 라벨을 바꾸고 두 문서를 빠뜨린 커밋이 여기서 붉어진다. 문자열 표(domain/strings)와 명령 등록부(domain/commands)를
+//      먼저 대조하고, 표 밖의 화면 글자에서만 찾은 인용은 따로 센다(RM-10)
 //   ⑥ 화면의 `?` 단추(data-help)가 가리키는 문서 · 앵커가 있는지, 단추 키와 표(src/ui/helpLinks.js)가 짝이 맞는지(RM-26)
 //      — 제목을 고쳐 앵커가 바뀌면 `?` 가 문서 맨 위로 떨어진다. 그것을 여기서 붉게 한다
 
@@ -18,7 +19,9 @@ import { fileURLToPath } from 'node:url';
 import { renderMarkdown, buildToc } from '../src/ui/docsHub.js';
 import { DOCS, DOC_GROUPS, idForFileName, resolveDoc } from '../src/ui/docsRegistry.js';
 import { HELP_LINKS, missingHelpAnchors, unmatchedHelpKeys } from '../src/ui/helpLinks.js';
-import { LABEL_DOCS, NOT_LABELS, checkDocLabels, formatMiss } from './docLabels.mjs';
+import { COMMANDS } from '../src/domain/commands.js';
+import { LABELS } from '../src/domain/strings.js';
+import { LABEL_DOCS, NOT_LABELS, checkDocLabels, formatMiss, labelTableTexts } from './docLabels.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -127,7 +130,7 @@ function readScreenFiles() {
   return files;
 }
 const labelDocs = Object.fromEntries(LABEL_DOCS.filter(f => existsSync(join(ROOT, f))).map(f => [f, readFileSync(join(ROOT, f), 'utf8')]));
-const labels = checkDocLabels(labelDocs, readScreenFiles());
+const labels = checkDocLabels(labelDocs, readScreenFiles(), NOT_LABELS, labelTableTexts(LABELS, COMMANDS));
 for (const m of labels.misses) problems.push(formatMiss(m));
 for (const q of labels.badExclusions) problems.push(`tools/docLabels.mjs NOT_LABELS: '${q}' 에 이유가 없다 — 왜 라벨이 아닌지 적는다`);
 for (const q of labels.unusedExclusions) problems.push(`tools/docLabels.mjs NOT_LABELS: '${q}' 를 인용한 곳이 이제 없다 — 목록에서 지운다`);
@@ -148,7 +151,7 @@ for (const p of unmatchedHelpKeys(HELP_LINKS, helpKeys)) problems.push(p);
 console.log(stats.join('\n'));
 console.log(`\n등록 문서 ${DOCS.length}건 / 갈래 ${DOC_GROUPS.length}개 / 문서 간 링크 ${links.length}개`);
 console.log(`도움말 ? 단추 ${helpKeys.size}종 / 표 ${HELP_LINKS.length}줄`);
-console.log(`라벨 인용 ${labels.checked}개 대조(${LABEL_DOCS.join(' · ')}) / 꼴로 거른 것 ${filteredTotal}개(${Object.entries(labels.filtered).map(([k, n]) => `${k} ${n}`).join(' · ')}) / 라벨 아님 목록 ${NOT_LABELS.length}개`);
+console.log(`라벨 인용 ${labels.checked}개 대조(${LABEL_DOCS.join(' · ')}) — 문자열 표·명령 등록부에서 ${labels.fromTable}개, 표 밖 화면 글자에서만 ${labels.scrapedOnly}개 / 꼴로 거른 것 ${filteredTotal}개(${Object.entries(labels.filtered).map(([k, n]) => `${k} ${n}`).join(' · ')}) / 라벨 아님 목록 ${NOT_LABELS.length}개`);
 for (const n of notes) console.log('  · ' + n);
 
 if (problems.length) {
