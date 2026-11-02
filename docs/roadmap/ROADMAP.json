@@ -2062,6 +2062,36 @@
             "note": "길의 활은 그대로 살지만, 영상 띠가 그만큼 길어져 779px 창에서 안무표의 몫이 줄어든다(BOARD_MIN_H 와 부딪칠 수 있다)"
           }
         ]
+      },
+      {
+        "id": "Q104",
+        "title": "RM-60 — 새 꼴을 D-5 에 넣을까, 다른 번호로 따로 둘까",
+        "answer": "D-5 에 넣는다 (2026-11-03)",
+        "options": [
+          {
+            "label": "D-5 에 넣는다",
+            "note": "추천 — 「0 이 뜻을 갖는 자리에서 Number 변환이 값을 바꾼다」는 같은 뿌리라 원칙 목록 · 규칙 이름표 시험(`RULES.map` 아홉)이 그대로다. 예외 표식도 `원칙-예외(D-5)` 하나로 같다"
+          },
+          {
+            "label": "새 번호(D-n)로 따로 둔다",
+            "note": "규칙 이름표 시험 · CLAUDE.md · PRINCIPLES.md 머리의 원칙 목록 세 곳을 함께 고친다. 걸린 자리에서 원칙 이름이 더 정확하게 보인다"
+          }
+        ]
+      },
+      {
+        "id": "Q105",
+        "title": "RM-60 — boundaryCount 가 숫자 글(예: '4.5')을 계속 받아 줄까",
+        "answer": "수만 받는다 (2026-11-03)",
+        "options": [
+          {
+            "label": "수만 받는다",
+            "note": "추천 — 호출부 둘이 모두 수를 넘기므로 동작은 바뀌지 않고, null · 빈 글 · 숫자 글을 한꺼번에 막는다. 검사기 규칙의 고치는 법도 이 꼴 한 가지가 된다"
+          },
+          {
+            "label": "숫자 글은 받고 null · 빈 글만 막는다",
+            "note": "`sec != null && sec !== '' && Number.isFinite(Number(sec))` 꼴이 된다. 바깥 입력이 글로 올 길이 생겨도 견디지만, 거름이 길어지고 규칙의 고치는 법이 두 갈래로 갈린다"
+          }
+        ]
       }
     ]
   },
@@ -2069,31 +2099,26 @@
     "RM-60",
     "RM-58",
     "RM-53",
-    "RM-49",
-    "RM-40",
-    "RM-38",
-    "RM-36",
-    "RM-10",
-    "RM-11",
-    "RM-12",
-    "RM-14",
-    "RM-15",
-    "RM-16",
-    "RM-17",
     "RM-18",
-    "RM-19",
-    "RM-20",
-    "RM-21",
     "RM-23",
     "RM-24",
-    "RM-25",
-    "RM-26",
-    "RM-27",
     "RM-28",
     "RM-29",
     "RM-30",
-    "RM-33",
-    "RM-35"
+    "RM-42",
+    "RM-43",
+    "RM-44",
+    "RM-45",
+    "RM-46",
+    "RM-47",
+    "RM-48",
+    "RM-50",
+    "RM-51",
+    "RM-52",
+    "RM-54",
+    "RM-55",
+    "RM-56",
+    "RM-57"
   ],
   "flow": {
     "note": "「다음」 칸의 토대부터 — 결정이 선 작은 것으로 몸을 풀고, 뒤의 여럿이 밟을 채널을 먼저 놓는다.",
@@ -4144,14 +4169,14 @@
         {
           "id": "RM-46",
           "name": "Safari 인쇄에서 행 중간에 쪽이 넘어간다",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
           "questions": [],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "RM-21 요구 1(행 중간에서 쪽이 넘어가지 않는다)이 WebKit 에서 깨진다 — 40마디 표에서 1쪽 끝에 8x13 행의 윗부분이 걸리고 2쪽이 그 행의 나머지로 시작한다(넓은 판 · 폰 폭 둘 다). Chrome 은 지킨다. .board 가 display:grid 라 WebKit 이 격자 안의 break-inside: avoid 를 따르지 않는 것으로 보인다(추론). 고침 후보: 인쇄에서 .board 를 display:block 으로 바꿔 행을 블록으로 흐르게 한다.",
+          "what": "인쇄할 때 .board 를 격자(display:grid)가 아닌 블록으로 흘려서, WebKit 도 행(.board-row) 중간에서 쪽을 넘기지 않게 한다. RM-21 요구 1의 「행 중간에서 쪽이 넘어가지 않는다」가 Chrome 에서만 지켜지고 Safari 에서는 깨지기 때문이며, 같은 @media print 블록을 고치는 RM-44 · RM-45 · RM-47 과 손댈 자리가 겹친다(함수 호출 관계는 없다).",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T16:31:45Z",
@@ -4162,10 +4187,25 @@
             "side": "feature",
             "why": "RM-21 인쇄 CSS(앱 코드)의 결함 — 실제 Chrome 156 printToPDF · WebKit 인쇄 작업으로 재현"
           },
-          "slug": "safari-print-row-break",
+          "slug": "safari-print-row-break-block-flow",
           "deepens": [
             "RM-21"
-          ]
+          ],
+          "files": [
+            "index.html",
+            "tests/unit/countSheet.test.mjs#printRevivesHidden",
+            "docs/BUG_REPORTS.md",
+            "docs/HISTORY.md"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-46.md"
         },
         {
           "id": "RM-47",
@@ -4543,14 +4583,17 @@
         {
           "id": "RM-60",
           "name": "null 초가 카운트 0 으로 읽히는 자리와 그 꼴의 기계 검사",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q104",
+            "Q105"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "src/domain/tempo.js 의 boundaryCount 는 Number.isFinite(Number(sec)) 로 초를 거르는데 Number(null) 은 0 이라 null 이 「0초」로 통과한다(추론함 — 지금 호출부 둘이 null 을 넘기는지는 재지 않았다). 이 꼴을 check-principles 의 D-5 규칙으로 잡으려면 이 자리를 고치거나 예외 이유를 달아야 한다.",
+          "what": "`boundaryCount` 는 `Number.isFinite(Number(sec))` 로 초를 거르는데 `Number(null)`·`Number('')` 가 0 이라, 못 읽는 초가 「0초 → 카운트 0」으로 통과한다. 그래서 `splitAtPlayhead` 에 `sec: null` 이 오면 카운트 0 에서 잘린다(추론함). 이 자리를 수만 받게 고치고, 같은 꼴을 `tools/check-principles.mjs` 의 D-5 규칙이 잡게 넓힌다 — 이 꼴을 처음 짚은 것은 RM-24 다.",
           "kind": "bug",
           "seat": "codify",
           "addedAt": "2026-11-02T22:28:18Z",
@@ -4563,7 +4606,25 @@
             "why": "RM-24 에서 같은 꼴(Number.isFinite(Number(x)) 가 null 을 0 으로 통과시킴)을 시험이 잡아 고쳤다. 원칙 D-5 에 더했고, 기계 검사로 만들려면 남은 한 자리(tempo.boundaryCount)부터 판정해야 한다"
           },
           "slug": "number-null-is-finite-check",
-          "priority": "top4"
+          "priority": "top4",
+          "files": [
+            "src/domain/tempo.js#boundaryCount",
+            "tools/check-principles.mjs#RULES",
+            "tests/unit/domain.test.mjs",
+            "tests/unit/checkPrinciples.test.mjs",
+            "docs/PRINCIPLES.md",
+            "docs/BUG_REPORTS.md",
+            "CLAUDE.md"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-60.md"
         }
       ]
     }
