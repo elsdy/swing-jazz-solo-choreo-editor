@@ -646,7 +646,9 @@ RM-49 — 같은 꼴의 네 번째. 항목에 둔 「계획서 **또는** 설명
 
 **어떻게 확인할까.** `node tools/check-principles.mjs` 가 `src/ui/` · `src/input/` 에서 `placePlacementActionPopup({ … })` 을 부르는데 `height` 키가 없는 자리를 잡는다. 다른 자리 함수(루틴 팝업 · 이름 입력칸)는 아직 가정 크기를 쓴다 — 그쪽에 줄을 더하면 같은 방식으로 잰 값을 넘기고 규칙을 넓힌다. 실물에서는 창 아래쪽 행에서 열어 `getBoundingClientRect().bottom` 이 `innerHeight` 안인지 잰다.
 
-**근거 버그.** 2026-11-02(`rm-16-split-merge-and-bar-insert-delete`, 로드맵 RM-16). 상세는 [버그 기록](BUG_REPORTS.md#다섯-줄이-된-팝업의-마지막-줄이-창-아래로-넘침).
+**그려 넣는 좌표도 같다(2026-11-03, RM-58).** 상자 안에 그려 넣는 좌표(테마의 흐름 길 마디)는 ① 그 상자에 담길 것 전부 — 마디만이 아니라 그 아래 이름까지 — 를 셈에 넣어 상자 안에 든다고 보장하고, ② 그 상자의 크기가 **렌더 밖에서** 바뀌는 때(창 크기 · 테마 켜고 끄기 · 처음 자리 잡기)에도 다시 잰다. `resize` 리스너가 상자만 다시 놓고 좌표는 그리지 않으면, 그린 좌표가 그것을 잰 상자보다 오래 산다. 확인: `tests/unit/domain.test.mjs` 의 `[RM-58 요구 1] flowTrack: 마디와 이름이 띠 높이 안에 든다` 와 `tests/unit/videoPanelMarkup.test.mjs` 의 CSS ↔ flowTrack 대조 시험. 실물에서는 띠 폭을 줄인 뒤 길의 `viewBox` 가 띠 폭을 따라오는지 잰다.
+
+**근거 버그.** 2026-11-02(`rm-16-split-merge-and-bar-insert-delete`, 로드맵 RM-16). 상세는 [버그 기록](BUG_REPORTS.md#다섯-줄이-된-팝업의-마지막-줄이-창-아래로-넘침). 2026-11-03(`rm-58-themed-flow-step-buttons-stay-inside-track-band`, 로드맵 RM-58) — [창 폭이 줄어도 테마의 흐름 길이 옛 폭에 묶여 ③ 마디가 띠 밖으로 사라짐](BUG_REPORTS.md#창-폭이-줄어도-테마의-흐름-길이-옛-폭에-묶여-③-마디가-띠-밖으로-사라짐).
 
 <a id="u-16"></a>
 ### U-16 · 스타일은 디자인 토큰만 쓴다 — 테마는 토큰 값만 바꾸고, 빛은 세 자리에만

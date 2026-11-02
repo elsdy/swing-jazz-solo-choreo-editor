@@ -159,3 +159,38 @@ test('안내 문구가 가리키는 단계 이름이 마크업에 있다', () =>
   }
   assert.deepEqual(misses, [], `단계 이름 인용이 화면의 summary 와 맞지 않는다:\n  ${misses.join('\n  ')}`);
 });
+
+/**
+ * 테마 길 띠의 CSS 크기와 domain/flowTrack 의 셈이 같은 수를 쓰는가(RM-58). 띠 높이 · 마디 지름 · 이름 여백은
+ * CSS 에, 마디가 띠 안에 든다는 보장은 domain 에 있다 — 한쪽만 바뀌면 이름이 띠(`overflow:hidden`) 밖으로 잘린다.
+ */
+test('[RM-58 요구 1] 테마 길 띠의 CSS 크기와 flowTrack 의 마디 셈이 맞는다', async () => {
+  const { flowTrack, FLOW_NODE_R, FLOW_LABEL_H } = await import('../../src/domain/flowTrack.js');
+  const CSS = readFileSync(join(ROOT, 'index.html'), 'utf8');
+  /** `선택자 { … }` 한 덩이의 `속성: 값` 을 읽는다 — 같은 선택자가 여럿이면 뒤의 것이 이긴다(CSS 와 같다). */
+  const prop = (selector, name) => {
+    const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let val = null;
+    for (const m of CSS.matchAll(new RegExp(`(?:^|\\n)\\s*${esc}\\s*\\{([^}]*)\\}`, 'g'))) {
+      const hit = m[1].match(new RegExp(`(?:^|[;\\s])${name}\\s*:\\s*([^;]+);`));
+      if (hit) val = hit[1].trim();
+    }
+    assert.ok(val, `index.html 에 \`${selector} { ${name} }\` 가 없다`);
+    return val;
+  };
+  const band = parseFloat(prop(':root[data-theme] .flow-steps', 'height'));
+  const icon = parseFloat(prop(':root[data-theme] .flow-step .flow-icon', 'height'));
+  const gap = parseFloat(prop(':root[data-theme] .flow-step .flow-name', 'margin-top'));
+  assert.equal(icon, FLOW_NODE_R * 2, `테마 마디 지름(${icon}px)이 flowTrack 의 FLOW_NODE_R×2(${FLOW_NODE_R * 2}) 와 다르다`);
+  assert.ok(gap < FLOW_LABEL_H, `이름 여백(${gap}px)이 FLOW_LABEL_H(${FLOW_LABEL_H}) 안에 들어야 한다`);
+  // 띠의 실제 폭은 창마다 다르다 — 넓은 판(1068)과 좁은 띠(600)에서 잰다.
+  for (const width of [1068, 600]) {
+    for (let count = 2; count <= 6; count++) {
+      const t = flowTrack({ width, height: band, count });
+      for (const p of t.points) {
+        assert.ok(p.y - FLOW_NODE_R >= 0 && p.y + FLOW_NODE_R + FLOW_LABEL_H <= band,
+          `띠 ${band}px · 폭 ${width} · 마디 ${count}: 마디(y=${p.y})나 그 아래 이름이 띠 밖으로 나간다`);
+      }
+    }
+  }
+});
