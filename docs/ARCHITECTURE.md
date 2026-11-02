@@ -48,7 +48,7 @@ node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 여�
 | `src/usecases/` (2) | 저장소를 갱신하고 `Dirty`(무엇을 다시 그릴지)를 돌려준다. 포트는 주입받는다 | DOM 접근, 렌더 함수 호출, 어댑터 import | `store.js` `boardCommands.js` |
 | `src/ui/` (3) | DOM 렌더. 상태를 읽어 엘리먼트를 만든다 | `input/**` import(`domContract.js` 제외), 커맨드 직접 import | `boardView.js` `paletteView.js` |
 | `src/input/` (3) | 포인터·터치·키보드 제스처와 이벤트 위임 | `ui/**` import(`domContract.js` 제외), 커맨드 직접 import | `boardController.js` `hitTest.js` |
-| `src/app/` (4) | 조립과 렌더 라우팅. 뷰를 아는 유일한 곳 | — | `render.js` |
+| `src/app/` (4) | 조립과 렌더 라우팅. 뷰를 아는 유일한 곳 | — | `render.js` · `thumbState.js` |
 | `src/testing/` (4) | 골든 러너가 도메인·유스케이스 위에 올려 쓰는 어댑터. 앱은 이 계층을 import 하지 않는다 | — | `golden-adapter.mjs` |
 
 ## 자동 검사 — `node tools/check-arch.mjs`
