@@ -22,7 +22,7 @@ import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
 // 목록 칩과 블록 색이 갈리지 않는다(원본 4715 는 여기에 리터럴을 또 뒀다).
 
 /** 즐겨찾기 머리글의 인라인 스타일. 원본 4756. */
-const FAV_HEADER_STYLE = 'font-size:10px;font-weight:800;color:#facc15;padding:4px 2px 2px;letter-spacing:0.04em;';
+const FAV_HEADER_STYLE = 'font-size:var(--fs-1);font-weight:800;color:var(--now);padding:4px 2px 2px;letter-spacing:0.04em;';
 /** 즐겨찾기와 나머지 사이의 구분선. 원본 4763. */
 const DIVIDER_STYLE = 'height:1px;background:var(--line);margin:6px 0 4px;';
 /** 루틴이 하나도 없을 때의 안내. 원본 4694 — 문구·인라인 스타일까지 원문 그대로. */

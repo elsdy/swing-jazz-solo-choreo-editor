@@ -113,18 +113,18 @@ export function createCoachFlow({ steps = COACHMARKS, seen, context = () => ({ h
 const STYLE_ID = 'coachmarks-style';
 const CSS = `
 .coachmark { position: fixed; z-index: 7000; max-width: min(320px, calc(100vw - 32px));
-  padding: 10px 12px; border-radius: 12px; background: #0f1729; color: #e5e7eb;
-  border: 1px solid rgba(34,197,94,0.55); box-shadow: 0 18px 46px rgba(0,0,0,0.45), 0 0 24px rgba(34,197,94,0.18);
-  font-size: 12px; line-height: 1.5; }
+  padding: 10px 12px; border-radius: var(--r-2); background: var(--bg-2); color: var(--text);
+  border: 1px solid rgba(var(--accent-rgb), 0.55); box-shadow: var(--shadow);
+  font-size: var(--fs-2); line-height: 1.5; }
 .coachmark[hidden] { display: none; }
-.coachmark b { display: block; font-size: 12.5px; margin-bottom: 3px; color: #eafff1; }
+.coachmark b { display: block; font-size: var(--fs-3); margin-bottom: 3px; color: var(--text); }
 .coachmark p { margin: 0 0 8px; }
 .coachmark-row { display: flex; gap: 6px; align-items: center; }
-.coachmark-row .coachmark-count { font-size: 10.5px; color: #94a3b8; flex: 1; }
-.coachmark-row button { font-size: 11.5px; padding: 3px 10px; }
+.coachmark-row .coachmark-count { font-size: var(--fs-1); color: var(--muted); flex: 1; }
+.coachmark-row button { font-size: var(--fs-2); padding: 3px 10px; }
 /* 코치마크가 가리키는 대상만 숨 쉰다 — btnInvite 는 이제 여기서만 쓴다(RM-26). */
 [data-coach="1"] { animation: btnInvite 2.6s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { [data-coach="1"] { animation: none; box-shadow: 0 0 0 4px rgba(34,197,94,0.25); } }
+@media (prefers-reduced-motion: reduce) { [data-coach="1"] { animation: none; box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.25); } }
 `;
 
 /**

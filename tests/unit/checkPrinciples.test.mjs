@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkPrinciples, loadRepoFiles, commandIdTable, RULES } from '../../tools/check-principles.mjs';
+import { checkPrinciples, loadRepoFiles, commandIdTable, RULES, TOKEN_STEPS } from '../../tools/check-principles.mjs';
 import { COMMANDS } from '../../src/domain/commands.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -55,7 +55,7 @@ test('위반이 있으면 종료 코드 1과 파일:줄 — 원칙 꼴로 찍는
   assert.match(good.stdout, /원칙 검사 통과 — 어긴 자리 0/);
 
   // 원칙마다 규칙이 표 한 줄 — { 원칙, 무엇, 고치는 법, scan }
-  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14', 'U-15']);
+  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14', 'U-15', 'U-16']);
   for (const r of RULES) {
     assert.equal(typeof r.scan, 'function');
     assert.ok(r.what && r.fix, `${r.principle}: 무엇 · 고치는 법이 비었다`);
@@ -158,6 +158,61 @@ test('R-10 조립부가 같은 views 이름을 두 번 달면 잡는다', () => 
   assert.equal(run('R-10', { 'src/app/main.js': bad.replace('views.palette = create', '// 원칙-예외(R-10): 시험용으로 갈아 끼운다\nviews.palette = create') }).length, 0);
 });
 
+// ── U-16 디자인 토큰(RM-17) — 요구 ↔ 시험 1 · 5 · 6 ─────────────────────────
+
+/** 단계 토큰을 다 갖춘 :root — 시험마다 여기서 하나씩 빼거나 어긴다. */
+const ROOT_TOKENS = ':root {\n' + TOKEN_STEPS.map((n, i) => `  ${n}: ${n.startsWith('--fs') ? 11 + i + 'px' : '#000'};`).join('\n') + '\n}\n';
+
+test('토큰 규칙 — :root 에 단계 토큰이 빠지면 잡는다', () => {
+  assert.equal(run('U-16', { 'index.html': page(ROOT_TOKENS, '') }).length, 0);
+  const v = run('U-16', { 'index.html': page(ROOT_TOKENS.replace(/  --sp-3: [^\n]+\n/, ''), '') });
+  assert.equal(v.length, 1);
+  assert.equal(v[0].principle, 'U-16');
+  assert.match(v[0].snippet, /단계 토큰이 없다 — --sp-3/);
+  // 실제 저장소에서 하나를 지워도 붉어진다(빈 손 통과 막기)
+  const files = loadRepoFiles();
+  const cut = files['index.html'].replace(/\n\s*--r-pill: 999px;/, '\n').replace(/--r-pill: 999px;/, '');
+  assert.notEqual(cut, files['index.html'], '지울 자리를 못 찾았다 — 시험이 빈손이다');
+  assert.ok(checkPrinciples({ ...files, 'index.html': cut }, only('U-16')).some(x => /--r-pill/.test(x.snippet)));
+});
+
+test('토큰 규칙 — 테마 블록이 토큰 아닌 속성을 적으면 잡는다', () => {
+  const good = ROOT_TOKENS + ':root[data-theme="neon"] {\n  --bg: #050b18;\n  --bg-image: linear-gradient(#000, #111);\n}\n';
+  assert.equal(run('U-16', { 'index.html': page(good, '') }).length, 0);
+  const bad = good + ':root[data-theme="neon"] body {\n  background-attachment: fixed;\n}\n';
+  const v = run('U-16', { 'index.html': page(bad, '') });
+  assert.equal(v.length, 1);
+  assert.match(v[0].snippet, /테마 블록이 토큰 아닌 속성 background-attachment/);
+  assert.equal(v[0].file, 'index.html');
+  // 테마 블록에 색을 적는 것은 토큰 정의라 괜찮고, 그 밖의 선택자에서 커스텀 속성에 색을 적으면 잡는다
+  assert.equal(run('U-16', { 'index.html': page(ROOT_TOKENS + '.x {\n  --c: #fff;\n}\n', '') }).length, 1);
+});
+
+test('토큰 규칙 — 토큰 밖 색 · 여섯째 글자 크기 · !important 를 잡는다', () => {
+  const css = ROOT_TOKENS + '.a {\n  color: #e5e7eb;\n}\n.b {\n  font-size: 10.5px;\n}\n.c {\n  display: none !important;\n}\n';
+  const v = run('U-16', { 'index.html': page(css, '') });
+  assert.deepEqual(v.map(x => [x.principle, x.file, x.line]), [['U-16', 'index.html', 24], ['U-16', 'index.html', 27], ['U-16', 'index.html', 30]]);
+  assert.match(v[0].snippet, /토큰 밖 색 #e5e7eb/);
+  assert.match(v[1].snippet, /단계 밖 글자 크기 10\.5px/);
+  assert.match(v[2].snippet, /!important/);
+  // 토큰으로 쓰면 지나간다
+  assert.equal(run('U-16', { 'index.html': page(ROOT_TOKENS + '.a { color: var(--text); background: rgba(var(--bg-rgb), 0.5); font-size: var(--fs-2); }\n', '') }).length, 0);
+  // 여섯째 단계 토큰도 「여섯째 글자 크기」다
+  const six = ROOT_TOKENS.replace(':root {\n', ':root {\n  --fs-5: 28px;\n  --fs-6: 30px;\n');
+  assert.ok(run('U-16', { 'index.html': page(six, '') }).some(x => /글자 크기 단계가 6개/.test(x.snippet)));
+  // 뷰의 CSS 템플릿 · 손으로 적은 cssText · 마크업 style 도 본다
+  const view = (s) => `const CSS = \`\n${s}\n\`;\n`;
+  assert.equal(run('U-16', { 'index.html': page('', ''), 'src/ui/v.js': view('.x { background: rgba(15, 23, 41, 0.9); }') }).length, 1);
+  assert.equal(run('U-16', { 'index.html': page('', ''), 'src/ui/v.js': "el.style.cssText = 'font-size:10px;color:var(--muted);';\n" }).length, 1);
+  assert.equal(run('U-16', { 'index.html': page('', '<p style="color:#dbe4ef">x</p>') }).length, 1);
+  // 도메인의 데이터 색(카테고리 팔레트)은 보지 않는다
+  assert.equal(run('U-16', { 'index.html': page('', ''), 'src/domain/p.js': "export const P = ['#22c55e'];\n" }).length, 0);
+  // 데이터 색은 이유를 단 표식이 블록 머리 위에서 덮는다
+  const mesh = "// 원칙-예외(U-16): 캔버스에 그리는 데이터 색\nexport const C = Object.freeze({\n  stroke: 'rgba(226,232,240,0.92)',\n  fill: '#0f172a',\n});\n";
+  assert.equal(run('U-16', { 'index.html': page('', ''), 'src/ui/m.js': mesh }).length, 0);
+  assert.equal(run('U-16', { 'index.html': page('', ''), 'src/ui/m.js': mesh.replace(': 캔버스에 그리는 데이터 색', ':') }).length, 2);
+});
+
 test('지금 저장소는 통과한다', () => {
   const r = spawnSync(process.execPath, [TOOL], { encoding: 'utf8', cwd: ROOT });
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -243,7 +298,8 @@ test('U-10 폰 확대 차단(user-scalable=no · maximum-scale=1 · focusout 때
 
   // 16px 입력 글자만 둔 꼴 · 다른 처리기의 scrollTo · 주석 속 글자는 통과한다
   const good = runCli({
-    'index.html': page('@media (max-width: 1040px) { input, select, textarea { font-size: 16px !important; } }', '')
+    // 16px !important 는 U-16(토큰)에 걸리는 글자라 실제 index.html 처럼 이유를 단 표식을 함께 둔다
+    'index.html': page('/* 원칙-예외(U-16): iOS 확대 문턱 — 글자 단계가 아니다 */\n@media (max-width: 1040px) { input, select, textarea { font-size: 16px !important; } }', '')
       .replace('<head>', '<head><meta name="viewport" content="width=device-width, initial-scale=1.0" />'),
     'src/ui/layout.js': "// 옛날에는 user-scalable=no 를 박았다\non(doc, 'click', () => { win.scrollTo(0, 0); });\non(doc, 'focusout', () => { save(); });\n"
   });

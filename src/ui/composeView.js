@@ -15,41 +15,41 @@ import { str } from '../domain/strings.js';
 const STYLE_ID = 'compose-view-style';
 const CSS = `
 .compose-overlay { position: fixed; inset: 0; z-index: 6000; display: none;
-  background: rgba(6,10,20,0.72); backdrop-filter: blur(3px); }
+  background: rgba(var(--bg-rgb), 0.72); backdrop-filter: blur(3px); }
 .compose-overlay[data-open="1"] { display: block; }
 .compose-shell { position: absolute; left: 50%; top: 5vh; transform: translateX(-50%);
-  width: min(760px, 96vw); max-height: 90vh; overflow-y: auto; display: grid; gap: 12px;
-  background: #0f1729; border: 1px solid rgba(148,163,184,0.22); border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.45); padding: 0 0 14px; }
+  width: min(760px, 96vw); max-height: 90vh; overflow-y: auto; display: grid; gap: var(--sp-3);
+  background: var(--bg-2); border: 1px solid rgba(var(--muted-rgb), 0.22); border-radius: var(--r-2);
+  box-shadow: var(--shadow); padding: 0 0 14px; }
 .compose-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  border-bottom: 1px solid rgba(148,163,184,0.16); position: sticky; top: 0; background: #0f1729; z-index: 1; }
-.compose-head h2 { margin: 0; font-size: 14px; font-weight: 800; color: #e5e7eb; }
+  border-bottom: 1px solid rgba(var(--muted-rgb), 0.16); position: sticky; top: 0; background: var(--bg-2); z-index: 1; }
+.compose-head h2 { margin: 0; font-size: var(--fs-4); font-weight: 800; color: var(--text); }
 .compose-head .compose-spacer { flex: 1; }
 .compose-step { padding: 0 14px; display: grid; gap: 6px; }
 /* ⚠ display:grid 가 브라우저 기본 [hidden]{display:none} 을 이긴다(개발 원칙 U-12) — 계획 전부터 3단계 빈 표가 보였다. */
 .compose-step[hidden] { display: none; }
-.compose-step h3 { margin: 0; font-size: 12.5px; color: #dbe4ef; display: flex; align-items: center; gap: 8px; }
-.compose-step h3 .compose-badge { font-size: 10px; font-weight: 800; color: #0b1220; background: #86efac;
-  border-radius: 999px; padding: 1px 7px; }
-.compose-step textarea { width: 100%; min-height: 84px; resize: vertical; font: inherit; font-size: 12.5px;
-  line-height: 1.5; color: #e2e8f0; background: #0b1220; border: 1px solid rgba(148,163,184,0.22);
-  border-radius: 8px; padding: 8px 10px; box-sizing: border-box; }
+.compose-step h3 { margin: 0; font-size: var(--fs-3); color: var(--text); display: flex; align-items: center; gap: var(--sp-2); }
+.compose-step h3 .compose-badge { font-size: var(--fs-1); font-weight: 800; color: var(--bg); background: var(--accent);
+  border-radius: var(--r-pill); padding: 1px 7px; }
+.compose-step textarea { width: 100%; min-height: 84px; resize: vertical; font: inherit; font-size: var(--fs-3);
+  line-height: 1.5; color: var(--text); background: var(--bg); border: 1px solid rgba(var(--muted-rgb), 0.22);
+  border-radius: var(--r-1); padding: 8px 10px; box-sizing: border-box; }
 .compose-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .compose-row .compose-grow { flex: 1; }
-.compose-status { font-size: 11px; color: #94a3b8; line-height: 1.45; min-height: 1.4em; }
-.compose-status.is-error { color: #fca5a5; }
-.compose-status.is-busy { color: #a7f3d0; }
-.compose-mic.is-on { background: rgba(239,68,68,0.25) !important; border-color: rgba(239,68,68,0.6) !important; }
+.compose-status { font-size: var(--fs-1); color: var(--muted); line-height: 1.45; min-height: 1.4em; }
+.compose-status.is-error { color: var(--danger); }
+.compose-status.is-busy { color: var(--text); }
+.compose-mic.is-on:not(#_) { background: rgba(var(--danger-rgb), 0.25); border-color: rgba(var(--danger-rgb), 0.6); }
 .compose-table-wrap { overflow-x: auto; }
-.compose-table { border-collapse: collapse; width: 100%; font-size: 12px; }
-.compose-table th, .compose-table td { border: 1px solid rgba(148,163,184,0.18); padding: 4px 8px; text-align: left; white-space: nowrap; }
-.compose-table th { background: rgba(148,163,184,0.10); color: #e2e8f0; font-weight: 700; }
-.compose-table tr.is-new td { background: rgba(245,158,11,0.10); }
-.compose-table td.compose-note { white-space: normal; color: #94a3b8; }
-.compose-new { display: inline-block; font-size: 10px; font-weight: 800; color: #fcd34d; margin-left: 4px; }
-.compose-notes { margin: 0; padding-left: 18px; font-size: 11.5px; color: #cbd5e1; }
+.compose-table { border-collapse: collapse; width: 100%; font-size: var(--fs-2); }
+.compose-table th, .compose-table td { border: 1px solid rgba(var(--muted-rgb), 0.18); padding: var(--sp-1) var(--sp-2); text-align: left; white-space: nowrap; }
+.compose-table th { background: rgba(var(--muted-rgb), 0.10); color: var(--text); font-weight: 700; }
+.compose-table tr.is-new td { background: rgba(var(--warn-rgb), 0.10); }
+.compose-table td.compose-note { white-space: normal; color: var(--muted); }
+.compose-new { display: inline-block; font-size: var(--fs-1); font-weight: 800; color: var(--now); margin-left: 4px; }
+.compose-notes { margin: 0; padding-left: 18px; font-size: var(--fs-2); color: var(--text); }
 .compose-notes li { margin: 2px 0; }
-.compose-model { font-size: 11px; color: #64748b; }
+.compose-model { font-size: var(--fs-1); color: var(--muted); }
 `;
 
 const NO_SPEECH_TEXT = '이 브라우저에는 음성 인식이 없습니다(크롬·엣지에서 됩니다). 아래 칸에 적어 주세요.';

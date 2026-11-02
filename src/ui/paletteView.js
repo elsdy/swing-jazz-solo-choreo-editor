@@ -307,7 +307,7 @@ export function createPaletteView(deps) {
     // ① 즐겨찾기 섹션 (3163-3175)
     if (favs.length > 0) {
       const favHeader = document.createElement('div');
-      favHeader.style.cssText = 'font-size:10px;font-weight:800;color:#facc15;padding:4px 2px 2px;letter-spacing:0.04em;';
+      favHeader.style.cssText = 'font-size:var(--fs-1);font-weight:800;color:var(--now);padding:4px 2px 2px;letter-spacing:0.04em;';
       favHeader.textContent = '★ 즐겨찾기';
       paletteListEl.appendChild(favHeader);
       favs.forEach(m => paletteListEl.appendChild(buildCard(m)));

@@ -106,6 +106,7 @@ export function createCategoryView(deps) {
    * ⚠ 자식 순서는 `row.append(colorInput, input, catStarBtn, del)`(3042)이다 — ★ 가 × 앞이다.
    * @see index.html:2970
    */
+  // @complexity time=O(k) space=O(k) cc=4?
   function renderManager() {
     const categories = store.categories;
     categoryManagerEl.innerHTML = '';
@@ -118,7 +119,7 @@ export function createCategoryView(deps) {
       const colorInput = document.createElement('input');
       colorInput.type = 'color';
       colorInput.value = categoryColor(categories, name);
-      colorInput.style.cssText = 'width:22px; height:22px; padding:0; border:1px solid rgba(148,163,184,0.2); border-radius:6px; cursor:pointer; background:none; flex:0 0 auto;';
+      colorInput.className = 'category-color'; // 크기 · 모양은 CSS(.category-color) — 좁은 화면 규칙이 !important 없이 키운다
       colorInput.title = str('category.color.title');
       colorInput.addEventListener('input', () => {
         // 2983-2987: 범례 · 팔레트 · 두 보드만 다시 그린다. 관리 행은 **일부러** 빼놓는다.

@@ -6,15 +6,37 @@
   <title>안무 편집기</title>
   <style>
     :root {
-      --bg: #0b1220;
-      --panel: rgba(17, 24, 39, 0.94);
-      --line: rgba(148, 163, 184, 0.16);
-      --text: #e5e7eb;
-      --muted: #94a3b8;
-      --accent: #22c55e;
-      --danger: #ef4444;
-      --warn: #f59e0b;
-      --shadow: 0 18px 40px rgba(0,0,0,0.24);
+      /* ── 디자인 토큰 한 벌(RM-17, 2026-11-02) ─────────────────────────────────────────
+         화면의 색 · 글자 · 간격 · 모서리 · 그림자는 이 토큰만 쓴다(개발 원칙 U-16 — 검사기가 잰다).
+         테마(아래 「테마」 절)는 이 값만 갈아 끼운다. 색마다 `-rgb` 짝이 있어 `rgba(var(--이름-rgb), a)` 로 비친다.
+         ⚠ 뜻을 담은 색(--danger · --warn · --now · --focus · --routine)은 정보라서 테마가 바꾸지 않는다 —
+           밝은 테마는 같은 색상의 짙은 단계로 대비만 맞춘다. 카테고리 · 루틴 · 자세 메시 색은 데이터라
+           여기 없다(domain 이 준다). */
+      --bg: #0b1220;        --bg-rgb: 11, 18, 32;        /* 바탕 */
+      --bg-2: #111827;      --bg-2-rgb: 17, 24, 39;      /* 바탕 둘째 단 — 그러데이션 끝 · 떠 있는 창 */
+      --panel: rgba(var(--bg-2-rgb), 0.94);              /* 면 — 패널 */
+      --surface: #1f2937;   --surface-rgb: 31, 41, 55;   /* 면 — 버튼 · 칩처럼 올라온 것 */
+      --text: #e5e7eb;      --text-rgb: 229, 231, 235;   /* 글자 */
+      --muted: #94a3b8;     --muted-rgb: 148, 163, 184;  /* 보조 글자 · 선의 바탕 */
+      --line: rgba(var(--muted-rgb), 0.16);              /* 구분선 · 테두리 */
+      --accent: #22c55e;    --accent-rgb: 34, 197, 94;   /* 강조 — 주 동작 · 재생 */
+      --white: #fff;        --white-rgb: 255, 255, 255;  /* 겹침(밝게) · 강한 색 위의 글자 */
+      --black: #000;        --black-rgb: 0, 0, 0;        /* 겹침(어둡게) · 그림자 · 뒷막 */
+      /* 상태색 — 뜻이 있다 */
+      --danger: #ef4444;    --danger-rgb: 239, 68, 68;   /* 위험 — 지우기 */
+      --warn: #f59e0b;      --warn-rgb: 245, 158, 11;    /* 경고 — 잃을 수 있는 것 */
+      --now: #fbbf24;       --now-rgb: 251, 191, 36;     /* 지금 자리 — 고른 것 · 즐겨찾기 */
+      --focus: #60a5fa;     --focus-rgb: 96, 165, 250;   /* 초점 — 입력 초점 · 크기 조절 · 키보드 자리 */
+      --routine: #6366f1;   --routine-rgb: 99, 102, 241; /* 루틴 — 루틴 편집기 · 루틴 칩(데이터 색의 틀) */
+      /* 글자 다섯 단 · 간격 네 단 · 모서리 세 단 · 그림자 두 단 */
+      --fs-1: 11px; --fs-2: 12px; --fs-3: 13px; --fs-4: 15px; --fs-5: 28px;   /* 5 = 영상 시계 */
+      --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+      --r-1: 6px; --r-2: 10px; --r-pill: 999px;
+      --shadow: 0 18px 40px rgba(var(--black-rgb), 0.24);
+      --shadow-sm: 0 4px 12px rgba(var(--black-rgb), 0.25);
+      --ring: 0 0 0 3px rgba(var(--focus-rgb), 0.14);
+      --bg-image: linear-gradient(180deg, var(--bg), var(--bg-2));
+      /* 격자 치수 — 토큰이 아니라 ui/cssVars 가 재서 쓰는 레이아웃 값이다. 간격 토큰과 섞지 않는다. */
       --cellW: 76px;
       --rowLabelW: 88px;
       --noteW: 280px;
@@ -25,7 +47,8 @@
     body {
       margin: 0;
       font-family: Inter, Pretendard, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: linear-gradient(180deg, #0b1220, #111827);
+      background: var(--bg-image);
+      background-attachment: fixed;
       color: var(--text);
       min-height: 100vh;
     }
@@ -33,46 +56,46 @@
     button, input, select { font: inherit; }
     input, select {
       width: 100%;
-      background: #0b1220;
+      background: var(--bg);
       color: var(--text);
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: var(--r-1);
       padding: 6px 8px;
-      font-size: 12px;
+      font-size: var(--fs-2);
       outline: none;
     }
     input:focus, select:focus {
-      border-color: rgba(96,165,250,0.7);
-      box-shadow: 0 0 0 3px rgba(96,165,250,0.14);
+      border-color: rgba(var(--focus-rgb), 0.7);
+      box-shadow: 0 0 0 3px rgba(var(--focus-rgb), 0.14);
     }
     button {
       border: 0;
-      border-radius: 8px;
+      border-radius: var(--r-1);
       padding: 6px 10px;
-      font-size: 11px;
+      font-size: var(--fs-1);
       cursor: pointer;
-      background: #1f2937;
+      background: var(--surface);
       color: var(--text);
       transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
     }
     button:hover { transform: translateY(-1px); }
-    button.primary { background: var(--accent); color: #052e16; font-weight: 800; }
+    button.primary { background: var(--accent); color: rgba(var(--black-rgb), 0.85); font-weight: 800; }
     button.primary.special {
-      background: linear-gradient(135deg, #22c55e 0%, #06b6d4 50%, #a78bfa 100%);
-      color: #fff;
-      border: 2px solid rgba(255,255,255,0.35);
-      outline: 1px solid rgba(34,197,94,0.4);
-      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--focus) 50%, var(--routine) 100%);
+      color: var(--white);
+      border: 2px solid rgba(var(--white-rgb), 0.35);
+      outline: 1px solid rgba(var(--accent-rgb), 0.4);
+      text-shadow: 0 1px 2px rgba(var(--black-rgb), 0.3);
       letter-spacing: 0.3px;
     }
     button.primary.special:hover {
-      outline-color: rgba(167,139,250,0.6);
+      outline-color: rgba(var(--routine-rgb), 0.6);
       filter: brightness(1.1);
     }
-    button.warn { background: var(--warn); color: #2b1600; font-weight: 800; }
-    button.danger { background: var(--danger); color: white; }
+    button.warn { background: var(--warn); color: rgba(var(--black-rgb), 0.85); font-weight: 800; }
+    button.danger { background: var(--danger); color: var(--white); }
     button.ghost { background: transparent; border: 1px solid var(--line); }
-    button.ghost.accent { background: rgba(59,130,246,0.18); border: 1px solid rgba(96,165,250,0.38); color: #dbeafe; font-weight: 800; }
+    button.ghost.accent { background: rgba(var(--focus-rgb), 0.18); border: 1px solid rgba(var(--focus-rgb), 0.38); color: var(--text); font-weight: 800; }
     button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
     /* ⚠ 접힌 `<details>` 를 **명시적으로** 숨긴다. 브라우저 기본 동작에 기대면, 자식에 `display` 를 주는
@@ -94,8 +117,8 @@
     }
     .panel {
       background: var(--panel);
-      border: 1px solid rgba(148, 163, 184, 0.12);
-      border-radius: 14px;
+      border: 1px solid rgba(var(--muted-rgb), 0.12);
+      border-radius: var(--r-2);
       box-shadow: var(--shadow);
       overflow: hidden;
       backdrop-filter: blur(10px);
@@ -118,14 +141,14 @@
        안무표 자체를 만지는 것은 캔버스 바로 위 `.canvas-bar` 로 내려갔다. 자리를 섞지 않는 것이 요점이다. */
     .appbar {
       grid-column: 1 / -1;
-      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+      display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
       padding: 7px 12px;
       background: var(--panel);
-      border: 1px solid rgba(148, 163, 184, 0.12);
-      border-radius: 14px;
+      border: 1px solid rgba(var(--muted-rgb), 0.12);
+      border-radius: var(--r-2);
       box-shadow: var(--shadow, none);
     }
-    .appbar h1 { margin: 0; font-size: 14px; white-space: nowrap; }
+    .appbar h1 { margin: 0; font-size: var(--fs-4); white-space: nowrap; }
 
     /* ── 채우기 줄 (2026-09-21) ────────────────────────────────────────────────
        안무표를 **무엇으로 채울까**를 고르는 한 줄이다. 그전에는 같은 층의 입구 넷이
@@ -146,12 +169,12 @@
       gap: 6px;
       padding: 6px 12px;
       background: var(--panel);
-      border: 1px solid rgba(148, 163, 184, 0.12);
-      border-radius: 14px;
+      border: 1px solid rgba(var(--muted-rgb), 0.12);
+      border-radius: var(--r-2);
       box-shadow: var(--shadow, none);
     }
     .mode-bar-label {
-      font-size: 10px;
+      font-size: var(--fs-1);
       font-weight: 800;
       letter-spacing: .4px;
       color: var(--muted);
@@ -162,8 +185,8 @@
     .mode-bar .mode-sep {
       width: 1px;
       align-self: stretch;
-      margin: 0 4px;
-      background: rgba(148,163,184,0.22);
+      margin: 0 var(--sp-1);
+      background: rgba(var(--muted-rgb), 0.22);
       flex: 0 0 auto;
     }
     /* 슬롯에 붙는 버튼은 app/main 이 만든다(말로 채우기 · 프레이즈). 자리만 잡아 둔다. */
@@ -177,44 +200,44 @@
       display: flex; align-items: center; gap: 5px;
       max-width: 15em;
       background: transparent; border: 1px solid transparent;
-      font-size: 13px; font-weight: 800; color: var(--text);
-      padding: 4px 8px;
+      font-size: var(--fs-3); font-weight: 800; color: var(--text);
+      padding: var(--sp-1) var(--sp-2);
     }
-    .file-menu-btn:hover { border-color: rgba(148,163,184,0.28); background: rgba(255,255,255,0.04); }
+    .file-menu-btn:hover { border-color: rgba(var(--muted-rgb), 0.28); background: rgba(var(--white-rgb), 0.04); }
     .file-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .file-menu-caret { color: var(--muted); font-size: 10px; flex: 0 0 auto; }
+    .file-menu-caret { color: var(--muted); font-size: var(--fs-1); flex: 0 0 auto; }
     .file-menu-panel {
       position: absolute; left: 0; top: calc(100% + 6px); z-index: 2600;
       display: grid; gap: 6px;
       min-width: 300px;
       padding: 10px;
       background: var(--panel);
-      border: 1px solid rgba(148,163,184,0.18);
-      border-radius: 12px;
-      box-shadow: 0 18px 44px rgba(2,6,23,0.55);
+      border: 1px solid rgba(var(--muted-rgb), 0.18);
+      border-radius: var(--r-2);
+      box-shadow: var(--shadow);
     }
     /* 주의: display 를 주는 클래스에는 [hidden] 규칙을 짝으로 붙인다(개발 원칙 U-12). */
     .file-menu-panel[hidden] { display: none; }
-    .file-menu-label { font-size: 10.5px; color: var(--muted); }
+    .file-menu-label { font-size: var(--fs-1); color: var(--muted); }
     .file-menu-panel .appbar-file { display: flex; align-items: center; gap: 5px; }
     .file-menu-panel .appbar-file input { flex: 1; min-width: 0; width: auto; }
     .file-menu-save {
-      font-size: 10.5px; line-height: 1.5; color: var(--muted);
-      padding: 4px 7px; border-radius: 7px;
-      background: rgba(148, 163, 184, 0.08);
-      border: 1px solid rgba(148, 163, 184, 0.14);
+      font-size: var(--fs-1); line-height: 1.5; color: var(--muted);
+      padding: 4px 7px; border-radius: var(--r-1);
+      background: rgba(var(--muted-rgb), 0.08);
+      border: 1px solid rgba(var(--muted-rgb), 0.14);
     }
-    .file-menu-save[data-bound="on"] { color: #86efac; border-color: rgba(34, 197, 94, 0.32); background: rgba(34, 197, 94, 0.08); }
+    .file-menu-save[data-bound="on"] { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.32); background: rgba(var(--accent-rgb), 0.08); }
     /* 담기가 멈췄다 — 경고다. 이 줄이 「담기고 있습니다」라고 거짓말하면 줄을 둔 뜻이 없다. */
-    .file-menu-save[data-bound="stop"] { color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); }
+    .file-menu-save[data-bound="stop"] { color: var(--danger); border-color: rgba(var(--danger-rgb), 0.4); background: rgba(var(--danger-rgb), 0.1); }
     .file-menu-save[hidden] { display: none; }
     .file-menu-row { display: flex; gap: 5px; }
     .file-menu-row button { flex: 1; }
-    .file-menu-danger { margin-top: 2px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.14); }
+    .file-menu-danger { margin-top: 2px; padding-top: 8px; border-top: 1px solid rgba(var(--muted-rgb), 0.14); }
     .file-menu-danger button { width: 100%; }
     /* 묶음 사이를 세로선으로 가른다 — 같은 줄에 있어도 다른 종류의 일이라는 표시다(게슈탈트 공통 영역). */
     .appbar-group { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-    .appbar-group + .appbar-group { padding-left: 8px; border-left: 1px solid rgba(148, 163, 184, 0.16); }
+    .appbar-group + .appbar-group { padding-left: 8px; border-left: 1px solid rgba(var(--muted-rgb), 0.16); }
     .appbar-spacer { flex: 1 1 auto; min-width: 0; }
 
     /* ── 기준 박자 배지 (2026-09-22) ────────────────────────────────────────────
@@ -232,54 +255,54 @@
          그래서 감싸는 칸을 두고 버튼과 꼬리말을 **형제**로 둔다. `data-drift` 는 그 칸이 쥔다. */
     .bpm-badge-wrap { position: relative; display: inline-flex; }
     .bpm-badge {
-      display: inline-flex; align-items: baseline; gap: 4px;
+      display: inline-flex; align-items: baseline; gap: var(--sp-1);
       padding: 4px 9px; min-height: 30px;
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      border-radius: 999px;
-      background: rgba(148, 163, 184, 0.08);
-      color: #cbd5e1; font-size: 11px; line-height: 1.2;
+      border: 1px solid rgba(var(--muted-rgb), 0.22);
+      border-radius: var(--r-pill);
+      background: rgba(var(--muted-rgb), 0.08);
+      color: var(--text); font-size: var(--fs-1); line-height: 1.2;
       cursor: pointer; white-space: nowrap;
       transition: color .18s ease, border-color .18s ease, background .18s ease;
     }
-    .bpm-badge:hover { border-color: rgba(148, 163, 184, 0.4); }
+    .bpm-badge:hover { border-color: rgba(var(--muted-rgb), 0.4); }
     .bpm-badge-num {
-      font-size: 14px; font-weight: 700; letter-spacing: .01em;
+      font-size: var(--fs-4); font-weight: 700; letter-spacing: .01em;
       font-variant-numeric: tabular-nums;
       min-width: 3.4em; text-align: right;   /* 130 → 134 로 바뀌어도 폭이 그대로다 */
-      color: #e2e8f0;
+      color: var(--text);
     }
-    .bpm-badge-unit { font-size: 10px; opacity: .7; }
+    .bpm-badge-unit { font-size: var(--fs-1); opacity: .7; }
     /* 꼬리말 — 배지 아래에 매달린다. 흐름 밖이라 붙어도 줄이 밀리지 않는다.
        ⚠ `채우기` 줄 위에 떠야 하므로 z-index 를 준다. 줄바꿈하지 않는다(폭이 튀면 눈에 걸린다). */
     .bpm-badge-note {
       position: absolute; top: calc(100% + 4px); right: 0; z-index: 30;
-      padding: 2px 8px; border-radius: 999px;
-      font-size: 10.5px; line-height: 1.5; white-space: nowrap;
-      border: 1px solid rgba(251, 191, 36, 0.5);
-      background: rgba(30, 24, 8, 0.96);
-      color: #fcd34d;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      padding: 2px 8px; border-radius: var(--r-pill);
+      font-size: var(--fs-1); line-height: 1.5; white-space: nowrap;
+      border: 1px solid rgba(var(--now-rgb), 0.5);
+      background: rgba(var(--bg-rgb), 0.96);
+      color: var(--now);
+      box-shadow: var(--shadow-sm);
       pointer-events: none;
     }
     .bpm-badge-note[hidden] { display: none; }
     /* 박자가 없다 — 있어야 할 것이 없는 상태이므로 숫자칸을 비우고 흐리게 둔다. */
     .bpm-badge-wrap[data-bpm="off"] .bpm-badge { opacity: .6; }
-    .bpm-badge-wrap[data-bpm="off"] .bpm-badge-num { min-width: 0; font-size: 11px; font-weight: 600; }
+    .bpm-badge-wrap[data-bpm="off"] .bpm-badge-num { min-width: 0; font-size: var(--fs-1); font-weight: 600; }
     /* 한쪽으로 고르게 밀렸다 — 고칠 곳은 BPM 이 아니라 `표 전체 옮기기` 다. 경고까지는 아니다. */
-    .bpm-badge-wrap[data-drift="lag"] .bpm-badge { border-color: rgba(148, 163, 184, 0.45); }
+    .bpm-badge-wrap[data-drift="lag"] .bpm-badge { border-color: rgba(var(--muted-rgb), 0.45); }
     .bpm-badge-wrap[data-drift="lag"] .bpm-badge-note {
-      color: #cbd5e1;
-      border-color: rgba(148, 163, 184, 0.45);
-      background: rgba(15, 23, 42, 0.96);
+      color: var(--text);
+      border-color: rgba(var(--muted-rgb), 0.45);
+      background: rgba(var(--bg-2-rgb), 0.96);
     }
     /* 속도가 다르다 — 이건 정말 값이 틀린 것이라 눈에 띄어야 한다. */
     .bpm-badge-wrap[data-drift="fast"] .bpm-badge,
     .bpm-badge-wrap[data-drift="slow"] .bpm-badge {
-      border-color: rgba(251, 191, 36, 0.55);
-      background: rgba(251, 191, 36, 0.12);
+      border-color: rgba(var(--now-rgb), 0.55);
+      background: rgba(var(--now-rgb), 0.12);
     }
     .bpm-badge-wrap[data-drift="fast"] .bpm-badge-num,
-    .bpm-badge-wrap[data-drift="slow"] .bpm-badge-num { color: #fcd34d; }
+    .bpm-badge-wrap[data-drift="slow"] .bpm-badge-num { color: var(--now); }
 
     /* ── 말로 이름 붙이기 (2026-09-22) ──────────────────────────────────────────
        ⚠ **듣는 중인지가 한눈에 보여야 한다.** 크롬의 음성 인식은 조용하면 스스로 멈추고, 다시
@@ -287,37 +310,37 @@
        ⚠ 지금 붙을 이름(`.video-voice-now`)은 **붙기 전에** 보여야 한다. 그래야 잘못 들었을 때
          한 번 더 말해 고친다(나중 말이 이긴다). */
     .video-voice { align-items: center; }
-    .video-voice-label { font-size: 11px; color: var(--muted); }
+    .video-voice-label { font-size: var(--fs-1); color: var(--muted); }
     #videoVoiceBtn[data-listening="on"] {
-      border-color: rgba(239, 68, 68, 0.6);
-      background: rgba(239, 68, 68, 0.14);
-      color: #fca5a5;
+      border-color: rgba(var(--danger-rgb), 0.6);
+      background: rgba(var(--danger-rgb), 0.14);
+      color: var(--danger);
       animation: voicePulse 1.6s ease-in-out infinite;
     }
     /* 켜 두었는데 지금은 안 듣는 중(스스로 멈춰 다시 켜는 사이). 깜빡임을 멈춰 «지금은 아니다» 를 말한다. */
     #videoVoiceBtn[data-listening="wait"] {
-      border-color: rgba(251, 191, 36, 0.5);
-      color: #fcd34d;
+      border-color: rgba(var(--now-rgb), 0.5);
+      color: var(--now);
       animation: none;
     }
     @keyframes voicePulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
-      50%      { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(var(--danger-rgb), 0.35); }
+      50%      { box-shadow: 0 0 0 5px rgba(var(--danger-rgb), 0); }
     }
     .video-voice-now {
-      padding: 2px 9px; border-radius: 999px;
-      font-size: 11.5px; font-weight: 600;
-      border: 1px solid rgba(34, 197, 94, 0.45);
-      background: rgba(34, 197, 94, 0.12);
-      color: #86efac;
+      padding: 2px 9px; border-radius: var(--r-pill);
+      font-size: var(--fs-2); font-weight: 600;
+      border: 1px solid rgba(var(--accent-rgb), 0.45);
+      background: rgba(var(--accent-rgb), 0.12);
+      color: var(--accent);
       max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .video-voice-now[hidden] { display: none; }
     /* 아직 확신이 안 선 이름 — LLM 이 곧 고칠 수도 있다는 뜻이라 초록이 아니다. */
     .video-voice-now[data-sure="no"] {
-      border-color: rgba(148, 163, 184, 0.45);
-      background: rgba(148, 163, 184, 0.12);
-      color: #cbd5e1;
+      border-color: rgba(var(--muted-rgb), 0.45);
+      background: rgba(var(--muted-rgb), 0.12);
+      color: var(--text);
     }
 
     /* 캔버스 바 — 안무표 자체를 만지는 것만. `.top-actions` 와 같은 모양이되 이름을 갈라
@@ -327,17 +350,17 @@
     .canvas-bar { position: relative; }
     .selection-bar { position: absolute; top: calc(100% + 4px); right: 8px; z-index: 30; max-width: calc(100% - 16px);
       display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
-      padding: 5px 8px; border-radius: 10px; background: var(--panel, #1f2937);
-      border: 1px solid rgba(250, 204, 21, 0.55); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+      padding: 5px 8px; border-radius: var(--r-2); background: var(--panel);
+      border: 1px solid rgba(var(--now-rgb), 0.55); box-shadow: var(--shadow-sm); }
     .selection-bar[hidden] { display: none; }
-    .selection-bar-count { font-weight: 700; font-size: 12px; margin-right: 4px; color: #facc15; }
-    .selection-bar button { font-size: 11px; padding: 4px 8px; }
+    .selection-bar-count { font-weight: 700; font-size: var(--fs-2); margin-right: 4px; color: var(--now); }
+    .selection-bar button { font-size: var(--fs-1); padding: 4px 8px; }
 
     /* 사이드바 아래의 파일 서랍. 자주 안 쓰는 것은 접어 둔다(점진적 공개). */
-    .drawer { border-top: 1px solid rgba(148, 163, 184, 0.12); margin-top: 6px; }
+    .drawer { border-top: 1px solid rgba(var(--muted-rgb), 0.12); margin-top: 6px; }
     .drawer > summary {
       cursor: pointer; list-style: none; padding: 8px 2px;
-      font-size: 11px; font-weight: 800; color: #dbe4ef; user-select: none;
+      font-size: var(--fs-1); font-weight: 800; color: var(--text); user-select: none;
     }
     .drawer > summary::-webkit-details-marker { display: none; }
     .drawer > summary::before { content: '▸ '; color: var(--muted); }
@@ -351,12 +374,12 @@
 
     .panel-header, .section, .toolbar {
       padding: 8px 10px;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.10);
+      border-bottom: 1px solid rgba(var(--muted-rgb), 0.10);
     }
     .panel-header h1, .panel-header h2, .panel-header h3, .toolbar h2 { margin: 0; }
     .panel-header p, .toolbar p, .helper {
       color: var(--muted);
-      font-size: 11px;
+      font-size: var(--fs-1);
       line-height: 1.4;
     }
     .stack { display: grid; gap: 6px; }
@@ -391,21 +414,21 @@
     .size-pill {
       width: auto;
       text-align: center;
-      border-radius: 999px;
-      background: rgba(11,18,32,0.9);
-      font-size: 11px;
+      border-radius: var(--r-pill);
+      background: rgba(var(--bg-rgb), 0.9);
+      font-size: var(--fs-1);
       padding: 2px 8px;
     }
     .size-pill-label {
-      font-size: 11px;
-      color: #8892a4;
+      font-size: var(--fs-1);
+      color: var(--muted);
       white-space: nowrap;
     }
     .size-pill input[type=number]::-webkit-inner-spin-button,
     .size-pill input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     .size-pill input[type=number] { -moz-appearance: textfield; }
     .board-wrap {
-      padding: 16px;
+      padding: var(--sp-4);
       flex: 1;
       min-height: 0;
       overflow: auto;
@@ -423,41 +446,41 @@
       display: flex; flex-direction: column; gap: 2px;
       margin: 10px 16px 0;
       padding: 10px 12px;
-      border: 1px dashed rgba(148,163,184,0.35);
-      border-radius: 12px;
-      color: var(--muted); font-size: 11.5px; line-height: 1.5;
+      border: 1px dashed rgba(var(--muted-rgb), 0.35);
+      border-radius: var(--r-2);
+      color: var(--muted); font-size: var(--fs-2); line-height: 1.5;
     }
-    .board-empty b { color: #e6edf6; }
-    .board-empty span { font-size: 10.5px; opacity: 0.85; }
+    .board-empty b { color: var(--text); }
+    .board-empty span { font-size: var(--fs-1); opacity: 0.85; }
     .board-empty[hidden] { display: none; }
     /* RM-26: 안내 한 걸음 밑에 `예제 열기` 하나. 글자는 짧게 — 네 갈래 나열은 채우기 줄이 이미 말한다. */
     .board-empty .board-empty-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
-    .board-empty .board-empty-actions button { font-size: 11.5px; }
+    .board-empty .board-empty-actions button { font-size: var(--fs-2); }
     /* 설명서의 그 절로 가는 작은 `?`(RM-26). 누름은 ui/docsHub 가 문서 전체에서 위임받는다. */
     .help-q {
       display: inline-flex; align-items: center; justify-content: center;
       width: 18px; height: 18px; padding: 0; margin-left: 6px; border-radius: 50%;
-      border: 1px solid rgba(148,163,184,0.45); background: transparent; color: var(--muted);
-      font-size: 11px; font-weight: 800; line-height: 1; cursor: pointer; vertical-align: middle; flex: 0 0 auto;
+      border: 1px solid rgba(var(--muted-rgb), 0.45); background: transparent; color: var(--muted);
+      font-size: var(--fs-1); font-weight: 800; line-height: 1; cursor: pointer; vertical-align: middle; flex: 0 0 auto;
     }
-    .help-q:hover { border-color: rgba(34,197,94,0.7); color: #eafff1; transform: none; }
+    .help-q:hover { border-color: rgba(var(--accent-rgb), 0.7); color: var(--text); transform: none; }
     /* 도구 탭(RM-20)은 summary 를 숨기고 탭이 그 자리를 맡으므로, 그 도구의 `?` 는 펼친 도구의 맨 위 오른쪽에 둔다. */
     .vtool-help { display: flex; justify-content: flex-end; margin-bottom: -18px; position: relative; z-index: 1; }
     /* 아직 쓸 수 없는 입구는 흐리게 두고, 줄 끝에 까닭을 한 줄 적는다(RM-26). 끄지는 않는다 — 눌러도 같은 까닭을 말한다. */
     .mode-bar button[data-blocked="1"] { opacity: 0.45; }
-    .mode-bar .mode-note { flex-basis: 100%; font-size: 10.5px; color: var(--muted); line-height: 1.4; }
+    .mode-bar .mode-note { flex-basis: 100%; font-size: var(--fs-1); color: var(--muted); line-height: 1.4; }
     .mode-bar .mode-note[hidden] { display: none; }
     .quick-popup-header { gap: 6px; }
     .quick-popup-header > :first-child { flex: 1; }
     .board-header, .board-row {
       display: grid;
-      gap: 12px;
+      gap: var(--sp-3);
       align-items: stretch;
     }
     .corner, .row-label, .note-header, .note-cell {
-      background: #0b1220;
-      border: 1px solid rgba(148,163,184,0.16);
-      border-radius: 14px;
+      background: var(--bg);
+      border: 1px solid rgba(var(--muted-rgb), 0.16);
+      border-radius: var(--r-2);
     }
     .corner, .row-label, .note-header {
       min-height: 52px;
@@ -465,20 +488,20 @@
       align-items: center;
       justify-content: center;
       font-weight: 800;
-      color: #cbd5e1;
-      padding: 8px;
+      color: var(--text);
+      padding: var(--sp-2);
     }
     .note-cell {
       padding: 10px 12px;
-      font-size: 13px;
+      font-size: var(--fs-3);
       line-height: 1.4;
       white-space: nowrap;
-      color: #cbd5e1;
+      color: var(--text);
     }
     .header-cells {
       display: grid;
-      border: 1px solid rgba(148,163,184,0.16);
-      border-radius: 14px;
+      border: 1px solid rgba(var(--muted-rgb), 0.16);
+      border-radius: var(--r-2);
       overflow: hidden;
     }
     .header-cells > div {
@@ -486,11 +509,11 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #111827;
-      border-right: 1px solid rgba(148,163,184,0.14);
+      background: var(--bg-2);
+      border-right: 1px solid rgba(var(--muted-rgb), 0.14);
       font-weight: 800;
-      font-size: 13px;
-      color: #cbd5e1;
+      font-size: var(--fs-3);
+      color: var(--text);
     }
     .track-spacer {
       display: block;
@@ -501,10 +524,10 @@
     }
     .track {
       position: relative;
-      border-radius: 14px;
+      border-radius: var(--r-2);
       overflow: hidden;
-      border: 1px solid rgba(148,163,184,0.16);
-      background: linear-gradient(90deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) calc(var(--cellW) - 1px), rgba(255,255,255,0.08) calc(var(--cellW) - 1px), rgba(255,255,255,0.08) var(--cellW));
+      border: 1px solid rgba(var(--muted-rgb), 0.16);
+      background: linear-gradient(90deg, rgba(var(--white-rgb), 0.03) 0, rgba(var(--white-rgb), 0.03) calc(var(--cellW) - 1px), rgba(var(--white-rgb), 0.08) calc(var(--cellW) - 1px), rgba(var(--white-rgb), 0.08) var(--cellW));
       background-size: var(--cellW) 100%;
     }
     /* 동작을 골랐거나 빠른 배치가 켜진 보드에서는 트랙 위 손가락 끌기가 스크롤이 아니라 그리기다(RM-11).
@@ -517,11 +540,11 @@
       left: 0; right: 0;
       top: var(--cellH);
       height: 1px;
-      background: rgba(148,163,184,0.35);
+      background: rgba(var(--muted-rgb), 0.35);
       pointer-events: none;
     }
     .track.drop-hover {
-      outline: 3px dashed rgba(96,165,250,0.7);
+      outline: 3px dashed rgba(var(--focus-rgb), 0.7);
       outline-offset: -4px;
     }
     .cell-overlay {
@@ -530,7 +553,7 @@
       display: grid;
       pointer-events: none;
     }
-    .cell-overlay div { border-right: 1px solid rgba(148,163,184,0.14); }
+    .cell-overlay div { border-right: 1px solid rgba(var(--muted-rgb), 0.14); }
 
     /* ── 프레이즈·코러스 표시(2026-09-13) ──
        ui/boardView.syncPhrasing 이 행에 붙인 data-* 와 --phraseColor/--chorusColor 만 읽는다.
@@ -560,55 +583,56 @@
     .row-label[data-phrase-tag] { flex-direction: column; gap: 3px; }
     .row-label[data-phrase-tag]::after {
       content: attr(data-phrase-tag);
-      font-size: 10px;
+      font-size: var(--fs-1);
       font-weight: 800;
       line-height: 1.5;
       padding: 0 7px;
-      border-radius: 999px;
-      color: var(--chorusColor, #94a3b8);
-      background: rgba(148,163,184,0.12);
+      border-radius: var(--r-pill);
+      color: var(--chorusColor, var(--muted));
+      background: rgba(var(--muted-rgb), 0.12);
     }
     .preview-block {
       position: absolute;
       top: 6px;
       height: calc(var(--cellH) - 12px);
-      border-radius: 12px;
+      border-radius: var(--r-2);
       pointer-events: none;
-      border: 2px dashed rgba(255,255,255,0.72);
-      background: rgba(96,165,250,0.30);
+      border: 2px dashed rgba(var(--white-rgb), 0.72);
+      background: rgba(var(--focus-rgb), 0.30);
       z-index: 5;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
+      font-size: var(--fs-1);
       font-weight: 800;
-      color: white;
+      color: var(--white);
     }
     .resize-preview-block {
       z-index: 8;
-      border: 2px dashed rgba(255,255,255,0.85);
-      background: rgba(96,165,250,0.22);
+      border: 2px dashed rgba(var(--white-rgb), 0.85);
+      background: rgba(var(--focus-rgb), 0.22);
     }
     .snap-indicator {
       position: absolute;
       top: 0;
       bottom: 0;
       width: 3px;
-      background: rgba(250,204,21,0.95);
+      background: rgba(var(--now-rgb), 0.95);
       z-index: 6;
     }
     .placement {
       position: absolute;
       top: 6px;
       height: calc(var(--cellH) - 12px);
-      border-radius: 12px;
+      border-radius: var(--r-2);
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px;
-      color: #08111f;
+      gap: var(--sp-2);
+      padding: var(--sp-2);
+      background: var(--block-bg); /* 색은 domain 이 정하고 ui/placementView 가 변수로 넘긴다 */
+      color: var(--block-ink, var(--bg));
       font-weight: 900;
-      box-shadow: 0 8px 18px rgba(0,0,0,0.2);
+      box-shadow: var(--shadow-sm);
       overflow: visible;
       z-index: 3;
       touch-action: none;
@@ -617,48 +641,49 @@
     /* 이름을 아직 안 붙인 블록(받아 적기). 자리는 잡혔지만 아직 비었다는 것이 한눈에 보여야 하므로
        채움을 지우고 점선만 남긴다 — 이름을 붙이면 클래스가 떨어지고 보통 블록으로 돌아온다. */
     .placement.is-pending {
-      background: rgba(148,163,184,0.14) !important;
-      color: #cbd5e1 !important;
-      border: 2px dashed rgba(148,163,184,0.75);
+      background: rgba(var(--muted-rgb), 0.14);
+      color: var(--text);
+      border: 2px dashed rgba(var(--muted-rgb), 0.75);
       box-shadow: none;
       font-weight: 700;
     }
     .placement.is-pending .label { opacity: 0.92; }
     .placement.is-selected {
-      outline: 2.5px solid rgba(250,204,21,0.9);
+      outline: 2.5px solid rgba(var(--now-rgb), 0.9);
       outline-offset: -1px;
-      box-shadow: 0 0 10px rgba(250,204,21,0.4), 0 8px 18px rgba(0,0,0,0.2);
+      box-shadow: var(--shadow-sm);
       z-index: 4;
     }
     /* 재생 위치가 지나가는 블록. ⚠ 렌더가 아니라 ui/playhead 의 rAF 루프가 붙였다 뗀다(채널 B).
        선택(노랑)·리사이즈(파랑)와 겹칠 수 있어 색은 재생 헤드와 같은 초록이고 z-index 는 올리지 않는다. */
     .placement.is-playing {
-      outline: 2.5px solid rgba(34,197,94,0.95);
+      outline: 2.5px solid rgba(var(--accent-rgb), 0.95);
       outline-offset: -1px;
-      box-shadow: 0 0 14px rgba(34,197,94,0.55), 0 8px 18px rgba(0,0,0,0.2);
+      box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.55), var(--shadow-sm);
       filter: brightness(1.12);
     }
     .placement.is-resizing {
-      outline: 2px solid rgba(96,165,250,0.85);
+      outline: 2px solid rgba(var(--focus-rgb), 0.85);
       outline-offset: -1px;
-      box-shadow: 0 0 12px rgba(96,165,250,0.45), 0 8px 18px rgba(0,0,0,0.2);
+      box-shadow: var(--shadow-sm);
     }
-    .placement.is-resizing .resize-handle {
-      background: rgba(96,165,250,0.55) !important;
-      border-color: rgba(96,165,250,0.8);
+    /* 루틴 블록의 손잡이 규칙(아래 「루틴 배치 블록」)과 명시도가 같아질 수 있어 하나 더 높인다 — !important 대신. */
+    .placement.is-resizing .resize-handle.resize-handle {
+      background: rgba(var(--focus-rgb), 0.55);
+      border-color: rgba(var(--focus-rgb), 0.8);
     }
     .resize-count-badge {
       position: fixed;
       z-index: 2000;
       pointer-events: none;
-      background: rgba(0,0,0,0.85);
-      color: #fff;
+      background: rgba(var(--black-rgb), 0.85);
+      color: var(--white);
       padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 13px;
+      border-radius: var(--r-1);
+      font-size: var(--fs-3);
       font-weight: 700;
       white-space: nowrap;
-      box-shadow: 0 2px 8px rgba(0,0,0,.3);
+      box-shadow: var(--shadow-sm);
       transform: translate(-50%, -100%);
       display: none;
     }
@@ -671,7 +696,7 @@
       white-space: normal;
       word-break: break-all;
       line-height: 1.15;
-      font-size: 11px;
+      font-size: var(--fs-1);
       max-height: 100%;
       display: -webkit-box;
       -webkit-line-clamp: 2;
@@ -681,21 +706,21 @@
     .placement .resize-handle {
       width: 18px;
       min-height: 100%;
-      border-radius: 9px;
-      border: 1px solid rgba(0,0,0,0.18);
-      background: rgba(255,255,255,0.28);
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+      border-radius: var(--r-2);
+      border: 1px solid rgba(var(--black-rgb), 0.18);
+      background: rgba(var(--white-rgb), 0.28);
+      box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), 0.12);
       touch-action: none;
       flex: 0 0 auto;
       position: relative;
     }
     .placement .move-handle {
       cursor: grab;
-      background: linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.18)), repeating-linear-gradient(0deg, rgba(0,0,0,0.38) 0, rgba(0,0,0,0.38) 2px, transparent 2px, transparent 5px);
+      background: linear-gradient(180deg, rgba(var(--white-rgb), 0.34), rgba(var(--white-rgb), 0.18)), repeating-linear-gradient(0deg, rgba(var(--black-rgb), 0.38) 0, rgba(var(--black-rgb), 0.38) 2px, transparent 2px, transparent 5px);
     }
     .placement .resize-handle {
       cursor: ew-resize;
-      background: linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.18)), repeating-linear-gradient(90deg, rgba(0,0,0,0.38) 0, rgba(0,0,0,0.38) 2px, transparent 2px, transparent 5px);
+      background: linear-gradient(180deg, rgba(var(--white-rgb), 0.34), rgba(var(--white-rgb), 0.18)), repeating-linear-gradient(90deg, rgba(var(--black-rgb), 0.38) 0, rgba(var(--black-rgb), 0.38) 2px, transparent 2px, transparent 5px);
     }
     /* 동작 정하기 `✎`(2026-09-20). **고른 블록에만** 뜬다.
        ⚠⚠ **자리를 차지하지 않는다**(absolute). 흐름에 끼우면 고르는 순간 라벨이 밀리는데, 지우려는
@@ -714,21 +739,21 @@
       width: 20px;
       height: 20px;
       padding: 0;
-      border-radius: 10px;
-      border: 1px solid rgba(148,163,184,0.5);
-      background: #0f172a;
-      color: #e6edf6;
-      font-size: 11px;
+      border-radius: var(--r-2);
+      border: 1px solid rgba(var(--muted-rgb), 0.5);
+      background: var(--bg-2);
+      color: var(--text);
+      font-size: var(--fs-1);
       line-height: 1;
       font-weight: 700;
       cursor: pointer;
       z-index: 5;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+      box-shadow: var(--shadow-sm);
     }
-    .placement.is-selected .name-btn:hover { background: #1e293b; }
+    .placement.is-selected .name-btn:hover { background: var(--surface); }
     .palette-list {
       display: grid;
-      gap: 4px;
+      gap: var(--sp-1);
       max-height: 54vh;
       overflow: auto;
       padding-right: 4px;
@@ -739,42 +764,42 @@
       align-items: center;
       gap: 5px;
       padding: 4px 6px;
-      border-radius: 10px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
-      border: 1px solid rgba(148,163,184,0.14);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+      border-radius: var(--r-2);
+      background: linear-gradient(180deg, rgba(var(--white-rgb), 0.04), rgba(var(--white-rgb), 0.02));
+      border: 1px solid rgba(var(--muted-rgb), 0.14);
+      box-shadow: var(--shadow-sm);
     }
     .move-card.palette-active {
-      outline: 2px solid #7eb8f7;
-      background: linear-gradient(180deg, rgba(126,184,247,0.18), rgba(126,184,247,0.10));
+      outline: 2px solid var(--focus);
+      background: linear-gradient(180deg, rgba(var(--focus-rgb), 0.18), rgba(var(--focus-rgb), 0.10));
     }
     .track.draw-hover { cursor: crosshair; }
     /* 빈 칸 끌기의 점선 네모(RM-14). 행마다 한 조각이 트랙 안에 서고 누를 수 없다 — 놓는 순간 사라진다. */
     .track .marquee-rect {
       position: absolute; top: 1px; bottom: 1px;
-      border: 1px dashed rgba(250,204,21,0.9);
-      background: rgba(250,204,21,0.10);
-      border-radius: 4px;
+      border: 1px dashed rgba(var(--now-rgb), 0.9);
+      background: rgba(var(--now-rgb), 0.10);
+      border-radius: var(--r-1);
       pointer-events: none;
       z-index: 6;
     }
     .move-chip {
       width: 22px;
       height: 22px;
-      border-radius: 7px;
+      border-radius: var(--r-1);
       display: inline-flex;
       align-items: center;
       justify-content: center;
       cursor: grab;
       touch-action: none;
-      color: #08111f;
+      color: var(--bg);
       font-weight: 900;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.14);
+      box-shadow: var(--shadow-sm);
       user-select: none;
     }
     .move-chip::before {
       content: "⋮⋮";
-      font-size: 8px;
+      font-size: var(--fs-1);
       letter-spacing: -1px;
       opacity: 0.72;
     }
@@ -782,10 +807,10 @@
       min-width: 0;
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--sp-1);
     }
     .move-name {
-      font-size: 11px;
+      font-size: var(--fs-1);
       font-weight: 700;
       color: var(--text);
       white-space: nowrap;
@@ -801,17 +826,17 @@
       position: fixed;
       z-index: 4000;
       min-width: 220px;
-      padding: 8px;
-      border-radius: 14px;
-      background: rgba(11, 18, 32, 0.98);
-      border: 1px solid rgba(148,163,184,0.18);
-      box-shadow: 0 18px 40px rgba(0,0,0,0.34);
+      padding: var(--sp-2);
+      border-radius: var(--r-2);
+      background: rgba(var(--bg-rgb), 0.98);
+      border: 1px solid rgba(var(--muted-rgb), 0.18);
+      box-shadow: var(--shadow);
       display: grid;
       gap: 6px;
     }
     .context-menu-title {
       padding: 6px 8px 4px;
-      font-size: 12px;
+      font-size: var(--fs-2);
       color: var(--muted);
       font-weight: 800;
     }
@@ -819,43 +844,43 @@
       width: 100%;
       text-align: left;
       justify-content: flex-start;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(148,163,184,0.12);
+      background: rgba(var(--white-rgb), 0.04);
+      border: 1px solid rgba(var(--muted-rgb), 0.12);
     }
     .category-shell {
       display: inline-flex;
       align-items: center;
       gap: 3px;
       padding: 1px;
-      border-radius: 999px;
-      background: rgba(11,18,32,0.78);
-      border: 1px solid rgba(148,163,184,0.14);
+      border-radius: var(--r-pill);
+      background: rgba(var(--bg-rgb), 0.78);
+      border: 1px solid rgba(var(--muted-rgb), 0.14);
     }
     .category-dot {
       width: 7px;
       height: 7px;
-      border-radius: 999px;
+      border-radius: var(--r-pill);
       margin-left: 5px;
       flex: 0 0 auto;
     }
     .category-select {
       min-width: 72px;
       width: auto;
-      border-radius: 999px;
-      background: linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.90));
-      border: 1px solid rgba(148,163,184,0.14);
-      font-size: 10px;
+      border-radius: var(--r-pill);
+      background: linear-gradient(180deg, rgba(var(--bg-2-rgb), 0.98), rgba(var(--bg-2-rgb), 0.90));
+      border: 1px solid rgba(var(--muted-rgb), 0.14);
+      font-size: var(--fs-1);
       font-weight: 800;
       padding: 4px 20px 4px 6px;
       appearance: none;
-      background-image: linear-gradient(45deg, transparent 50%, #94a3b8 50%), linear-gradient(135deg, #94a3b8 50%, transparent 50%);
+      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
       background-position: calc(100% - 12px) calc(50% - 2px), calc(100% - 7px) calc(50% - 2px);
       background-size: 5px 5px, 5px 5px;
       background-repeat: no-repeat;
     }
     .move-actions {
       display: flex;
-      gap: 4px;
+      gap: var(--sp-1);
       align-items: center;
       justify-content: flex-end;
       flex-wrap: nowrap;
@@ -863,22 +888,22 @@
     .icon-btn {
       width: 22px;
       height: 22px;
-      border-radius: 999px;
-      border: 1px solid rgba(239,68,68,0.24);
-      background: rgba(239,68,68,0.08);
-      color: #fecaca;
+      border-radius: var(--r-pill);
+      border: 1px solid rgba(var(--danger-rgb), 0.24);
+      background: rgba(var(--danger-rgb), 0.08);
+      color: var(--danger);
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
+      font-size: var(--fs-3);
       font-weight: 800;
       flex-shrink: 0;
     }
     .soft-card {
-      padding: 8px;
-      border-radius: 10px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
-      border: 1px solid rgba(148,163,184,0.14);
+      padding: var(--sp-2);
+      border-radius: var(--r-2);
+      background: linear-gradient(180deg, rgba(var(--white-rgb), 0.04), rgba(var(--white-rgb), 0.02));
+      border: 1px solid rgba(var(--muted-rgb), 0.14);
     }
 
     /* -- 프로젝트 칸 (2026-09-20) --
@@ -889,23 +914,23 @@
     .project-name {
       flex: 1 1 auto; min-width: 0; text-align: left;
       background: transparent; border: 1px solid transparent;
-      font-size: 13px; font-weight: 800; color: var(--text);
-      padding: 3px 6px; border-radius: 8px;
+      font-size: var(--fs-3); font-weight: 800; color: var(--text);
+      padding: 3px 6px; border-radius: var(--r-1);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .project-name:hover { border-color: rgba(148,163,184,0.28); background: rgba(255,255,255,0.04); }
+    .project-name:hover { border-color: rgba(var(--muted-rgb), 0.28); background: rgba(var(--white-rgb), 0.04); }
     .project-name.is-untitled { color: var(--muted); font-weight: 700; }
-    .project-summary { font-size: 10.5px; color: var(--muted); }
-    .project-clips { display: grid; gap: 4px; max-height: 40vh; overflow: auto; }
-    .project-empty { font-size: 10.5px; color: var(--muted); line-height: 1.45; padding: 4px 2px; }
+    .project-summary { font-size: var(--fs-1); color: var(--muted); }
+    .project-clips { display: grid; gap: var(--sp-1); max-height: 40vh; overflow: auto; }
+    .project-empty { font-size: var(--fs-1); color: var(--muted); line-height: 1.45; padding: 4px 2px; }
 
     .project-clip {
       display: grid; gap: 3px;
-      padding: 5px 7px; border-radius: 9px;
-      background: rgba(255,255,255,0.025);
-      border: 1px solid rgba(148,163,184,0.14);
+      padding: 5px 7px; border-radius: var(--r-2);
+      background: rgba(var(--white-rgb), 0.025);
+      border: 1px solid rgba(var(--muted-rgb), 0.14);
     }
-    .project-clip.is-active { border-color: rgba(74,222,128,0.45); background: rgba(34,197,94,0.08); }
+    .project-clip.is-active { border-color: rgba(var(--accent-rgb), 0.45); background: rgba(var(--accent-rgb), 0.08); }
     .project-clip-head {
       display: flex; align-items: baseline; gap: 6px;
       width: 100%; text-align: left;
@@ -913,30 +938,30 @@
       color: var(--text); font: inherit; cursor: pointer;
     }
     .project-clip-head:hover { transform: none; }
-    .project-clip-when { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .project-clip-when { font-size: var(--fs-1); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
     .project-clip-when.is-unknown { opacity: 0.6; }
-    .project-clip-name { flex: 1 1 auto; min-width: 0; font-size: 11.5px; font-weight: 700;
+    .project-clip-name { flex: 1 1 auto; min-width: 0; font-size: var(--fs-2); font-weight: 700;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .project-clip-now { font-size: 10px; font-weight: 800; color: var(--accent); white-space: nowrap; }
-    .project-clip-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .project-clip-now { font-size: var(--fs-1); font-weight: 800; color: var(--accent); white-space: nowrap; }
+    .project-clip-meta { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
     .project-chip {
-      font-size: 9.5px; color: var(--muted); white-space: nowrap;
-      background: rgba(15,23,42,0.6); border: 1px solid rgba(148,163,184,0.18);
-      border-radius: 999px; padding: 0 6px;
+      font-size: var(--fs-1); color: var(--muted); white-space: nowrap;
+      background: rgba(var(--bg-2-rgb), 0.6); border: 1px solid rgba(var(--muted-rgb), 0.18);
+      border-radius: var(--r-pill); padding: 0 6px;
     }
-    .project-clip-note { font-size: 10px; color: var(--muted); flex: 1 1 6em; min-width: 0;
+    .project-clip-note { font-size: var(--fs-1); color: var(--muted); flex: 1 1 6em; min-width: 0;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .project-clip-edit { margin-left: auto; padding: 1px 7px; font-size: 10px; min-height: 22px; }
-    .project-clip-editor { display: grid; gap: 4px; margin-top: 3px; padding-top: 5px;
-      border-top: 1px solid rgba(148,163,184,0.14); }
+    .project-clip-edit { margin-left: auto; padding: 1px 7px; font-size: var(--fs-1); min-height: 22px; }
+    .project-clip-editor { display: grid; gap: var(--sp-1); margin-top: 3px; padding-top: 5px;
+      border-top: 1px solid rgba(var(--muted-rgb), 0.14); }
     .project-field { display: flex; align-items: center; gap: 5px; }
-    .project-field-label { font-size: 10px; color: var(--muted); width: 3.6em; flex: 0 0 auto; }
-    .project-field input { flex: 1 1 auto; min-width: 0; font-size: 11px; padding: 3px 6px; }
-    .project-clip-del { width: 100%; font-size: 10.5px; }
+    .project-field-label { font-size: var(--fs-1); color: var(--muted); width: 3.6em; flex: 0 0 auto; }
+    .project-field input { flex: 1 1 auto; min-width: 0; font-size: var(--fs-1); padding: 3px 6px; }
+    .project-clip-del { width: 100%; font-size: var(--fs-1); }
 
     .saved-list {
       display: grid;
-      gap: 4px;
+      gap: var(--sp-1);
       max-height: 140px;
       overflow: auto;
     }
@@ -945,16 +970,16 @@
       overflow: visible;
     }
     /* 휴지통 — 목록과 같은 행 모양이되 한 단 흐리다. 되돌릴 길이 보이는 것이 목적이지 목록의 경쟁자가 아니다. */
-    .saved-trash { display: grid; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(148, 163, 184, 0.22); }
+    .saved-trash { display: grid; gap: var(--sp-1); margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(var(--muted-rgb), 0.22); }
     /* ⚠ display:grid 가 브라우저 기본 [hidden]{display:none} 을 이긴다(개발 원칙 U-12) — 비었을 때 점선 경계만 남았다. */
     .saved-trash[hidden] { display: none; }
-    .saved-trash-head { font-size: 11px; color: var(--muted); }
+    .saved-trash-head { font-size: var(--fs-1); color: var(--muted); }
     .saved-trash-item { opacity: .82; }
     .saved-trash-item:hover { opacity: 1; }
     /* 지난 판(RM-25) — 휴지통과 같은 꼴. 손 저장 판과 자동 담기 판은 12+20 장까지라 칸 안에서 스크롤한다. */
-    .saved-history { display: grid; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(148, 163, 184, 0.22); max-height: 240px; overflow: auto; }
+    .saved-history { display: grid; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(var(--muted-rgb), 0.22); max-height: 240px; overflow: auto; }
     .saved-history[hidden] { display: none; }   /* 위 휴지통과 같은 까닭(U-12) */
-    .saved-history-head { font-size: 11px; color: var(--muted); }
+    .saved-history-head { font-size: var(--fs-1); color: var(--muted); }
     .saved-history-item { opacity: .82; }
     .saved-history-item:hover { opacity: 1; }
     .saved-history-item[data-kind="auto"] { opacity: .62; }   /* 자동 담기 판은 한 단 더 흐리다 — 「내가 저장한 자리」가 먼저 보이게 */
@@ -965,33 +990,34 @@
       gap: 6px;
       align-items: center;
       padding: 5px 8px;
-      border-radius: 8px;
-      background: #0b1220;
+      border-radius: var(--r-1);
+      background: var(--bg);
       border: 1px solid var(--line);
-      font-size: 11px;
+      font-size: var(--fs-1);
     }
     .legend {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px;
+      gap: var(--sp-1);
     }
     .legend span {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--sp-1);
       padding: 3px 7px;
-      border-radius: 999px;
-      background: #0b1220;
+      border-radius: var(--r-pill);
+      background: var(--bg);
       border: 1px solid var(--line);
-      font-size: 10px;
+      font-size: var(--fs-1);
     }
     .legend i {
       width: 8px;
       height: 8px;
-      border-radius: 999px;
+      border-radius: var(--r-pill);
       display: inline-block;
     }
     .muted { color: var(--muted); }
+    .category-color:not(#_) { width: 22px; height: 22px; padding: 0; border: 1px solid rgba(var(--muted-rgb), 0.2); border-radius: var(--r-1); cursor: pointer; background: none; flex: 0 0 auto; }
     .ghost-drag {
       position: fixed;
       z-index: 2000;
@@ -1002,7 +1028,8 @@
 
     /* ── 좁은 화면 전용 조작 (2026-09-12) ──
        넓은 화면에서는 **없는 것과 같다**. 자리를 차지하지 않고 탭 순서에도 들어가지 않는다. */
-    .only-stacked { display: none !important; }   /* 사이드바가 위로 접히는 폭(≤1040)에서만 보인다 */
+    /* `:not(#_)` 는 ID 하나의 무게다 — 도우미 · 상태 클래스가 컴포넌트 규칙을 !important 없이 이긴다(개발 원칙 U-16). */
+    .only-stacked:not(#_) { display: none; }   /* 사이드바가 위로 접히는 폭(≤1040)에서만 보인다 */
     .sheet-backdrop { display: none; }
 
     /* ── 스크롤 락 버튼 ── */
@@ -1024,26 +1051,26 @@
       align-items: center;
       gap: 2px;
       padding: 8px 6px;
-      border-radius: 10px;
-      font-size: 10px;
+      border-radius: var(--r-2);
+      font-size: var(--fs-1);
       font-weight: 700;
-      background: rgba(17,24,39,0.88);
-      border: 1px solid rgba(148,163,184,0.22);
+      background: rgba(var(--bg-2-rgb), 0.88);
+      border: 1px solid rgba(var(--muted-rgb), 0.22);
       color: var(--muted);
       backdrop-filter: blur(8px);
-      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+      box-shadow: var(--shadow-sm);
       line-height: 1.2;
       min-width: 44px;
       transition: background 0.15s, color 0.15s, border-color 0.15s;
       user-select: none;
     }
     .scroll-lock-btn .lock-icon {
-      font-size: 16px;
+      font-size: var(--fs-4);
       line-height: 1;
     }
     .scroll-lock-btn.locked {
-      background: rgba(34,197,94,0.18);
-      border-color: rgba(34,197,94,0.5);
+      background: rgba(var(--accent-rgb), 0.18);
+      border-color: rgba(var(--accent-rgb), 0.5);
       color: var(--accent);
     }
     .scroll-lock-btn.locked .lock-icon::after { content: '🔒'; }
@@ -1073,20 +1100,21 @@
         display: block;
         width: 48px;
         height: 4px;
-        border-radius: 2px;
-        background: rgba(148, 163, 184, 0.35);
+        border-radius: var(--r-1);
+        background: rgba(var(--muted-rgb), 0.35);
         transition: background 0.15s, width 0.15s;
       }
       .resize-divider:hover::before,
       .resize-divider.active::before {
-        background: rgba(148, 163, 184, 0.7);
+        background: rgba(var(--muted-rgb), 0.7);
         width: 64px;
       }
       .resize-divider.active {
-        background: rgba(148, 163, 184, 0.08);
+        background: rgba(var(--muted-rgb), 0.08);
       }
       /* iOS 는 16px 미만 글자의 입력칸에 포커스가 가면 화면을 저절로 확대한다. 확대를 전면 차단하지 않고
          입력칸 글자를 16px 로 두어 그 확대가 애초에 일어나지 않게 한다(2026-11-02, RM-27 · 개발 원칙 U-10). */
+      /* 원칙-예외(U-16): 16px 는 글자 단계가 아니라 iOS 의 확대 문턱이고, 입력칸마다 적힌 크기를 모두 이겨야 한다 */
       input, select, textarea {
         font-size: 16px !important;
       }
@@ -1130,17 +1158,18 @@
         -webkit-overflow-scrolling: touch;
       }
       /* ── 태블릿: 루틴 편집기 풀스크린 오버레이 ── */
-      .routine-editor-panel {
-        position: fixed !important;
+      /* `body` 를 앞에 붙여 한 단 강하게 — 아래(뒤)에 있는 기본 규칙을 !important 없이 이긴다. */
+      body .routine-editor-panel {
+        position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
         z-index: 5000;
-        flex: none !important;
-        max-width: none !important;
-        width: 100% !important;
-        height: 100% !important;
-        border-left: none !important;
+        flex: none;
+        max-width: none;
+        width: 100%;
+        height: 100%;
+        border-left: none;
         border-radius: 0;
-        background: var(--bg) !important;
+        background: var(--bg);
       }
       .routine-editor-panel .board-wrap {
         flex: 1;
@@ -1152,8 +1181,8 @@
 
     @media (max-width: 720px) {
       .app {
-        padding: 8px;
-        gap: 8px;
+        padding: var(--sp-2);
+        gap: var(--sp-2);
         grid-template-columns: 1fr;
         grid-template-rows: auto var(--sidebar-h, minmax(220px, 34vh)) auto minmax(0, 1fr);
         height: 100vh;
@@ -1191,21 +1220,21 @@
         padding-right: 8px;
       }
       .compact-grid { grid-template-columns: 1fr; }
-      .move-card { grid-template-columns: 20px minmax(70px, 1fr) auto; gap: 4px; padding: 3px 6px; border-radius: 9px; min-width: 0; }
-      .move-chip { width: 20px; height: 20px; border-radius: 7px; }
-      .move-chip::before { font-size: 8px; }
-      .move-name { font-size: 11px; line-height: 1.2; min-width: 0; }
+      .move-card { grid-template-columns: 20px minmax(70px, 1fr) auto; gap: var(--sp-1); padding: 3px 6px; border-radius: var(--r-2); min-width: 0; }
+      .move-chip { width: 20px; height: 20px; border-radius: var(--r-1); }
+      .move-chip::before { font-size: var(--fs-1); }
+      .move-name { font-size: var(--fs-1); line-height: 1.2; min-width: 0; }
       .category-shell { padding: 1px; gap: 3px; min-width: 0; }
       .category-dot { width: 6px; height: 6px; margin-left: 4px; }
-      .category-select { min-width: 68px; max-width: 100px; font-size: 10px; padding: 3px 18px 3px 6px; }
-      .move-actions { gap: 4px; justify-content: flex-end; min-width: 0; }
-      .icon-btn { width: 20px; height: 20px; font-size: 12px; }
-      .quick-popup-item { font-size: 11px; padding: 7px 9px; }
-      .quick-popup-title { font-size: 9px; }
-      #categoryManager input[type="text"] { font-size: 11px; }
+      .category-select { min-width: 68px; max-width: 100px; font-size: var(--fs-1); padding: 3px 18px 3px 6px; }
+      .move-actions { gap: var(--sp-1); justify-content: flex-end; min-width: 0; }
+      .icon-btn { width: 20px; height: 20px; font-size: var(--fs-2); }
+      .quick-popup-item { font-size: var(--fs-1); padding: 7px 9px; }
+      .quick-popup-title { font-size: var(--fs-1); }
+      #categoryManager input[type="text"] { font-size: var(--fs-1); }
       .palette-list { gap: 3px; max-height: none; overflow-x: hidden; }
       .placement { padding: 3px; gap: 3px; }
-      .placement .label { font-size: 10px; }
+      .placement .label { font-size: var(--fs-1); }
       .placement .move-handle,
       .placement .resize-handle { width: 14px; min-width: 14px; }
       .placement .move-handle::before,
@@ -1224,27 +1253,27 @@
       }
       .board { gap: 6px; }
       .board-header, .board-row { gap: 6px; }
-      .corner, .row-label { font-size: 11px; padding: 4px; min-height: 40px; border-radius: 10px; }
-      .header-cells > div { font-size: 10px; min-height: 40px; }
-      .header-cells { border-radius: 10px; }
-      .track { border-radius: 10px; }
+      .corner, .row-label { font-size: var(--fs-1); padding: var(--sp-1); min-height: 40px; border-radius: var(--r-2); }
+      .header-cells > div { font-size: var(--fs-1); min-height: 40px; }
+      .header-cells { border-radius: var(--r-2); }
+      .track { border-radius: var(--r-2); }
       .track-spacer { height: var(--cellH); }
-      .board-wrap { padding: 8px; }
+      .board-wrap { padding: var(--sp-2); }
       .app { padding: 10px; gap: 10px; }
       .compact-grid { grid-template-columns: 1fr; }
       .move-card {
         grid-template-columns: 20px minmax(60px, 1fr) auto;
-        gap: 4px;
+        gap: var(--sp-1);
         padding: 3px 5px;
-        border-radius: 8px;
+        border-radius: var(--r-1);
       }
       .move-chip {
         width: 20px;
         height: 20px;
-        border-radius: 6px;
+        border-radius: var(--r-1);
       }
-      .move-chip::before { font-size: 7px; }
-      .move-name { font-size: 10px; line-height: 1.2; }
+      .move-chip::before { font-size: var(--fs-1); }
+      .move-name { font-size: var(--fs-1); line-height: 1.2; }
       .category-shell { padding: 1px; gap: 3px; }
       .category-dot {
         width: 6px;
@@ -1253,7 +1282,7 @@
       }
       .category-select {
         min-width: 64px;
-        font-size: 9px;
+        font-size: var(--fs-1);
         padding: 3px 16px 3px 5px;
       }
       .move-actions {
@@ -1263,7 +1292,7 @@
       .icon-btn {
         width: 20px;
         height: 20px;
-        font-size: 12px;
+        font-size: var(--fs-2);
         padding: 0;
       }
       .palette-list {
@@ -1271,7 +1300,7 @@
         max-height: 44vh;
       }
       .placement { padding: 3px; gap: 3px; }
-      .placement .label { font-size: 10px; }
+      .placement .label { font-size: var(--fs-1); }
       .placement .move-handle,
       .placement .resize-handle {
         width: 14px;
@@ -1287,17 +1316,18 @@
         right: -12px;
       }
       /* ── 모바일: 루틴 편집기 풀스크린 오버레이 ── */
-      .routine-editor-panel {
-        position: fixed !important;
+      /* `body` 를 앞에 붙여 한 단 강하게 — 아래(뒤)에 있는 기본 규칙을 !important 없이 이긴다. */
+      body .routine-editor-panel {
+        position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
         z-index: 5000;
-        flex: none !important;
-        max-width: none !important;
-        width: 100% !important;
-        height: 100% !important;
-        border-left: none !important;
+        flex: none;
+        max-width: none;
+        width: 100%;
+        height: 100%;
+        border-left: none;
         border-radius: 0;
-        background: var(--bg) !important;
+        background: var(--bg);
       }
       .routine-editor-panel .board-wrap {
         flex: 1;
@@ -1310,29 +1340,29 @@
         position: sticky;
         top: 0;
         z-index: 10;
-        background: rgba(15,23,42,0.96);
+        background: rgba(var(--bg-2-rgb), 0.96);
         backdrop-filter: blur(8px);
       }
       .routine-editor-panel .re-close-btn {
-        font-size: 14px;
+        font-size: var(--fs-4);
         padding: 8px 14px;
       }
       /* 빠른 배치 팝업 – 동작 파레트와 동일한 톤 */
       .quick-popup-item {
-        font-size: 10px;
+        font-size: var(--fs-1);
         padding: 6px 8px;
         gap: 6px;
       }
       .quick-popup-title {
-        font-size: 9px;
+        font-size: var(--fs-1);
       }
       .quick-popup input {
-        font-size: 11px;
+        font-size: var(--fs-1);
         padding: 5px 7px;
       }
       /* 카테고리 관리 – 동작 파레트와 동일한 레벨 */
       #categoryManager input[type="text"] {
-        font-size: 10px;
+        font-size: var(--fs-1);
         padding: 4px 6px;
       }
       #categoryManager input[type="color"] {
@@ -1340,12 +1370,12 @@
         height: 20px;
       }
       #categoryManager .star-btn {
-        font-size: 12px;
+        font-size: var(--fs-2);
       }
       #categoryManager .icon-btn {
         width: 20px;
         height: 20px;
-        font-size: 12px;
+        font-size: var(--fs-2);
       }
     }
 
@@ -1354,9 +1384,9 @@
       position: fixed;
       z-index: 4000;
       background: var(--panel);
-      border: 1px solid rgba(148,163,184,0.2);
-      border-radius: 14px;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.55);
+      border: 1px solid rgba(var(--muted-rgb), 0.2);
+      border-radius: var(--r-2);
+      box-shadow: var(--shadow);
       backdrop-filter: blur(12px);
       min-width: 230px;
       max-width: 300px;
@@ -1374,7 +1404,7 @@
       margin-bottom: 2px;
     }
     .quick-popup-title {
-      font-size: 10px;
+      font-size: var(--fs-1);
       font-weight: 800;
       color: var(--muted);
       text-transform: uppercase;
@@ -1383,11 +1413,11 @@
     .quick-popup-item {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--sp-2);
       padding: 8px 10px;
-      border-radius: 8px;
+      border-radius: var(--r-1);
       cursor: pointer;
-      font-size: 12px;
+      font-size: var(--fs-2);
       background: transparent;
       border: 1px solid transparent;
       color: var(--text);
@@ -1396,66 +1426,66 @@
       font: inherit;
       transition: background 0.12s;
     }
-    .quick-popup-item:hover { background: rgba(148,163,184,0.1); }
-    .quick-popup-item.kb-active { background: rgba(96,165,250,0.18); border-color: rgba(96,165,250,0.4); }
+    .quick-popup-item:hover { background: rgba(var(--muted-rgb), 0.1); }
+    .quick-popup-item.kb-active { background: rgba(var(--focus-rgb), 0.18); border-color: rgba(var(--focus-rgb), 0.4); }
     .quick-popup-item.new-action {
-      border-color: rgba(34,197,94,0.35);
+      border-color: rgba(var(--accent-rgb), 0.35);
       color: var(--accent);
       font-weight: 800;
     }
     .quick-popup-divider {
       height: 1px;
       background: var(--line);
-      margin: 4px 0;
+      margin: var(--sp-1) 0;
     }
-    .quick-btn-active {
-      background: rgba(34,197,94,0.16) !important;
-      border: 1px solid rgba(34,197,94,0.45) !important;
-      color: var(--accent) !important;
+    .quick-btn-active:not(#_) {
+      background: rgba(var(--accent-rgb), 0.16);
+      border: 1px solid rgba(var(--accent-rgb), 0.45);
+      color: var(--accent);
       font-weight: 800;
     }
     .star-btn {
       background: none;
       border: none;
       padding: 0 2px;
-      font-size: 13px;
+      font-size: var(--fs-3);
       color: var(--muted);
       cursor: pointer;
       line-height: 1;
       flex-shrink: 0;
-      border-radius: 4px;
+      border-radius: var(--r-1);
     }
-    .star-btn:not(.active):hover { color: rgba(250,204,21,0.45); }
-    .star-btn.active { color: #facc15; }
+    .star-btn:not(.active):hover { color: rgba(var(--now-rgb), 0.45); }
+    .star-btn.active { color: var(--now); }
     .sort-mode-btn {
       flex: 1;
-      font-size: 10px;
+      font-size: var(--fs-1);
       font-weight: 700;
       padding: 3px 6px;
-      border-radius: 6px;
+      border-radius: var(--r-1);
       background: transparent;
-      border: 1px solid rgba(148,163,184,0.2);
+      border: 1px solid rgba(var(--muted-rgb), 0.2);
       color: var(--muted);
       cursor: pointer;
       transition: background 0.12s, color 0.12s;
     }
     .sort-mode-btn.active {
-      background: rgba(96,165,250,0.18);
-      border-color: rgba(96,165,250,0.4);
-      color: #93c5fd;
+      background: rgba(var(--focus-rgb), 0.18);
+      border-color: rgba(var(--focus-rgb), 0.4);
+      color: var(--focus);
       font-weight: 800;
     }
     .sort-dir-btn {
-      font-size: 13px;
+      font-size: var(--fs-3);
       padding: 3px 8px;
-      border-radius: 6px;
+      border-radius: var(--r-1);
       background: transparent;
-      border: 1px solid rgba(148,163,184,0.2);
+      border: 1px solid rgba(var(--muted-rgb), 0.2);
       color: var(--muted);
       cursor: pointer;
       transition: background 0.12s;
     }
-    .sort-dir-btn:hover { background: rgba(148,163,184,0.1); color: var(--text); }
+    .sort-dir-btn:hover { background: rgba(var(--muted-rgb), 0.1); color: var(--text); }
 
     /* ── 루틴 편집기 레이아웃 ── */
     .boards-container {
@@ -1480,8 +1510,8 @@
       max-width: 48%;
       min-width: 0;
       min-height: 0;
-      border-left: 2px solid rgba(99,102,241,0.35);
-      background: linear-gradient(180deg, rgba(99,102,241,0.05), rgba(99,102,241,0.02));
+      border-left: 2px solid rgba(var(--routine-rgb), 0.35);
+      background: linear-gradient(180deg, rgba(var(--routine-rgb), 0.05), rgba(var(--routine-rgb), 0.02));
     }
     .re-toolbar {
       display: flex;
@@ -1490,19 +1520,19 @@
       justify-content: space-between;
       gap: 6px;
       padding: 8px 10px;
-      border-bottom: 1px solid rgba(99,102,241,0.2);
-      background: rgba(99,102,241,0.06);
+      border-bottom: 1px solid rgba(var(--routine-rgb), 0.2);
+      background: rgba(var(--routine-rgb), 0.06);
     }
-    .re-toolbar h2 { margin:0; font-size:13px; color:rgba(165,180,252,0.95); white-space:nowrap; }
-    .re-toolbar p  { margin:0; font-size:11px; color:var(--muted); white-space:nowrap; }
+    .re-toolbar h2 { margin:0; font-size:var(--fs-3); color:rgba(var(--routine-rgb), 0.95); white-space:nowrap; }
+    .re-toolbar p  { margin:0; font-size:var(--fs-1); color:var(--muted); white-space:nowrap; }
     .re-toolbar > div:first-child { flex-shrink:0; min-width:0; }
     .re-close-btn {
-      background: rgba(99,102,241,0.15);
-      border: 1px solid rgba(99,102,241,0.4);
-      color: #a5b4fc;
+      background: rgba(var(--routine-rgb), 0.15);
+      border: 1px solid rgba(var(--routine-rgb), 0.4);
+      color: var(--routine);
       font-weight: 800;
     }
-    .re-close-btn:hover { background: rgba(99,102,241,0.28); }
+    .re-close-btn:hover { background: rgba(var(--routine-rgb), 0.28); }
 
     /* ── 루틴 카드 ── */
     .routine-card {
@@ -1511,35 +1541,35 @@
       align-items: center;
       gap: 5px;
       padding: 4px 6px;
-      border-radius: 10px;
-      background: linear-gradient(180deg, rgba(99,102,241,0.1), rgba(99,102,241,0.05));
-      border: 1px solid rgba(99,102,241,0.22);
+      border-radius: var(--r-2);
+      background: linear-gradient(180deg, rgba(var(--routine-rgb), 0.1), rgba(var(--routine-rgb), 0.05));
+      border: 1px solid rgba(var(--routine-rgb), 0.22);
       cursor: grab;
       user-select: none;
     }
     .routine-card.is-editing {
-      outline: 2px solid rgba(99,102,241,0.85);
-      background: linear-gradient(180deg, rgba(99,102,241,0.18), rgba(99,102,241,0.1));
+      outline: 2px solid rgba(var(--routine-rgb), 0.85);
+      background: linear-gradient(180deg, rgba(var(--routine-rgb), 0.18), rgba(var(--routine-rgb), 0.1));
     }
     .routine-chip {
       width: 22px;
       height: 22px;
-      border-radius: 7px;
+      border-radius: var(--r-1);
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      color: white;
-      font-size: 10px;
+      color: var(--white);
+      font-size: var(--fs-1);
       flex-shrink: 0;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      box-shadow: var(--shadow-sm);
     }
-    .routine-chip::before { content: "▶"; font-size:8px; }
+    .routine-chip::before { content: "▶"; font-size:var(--fs-1); }
     /* 칩을 누르면 견본판이 열린다(RM-34). 끌기는 카드 전체가 하므로 칩은 커서만 바꾼다. */
     .routine-chip[role="button"] { cursor: pointer; }
     .routine-chip[role="button"]:hover,
     .routine-chip[role="button"]:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
     .routine-name-text {
-      font-size: 11px;
+      font-size: var(--fs-1);
       font-weight: 700;
       color: var(--text);
       overflow: hidden;
@@ -1547,7 +1577,7 @@
       white-space: nowrap;
     }
     .routine-meta-text {
-      font-size: 9px;
+      font-size: var(--fs-1);
       color: var(--muted);
       line-height: 1.2;
     }
@@ -1560,30 +1590,30 @@
     .edit-btn {
       width: 22px;
       height: 22px;
-      border-radius: 999px;
-      border: 1px solid rgba(99,102,241,0.35);
-      background: rgba(99,102,241,0.12);
-      color: #a5b4fc;
+      border-radius: var(--r-pill);
+      border: 1px solid rgba(var(--routine-rgb), 0.35);
+      background: rgba(var(--routine-rgb), 0.12);
+      color: var(--routine);
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
+      font-size: var(--fs-1);
       font-weight: 800;
       flex-shrink: 0;
       cursor: pointer;
     }
-    .edit-btn:hover { background: rgba(99,102,241,0.25); }
+    .edit-btn:hover { background: rgba(var(--routine-rgb), 0.25); }
 
     /* ── 루틴 배치 블록 ── */
-    /* 실제 색은 JS 가 루틴 색에서 만들어 인라인으로 칠한다. 여기 값은 그 전 한 프레임의 폴백이다.
-       !important 를 쓰면 안 된다 — 인라인 스타일을 이겨 루틴 색이 다시 묻힌다. */
+    /* 실제 색은 JS 가 루틴 색에서 만들어 `--block-bg` 로 넘긴다. 여기 값은 그 전 한 프레임의 폴백이다.
+       ⚠ 이 규칙이 `.placement` 보다 강하므로 변수를 먼저 읽어야 한다 — 폴백만 적으면 루틴 색이 다시 묻힌다. */
     .placement.is-routine {
-      background: linear-gradient(135deg, #818cf8 0%, #5d65b2 100%);
+      background: var(--block-bg, linear-gradient(135deg, var(--routine) 0%, var(--routine) 100%));
     }
     .placement.is-routine .label { color: inherit; }
     .placement.is-routine .move-handle,
     .placement.is-routine .resize-handle {
-      background: rgba(255,255,255,0.25);
+      background: rgba(var(--white-rgb), 0.25);
     }
     /* 메인 보드의 루틴 배치는 크기 조절 불가 */
     .main-board-area .placement.is-routine .resize-handle {
@@ -1592,41 +1622,41 @@
     }
     .routine-action-popup {
       position: fixed; z-index: 9999;
-      background: var(--surface, #1e1e2e); border: 1px solid rgba(99,102,241,0.45);
-      border-radius: 8px; padding: 6px;
-      display: flex; flex-direction: column; gap: 4px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+      background: var(--surface, var(--surface)); border: 1px solid rgba(var(--routine-rgb), 0.45);
+      border-radius: var(--r-1); padding: 6px;
+      display: flex; flex-direction: column; gap: var(--sp-1);
+      box-shadow: var(--shadow-sm);
       min-width: 130px;
     }
     .routine-action-popup .rap-title {
-      font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.55);
-      padding: 2px 6px 4px; border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: var(--fs-1); font-weight: 700; color: rgba(var(--white-rgb), 0.55);
+      padding: 2px 6px 4px; border-bottom: 1px solid rgba(var(--white-rgb), 0.08);
       margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .routine-action-popup button {
-      text-align: left; padding: 5px 10px; border-radius: 5px;
+      text-align: left; padding: 5px 10px; border-radius: var(--r-1);
       background: transparent; border: none; cursor: pointer;
-      font-size: 12px; color: var(--text, #cdd6f4);
+      font-size: var(--fs-2); color: var(--text, var(--text));
     }
-    .routine-action-popup button:hover { background: rgba(99,102,241,0.25); }
-    .routine-action-popup button.danger:hover { background: rgba(239,68,68,0.25); color: #f87171; }
+    .routine-action-popup button:hover { background: rgba(var(--routine-rgb), 0.25); }
+    .routine-action-popup button.danger:hover { background: rgba(var(--danger-rgb), 0.25); color: var(--danger); }
     .routine-action-popup button:disabled { opacity: 0.4; cursor: default; }
     .routine-action-popup button:disabled:hover { background: transparent; }
     /* 블록 팝업의 「몇 번째 카운트에서」(RM-16) — 2..N 단추를 가로로 늘어놓는다. */
-    .routine-action-popup .rap-counts { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
-    .routine-action-popup .rap-counts button { min-width: 32px; text-align: center; padding: 5px 6px; border: 1px solid rgba(99,102,241,0.35); }
+    .routine-action-popup .rap-counts { display: flex; flex-wrap: wrap; gap: var(--sp-1); max-width: 220px; }
+    .routine-action-popup .rap-counts button { min-width: 32px; text-align: center; padding: 5px 6px; border: 1px solid rgba(var(--routine-rgb), 0.35); }
     .row-label { cursor: context-menu; }
     /* 루틴 색 견본판(RM-34) — 틀과 테마는 위 루틴 팝업 것을 그대로 쓰고, 여덟 색을 4×2 격자로 놓는다.
        색 자체는 domain/routines.js 의 ROUTINE_COLORS(데이터 색이라 토큰 밖 — RM-17)에서 온다. */
-    .routine-color-popup .rcp-swatches { display: grid; grid-template-columns: repeat(4, 28px); gap: 6px; padding: 4px; }
+    .routine-color-popup .rcp-swatches { display: grid; grid-template-columns: repeat(4, 28px); gap: 6px; padding: var(--sp-1); }
     .routine-color-popup .rcp-swatches button {
-      width: 28px; height: 28px; padding: 0; border-radius: 7px;
-      border: 2px solid transparent; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+      width: 28px; height: 28px; padding: 0; border-radius: var(--r-1);
+      border: 2px solid transparent; box-shadow: var(--shadow-sm);
     }
     .routine-color-popup .rcp-swatches button:hover,
     .routine-color-popup .rcp-swatches button:focus-visible { border-color: var(--text); background-clip: padding-box; }
     .routine-color-popup .rcp-swatches button.is-current { border-color: var(--text); }
-    .routine-color-popup .rcp-swatches button.is-current::after { content: "✓"; color: #0b1220; font-weight: 800; font-size: 13px; }
+    .routine-color-popup .rcp-swatches button.is-current::after { content: "✓"; color: var(--bg); font-weight: 800; font-size: var(--fs-3); }
 
     /* 링크바 — 2026-09-20 부터 **모든 폭에서** 기본으로 접혀 있다(전에는 좁은 화면에서만).
        비어 있는 안무표에서 YouTube·ClickUp 두 줄이 도구와 격자 사이를 갈라놓고 있었고, 처음
@@ -1634,30 +1664,32 @@
        펴고 접는 것은 캔버스 바의 `🔗` 하나다. */
     .links-bar {
       padding: 5px 10px;
-      border-bottom: 1px solid rgba(148,163,184,0.10);
-      display: none; flex-direction: column; gap: 4px;
+      border-bottom: 1px solid rgba(var(--muted-rgb), 0.10);
+      display: none; flex-direction: column; gap: var(--sp-1);
     }
     body[data-links="on"] .links-bar { display: flex; }
-    body[data-links="on"] #linksToggleBtn { background: rgba(34,197,94,0.16); color: var(--accent); }
+    body[data-links="on"] #linksToggleBtn { background: rgba(var(--accent-rgb), 0.16); color: var(--accent); }
     .link-row {
       display: flex; align-items: center; gap: 6px; min-height: 26px;
     }
     .link-badge {
-      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+      font-size: var(--fs-1); font-weight: 700; padding: 2px 8px; border-radius: var(--r-1);
       white-space: nowrap; flex-shrink: 0; letter-spacing: .3px;
       width: 96px; text-align: center; box-sizing: border-box;
     }
-    .link-badge.yt { background: #ff0000; color: #fff; }
-    .link-badge.clickup { background: #7b68ee; color: #fff; }
-    .link-badge.custom { background: rgba(99,102,241,0.22); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
+    /* 원칙-예외(U-16): 유튜브 · ClickUp 배지는 그 서비스의 상표 색이다 — 테마가 바꾸면 알아보지 못한다 */
+    .link-badge.yt { background: #ff0000; color: var(--white); }
+    /* 원칙-예외(U-16): 상표 색(위와 같다) */
+    .link-badge.clickup { background: #7b68ee; color: var(--white); }
+    .link-badge.custom { background: rgba(var(--routine-rgb), 0.22); color: var(--routine); border: 1px solid rgba(var(--routine-rgb), 0.3); }
     .link-row input[type="url"], .link-row input[type="text"] {
       flex: 1; min-width: 0;
-      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09);
-      border-radius: 5px; padding: 3px 7px; font-size: 12px;
-      color: var(--text, #cdd6f4); outline: none;
+      background: rgba(var(--white-rgb), 0.05); border: 1px solid rgba(var(--white-rgb), 0.09);
+      border-radius: var(--r-1); padding: 3px 7px; font-size: var(--fs-2);
+      color: var(--text, var(--text)); outline: none;
     }
-    .link-row input:focus { border-color: rgba(99,102,241,0.5); }
-    .link-label-input { max-width: 90px !important; flex: 0 0 90px !important; }
+    .link-row input:focus { border-color: rgba(var(--routine-rgb), 0.5); }
+    .link-label-input:not(#_) { max-width: 90px; flex: 0 0 90px; }
     /* URL입력 + 제목 칩을 gap 없이 붙여서 담는 sub-container */
     .yt-url-group {
       display: flex; flex: 1; min-width: 0; gap: 0; overflow: hidden;
@@ -1665,31 +1697,31 @@
     /* URL 입력: flex-shrink 높게 → 먼저 줄어듦 */
     .yt-url-group #youtubeUrlInput {
       flex: 1 4 120px; min-width: 60px;
-      border-radius: 5px 0 0 5px; border-right: none;
+      border-radius: var(--r-1) 0 0 var(--r-1); border-right: none;
     }
     /* 제목 없을 때 border-radius 복원 */
     .yt-url-group:not(:has(.link-title-chip)) #youtubeUrlInput {
-      border-radius: 5px; border-right: 1px solid rgba(255,255,255,0.09);
+      border-radius: var(--r-1); border-right: 1px solid rgba(var(--white-rgb), 0.09);
     }
     .link-title-chip {
-      font-size: 11px; color: #a5b4fc; text-decoration: none;
+      font-size: var(--fs-1); color: var(--routine); text-decoration: none;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      background: rgba(99,102,241,0.14); padding: 2px 8px;
+      background: rgba(var(--routine-rgb), 0.14); padding: 2px 8px;
       /* URL이 충분히 줄어든 뒤에 제목도 줄어들게 — flex-shrink 낮게 */
       flex: 0 1 auto; min-width: 60px;
-      border: 1px solid rgba(99,102,241,0.25); border-radius: 0 5px 5px 0;
+      border: 1px solid rgba(var(--routine-rgb), 0.25); border-radius: 0 var(--r-1) var(--r-1) 0;
     }
-    .link-title-chip:hover { background: rgba(99,102,241,0.28); }
-    .link-title-fetching { font-size: 11px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
-    .link-open-btn { padding: 2px 7px !important; font-size: 13px !important; flex-shrink: 0; }
-    .link-reset-btn { padding: 2px 6px !important; font-size: 12px !important; flex-shrink: 0; color: rgba(255,255,255,0.35) !important; }
-    .link-reset-btn:hover { color: #ef4444 !important; }
+    .link-title-chip:hover { background: rgba(var(--routine-rgb), 0.28); }
+    .link-title-fetching { font-size: var(--fs-1); color: rgba(var(--white-rgb), 0.3); flex-shrink: 0; }
+    .link-open-btn:not(#_) { padding: 2px 7px; font-size: var(--fs-3); flex-shrink: 0; }
+    .link-reset-btn:not(#_) { padding: 2px 6px; font-size: var(--fs-2); flex-shrink: 0; color: rgba(var(--white-rgb), 0.35); }
+    .link-reset-btn:not(#_):hover { color: var(--danger); }
     .link-del-btn {
-      padding: 2px 6px; font-size: 13px; background: transparent; border: none;
-      cursor: pointer; color: rgba(255,255,255,0.3); border-radius: 4px; flex-shrink: 0;
+      padding: 2px 6px; font-size: var(--fs-3); background: transparent; border: none;
+      cursor: pointer; color: rgba(var(--white-rgb), 0.3); border-radius: var(--r-1); flex-shrink: 0;
     }
-    .link-del-btn:hover { color: #f87171; background: rgba(239,68,68,0.15); }
-    .link-add-btn { font-size: 11px !important; padding: 2px 8px !important; }
+    .link-del-btn:hover { color: var(--danger); background: rgba(var(--danger-rgb), 0.15); }
+    .link-add-btn:not(#_) { font-size: var(--fs-1); padding: 2px 8px; }
 
     /* ── 영상 패널 (2026-09 신설) ──
        ⚠ 켜야 보이는 기능이다. #videoPanel 에 `hidden` 이 붙어 있는 동안은 이 블록의 어떤 규칙도
@@ -1704,8 +1736,8 @@
       min-width: 0;
       min-height: 0;
       overflow: hidden;
-      border-left: 2px solid rgba(34,197,94,0.30);
-      background: linear-gradient(180deg, rgba(34,197,94,0.05), rgba(34,197,94,0.02));
+      border-left: 2px solid rgba(var(--accent-rgb), 0.30);
+      background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.05), rgba(var(--accent-rgb), 0.02));
     }
     /* `.video-panel`(0,1,0) 보다 강하므로 !important 없이 이긴다. */
     .video-panel[hidden] { display: none; }
@@ -1722,17 +1754,17 @@
       justify-content: space-between;
       gap: 6px;
       padding: 8px 10px;
-      border-bottom: 1px solid rgba(34,197,94,0.20);
-      background: rgba(34,197,94,0.06);
+      border-bottom: 1px solid rgba(var(--accent-rgb), 0.20);
+      background: rgba(var(--accent-rgb), 0.06);
     }
-    .video-head h2 { margin: 0; font-size: 13px; color: rgba(134,239,172,0.95); white-space: nowrap; }
+    .video-head h2 { margin: 0; font-size: var(--fs-3); color: rgba(var(--accent-rgb), 0.95); white-space: nowrap; }
     .video-head-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .video-head-actions { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
     .video-title-chip {
-      font-size: 11px; color: #a7f3d0;
+      font-size: var(--fs-1); color: var(--text);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.25);
-      border-radius: 5px; padding: 2px 8px; max-width: 220px;
+      background: rgba(var(--accent-rgb), 0.14); border: 1px solid rgba(var(--accent-rgb), 0.25);
+      border-radius: var(--r-1); padding: 2px 8px; max-width: 220px;
     }
     .video-body {
       flex: 1;
@@ -1741,7 +1773,7 @@
       overflow-x: hidden;
       padding: 10px;
       display: grid;
-      gap: 8px;
+      gap: var(--sp-2);
       align-content: start;
     }
     .video-panel.is-collapsed .video-body { display: none; }
@@ -1752,10 +1784,10 @@
       position: relative;
       width: 100%;
       aspect-ratio: 16 / 9;
-      border-radius: 10px;
+      border-radius: var(--r-2);
       overflow: hidden;
-      background: #000;
-      border: 1px solid rgba(148,163,184,0.16);
+      background: var(--black);
+      border: 1px solid rgba(var(--muted-rgb), 0.16);
     }
     /* YT.Player 는 넘겨받은 <div> 를 <iframe> 으로 **갈아치운다** — 둘 다 프레임을 꽉 채워야 한다
        (어댑터는 width/height 를 넘기지 않아 iframe 기본값이 640x390 이다). */
@@ -1790,11 +1822,11 @@
     body[data-videoband="on"] .video-frame-slot,
     body[data-videofloat="on"] .video-frame-slot {
       display: block;
-      border: 1px dashed rgba(34,197,94,0.35);
-      border-radius: 10px;
-      background: rgba(34,197,94,0.05);
+      border: 1px dashed rgba(var(--accent-rgb), 0.35);
+      border-radius: var(--r-2);
+      background: rgba(var(--accent-rgb), 0.05);
       color: var(--muted);
-      font-size: 11px;
+      font-size: var(--fs-1);
       text-align: center;
       padding: 10px 8px;
     }
@@ -1805,8 +1837,8 @@
       width: min(56vw, 1100px);
       right: 18px;
       bottom: 18px;
-      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
-      border-color: rgba(34,197,94,0.55);
+      box-shadow: var(--shadow);
+      border-color: rgba(var(--accent-rgb), 0.55);
       /* 오른쪽 아래 모서리로 크기 조절. 세로는 aspect-ratio 가 정하므로 가로만 연다. */
       resize: horizontal;
     }
@@ -1818,11 +1850,11 @@
          것은 배경이 그러데이션이라 그럴 뿐이고, 그 아래 재생기 컨트롤은 한 곳도 눌리지 않는다. */
       top: 0; left: 0; right: 0; bottom: auto; height: auto;
       align-items: center;
-      gap: 8px;
+      gap: var(--sp-2);
       padding: 5px 8px;
-      background: linear-gradient(180deg, rgba(2,6,23,0.85), rgba(2,6,23,0));
-      color: #dbe4ef;
-      font-size: 11px;
+      background: linear-gradient(180deg, rgba(var(--bg-rgb), 0.85), rgba(var(--bg-rgb), 0));
+      color: var(--text);
+      font-size: var(--fs-1);
       font-weight: 700;
       cursor: grab;
       user-select: none;
@@ -1830,18 +1862,18 @@
     }
     body[data-videofloat="on"] .video-float-bar.is-dragging { cursor: grabbing; }
     .video-float-bar { display: none; }
-    .video-float-bar button { padding: 2px 8px; font-size: 11px; }
+    .video-float-bar button { padding: 2px 8px; font-size: var(--fs-1); }
     /* 좁은 화면에서는 띄우지 않는다 — 영상이 이미 안무표 위를 차지한다. */
     @media (max-width: 1040px) {
-      .only-wide { display: none !important; }
+      .only-wide:not(#_) { display: none; }
       body[data-videofloat="on"] .video-frame { position: relative; width: 100%; right: auto; bottom: auto; box-shadow: none; resize: none; }
       body[data-videofloat="on"] .video-frame-slot { display: none; }
       body[data-videofloat="on"] .video-float-bar { display: none; }
     }
 
-    .video-status { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .video-status { font-size: var(--fs-1); color: var(--muted); line-height: 1.4; }
     /* ── 연습 조작 줄 (RM-22 · 2026-10-01) ── */
-    .video-practice { display: grid; gap: 5px; padding: 6px 0; border-top: 1px solid rgba(148,163,184,0.16); border-bottom: 1px solid rgba(148,163,184,0.16); }
+    .video-practice { display: grid; gap: 5px; padding: 6px 0; border-top: 1px solid rgba(var(--muted-rgb), 0.16); border-bottom: 1px solid rgba(var(--muted-rgb), 0.16); }
     /* 미러 — 영상과 자세 오버레이만 뒤집는다. data-keep 이 붙은 우리 손잡이(띄우기 줄 · ⇄)의 글자는 그대로 둔다.
        ⚠ 끌 때는 속성을 없앤다(U-11) — 이 선택자는 빈 문자열에도 걸린다.
        ⚠ 유튜브 iframe 은 통째로 뒤집혀 그 안의 유튜브 글자도 거울 글자가 된다 — 바깥 문서가 iframe 안을 고를 수 없다. */
@@ -1850,18 +1882,18 @@
     /* 박자 시계(영상 없이 박자로 재생). 검은 칸이 비어 있으면 고장으로 보이므로 무엇이 도는지 적는다. */
     .video-frame .video-clock {
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-      width: 100%; height: 100%; color: #94a3b8; font-size: 12px;
+      width: 100%; height: 100%; color: var(--muted); font-size: var(--fs-2);
     }
-    .video-frame .video-clock-time { font-size: 28px; font-variant-numeric: tabular-nums; color: #e2e8f0; }
-    .video-status.is-error { color: #fca5a5; }
-    .video-cut .helper.is-error { color: #fca5a5; }
+    .video-frame .video-clock-time { font-size: var(--fs-5); font-variant-numeric: tabular-nums; color: var(--text); }
+    .video-status.is-error { color: var(--danger); }
+    .video-cut .helper.is-error { color: var(--danger); }
     /* 로컬 파일 줄. 파일명 칩은 제목 칩과 같은 톤이다(둘 다 "지금 무엇이 소스인가"를 말한다). */
     .video-source { gap: 6px; }
     .video-file-name {
-      font-size: 11px; color: #a7f3d0; min-width: 0; max-width: 100%;
+      font-size: var(--fs-1); color: var(--text); min-width: 0; max-width: 100%;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.25);
-      border-radius: 999px; padding: 2px 8px;
+      background: rgba(var(--accent-rgb), 0.14); border: 1px solid rgba(var(--accent-rgb), 0.25);
+      border-radius: var(--r-pill); padding: 2px 8px;
     }
     /* <video> 도 iframe 과 같이 프레임에 맞춰 들어간다. 검은 레터박스는 영상 비율의 몫이다.
        ⚠ **자손 선택자여야 한다.** app/main.js 는 재생기마다 host <div> 를 하나 만들어 그 안에 넘기고
@@ -1870,7 +1902,7 @@
          `> video` 로 적으면 규칙이 하나도 안 걸려 영상이 제 원본 크기로 펼쳐지고, 프레임의
          overflow:hidden 이 그것을 잘라 **"일부만 확대된 것처럼"** 보인다 — 2026-09-11 에 실제로 그랬다
          (945x531 프레임에 480x640 영상이 들어가 세로 109px 이 잘렸다. 1080x1920 촬영본이면 훨씬 크다). */
-    .video-frame video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+    .video-frame video { display: block; width: 100%; height: 100%; object-fit: contain; background: var(--black); }
 
     /* 자세 오버레이. ⚠ 프레임이 아니라 **영상이 실제로 그려진 칸**에 맞춰야 한다 — 영상은 레터박스와 함께
        가운데에 들어가므로, 프레임을 꽉 채우면 관절이 검은 띠 쪽으로 밀린다. 자리와 크기는
@@ -1883,27 +1915,27 @@
     .video-frame > .video-pose[hidden] { display: none; }
 
     /* 자세 분석 구획. 구간 자르기와 같은 톤이다. */
-    .video-pose-section { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(34,197,94,0.16); }
+    .video-pose-section { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(var(--accent-rgb), 0.16); }
     /* ⚠ `.video-field` 의 `display:flex` 가 브라우저 기본 `[hidden]{display:none}` 를 이긴다 —
        숨기려고 hidden 을 붙여도 그대로 보인다(`.video-panel[hidden]` 이 같은 이유로 이미 있다).
        이 줄이 없으면 `인물` 줄이 분석 전에도 떠 있는다. */
     .video-field[hidden] { display: none; }
-    .video-people { display: flex; flex-wrap: wrap; gap: 4px; }
-    .video-people button { padding: 2px 8px; font-size: 11px; }
+    .video-people { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+    .video-people button { padding: 2px 8px; font-size: var(--fs-1); }
     .video-progress {
-      height: 4px; border-radius: 999px; overflow: hidden;
-      background: rgba(148,163,184,0.18);
+      height: 4px; border-radius: var(--r-pill); overflow: hidden;
+      background: rgba(var(--muted-rgb), 0.18);
     }
-    .video-progress > span { display: block; height: 100%; background: rgba(34,197,94,0.85); width: 0; }
+    .video-progress > span { display: block; height: 100%; background: rgba(var(--accent-rgb), 0.85); width: 0; }
     /* ── 영상 패널의 단계 묶음 (2026-09-12 · RM-20 으로 2026-11-02 에 둘로 가름) ──
        버튼 서른한 개가 한 화면에 평평하게 있던 것을 **하는 순서**로 묶었다. 지금은 차례(①영상 → ②박자 → ③받아 적기)와
        도구(구간 자르기 · 마커 · 자세 분석 — 아래 `.video-tools`)가 갈려 있다.
        자주 안 쓰는 것(두 점 앵커·직접 입력·보정점)은 ② 의 「세로선이 어긋날 때」 뒤로 접었다 — 점진적 공개.
        ⚠ `<details>` 라 JS 가 없다. 여는 상태는 브라우저가 들고 있고 마크업의 `open` 이 기본값이다. */
-    .vstep { border-top: 1px solid rgba(34,197,94,0.16); padding-top: 6px; }
+    .vstep { border-top: 1px solid rgba(var(--accent-rgb), 0.16); padding-top: 6px; }
     .vstep > summary, .vsub > summary {
       cursor: pointer; list-style: none; user-select: none; padding: 2px 0;
-      font-size: 11px; font-weight: 800; color: rgba(134,239,172,0.92); letter-spacing: 0.02em;
+      font-size: var(--fs-1); font-weight: 800; color: rgba(var(--accent-rgb), 0.92); letter-spacing: 0.02em;
     }
     .vstep > summary::-webkit-details-marker, .vsub > summary::-webkit-details-marker { display: none; }
     .vstep > summary::before, .vsub > summary::before { content: '▸ '; color: var(--muted); font-weight: 400; }
@@ -1921,96 +1953,96 @@
        `.vtool` 의 summary 를 읽어 그린다) 아래로 **누른 하나만** 펼쳐진다.
        ⚠ `.vtool` 의 `<summary>` 는 숨긴다 — 손잡이는 탭 줄이다. 닫힌 `.vtool` 은 자리를 차지하지 않는다
          (details 의 열림 규칙이라 U-12 의 [hidden] 짝 대상이 아니다). */
-    .video-tools { border-top: 1px solid rgba(34,197,94,0.16); padding-top: 6px; display: grid; gap: 6px; }
+    .video-tools { border-top: 1px solid rgba(var(--accent-rgb), 0.16); padding-top: 6px; display: grid; gap: 6px; }
     .video-tools-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .video-tools-label {
-      font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 0.02em; flex-shrink: 0;
+      font-size: var(--fs-1); font-weight: 800; color: var(--muted); letter-spacing: 0.02em; flex-shrink: 0;
     }
     .vtool-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
     .vtool-tab {
       position: relative;
       display: inline-flex; align-items: center; gap: 5px;
-      padding: 3px 9px; font-size: 11px; font-weight: 700;
-      border: 1px solid rgba(148,163,184,0.22); border-radius: 999px;
-      background: rgba(255,255,255,0.03); color: var(--muted);
+      padding: 3px 9px; font-size: var(--fs-1); font-weight: 700;
+      border: 1px solid rgba(var(--muted-rgb), 0.22); border-radius: var(--r-pill);
+      background: rgba(var(--white-rgb), 0.03); color: var(--muted);
     }
-    .vtool-tab:hover { color: var(--text); border-color: rgba(34,197,94,0.35); }
+    .vtool-tab:hover { color: var(--text); border-color: rgba(var(--accent-rgb), 0.35); }
     /* 열린 탭 — 「지금 여기」일 뿐 끝남(✓)이 아니다. 차례 줄의 now 와 같은 초록. */
     .vtool-tab[data-state="now"] {
-      color: rgba(134,239,172,0.95); border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.12);
+      color: rgba(var(--accent-rgb), 0.95); border-color: rgba(var(--accent-rgb), 0.45); background: rgba(var(--accent-rgb), 0.12);
     }
-    .vtool-icon { font-size: 11px; line-height: 1; }
+    .vtool-icon { font-size: var(--fs-1); line-height: 1; }
     /* 남은 할 일 배지 — 차례 줄과 같은 주황 숫자. 값이 있을 때만 그린다. */
     .vtool-tab[data-todo]::after {
       content: attr(data-todo);
       position: absolute; top: -7px; right: -6px;
       min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
-      border-radius: 8px; background: #f59e0b; color: #1c1917;
-      font-size: 10px; font-weight: 800; line-height: 16px; text-align: center;
+      border-radius: var(--r-1); background: var(--warn); color: var(--bg-2);
+      font-size: var(--fs-1); font-weight: 800; line-height: 16px; text-align: center;
     }
     .video-tools > .vtool { border-top: none; padding-top: 0; }
     .video-tools > .vtool > summary { display: none; }
     .video-tools > .vtool:not([open]) { display: none; }
     .video-tools > .vtool[open] {
-      border: 1px solid rgba(34,197,94,0.18); border-radius: 10px;
-      padding: 6px 10px 8px; background: rgba(34,197,94,0.05);
+      border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: var(--r-2);
+      padding: 6px 10px 8px; background: rgba(var(--accent-rgb), 0.05);
     }
 
     .video-tempo { display: grid; gap: 6px; }
-    .video-bpm { font-size: 12px; font-weight: 800; color: #dbe4ef; line-height: 1.4; }
+    .video-bpm { font-size: var(--fs-2); font-weight: 800; color: var(--text); line-height: 1.4; }
     .video-field { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
-    .video-label { font-size: 11px; color: #8892a4; white-space: nowrap; }
+    .video-label { font-size: var(--fs-1); color: var(--muted); white-space: nowrap; }
     .video-num { width: 4.6em; text-align: center; flex: 0 0 auto; }
     .video-pick { width: auto; min-width: 5.5em; flex: 0 0 auto; }
 
     /* ── 구간 자르기·마커(2026-09-10) ── 템포 구획과 같은 톤이고, 구획 제목 한 줄로만 나눈다. */
-    .video-cut { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(34,197,94,0.16); }
+    .video-cut { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(var(--accent-rgb), 0.16); }
     /* 표 전체 옮기기(2026-09-20). `③ 받아 적기` 안의 한 줄이다 — 받아 적은 뒤 통째로 밀렸을 때 쓴다. */
     .video-shift { align-items: center; gap: 6px; }
-    .video-shift-label { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
-    .video-section-title { font-size: 11px; font-weight: 800; color: rgba(134,239,172,0.9); letter-spacing: 0.02em; }
-    .video-markers { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+    .video-shift-label { font-size: var(--fs-1); color: var(--muted); white-space: nowrap; }
+    .video-section-title { font-size: var(--fs-1); font-weight: 800; color: rgba(var(--accent-rgb), 0.9); letter-spacing: 0.02em; }
+    .video-markers { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
     .video-marker {
       display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
-      font-size: 11px; color: #dbe4ef; line-height: 1.35;
-      background: rgba(34,197,94,0.07); border: 1px solid rgba(34,197,94,0.18);
-      border-radius: 7px; padding: 4px 6px;
+      font-size: var(--fs-1); color: var(--text); line-height: 1.35;
+      background: rgba(var(--accent-rgb), 0.07); border: 1px solid rgba(var(--accent-rgb), 0.18);
+      border-radius: var(--r-1); padding: 4px 6px;
     }
-    .video-marker.is-current { border-color: rgba(34,197,94,0.7); background: rgba(34,197,94,0.16); }
-    .video-marker-label { font-weight: 700; color: #a7f3d0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-    .video-marker-range { color: #8892a4; }
-    .video-marker button { padding: 1px 6px; font-size: 11px; }
+    .video-marker.is-current { border-color: rgba(var(--accent-rgb), 0.7); background: rgba(var(--accent-rgb), 0.16); }
+    .video-marker-label { font-weight: 700; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .video-marker-range { color: var(--muted); }
+    .video-marker button { padding: 1px 6px; font-size: var(--fs-1); }
 
     /* ── 영상 목록 (2026-09-12) ──
        한 줄이 영상 하나다: 고르기(●) · 이름 · 원본 파일 이름 · 커버리지 막대 · ✎ · ✕.
        커버리지는 그 영상의 마커가 안무표의 어디를 덮는지다 — 전부 덮는 것과 일부만 덮는 것을
        눈으로 가른다. 마커가 없으면 막대 대신 "마커 없음"이라고 말한다(0% 와 다르다). */
-    .video-clips { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+    .video-clips { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
     .video-clip {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
       align-items: center; gap: 6px;
-      font-size: 11px; color: #dbe4ef;
-      background: rgba(148,163,184,0.06); border: 1px solid rgba(148,163,184,0.16);
-      border-radius: 8px; padding: 5px 6px;
+      font-size: var(--fs-1); color: var(--text);
+      background: rgba(var(--muted-rgb), 0.06); border: 1px solid rgba(var(--muted-rgb), 0.16);
+      border-radius: var(--r-1); padding: 5px 6px;
     }
-    .video-clip.is-active { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.55); }
-    .video-clip-pick { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 4px; }
+    .video-clip.is-active { background: rgba(var(--accent-rgb), 0.12); border-color: rgba(var(--accent-rgb), 0.55); }
+    .video-clip-pick { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: var(--fs-3); padding: 2px 4px; }
     .video-clip.is-active .video-clip-pick { color: var(--accent); }
     .video-clip-main { min-width: 0; display: grid; gap: 2px; }
-    .video-clip-name { font-weight: 800; color: #eaf2ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .video-clip-sub { font-size: 10px; color: #8892a4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .video-clip-name { font-weight: 800; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .video-clip-sub { font-size: var(--fs-1); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .video-clip-bar {
-      position: relative; height: 6px; border-radius: 3px;
-      background: rgba(148,163,184,0.16); overflow: hidden;
+      position: relative; height: 6px; border-radius: var(--r-1);
+      background: rgba(var(--muted-rgb), 0.16); overflow: hidden;
     }
     .video-clip-bar > span {
       position: absolute; top: 0; bottom: 0;
-      background: linear-gradient(90deg, rgba(34,197,94,0.85), rgba(34,197,94,0.55));
-      border-radius: 3px;
+      background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.85), rgba(var(--accent-rgb), 0.55));
+      border-radius: var(--r-1);
     }
     .video-clip-acts { display: flex; gap: 2px; }
-    .video-clip-acts button { padding: 2px 6px; font-size: 11px; }
+    .video-clip-acts button { padding: 2px 6px; font-size: var(--fs-1); }
 
     /* ── 재생 헤드 ──
        z-index 6 은 .snap-indicator 와 동급이다 — .placement(3·4) 위, .resize-preview-block(8) 아래.
@@ -2020,8 +2052,8 @@
       top: 0; bottom: 0; left: 0;
       width: 2px;
       margin-left: -1px;
-      background: rgba(34,197,94,0.95);
-      box-shadow: 0 0 8px rgba(34,197,94,0.65);
+      background: rgba(var(--accent-rgb), 0.95);
+      box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.65);
       z-index: 6;
       pointer-events: none;
       will-change: transform;
@@ -2043,7 +2075,7 @@
        (스크롤 락과 같은 화면 상태이지 안무가 아니다). 기본값은 마크업에 적혀 있다.
        ──────────────────────────────────────────────────────────────────────── */
     @media (max-width: 1040px) {
-      .only-stacked { display: inline-flex !important; }
+      .only-stacked:not(#_) { display: inline-flex; }
 
       /* 사이드바가 흐름에서 빠지므로 행은 **앱바 · 채우기 줄 · 작업 영역** 셋이다.
          ⚠⚠ 2026-09-21 에 `채우기` 줄을 더하면서 여기를 같이 못 고쳐, 이 폭에서 그 줄이 자리 없는
@@ -2058,20 +2090,20 @@
         left: 0; right: 0; bottom: 0; top: auto;
         max-height: 78vh;
         z-index: 2500;
-        border-radius: 16px 16px 0 0;
-        box-shadow: 0 -14px 36px rgba(0,0,0,0.55);
+        border-radius: var(--r-2) var(--r-2) 0 0;
+        box-shadow: var(--shadow);
         transform: translateY(101%);
         transition: transform 0.18s ease-out;
         will-change: transform;
       }
       body[data-sheet="on"] .sidebar { transform: translateY(0); }
       .sidebar .panel-header { position: relative; padding-right: 44px; }
-      #sheetCloseBtn { position: absolute; right: 8px; top: 6px; padding: 4px 12px; min-height: 32px; }
+      #sheetCloseBtn { position: absolute; right: 8px; top: 6px; padding: var(--sp-1) var(--sp-3); min-height: 32px; }
       .sheet-backdrop {
         display: block;
         position: fixed;
         inset: 0;
-        background: rgba(2,6,23,0.55);
+        background: rgba(var(--bg-rgb), 0.55);
         z-index: 2400;
         opacity: 0;
         pointer-events: none;
@@ -2081,9 +2113,10 @@
 
       /* ── 비고는 부를 때만(링크바는 전역 규칙으로 옮겼다 — 2026-09-20) ── */
       body[data-notes="on"] #notesToggleBtn,
-      body[data-sheet="on"] #sidebarSheetBtn { background: rgba(34,197,94,0.16); color: var(--accent); }
-      /* ⚠ `--noteW` 는 ui/cssVars 가 렌더마다 인라인으로 쓴다 — !important 라야 이긴다. */
-      body[data-notes="off"] .board-wrap { --noteW: 0px !important; }
+      body[data-sheet="on"] #sidebarSheetBtn { background: rgba(var(--accent-rgb), 0.16); color: var(--accent); }
+      /* ⚠ `--noteW` 는 ui/cssVars 가 렌더마다 인라인으로 쓴다 — 그것을 덮지 않고, 격자가 읽는
+         `--noteCol`(ui/boardView 가 `var(--noteCol, var(--noteW))` 로 읽는다)을 0 으로 둔다. */
+      body[data-notes="off"] .board-wrap { --noteCol: 0px; }
       body[data-notes="off"] .note-header,
       body[data-notes="off"] .note-cell { display: none; }
 
@@ -2096,14 +2129,14 @@
       .top-actions button,
       .sort-mode-btn,
       .sort-dir-btn { min-height: 32px; }
-      .size-pill button { min-width: 32px; min-height: 32px; font-size: 15px; }
+      .size-pill button { min-width: 32px; min-height: 32px; font-size: var(--fs-4); }
       .size-pill input[type="number"] { min-height: 32px; }
-      .icon-btn, #categoryManager .icon-btn { width: 30px; height: 30px; font-size: 14px; }
-      .star-btn, #categoryManager .star-btn { min-width: 30px; min-height: 30px; font-size: 15px; padding: 0 4px; }
+      .icon-btn, #categoryManager .icon-btn { width: 30px; height: 30px; font-size: var(--fs-4); }
+      .star-btn, #categoryManager .star-btn { min-width: 30px; min-height: 30px; font-size: var(--fs-4); padding: 0 var(--sp-1); }
       #addRoutineBtn { min-height: 32px; }
       #categoryManager input[type="text"] { min-height: 30px; }
-      /* ⚠ 색 견본은 인라인 width/height 라 !important 가 아니면 못 이긴다(ui/categoryView 가 쓴다). */
-      #categoryManager input[type="color"] { width: 30px !important; height: 30px !important; }
+      /* 색 견본의 기본 크기는 `.category-color`(ui/categoryView 가 붙인다) — 인라인이 아니라 여기서 이긴다. */
+      #categoryManager input[type="color"] { width: 30px; height: 30px; }
       .category-select { min-height: 30px; }
       .move-card { min-height: 40px; }
       .link-row input[type="url"], .link-row input[type="text"] { min-height: 32px; }
@@ -2123,8 +2156,8 @@
          여기서 여백을 바꾸면 그 계산이 어긋나 가로로 4px 가 새어 나간다. */
     @media (max-width: 1040px) and (min-width: 721px) {
       :root { --rowLabelW: 64px; }
-      .board { gap: 8px; }
-      .board-header, .board-row { gap: 8px; }
+      .board { gap: var(--sp-2); }
+      .board-header, .board-row { gap: var(--sp-2); }
       .board-wrap { padding: 10px; }
     }
 
@@ -2135,30 +2168,30 @@
       /* ── 앱바 한 줄 ── */
       .appbar {
         padding: 4px 6px;
-        gap: 4px;
-        row-gap: 4px;
+        gap: var(--sp-1);
+        row-gap: var(--sp-1);
         align-items: center;
       }
       .appbar-spacer { display: none; }
-      .appbar button { padding: 5px 8px; font-size: 11px; min-height: 32px; }
+      .appbar button { padding: 5px 8px; font-size: var(--fs-1); min-height: 32px; }
       /* 배지는 폰에서도 남긴다 — 박자는 폭이 좁을수록 더 자주 의심하게 되는 값이다.
          다만 `BPM` 글자는 숫자 옆에서 자리만 먹으므로 접는다. */
       .bpm-badge { padding: 3px 7px; min-height: 30px; }
-      .bpm-badge-num { font-size: 12.5px; min-width: 2.9em; }
+      .bpm-badge-num { font-size: var(--fs-3); min-width: 2.9em; }
       .bpm-badge-unit { display: none; }
-      .bpm-badge-note { font-size: 10px; }
+      .bpm-badge-note { font-size: var(--fs-1); }
       /* 파일 메뉴는 폰에서도 그대로 쓴다(2026-09-20) — 전에는 `☰` 로 펼치는 딴 길이었다.
          다만 이름이 길어도 앱바 한 줄을 다 먹지 않게 폭을 줄이고, 메뉴는 화면 폭에 맞춘다. */
-      .file-menu-btn { max-width: 8em; font-size: 12px; }
+      .file-menu-btn { max-width: 8em; font-size: var(--fs-2); }
       .file-menu-panel { min-width: min(300px, calc(100vw - 24px)); }
 
       /* ── 캔버스 바 압축 ── */
-      .canvas-bar { padding: 5px 8px; gap: 4px; }
-      .canvas-bar h2 { font-size: 13px; }
+      .canvas-bar { padding: 5px 8px; gap: var(--sp-1); }
+      .canvas-bar h2 { font-size: var(--fs-3); }
       .canvas-bar p { display: none; }
       .size-pill-label { display: none; }
-      .canvas-actions { gap: 4px; }
-      .canvas-actions button { padding: 5px 8px; font-size: 11px; min-height: 32px; }
+      .canvas-actions { gap: var(--sp-1); }
+      .canvas-actions button { padding: 5px 8px; font-size: var(--fs-1); min-height: 32px; }
     }
 
     /* 영상과 안무표 사이의 손잡이. 넓은 화면에는 없다 — 거기서는 둘이 가로로 나뉘고 영상은
@@ -2188,11 +2221,11 @@
         transform: translate(-50%, -50%);
         width: 52px;
         height: 5px;
-        border-radius: 999px;
-        background: rgba(148,163,184,0.5);
+        border-radius: var(--r-pill);
+        background: rgba(var(--muted-rgb), 0.5);
       }
       .boards-container[data-video="on"] .video-divider.active::before {
-        background: rgba(74,222,128,0.9);
+        background: rgba(var(--accent-rgb), 0.9);
         width: 72px;
       }
       .video-panel {
@@ -2200,7 +2233,7 @@
         flex: 0 0 auto;
         max-width: none;
         border-left: none;
-        border-bottom: 2px solid rgba(34,197,94,0.30);
+        border-bottom: 2px solid rgba(var(--accent-rgb), 0.30);
       }
       /* ⚠ 예전에는 .scroll-locks(우상단 fixed)가 헤더 오른쪽을 덮어 96px 를 비웠다.
          2026-09-12 부터 이 폭에서는 락이 화면 아래로 내려가므로 비울 까닭이 없다. */
@@ -2251,18 +2284,18 @@
       height: 44px;
       padding: 0 6px;
       box-sizing: border-box;
-      background: rgba(12,18,32,0.94);
-      border: 1px solid rgba(34,197,94,0.35);
+      background: rgba(var(--bg-rgb), 0.94);
+      border: 1px solid rgba(var(--accent-rgb), 0.35);
       border-top: 0;
-      border-radius: 0 0 12px 12px;
-      box-shadow: 0 14px 30px rgba(0,0,0,0.45);
+      border-radius: 0 0 var(--r-2) var(--r-2);
+      box-shadow: var(--shadow);
     }
     body[data-videoband="on"] .thumb-bar[hidden] { display: none; }
     body[data-videoband="on"] .thumb-bar button {
       flex: 1 1 0;
       min-width: 0;
       min-height: 32px;
-      font-size: 12px;
+      font-size: var(--fs-2);
       font-weight: 700;
       white-space: nowrap;
       overflow: hidden;
@@ -2281,8 +2314,8 @@
         z-index: 2450;              /* 시트(2500)보다 아래, 배경막(2400)보다 위 */
         gap: 6px;
         padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
-        background: rgba(12,18,32,0.94);
-        border-top: 1px solid rgba(148,163,184,0.18);
+        background: rgba(var(--bg-rgb), 0.94);
+        border-top: 1px solid rgba(var(--muted-rgb), 0.18);
         backdrop-filter: blur(10px);
       }
       /* ⚠ display:flex 가 브라우저 기본 [hidden]{display:none} 을 이긴다(개발 원칙 U-12). */
@@ -2291,7 +2324,7 @@
         flex: 1 1 0;
         min-height: 44px;
         min-width: 0;
-        font-size: 12px;
+        font-size: var(--fs-2);
         font-weight: 700;
         white-space: nowrap;
         overflow: hidden;
@@ -2319,7 +2352,7 @@
        그래서 터치 폭에서는
          · 엄지 바가 이미 가진 것(`≡ 동작` · `+ 빠른 배치`)을 캔버스 바에서 뺀다 — 한 줄이 준다
          · `▶ 영상으로 채우기` 를 **첫 자리로 올리고 강조**한다
-       ⚠ `.only-stacked` 가 `display: inline-flex !important` 라 숨기려면 이쪽도 !important 다.
+       ⚠ `.only-stacked:not(#_)` 가 ID 하나 무게라 숨기려면 이쪽은 ID 둘 무게(`#id:not(#_)`)라야 이긴다.
        ───────────────────────────────────────────────────────────────────── */
     @media (max-width: 1040px) {
       /* ── 손가락이 닿는 크기 (2026-09-21) ────────────────────────────────────
@@ -2327,7 +2360,7 @@
          손가락 끝은 그보다 훨씬 굵어서, 옆 버튼과 4px 떨어진 32px 과녁은 눌러도 이웃이 눌린다.
          이 폭은 전부 터치이므로 44px(애플 HIG)·틈 8px 로 올린다.
          ⚠ 높이만 올리면 글자가 가운데로 안 온다 — `display: inline-flex` 로 세로 가운데를 준다. */
-      .appbar { gap: 8px; }
+      .appbar { gap: var(--sp-2); }
       .appbar button,
       .mode-bar button {
         min-height: 44px;
@@ -2339,13 +2372,13 @@
       }
       .file-menu-btn { min-height: 44px; }
       /* 엄지 바가 이미 가진 것은 여기서 뺀다 — 같은 버튼이 화면에 둘이면 한 줄이 그만큼 길어진다. */
-      #sidebarSheetBtn, #quickPlaceBtn, #modeManualBtn { display: none !important; }
+      #sidebarSheetBtn:not(#_), #quickPlaceBtn:not(#_), #modeManualBtn:not(#_) { display: none; }
       /* 채우기 줄은 한 줄로 두고 넘치면 옆으로 민다(줄바꿈하면 세로를 또 먹는다). */
       .mode-bar {
         flex-wrap: nowrap;
         overflow-x: auto;
         padding: 5px 8px;
-        gap: 8px;
+        gap: var(--sp-2);
       }
       /* 버튼은 줄지 않는다 — 줄면 `✨ 말로 채우기` 가 글자 하나씩 세로로 선다(RM-26 브라우저 시험에서 본 것). */
       .mode-bar > * { flex-shrink: 0; }
@@ -2355,9 +2388,9 @@
       .mode-bar-label { display: none; }
       #videoPanelBtn {
         order: -1;
-        background: rgba(34,197,94,0.18);
-        border: 1px solid rgba(74,222,128,0.42);
-        color: #bbf7d0;
+        background: rgba(var(--accent-rgb), 0.18);
+        border: 1px solid rgba(var(--accent-rgb), 0.42);
+        color: var(--text);
         font-weight: 800;
       }
     }
@@ -2399,8 +2432,8 @@
       bottom: auto;
       width: min(55vw, 280px);
       z-index: 2350;
-      box-shadow: 0 18px 44px rgba(0,0,0,0.62);
-      border-color: rgba(34,197,94,0.55);
+      box-shadow: var(--shadow);
+      border-color: rgba(var(--accent-rgb), 0.55);
     }
 
 
@@ -2421,10 +2454,10 @@
         width: 30px; height: 30px;
         z-index: 2;
         padding: 0;
-        font-size: 14px;
-        background: rgba(2,6,23,0.7);
-        border: 1px solid rgba(148,163,184,0.35);
-        color: #e6edf6;
+        font-size: var(--fs-4);
+        background: rgba(var(--bg-rgb), 0.7);
+        border: 1px solid rgba(var(--muted-rgb), 0.35);
+        color: var(--text);
       }
       /* 왼쪽으로 보냈을 때. 기본은 오른쪽이라 표식이 없으면 위의 `right: 12px` 가 그대로 산다. */
       body[data-capturing="on"][data-pipside="left"]:not([data-videofloat="on"]) .video-frame {
@@ -2451,8 +2484,8 @@
     body[data-videoband="on"] .video-frame {
       position: fixed;
       z-index: 2350;
-      box-shadow: 0 18px 44px rgba(0,0,0,0.62);
-      border-color: rgba(34,197,94,0.55);
+      box-shadow: var(--shadow);
+      border-color: rgba(var(--accent-rgb), 0.55);
     }
     body[data-videoband="on"][data-capturing="on"] .video-frame > .video-pip-side { display: none; }
 
@@ -2468,11 +2501,11 @@
     .flow-step {
       flex: 0 0 auto;
       padding: 9px 17px;
-      border-radius: 12px;
-      border: 1px solid rgba(148,163,184,0.34);
-      background: rgba(148,163,184,0.08);
-      color: #dbe4ef;
-      font-size: 14px;
+      border-radius: var(--r-2);
+      border: 1px solid rgba(var(--muted-rgb), 0.34);
+      background: rgba(var(--muted-rgb), 0.08);
+      color: var(--text);
+      font-size: var(--fs-4);
       font-weight: 800;
       letter-spacing: -0.01em;
       line-height: 1.2;
@@ -2483,33 +2516,33 @@
     /* 아이콘 칸. 기본 테마에서는 이름 앞에 한 글자로 붙는다(네온 테마가 이것을 마디로 키운다). */
     .flow-step .flow-icon { margin-right: 6px; opacity: 0.85; }
     .flow-step:hover {
-      border-color: rgba(34,197,94,0.55);
-      background: rgba(34,197,94,0.10);
+      border-color: rgba(var(--accent-rgb), 0.55);
+      background: rgba(var(--accent-rgb), 0.10);
     }
     /* 지금 열려 있는 단계 — 아래 본문이 이것의 내용이다. 가장 진하게. */
     .flow-step[data-state="now"] {
-      background: rgba(34,197,94,0.26);
-      border-color: rgba(74,222,128,0.8);
-      color: #dcfce7;
-      box-shadow: 0 0 0 1px rgba(74,222,128,0.35), 0 6px 16px rgba(16,185,129,0.18);
+      background: rgba(var(--accent-rgb), 0.26);
+      border-color: rgba(var(--accent-rgb), 0.8);
+      color: var(--text);
+      box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.35), var(--shadow-sm);
     }
     /* 이미 끝난 단계(영상이 있다 · 박자가 있다 · 블록이 놓였다). 다시 눌러 고칠 수 있다. */
     .flow-step[data-state="done"] {
-      border-color: rgba(34,197,94,0.42);
-      background: rgba(34,197,94,0.07);
-      color: rgba(167,243,208,0.95);
+      border-color: rgba(var(--accent-rgb), 0.42);
+      background: rgba(var(--accent-rgb), 0.07);
+      color: rgba(var(--text-rgb), 0.95);
     }
     /* 지금까지의 버릇이 짚어 주는 다음 자리(2026-09-21). **자리를 옮기지 않고 표식만 붙인다.**
        ⚠ `now`(지금 열린 것)와 색을 나눈다 — 하나는 "여기 있다", 하나는 "아마 다음"이다.
        ⚠ 표본이 모자라면 이 표식은 아예 안 붙는다(domain/flowStats.nextAfter 가 null 을 준다). */
     .flow-step[data-next="1"] {
       border-style: dashed;
-      border-color: rgba(96,165,250,0.7);
-      color: #bfdbfe;
+      border-color: rgba(var(--focus-rgb), 0.7);
+      color: var(--text);
     }
     .flow-step[data-next="1"]::after {
       content: ' 다음';
-      font-size: 11px;
+      font-size: var(--fs-1);
       font-weight: 700;
       opacity: 0.85;
       margin-left: 4px;
@@ -2522,19 +2555,19 @@
     .step-todo {
       margin-top: 8px;
       padding-top: 8px;
-      border-top: 1px dashed rgba(148,163,184,0.22);
+      border-top: 1px dashed rgba(var(--muted-rgb), 0.22);
       display: grid;
       gap: 5px;
     }
-    .step-todo-head { font-size: 11px; color: var(--muted); }
+    .step-todo-head { font-size: var(--fs-1); color: var(--muted); }
     .step-todo-list { display: grid; gap: 3px; }
     .step-todo-row {
       display: flex;
       align-items: center;
       gap: 6px;
       padding: 3px 6px;
-      border-radius: 8px;
-      background: rgba(148,163,184,0.06);
+      border-radius: var(--r-1);
+      background: rgba(var(--muted-rgb), 0.06);
     }
     .step-todo-row.is-done .step-todo-text { text-decoration: line-through; opacity: 0.55; }
     .step-todo-check, .step-todo-del {
@@ -2542,16 +2575,16 @@
       padding: 2px 5px;
       background: transparent;
       border: 0;
-      font-size: 12px;
+      font-size: var(--fs-2);
       line-height: 1;
       color: inherit;
       cursor: pointer;
     }
     .step-todo-del { color: var(--muted); }
-    .step-todo-del:hover { color: #fca5a5; }
-    .step-todo-text { flex: 1; min-width: 0; font-size: 11.5px; word-break: break-all; }
+    .step-todo-del:hover { color: var(--danger); }
+    .step-todo-text { flex: 1; min-width: 0; font-size: var(--fs-2); word-break: break-all; }
     .step-todo-add { display: flex; gap: 5px; align-items: center; }
-    .step-todo-add input { flex: 1; min-width: 0; font-size: 11.5px; }
+    .step-todo-add input { flex: 1; min-width: 0; font-size: var(--fs-2); }
     /* 마디 위의 남은 할 일 수. */
     .flow-step[data-todo]::after {
       content: attr(data-todo);
@@ -2560,22 +2593,22 @@
       right: -6px;
       min-width: 16px;
       height: 16px;
-      padding: 0 4px;
-      border-radius: 999px;
-      background: #f59e0b;
-      color: #2b1600;
-      font-size: 10px;
+      padding: 0 var(--sp-1);
+      border-radius: var(--r-pill);
+      background: var(--warn);
+      color: rgba(var(--black-rgb), 0.85);
+      font-size: var(--fs-1);
       font-weight: 800;
       line-height: 16px;
       text-align: center;
-      box-shadow: 0 0 0 2px rgba(2,6,23,0.85);
+      box-shadow: 0 0 0 2px rgba(var(--bg-rgb), 0.85);
     }
     .flow-step { position: relative; }
 
     .flow-arrow {
       flex: 0 0 auto;
-      color: rgba(148,163,184,0.75);
-      font-size: 16px;
+      color: rgba(var(--muted-rgb), 0.75);
+      font-size: var(--fs-4);
       line-height: 1;
       user-select: none;
     }
@@ -2592,6 +2625,12 @@
           ② `:root[data-theme] …`              표면 규칙. 세 테마가 **같은 한 벌**을 쓴다
           테마를 하나 더하는 일이 ①에 한 블록을 더하는 것으로 끝나야 한다. 규칙을 테마마다 베끼면
           네 번째 테마에서 반드시 한 곳을 빠뜨린다.
+       ⚠⚠ **테마는 분위기다(RM-17, 2026-11-02).** ②는 바탕 · 테두리 · 글자의 **색**만 바꾼다 —
+          모서리 · 여백 · 크기 · 굴대 · 누름 효과처럼 **모양**을 바꾸는 규칙은 두지 않는다. 모양은
+          기본 테마와 한 벌이다(유일한 예외: 작업 차례의 길 — 아래 그 절의 머리말).
+       ⚠⚠ **빛(발광)은 세 자리에만** — 지금 자리(재생 위치 · 지금 단계 · 지금 누를 것) · 듣는 중 ·
+          경고(경고 · 위험 · 할 일 배지). 그 밖에 빛을 얹으면 정말 봐야 할 자리가 묻힌다.
+          떠 있는 창의 깊이는 빛이 아니라 `--shadow` 로 말한다.
        ⚠ 덮는 것은 **표면(바탕·테두리·빛)** 이다. **뜻이 있는 색은 건드리지 않는다** —
          안무 블록의 카테고리 색, 팔레트의 색 점, 위험(빨강)·경고(주황)가 그렇다. 그 색들은
          장식이 아니라 정보라서, 테마가 바꾸면 읽던 뜻이 달라진다. 빛만 얹는다.
@@ -2608,6 +2647,13 @@
       --muted: #7d93b2;
       --accent: #22d3ee;
       --shadow: 0 18px 46px rgba(2, 10, 26, 0.6);
+      --bg-rgb: 5, 11, 24; --text-rgb: 232, 244, 255; --muted-rgb: 125, 147, 178; --accent-rgb: 34, 211, 238;
+      --bg-2: #071224; --bg-2-rgb: 7, 18, 36;
+      --surface: #1e3a5f; --surface-rgb: 30, 58, 95;
+      --bg-image:
+        radial-gradient(1200px 600px at 50% -10%, rgba(56,189,248,0.10), transparent 60%),
+        radial-gradient(900px 500px at 85% 110%, rgba(251,191,36,0.07), transparent 60%),
+        linear-gradient(180deg, #050b18 0%, #071224 55%, #04080f 100%);
 
       --t-glow: 56, 189, 248;      /* 이 테마의 빛(R,G,B). rgba() 안에 넣어 쓴다 */
       --t-hot: 251, 191, 36;       /* 지금 있는 자리 */
@@ -2623,13 +2669,6 @@
       --t-primary: linear-gradient(180deg, #22d3ee, #0891b2);
       --t-primary-ink: #04212b;
     }
-    :root[data-theme="neon"] body {
-      background:
-        radial-gradient(1200px 600px at 50% -10%, rgba(56,189,248,0.10), transparent 60%),
-        radial-gradient(900px 500px at 85% 110%, rgba(251,191,36,0.07), transparent 60%),
-        linear-gradient(180deg, #050b18 0%, #071224 55%, #04080f 100%);
-      background-attachment: fixed;
-    }
 
     /* 자정 장미 — 어두운 자두색에 장미빛. 네온과 같은 밝기라 밤에도 눈이 편하다. */
     :root[data-theme="rose"] {
@@ -2640,6 +2679,13 @@
       --muted: #b899b0;
       --accent: #f472b6;
       --shadow: 0 18px 46px rgba(24, 6, 30, 0.6);
+      --bg-rgb: 20, 10, 28; --text-rgb: 253, 238, 247; --muted-rgb: 184, 153, 176; --accent-rgb: 244, 114, 182;
+      --bg-2: #1d0f26; --bg-2-rgb: 29, 15, 38;
+      --surface: #3a1a46; --surface-rgb: 58, 26, 70;
+      --bg-image:
+        radial-gradient(1100px 600px at 20% -10%, rgba(244,114,182,0.14), transparent 60%),
+        radial-gradient(900px 500px at 90% 110%, rgba(167,139,250,0.12), transparent 60%),
+        linear-gradient(180deg, #140a1c 0%, #1d0f26 55%, #0d0714 100%);
 
       --t-glow: 244, 114, 182;
       --t-hot: 253, 164, 175;
@@ -2655,13 +2701,6 @@
       --t-primary: linear-gradient(180deg, #f472b6, #c026d3);
       --t-primary-ink: #2a0620;
     }
-    :root[data-theme="rose"] body {
-      background:
-        radial-gradient(1100px 600px at 20% -10%, rgba(244,114,182,0.14), transparent 60%),
-        radial-gradient(900px 500px at 90% 110%, rgba(167,139,250,0.12), transparent 60%),
-        linear-gradient(180deg, #140a1c 0%, #1d0f26 55%, #0d0714 100%);
-      background-attachment: fixed;
-    }
 
     /* 솜사탕 — 밝은 파스텔. 이 앱에서 **유일하게 밝은** 테마라 글자색까지 뒤집는다.
        ⚠ 밝은 테마는 어두운 테마보다 덮을 자리가 많다. 안 덮은 곳이 있으면 흰 바탕에 흰 글자가
@@ -2674,6 +2713,13 @@
       --muted: #8b7aa1;
       --accent: #f472b6;
       --shadow: 0 16px 38px rgba(184, 140, 205, 0.20);
+      --bg-rgb: 253, 244, 251; --text-rgb: 69, 47, 82; --muted-rgb: 139, 122, 161; --accent-rgb: 244, 114, 182;
+      --bg-2: #ffffff; --bg-2-rgb: 255, 255, 255;
+      --surface: #fde8f4; --surface-rgb: 253, 232, 244;
+      --bg-image:
+        radial-gradient(900px 500px at 15% -10%, rgba(244,114,182,0.18), transparent 60%),
+        radial-gradient(800px 460px at 88% 108%, rgba(45,212,191,0.16), transparent 60%),
+        linear-gradient(180deg, #fff9fd 0%, #f6f0ff 55%, #fdf4fb 100%);
 
       --t-glow: 236, 72, 153;
       --t-hot: 251, 113, 133;
@@ -2689,13 +2735,6 @@
       --t-primary: linear-gradient(180deg, #fb7bb5, #ec4899);
       --t-primary-ink: #ffffff;
     }
-    :root[data-theme="candy"] body {
-      background:
-        radial-gradient(900px 500px at 15% -10%, rgba(244,114,182,0.18), transparent 60%),
-        radial-gradient(800px 460px at 88% 108%, rgba(45,212,191,0.16), transparent 60%),
-        linear-gradient(180deg, #fff9fd 0%, #f6f0ff 55%, #fdf4fb 100%);
-      background-attachment: fixed;
-    }
 
     /* ── ② 표면 — 세 테마가 같은 한 벌을 쓴다 ──────────────────────────────── */
 
@@ -2707,7 +2746,7 @@
     :root[data-theme] .mode-bar {
       border-color: rgba(var(--t-glow), 0.18);
       background: var(--t-head);
-      box-shadow: 0 1px 0 rgba(var(--t-glow), 0.08) inset, 0 10px 30px rgba(0,0,0,0.12);
+      box-shadow: 0 1px 0 rgba(var(--t-glow), 0.08) inset, var(--shadow);
     }
     :root[data-theme] .mode-bar-label { color: var(--t-dim); }
     :root[data-theme] .video-voice-label { color: var(--t-dim); }
@@ -2715,8 +2754,8 @@
     /* ⚠ 테마 규칙이 `[data-sure]` 보다 먼저 이기므로 여기서도 갈라 준다 — 안 그러면 「아직 확신이
        없다」가 테마에서만 안 보인다. 경고와 같은 부류다: 예뻐진다고 흐려지면 안 된다. */
     :root[data-theme] .video-voice-now[data-sure="no"] {
-      border-color: rgba(148, 163, 184, 0.45);
-      background: rgba(148, 163, 184, 0.12);
+      border-color: rgba(var(--muted-rgb), 0.45);
+      background: rgba(var(--muted-rgb), 0.12);
       color: var(--t-dim);
     }
 
@@ -2728,7 +2767,7 @@
       color: var(--t-dim);
     }
     :root[data-theme] .bpm-badge .bpm-badge-num { color: var(--t-ink); }
-    :root[data-theme] .bpm-badge:hover { border-color: rgba(var(--t-glow), 0.6); box-shadow: 0 0 14px rgba(var(--t-glow), 0.22); }
+    :root[data-theme] .bpm-badge:hover { border-color: rgba(var(--t-glow), 0.6); }
     :root[data-theme] .bpm-badge-wrap[data-drift="fast"] .bpm-badge,
     :root[data-theme] .bpm-badge-wrap[data-drift="slow"] .bpm-badge {
       border-color: rgba(var(--t-hot), 0.6);
@@ -2749,10 +2788,7 @@
       border: 1px solid rgba(var(--t-glow), 0.22);
       color: var(--t-ink);
     }
-    :root[data-theme] button:hover {
-      border-color: rgba(var(--t-glow), 0.6);
-      box-shadow: 0 0 14px rgba(var(--t-glow), 0.22);
-    }
+    :root[data-theme] button:hover { border-color: rgba(var(--t-glow), 0.6); }
     :root[data-theme] button.ghost {
       background: rgba(var(--t-glow), 0.05);
       border-color: rgba(var(--t-glow), 0.26);
@@ -2761,16 +2797,15 @@
       background: var(--t-primary);
       border-color: rgba(var(--t-glow), 0.5);
       color: var(--t-primary-ink);
-      box-shadow: 0 0 18px rgba(var(--t-glow), 0.35);
     }
     :root[data-theme] button.ghost.accent {
       background: rgba(var(--t-glow), 0.16);
       border-color: rgba(var(--t-glow), 0.45);
       color: var(--t-ink);
     }
-    /* ⚠ 경고(주황)·위험(빨강)은 **뜻이 있는 색**이라 그대로 둔다. 빛만 얹는다. */
-    :root[data-theme] button.warn { box-shadow: 0 0 18px rgba(245,158,11,0.35); }
-    :root[data-theme] button.danger { box-shadow: 0 0 18px rgba(239,68,68,0.3); }
+    /* ⚠ 경고(주황)·위험(빨강)은 **뜻이 있는 색**이라 그대로 둔다. 빛만 얹는다 — 빛의 세 자리 중 「경고」. */
+    :root[data-theme] button.warn { box-shadow: 0 0 18px rgba(var(--warn-rgb), 0.35); }
+    :root[data-theme] button.danger { box-shadow: 0 0 18px rgba(var(--danger-rgb), 0.3); }
     :root[data-theme] button:disabled { box-shadow: none; }
 
     /* 입력칸 — 가라앉히고, 손이 닿으면 테마 색으로 켜진다. */
@@ -2805,10 +2840,7 @@
       border-color: rgba(var(--t-glow), 0.16);
     }
     :root[data-theme] .move-card:hover,
-    :root[data-theme] .routine-card:hover {
-      border-color: rgba(var(--t-glow), 0.45);
-      box-shadow: 0 0 16px rgba(var(--t-glow), 0.14);
-    }
+    :root[data-theme] .routine-card:hover { border-color: rgba(var(--t-glow), 0.45); }
     :root[data-theme] .size-pill { border-color: rgba(var(--t-glow), 0.22); }
     :root[data-theme] .vstep > summary { color: var(--t-dim); }
 
@@ -2835,10 +2867,11 @@
         var(--t-cell);
       background-size: var(--cellW) 100%, auto;
     }
-    /* 고른 블록은 색이 아니라 **빛**으로 말한다. */
+    /* 고른 블록은 색이 아니라 **테두리 고리**로 말한다(빛은 지금 자리의 몫이다). */
     :root[data-theme] .placement.is-selected {
-      box-shadow: 0 0 0 2px rgba(var(--t-glow), 0.9), 0 0 22px rgba(var(--t-glow), 0.45);
+      box-shadow: 0 0 0 2px rgba(var(--t-glow), 0.9), var(--shadow-sm);
     }
+    /* 재생 위치 — 빛의 세 자리 중 「지금 자리」. */
     :root[data-theme] .playhead { box-shadow: 0 0 12px rgba(var(--t-glow), 0.9); }
     :root[data-theme] .board-empty { border-color: rgba(var(--t-glow), 0.3); }
 
@@ -2848,25 +2881,18 @@
     :root[data-theme] .context-menu {
       background: var(--t-pop);
       border-color: rgba(var(--t-glow), 0.4);
-      box-shadow: 0 18px 46px rgba(0,0,0,0.35), 0 0 40px rgba(var(--t-glow), 0.12);
+      box-shadow: var(--shadow);
     }
     :root[data-theme] .quick-popup-item:hover,
     :root[data-theme] .routine-action-popup button:hover {
       background: rgba(var(--t-glow), 0.18);
     }
 
-    /* 굴대 */
-    :root[data-theme] ::-webkit-scrollbar { width: 10px; height: 10px; }
-    :root[data-theme] ::-webkit-scrollbar-track { background: rgba(var(--t-glow), 0.06); }
-    :root[data-theme] ::-webkit-scrollbar-thumb {
-      background: linear-gradient(180deg, rgba(var(--t-glow), 0.45), rgba(var(--t-glow), 0.2));
-      border-radius: 999px;
-    }
-    :root[data-theme] ::-webkit-scrollbar-thumb:hover { background: rgba(var(--t-glow), 0.7); }
-
     /* ── 작업 차례 = **길** ──────────────────────────────────────────────────
        사용자가 건네준 `boot-flow.html` 의 길을 이 띠 크기로 옮겼다(2026-09-21).
        버튼은 마디 자리에 **절대 배치**로 앉고, 그 뒤로 SVG 가 길을 그린다.
+       ⚠ 「테마는 모양을 바꾸지 않는다」(RM-17)의 **하나뿐인 예외**다. 사용자가 건네준 그림이라
+         두기로 사람이 정했다(2026-11-02, docs/DECISIONS.md). 빛은 지금 마디에만 남긴다(길 자체의 빛은 그림의 몫).
 
        ⚠ 좌표는 ui/videoPanel 이 domain/flowTrack 에서 받아 인라인으로 쓴다. 여기 CSS 는
          **색과 빛만** 정한다 — 자리를 두 곳에서 정하면 창 크기가 바뀔 때 서로 어긋난다.
@@ -2911,13 +2937,13 @@
     }
     :root[data-theme] .ft-core {
       fill: none;
-      stroke: rgba(255,255,255,0.75);
+      stroke: rgba(var(--white-rgb), 0.75);
       stroke-width: 0.7;
     }
     /* 흐르는 입자 — 원본의 `stroke-dasharray: 2 238` + dashoffset 애니메이션 그대로의 뜻이다. */
     :root[data-theme] .ft-spark {
       fill: none;
-      stroke: #fff;
+      stroke: var(--white);
       stroke-width: 2.4;
       stroke-linecap: round;
       stroke-dasharray: 3 260;
@@ -2946,7 +2972,7 @@
       top: -3px;
       right: auto;
       left: 22px;
-      box-shadow: 0 0 0 2px var(--bg), 0 0 10px rgba(245,158,11,0.6);
+      box-shadow: 0 0 0 2px var(--bg), 0 0 10px rgba(var(--warn-rgb), 0.6);
     }
     /* 이름은 마디 **아래**에 놓는다(원본은 위였지만 여기서는 위에 조작 줄이 붙어 있다). */
     :root[data-theme] .flow-step .flow-name {
@@ -2963,7 +2989,7 @@
       align-items: center;
       justify-content: center;
       border-radius: 50%;
-      font-size: 15px;
+      font-size: var(--fs-4);
       line-height: 1;
       color: var(--t-dim);
       background: var(--t-node);
@@ -2972,7 +2998,7 @@
       transition: color .15s ease, border-color .15s ease, box-shadow .15s ease;
     }
     :root[data-theme] .flow-step .flow-name {
-      font-size: 12px;
+      font-size: var(--fs-2);
       font-weight: 700;
       letter-spacing: 0.01em;
       white-space: nowrap;
@@ -2982,9 +3008,9 @@
     :root[data-theme] .flow-step[data-state="done"] .flow-icon {
       color: rgba(var(--t-done), 1);
       border-color: rgba(var(--t-done), 0.75);
-      box-shadow: 0 0 0 4px var(--bg), 0 0 14px rgba(var(--t-done), 0.45);
+      box-shadow: 0 0 0 4px var(--bg);
     }
-    /* 지금 있는 자리 — 타오른다. */
+    /* 지금 있는 자리 — 타오른다. 빛의 세 자리 중 「지금 자리」. */
     :root[data-theme] .flow-step[data-state="now"] { color: rgba(var(--t-hot), 1); }
     :root[data-theme] .flow-step[data-state="now"] .flow-icon {
       color: var(--t-primary-ink);
@@ -3000,11 +3026,11 @@
     :root[data-theme] .flow-step[data-next="1"] .flow-icon {
       border-style: dashed;
       border-color: rgba(var(--t-glow), 0.85);
-      box-shadow: 0 0 0 4px var(--bg), 0 0 12px rgba(var(--t-glow), 0.35);
+      box-shadow: 0 0 0 4px var(--bg);
     }
     :root[data-theme] .flow-step:hover .flow-icon {
       border-color: rgba(var(--t-glow), 0.9);
-      box-shadow: 0 0 0 4px var(--bg), 0 0 18px rgba(var(--t-glow), 0.5);
+      box-shadow: 0 0 0 4px var(--bg);
     }
     /* ⚠ 화살표는 **길이 대신한다.** 지우지 않고 감춘다 — 기본 테마에서는 그것이 유일한 이음새다. */
     :root[data-theme] .flow-arrow { display: none; }
@@ -3022,90 +3048,31 @@
        밝은 테마는 그 전제가 뒤집혀서, **연한 글자·연한 칸**이 흰 바탕에서 사라진다.
        ⚠ 새 규칙을 더할 때 이 테마에서 한 번 열어 보는 것이 가장 빠른 점검이다. */
     :root[data-theme="candy"] .placement.is-pending {
-      background: rgba(244,114,182,0.10) !important;
-      color: #7a4a63 !important;
-      border-color: rgba(236,72,153,0.55);
+      background: rgba(var(--accent-rgb), 0.10);
+      color: var(--t-dim);
+      border-color: rgba(var(--t-glow), 0.55);
     }
     :root[data-theme="candy"] .legend span,
     :root[data-theme="candy"] .category-shell {
-      background: rgba(255,255,255,0.9);
-      border-color: rgba(236,72,153,0.22);
+      background: rgba(var(--white-rgb), 0.9);
+      border-color: rgba(var(--t-glow), 0.22);
     }
     /* 고른 블록의 노랑 외곽선은 밝은 바탕에서 안 보인다 — 진분홍으로 바꾼다.
        ⚠ 블록의 **배경**은 그대로다(카테고리의 뜻). 바꾸는 것은 고름의 표시뿐이다. */
     :root[data-theme="candy"] .placement.is-selected {
-      outline-color: rgba(219,39,119,0.95);
-      box-shadow: 0 0 0 2px rgba(236,72,153,0.5), 0 0 18px rgba(236,72,153,0.35);
+      outline-color: rgba(var(--t-glow), 0.95);
+      box-shadow: 0 0 0 2px rgba(var(--t-glow), 0.5), var(--shadow-sm);
     }
-    :root[data-theme="candy"] .track[data-layers]::after { border-color: rgba(236,72,153,0.25); }
+    :root[data-theme="candy"] .track[data-layers]::after { border-color: rgba(var(--t-glow), 0.25); }
     :root[data-theme="candy"] .video-panel {
-      background: linear-gradient(180deg, rgba(255,255,255,0.75), rgba(253,241,248,0.6));
+      background: linear-gradient(180deg, rgba(var(--white-rgb), 0.75), rgba(var(--white-rgb), 0.6));
     }
-    :root[data-theme="candy"] .sheet-backdrop { background: rgba(80,40,90,0.35); }
+    :root[data-theme="candy"] .sheet-backdrop { background: rgba(var(--text-rgb), 0.35); }
     /* 프로젝트 칸의 작은 칩(박자·마커). 짙은 남색이라 흰 카드 위에서 혼자 검게 남았다. */
     :root[data-theme="candy"] .project-chip {
-      background: rgba(244,114,182,0.12);
-      border-color: rgba(236,72,153,0.28);
-      color: #7a4a63;
-    }
-
-    /* ── 조작 묶음을 **상자**로 (2026-09-21) ──────────────────────────────────
-       펼친 단계 아래에 버튼이 줄줄이 흩어져 있어 어디까지가 한 묶음인지 읽히지 않았다.
-       묶음(`.video-field`)마다 테두리를 두르고 모서리에 꺾쇠를 찍는다 — 계기판의 조작반처럼.
-
-       ⚠ **띠일 때만**이다. 오른쪽 세로 칸으로 돌아가면 폭이 좁아 상자가 겹겹이 쌓인 것처럼 보인다.
-       ⚠ 꺾쇠는 `::before/::after` 로 **왼쪽 위·오른쪽 아래** 두 곳만 찍는다. 넷을 다 찍으면
-         상자가 아니라 액자가 되어 안의 버튼보다 테두리가 먼저 읽힌다.
-       ⚠ 색은 토큰이다 — 세 테마가 같은 규칙을 쓰고 색만 갈린다. */
-    @media (min-width: 1041px) {
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field {
-        position: relative;
-        padding: 9px 12px;
-        border: 1px solid rgba(var(--t-glow), 0.20);
-        border-radius: 10px;
-        background: linear-gradient(180deg, rgba(var(--t-glow), 0.06), rgba(var(--t-glow), 0.015));
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
-      }
-      /* 꺾쇠 — 두 변만 그어 모서리를 집는다. */
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field::before,
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field::after {
-        content: '';
-        position: absolute;
-        width: 9px;
-        height: 9px;
-        pointer-events: none;
-        opacity: 0.85;
-      }
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field::before {
-        left: -1px;
-        top: -1px;
-        border-left: 2px solid rgba(var(--t-glow), 0.85);
-        border-top: 2px solid rgba(var(--t-glow), 0.85);
-        border-top-left-radius: 10px;
-      }
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field::after {
-        right: -1px;
-        bottom: -1px;
-        border-right: 2px solid rgba(var(--t-glow), 0.85);
-        border-bottom: 2px solid rgba(var(--t-glow), 0.85);
-        border-bottom-right-radius: 10px;
-      }
-      /* 상자 안의 버튼은 모서리를 덜 둥글게 — 상자가 둥글고 알맹이가 각져야 층이 읽힌다. */
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button {
-        border-radius: 7px;
-      }
-      /* 할 일 칸도 같은 상자다(점선 구분선 대신). */
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .step-todo {
-        margin-top: 10px;
-        padding: 9px 12px;
-        border: 1px solid rgba(var(--t-glow), 0.20);
-        border-radius: 10px;
-        background: linear-gradient(180deg, rgba(var(--t-glow), 0.05), transparent);
-      }
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .step-todo-row {
-        background: rgba(var(--t-glow), 0.07);
-        border: 1px solid rgba(var(--t-glow), 0.12);
-      }
+      background: rgba(var(--accent-rgb), 0.12);
+      border-color: rgba(var(--t-glow), 0.28);
+      color: var(--t-dim);
     }
 
     /* ── 누를 것이 스스로 부른다 (2026-09-21) ─────────────────────────────────
@@ -3119,60 +3086,22 @@
        ⚠ 숨은 `box-shadow` 로만 쉰다. 크기·자리를 건드리면 옆 버튼이 밀리고, 손이 겨눈 과녁이
          움직인다(이번 작업 내내 지킨 선).
        ⚠ 부르는 색은 `--t-hot` 이다 — 길에서 "지금 여기"를 태우는 그 색이라, 화면의 두 자리가
-         같은 뜻으로 읽힌다.
+         같은 뜻으로 읽힌다. 빛의 세 자리 중 「지금 자리」(지금 누를 것)다.
        ⚠ 움직임은 `prefers-reduced-motion` 에서 꺼진다. 빛은 남는다. */
-    @media (min-width: 1041px) {
-      /* 눌린 순간 — 가라앉고, 안쪽에서 빛이 한 번 번진다.
-         ⚠ `.flow-step` 은 뺀다. 그 버튼은 `::after` 를 할 일 배지로 이미 쓰고 있고, 마디 밖으로
-           나가는 배지라 `overflow: hidden` 이 그것을 잘라 먹는다. */
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step) {
-        position: relative;
-        overflow: hidden;
-        transition: transform .12s ease, background-color .12s ease, border-color .12s ease;
-      }
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step)::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        pointer-events: none;
-        background: radial-gradient(circle at center, rgba(255,255,255,0.4), rgba(255,255,255,0.05) 55%, transparent 70%);
-        opacity: 0;
-        transform: scale(0.55);
-        /* 놓을 때는 **천천히** 사라진다 — 번짐이 눈에 남아야 "눌렸다"가 읽힌다. */
-        transition: opacity .38s ease, transform .38s ease;
-      }
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step):active::after {
-        opacity: 1;
-        transform: scale(1);
-        transition-duration: .05s;   /* 누를 때는 즉시 */
-      }
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step):not(:disabled):active {
-        transform: translateY(1px) scale(0.985);
-      }
-      /* 길의 마디도 같은 반응을 준다(여기는 `::after` 를 못 쓰므로 크기만). */
-      :root[data-theme] body[data-videoband="on"] .flow-step:active .flow-icon {
-        transform: scale(0.92);
-        transition-duration: .05s;
-      }
-    }
     @keyframes btnInvite {
       0%, 100% { box-shadow: 0 0 0 0 rgba(var(--t-hot), 0), 0 0 14px rgba(var(--t-hot), 0.25); }
       50%      { box-shadow: 0 0 0 5px rgba(var(--t-hot), 0.10), 0 0 26px rgba(var(--t-hot), 0.55); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step)::after { transition: none; }
     }
 
     /* 영상 띠와 조작 줄도 같은 어휘로. */
     :root[data-theme] body[data-videoband="on"] .video-frame {
       border-color: rgba(var(--t-glow), 0.5);
-      box-shadow: 0 0 0 1px rgba(var(--t-glow), 0.25), 0 18px 50px rgba(0,0,0,0.45), 0 0 60px rgba(var(--t-glow), 0.10);
+      box-shadow: 0 0 0 1px rgba(var(--t-glow), 0.25), var(--shadow);
     }
     :root[data-theme] body[data-videoband="on"] .thumb-bar {
       background: var(--t-pop);
       border-color: rgba(var(--t-glow), 0.35);
-      box-shadow: 0 14px 34px rgba(0,0,0,0.35);
+      box-shadow: var(--shadow);
     }
     :root[data-theme] body[data-videoband="on"] .video-body > .vstep[open],
     :root[data-theme] body[data-videoband="on"] .video-tools > .vtool[open] {
@@ -3210,7 +3139,7 @@
         max-width: none;
         overflow: visible;
         border-left: 0;
-        border-bottom: 2px solid rgba(34,197,94,0.30);
+        border-bottom: 2px solid rgba(var(--accent-rgb), 0.30);
       }
       /* 단계는 **화살표로 이은 버튼 줄**이 된다(2026-09-21). 줄은 언제나 그 자리에 그대로 있고
          (order:0) 연 단계의 **본문만** 아래로 내려온다(order:1).
@@ -3245,10 +3174,10 @@
         flex: 1 1 100%;
         order: 1;
         border-top: 0;
-        border: 1px solid rgba(34,197,94,0.22);
-        border-radius: 12px;
+        border: 1px solid rgba(var(--accent-rgb), 0.22);
+        border-radius: var(--r-2);
         padding: 8px 12px 10px;
-        background: rgba(34,197,94,0.09);
+        background: rgba(var(--accent-rgb), 0.09);
       }
       /* 도구 칸(RM-20)은 차례 줄 밑, 열린 차례 카드 뒤에 선다. 탭 줄은 늘 보이고 열린 도구만 카드로 펼쳐진다 —
          「하나만 연다」 규칙은 videoPanel 의 toggle 리스너가 차례와 도구를 합쳐 지킨다. */
@@ -3259,10 +3188,10 @@
         padding-top: 0;
       }
       body[data-videoband="on"] .video-tools > .vtool[open] {
-        border: 1px solid rgba(34,197,94,0.22);
-        border-radius: 12px;
+        border: 1px solid rgba(var(--accent-rgb), 0.22);
+        border-radius: var(--r-2);
         padding: 8px 12px 10px;
-        background: rgba(34,197,94,0.09);
+        background: rgba(var(--accent-rgb), 0.09);
       }
       /* 열린 단계의 조작도 한 단계 키운다 — 이 폭에서는 띠가 주 작업면이다.
          ⚠ **띠일 때만**이다. 오른쪽 세로 칸으로 돌아가면 좁은 폭에 이 크기가 들어가지 않는다.
@@ -3270,15 +3199,15 @@
            정하므로 저절로 맞는다(수를 두 곳에 적지 않는다). */
       body[data-videoband="on"] .video-body > .vstep[open] button,
       body[data-videoband="on"] .video-tools > .vtool[open] button {
-        font-size: 12.5px;
+        font-size: var(--fs-3);
         padding: 6px 13px;
       }
       body[data-videoband="on"] .video-body > .vstep[open] .helper,
       body[data-videoband="on"] .video-tools > .vtool[open] .helper,
       body[data-videoband="on"] .video-body > .vstep[open] .video-label,
-      body[data-videoband="on"] .video-tools > .vtool[open] .video-label { font-size: 11.5px; }
-      body[data-videoband="on"] .video-body > .vstep[open] .video-bpm { font-size: 13.5px; }
-      body[data-videoband="on"] .vtool-tab { font-size: 12px; padding: 5px 12px; }
+      body[data-videoband="on"] .video-tools > .vtool[open] .video-label { font-size: var(--fs-2); }
+      body[data-videoband="on"] .video-body > .vstep[open] .video-bpm { font-size: var(--fs-3); }
+      body[data-videoband="on"] .vtool-tab { font-size: var(--fs-2); padding: 5px 12px; }
       /* 상태줄과 빈 자리 안내는 칩이 아니다 — 줄 전체를 쓰고 맨 아래로 간다.
          ⚠ 빈 자리 안내(`영상은 … 떠 있습니다`)는 여기서 숨긴다. 영상이 바로 위에 보이는데
            어디로 갔는지 말하는 줄은 거짓말이다. */
@@ -3301,11 +3230,11 @@
       top: 5px; left: 5px;
       z-index: 2;
       pointer-events: none;
-      font-size: 10px; font-weight: 800; letter-spacing: .2px;
-      color: #bbf7d0;
-      background: rgba(2,6,23,0.66);
-      border: 1px solid rgba(74,222,128,0.4);
-      border-radius: 999px;
+      font-size: var(--fs-1); font-weight: 800; letter-spacing: .2px;
+      color: var(--text);
+      background: rgba(var(--bg-rgb), 0.66);
+      border: 1px solid rgba(var(--accent-rgb), 0.4);
+      border-radius: var(--r-pill);
       padding: 1px 7px;
     }
     /* 좁은 화면에서는 프레임이 흐름에서 빠져 패널에 머리줄만 남는다 — 그 줄까지 얇게 만든다. */
@@ -3363,7 +3292,7 @@
       bottom: 16px;
       z-index: 5000;
       display: grid;
-      gap: 8px;
+      gap: var(--sp-2);
       justify-items: center;
       max-width: min(420px, calc(100vw - 32px));
       pointer-events: none;
@@ -3374,13 +3303,13 @@
       align-items: center;
       gap: 10px;
       padding: 10px 10px 10px 14px;
-      border-radius: 12px;
-      background: rgba(11, 18, 32, 0.97);
-      border: 1px solid rgba(148,163,184,0.22);
+      border-radius: var(--r-2);
+      background: rgba(var(--bg-rgb), 0.97);
+      border: 1px solid rgba(var(--muted-rgb), 0.22);
       border-left: 4px solid var(--warn);
-      box-shadow: 0 12px 30px rgba(0,0,0,0.34);
+      box-shadow: var(--shadow);
       color: var(--text);
-      font-size: 13px;
+      font-size: var(--fs-3);
       line-height: 1.4;
       animation: toast-in 160ms ease-out;
     }
@@ -3391,8 +3320,8 @@
       padding: 4px 10px;
       font-weight: 800;
       color: var(--accent);
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(148,163,184,0.2);
+      background: rgba(var(--white-rgb), 0.05);
+      border: 1px solid rgba(var(--muted-rgb), 0.2);
     }
     .toast-close {
       flex: 0 0 auto;
@@ -3413,46 +3342,46 @@
       z-index: 6000;
       display: grid;
       place-items: center;
-      padding: 16px;
-      background: rgba(2, 6, 14, 0.55);
+      padding: var(--sp-4);
+      background: rgba(var(--black-rgb), 0.55);
     }
     .notice-modal {
       width: min(420px, 100%);
       padding: 18px;
-      border-radius: 14px;
-      background: rgba(11, 18, 32, 0.99);
-      border: 1px solid rgba(239, 68, 68, 0.45);
+      border-radius: var(--r-2);
+      background: rgba(var(--bg-rgb), 0.99);
+      border: 1px solid rgba(var(--danger-rgb), 0.45);
       box-shadow: var(--shadow);
       color: var(--text);
       display: grid;
       gap: 14px;
     }
-    .notice-modal-text { margin: 0; font-size: 14px; line-height: 1.5; }
+    .notice-modal-text { margin: 0; font-size: var(--fs-4); line-height: 1.5; }
     .notice-modal-ok { justify-self: end; min-width: 80px; font-weight: 800; }
 
     .inline-prompt {
       position: fixed;
       z-index: 5500;
       display: grid;
-      gap: 4px;
-      padding: 8px;
-      border-radius: 12px;
-      background: rgba(11, 18, 32, 0.98);
-      border: 1px solid rgba(34, 197, 94, 0.5);
-      box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+      gap: var(--sp-1);
+      padding: var(--sp-2);
+      border-radius: var(--r-2);
+      background: rgba(var(--bg-rgb), 0.98);
+      border: 1px solid rgba(var(--accent-rgb), 0.5);
+      box-shadow: var(--shadow);
     }
-    .inline-prompt-title { font-size: 11px; font-weight: 800; color: var(--muted); }
-    .inline-prompt-input { width: 100%; box-sizing: border-box; font-size: 14px; }
-    .inline-prompt-hint { font-size: 11px; color: var(--muted); }
+    .inline-prompt-title { font-size: var(--fs-1); font-weight: 800; color: var(--muted); }
+    .inline-prompt-input { width: 100%; box-sizing: border-box; font-size: var(--fs-4); }
+    .inline-prompt-hint { font-size: var(--fs-1); color: var(--muted); }
     /* 블록 위 이름 입력의 추천 목록(RM-15) — ui/inlinePrompt.askName. 동작 고르기 창과 같은 규칙으로 추린다. */
     .inline-prompt-list { display: grid; max-height: 200px; overflow-y: auto; margin: 0 -4px; }
     .inline-prompt-item {
-      display: flex; justify-content: space-between; gap: 8px; align-items: baseline;
-      padding: 4px 8px; border-radius: 8px; font-size: 13px; cursor: pointer;
+      display: flex; justify-content: space-between; gap: var(--sp-2); align-items: baseline;
+      padding: var(--sp-1) var(--sp-2); border-radius: var(--r-1); font-size: var(--fs-3); cursor: pointer;
     }
-    .inline-prompt-item:hover { background: rgba(255,255,255,0.06); }
-    .inline-prompt-item.is-active { background: rgba(34, 197, 94, 0.22); }
-    .inline-prompt-item-cat { font-size: 10px; color: var(--muted); }
+    .inline-prompt-item:hover { background: rgba(var(--text-rgb), 0.06); }
+    .inline-prompt-item.is-active { background: rgba(var(--accent-rgb), 0.22); }
+    .inline-prompt-item-cat { font-size: var(--fs-1); color: var(--muted); }
 
     /* 명령 팔레트(Ctrl+K)와 단축키 일람(?) — ui/commandPalette 가 열 때 만들고 닫을 때 없앤다(RM-09). */
     .command-layer {
@@ -3463,7 +3392,7 @@
       justify-items: center;
       align-items: start;
       padding: 12vh 16px 16px;
-      background: rgba(2, 6, 14, 0.45);
+      background: rgba(var(--black-rgb), 0.45);
     }
     .command-palette,
     .shortcut-sheet {
@@ -3471,34 +3400,34 @@
       max-height: 70vh;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr) auto;
-      gap: 8px;
+      gap: var(--sp-2);
       padding: 10px;
-      border-radius: 14px;
-      background: rgba(11, 18, 32, 0.99);
-      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: var(--r-2);
+      background: rgba(var(--bg-rgb), 0.99);
+      border: 1px solid rgba(var(--muted-rgb), 0.3);
       box-shadow: var(--shadow);
       color: var(--text);
       outline: none;
     }
     .command-palette { grid-template-rows: auto minmax(0, 1fr); }
-    .command-palette-input { width: 100%; box-sizing: border-box; font-size: 15px; padding: 10px 12px; }
+    .command-palette-input { width: 100%; box-sizing: border-box; font-size: var(--fs-4); padding: 10px 12px; }
     .command-palette-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
     .command-palette-item {
       display: flex;
       align-items: center;
       gap: 10px;
       padding: 8px 10px;
-      border-radius: 10px;
+      border-radius: var(--r-2);
       cursor: pointer;
     }
-    .command-palette-item.is-on { background: rgba(34, 197, 94, 0.16); }
+    .command-palette-item.is-on { background: rgba(var(--accent-rgb), 0.16); }
     .command-palette-main { flex: 1 1 auto; min-width: 0; display: grid; }
     .command-palette-main small,
-    .shortcut-sheet-list small { color: var(--muted); font-size: 11px; }
+    .shortcut-sheet-list small { color: var(--muted); font-size: var(--fs-1); }
     .command-palette-keys,
     .shortcut-sheet-list dt {
       flex: 0 0 auto;
-      font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+      font: 600 var(--fs-2) ui-monospace, SFMono-Regular, Menlo, monospace;
       color: var(--muted);
     }
     .command-palette-empty { padding: 10px; color: var(--muted); }
@@ -3517,7 +3446,7 @@
     :root[data-theme] .command-palette,
     :root[data-theme] .shortcut-sheet {
       background: var(--t-pop);
-      box-shadow: 0 18px 46px rgba(0,0,0,0.35), 0 0 40px rgba(var(--t-glow), 0.12);
+      box-shadow: var(--shadow);
     }
     :root[data-theme] .command-palette-item.is-on { background: rgba(var(--t-glow), 0.16); }
 
@@ -3525,7 +3454,7 @@
     :root[data-theme] .notice-modal,
     :root[data-theme] .inline-prompt {
       background: var(--t-pop);
-      box-shadow: 0 18px 46px rgba(0,0,0,0.35), 0 0 40px rgba(var(--t-glow), 0.12);
+      box-shadow: var(--shadow);
     }
     :root[data-theme] .inline-prompt { border-color: rgba(var(--t-glow), 0.55); }
     :root[data-theme] .inline-prompt-item.is-active { background: rgba(var(--t-glow), 0.22); }
@@ -3549,18 +3478,18 @@
       align-items: center;
       gap: 10px;
       padding: 0 12px;
-      font-size: 11px;
+      font-size: var(--fs-1);
       color: var(--muted);
-      background: rgba(12,18,32,0.92);
-      border-top: 1px solid rgba(148,163,184,0.14);
+      background: rgba(var(--bg-rgb), 0.92);
+      border-top: 1px solid rgba(var(--muted-rgb), 0.14);
       white-space: nowrap;
       overflow: hidden;
     }
     .status-bar-parts { display: flex; gap: 12px; min-width: 0; overflow: hidden; flex: 1 1 auto; }
     .status-part { overflow: hidden; text-overflow: ellipsis; }
-    .status-part[data-tone="on"] { color: #86efac; font-weight: 700; }
-    .status-part[data-tone="warn"] { color: #fcd34d; font-weight: 700; }
-    .status-bar-notice { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #bbf7d0; }
+    .status-part[data-tone="on"] { color: var(--accent); font-weight: 700; }
+    .status-part[data-tone="warn"] { color: var(--now); font-weight: 700; }
+    .status-bar-notice { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
     /* ⚠ 개발 원칙 U-12 — display 를 준 클래스에는 [hidden] 짝을 붙인다. */
     .status-bar-notice[hidden] { display: none; }
     .helper[hidden] { display: none; }
@@ -3579,20 +3508,21 @@
       align-items: flex-start;
       margin: 6px 0;
       padding: 8px 10px;
-      font-size: 11px;
+      font-size: var(--fs-1);
       line-height: 1.5;
-      color: var(--text, #e2e8f0);
-      background: rgba(34,197,94,0.10);
-      border: 1px solid rgba(34,197,94,0.35);
-      border-radius: 8px;
+      color: var(--text);
+      background: rgba(var(--accent-rgb), 0.10);
+      border: 1px solid rgba(var(--accent-rgb), 0.35);
+      border-radius: var(--r-1);
     }
     .once-hint-text { flex: 1 1 auto; }
-    .once-hint-ok { flex: 0 0 auto; font-size: 11px; padding: 3px 8px; }
+    .once-hint-ok { flex: 0 0 auto; font-size: var(--fs-1); padding: 3px 8px; }
 
     /* ── 인쇄 (2026-11-02, RM-21) ──
        종이에는 안무표만 간다. 앱바 · 채우기 줄 · 동작 목록 · 영상 · 엄지 바 · 편집 버튼을 숨기고, 화면용 고정 높이 ·
        스크롤 · 어두운 배경을 걷어 격자가 A4 너비에 맞춰 여러 장으로 흐르게 한다. 행 중간에서 쪽이 넘어가지 않는다.
        흑백 인쇄에서 루틴 색이 사라지므로 루틴 블록은 테두리(이중선)로도 가른다 — 글자의 `▶` 는 뷰가 붙인다. */
+    /* 원칙-예외(U-16): 종이는 테마를 따르지 않는 흰 바탕 · 검은 글자이고, JS 가 요소에 직접 적은 높이 · 색까지 이겨야 해서 !important 를 쓴다 */
     @media print {
       html, body { background: #fff !important; color: #111 !important; height: auto !important; overflow: visible !important; }
       .app { display: block !important; height: auto !important; overflow: visible !important; padding: 0 !important; }
@@ -3717,7 +3647,7 @@
 
     <aside class="panel sidebar">
       <div class="panel-header">
-        <h2 style="font-size:12.5px;">넣을 것</h2>
+        <h2 style="font-size:var(--fs-3);">넣을 것</h2>
         <p>동작을 끌어다 놓거나, 카드를 눌러 고른 뒤 격자를 쓴다</p>
         <button id="sheetCloseBtn" class="ghost only-stacked" type="button" title="닫기">✕</button>
       </div>
@@ -3741,11 +3671,11 @@
            만드는 일·루틴·카테고리는 서랍으로 내려갔다. ⚠ 안의 id 는 하나도 바뀌지 않았다. -->
       <section class="section stack" style="min-height:0; flex:1;">
         <div class="row wrap" style="justify-content:space-between;">
-          <h3 style="margin:0; font-size:12px;">동작 목록</h3>
+          <h3 style="margin:0; font-size:var(--fs-2);">동작 목록</h3>
           <div class="legend" id="legend"></div>
         </div>
         <input id="paletteSearch" type="text" placeholder="동작 검색..." style="width:100%;box-sizing:border-box;" />
-        <div class="row" style="gap:4px;">
+        <div class="row" style="gap:var(--sp-1);">
           <button id="sortAlphaBtn" class="sort-mode-btn active" title="가나다 순">가나다</button>
           <button id="sortAddedBtn" class="sort-mode-btn" title="추가된 순">추가순</button>
           <button id="sortCategoryBtn" class="sort-mode-btn" title="카테고리별 정렬">카테고리</button>
@@ -3767,7 +3697,7 @@
         <summary>루틴 목록 — 동작 여러 개를 한 덩이로</summary>
         <div class="stack">
           <div class="row wrap" style="justify-content:flex-end;">
-            <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;" title="루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.">+ 새 루틴</button>
+            <button id="addRoutineBtn" class="warn" style="font-size:var(--fs-1);padding:var(--sp-1) var(--sp-2);" title="루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.">+ 새 루틴</button>
           </div>
           <div class="palette-list" id="routineList"></div>
         </div>
@@ -3783,7 +3713,7 @@
       <details class="drawer">
         <summary>파일 — 최근 프로젝트 · 동작 · 카테고리</summary>
         <div class="stack">
-          <div class="row" style="gap:4px;">
+          <div class="row" style="gap:var(--sp-1);">
             <button id="savedSortRecentBtn" class="sort-mode-btn active" title="최근 작업순">최근순</button>
             <button id="savedSortAlphaBtn" class="sort-mode-btn" title="이름순">이름순</button>
           </div>
@@ -3797,7 +3727,7 @@
         </div>
         <div class="compact-grid">
           <div class="soft-card stack">
-            <div style="font-size:11px; font-weight:800; color:#dbe4ef;">동작 저장 / 불러오기</div>
+            <div style="font-size:var(--fs-1); font-weight:800; color:var(--text);">동작 저장 / 불러오기</div>
             <input id="moveListFileNameInput" type="text" placeholder="동작 파일 이름" />
             <div class="row wrap">
               <button id="saveMoveListBtn" class="warn">동작 저장</button>
@@ -3807,7 +3737,7 @@
             <div class="saved-list" id="savedMoveList"></div>
           </div>
           <div class="soft-card stack">
-            <div style="font-size:11px; font-weight:800; color:#dbe4ef;">카테고리 저장 / 불러오기</div>
+            <div style="font-size:var(--fs-1); font-weight:800; color:var(--text);">카테고리 저장 / 불러오기</div>
             <input id="categoryFileNameInput" type="text" placeholder="카테고리 파일 이름" />
             <div class="row wrap">
               <button id="saveCategoriesBtn" class="ghost accent">카테고리 저장</button>
@@ -3837,8 +3767,8 @@
             </div>
             <div class="canvas-actions">
               <button id="sidebarSheetBtn" class="ghost accent only-stacked" type="button" title="동작 목록을 아래에서 엽니다">≡ 동작</button>
-              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
-              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
+              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
               <!-- ⚠ `🎵 프레이즈` · `+ 빠른 배치` · `▶ 영상으로 채우기` 는 2026-09-21 에 **채우기 줄**
                    (앱바 바로 아래)로 옮겼다. 여기 남은 것은 이 안무표의 **표시 설정**뿐이다.
                    같은 버튼을 두 곳에 두지 마라 — 라벨을 고칠 때마다 두 곳을 같이 고쳐야 한다. -->
@@ -3884,8 +3814,8 @@
               <p id="reSubtitle">이름을 클릭해 편집</p>
             </div>
             <div class="top-actions" style="flex-wrap:wrap;">
-              <span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><span class="size-pill-label">박자</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="reColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="reColsInput" type="number" min="1" max="64" value="8" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
-              <span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><span class="size-pill-label">행</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="reRowsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="reRowsInput" type="number" min="1" max="32" value="4" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reRowsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
+              <span style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><span class="size-pill-label">박자</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="reColsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><input id="reColsInput" type="number" min="1" max="64" value="8" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reColsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
+              <span style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><span class="size-pill-label">행</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="reRowsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><input id="reRowsInput" type="number" min="1" max="32" value="4" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reRowsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
               <button id="reQuickPlaceBtn" class="ghost" data-command="quickPlace" data-board="routine">+ 빠른 배치</button>
               <button id="reUndoBtn" class="ghost" data-command="undo" data-board="routine" disabled>되돌리기</button>
               <button id="reRedoBtn" class="ghost" data-command="redo" data-board="routine" disabled>다시 하기</button>

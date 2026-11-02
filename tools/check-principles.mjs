@@ -109,6 +109,7 @@ function parseCssRules(css, file, offset, fullText) {
         rules.push({
           selectors: splitTop(top.prelude),
           body: clean.slice(top.open + 1, i),
+          bodyAt: offset + top.open + 1, // fullText 안에서 몸통이 시작하는 자리(U-16 가 선언마다 줄을 잰다)
           file,
           line: lineAt(fullText, offset + top.at + Math.max(0, lead)),
         });
@@ -264,6 +265,80 @@ function collectCss(files) {
     }
   }
   return rules;
+}
+
+
+// ── U-16 디자인 토큰: 선언 하나하나를 본다 ───────────────────────────────────
+
+/** 토큰 밖 색 글자 — hex · rgb() · hsl() · 이름 색. transparent · currentColor 는 색이 아니라 뜻이라 넘긴다. */
+const COLOR_RE = /(?<![\w&-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])|\b(?:rgba?|hsla?)\(\s*[\d.]|(?<![\w-])(?:white|black|red|green|blue|yellow|orange|gray|grey|silver|pink|purple|gold)(?![\w-])/;
+/** 단계 토큰이 있어야 하는 이름 — :root 에서 하나라도 빠지면 붉어진다. */
+export const TOKEN_STEPS = ['--bg', '--panel', '--text', '--muted', '--accent', '--danger', '--warn',
+  '--fs-1', '--fs-2', '--fs-3', '--fs-4', '--sp-1', '--sp-2', '--sp-3', '--sp-4', '--r-1', '--r-2', '--r-pill', '--shadow', '--shadow-sm'];
+const MAX_FONT_STEPS = 5;
+const isRootSel = (s) => /^:root(?:\[data-theme(?:="[\w-]+")?\])?$/.test(s.trim());
+const isThemeRootSel = (s) => /^:root\[data-theme(?:="[\w-]+")?\](?:\s+body)?$/.test(s.trim());
+
+/** 괄호 · 따옴표 밖의 `;` 로 선언을 자른다 — { prop, value, at(몸통 안 자리) }. */
+function declarations(body) {
+  const out = [];
+  let depth = 0; let quote = ''; let start = 0;
+  const push = (end) => {
+    const raw = body.slice(start, end);
+    const colon = raw.indexOf(':');
+    if (colon > 0 && raw.trim()) {
+      const lead = raw.search(/\S/);
+      const name = raw.slice(0, colon).trim();
+      out.push({ prop: name.startsWith('--') ? name : name.toLowerCase(), value: raw.slice(colon + 1).trim(), at: start + lead });
+    }
+  };
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (quote) { if (c === '\\') i++; else if (c === quote) quote = ''; continue; }
+    if (c === '"' || c === "'") quote = c;
+    else if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (c === ';' && depth === 0) { push(i); start = i + 1; }
+  }
+  push(body.length);
+  return out;
+}
+
+/** 선언 하나가 U-16 를 어기면 그 까닭을 돌려준다(어기지 않으면 null). */
+function tokenBreach(prop, value, selectors) {
+  if (/!\s*important/i.test(value)) return '!important — 규칙 순서로 이긴다';
+  if (prop.startsWith('--')) {
+    if (selectors && selectors.every(isRootSel)) return null; // 토큰을 정의하는 자리
+    return COLOR_RE.test(value) ? `${prop} 를 :root 밖에서 색 글자로 정의한다` : null;
+  }
+  if (selectors && selectors.some(isThemeRootSel)) return `테마 블록이 토큰 아닌 속성 ${prop} 를 적는다`;
+  const color = value.match(COLOR_RE);
+  if (color) return `토큰 밖 색 ${color[0].replace(/\($/, '(…')}`;
+  if ((prop === 'font-size' || prop === 'font') && /(?<![\w.-])\d*\.?\d+(?:px|rem|pt)\b/.test(value)) return `단계 밖 글자 크기 ${value}`;
+  return null;
+}
+
+/** 줄 · 윗줄 · 그 줄을 감싼 블록의 머리 줄들(들여쓰기가 한 단씩 얕아지는 윗줄 — 규칙 · @media · 객체)과 그 윗줄에 표식이 있나.
+ *  여러 줄 규칙 · 객체 · @media 묶음 하나를 한 표식이 덮는다(인쇄 묶음처럼 통째로 이유가 같은 것). */
+// @complexity time=O(n) space=O(n) cc=6
+function excusedBlock(text, line, principle) {
+  if (excused(text, line, principle)) return true;
+  const lines = text.split('\n');
+  const indent = (s) => s.search(/\S/);
+  let own = indent(lines[line - 1] || '');
+  for (let i = line - 2; i >= 0 && own > 0; i--) {
+    if (!lines[i].trim()) continue;
+    if (indent(lines[i]) < own) {
+      if (excused(text, i + 1, principle)) return true;
+      own = indent(lines[i]);
+    }
+  }
+  return false;
+}
+
+/** style="…" 속성의 원문과 자리. */
+function styleAttrs(text, base = 0) {
+  return [...text.matchAll(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/g)].map(m => ({ body: m[2], at: base + m.index + m[0].indexOf(m[2]) }));
 }
 
 // ── 규칙 표 ─────────────────────────────────────────────────────────────────
@@ -577,6 +652,69 @@ export const RULES = [
           if (topLevelKeys(code, open).has('height')) continue;
           const line = lineAt(files[f], m.index);
           if (!excused(files[f], line, 'U-15')) out.push({ file: f, line, snippet: 'placePlacementActionPopup({ … }) 에 height 가 없다' });
+        }
+      }
+      return out;
+    },
+  },
+  {
+    principle: 'U-16',
+    what: '스타일이 디자인 토큰 밖의 값을 쓴다 — 색 글자 · 단계 밖 글자 크기 · !important · 테마 블록의 토큰 아닌 속성 · 빠진 단계 토큰',
+    fix: 'index.html :root 의 토큰을 쓴다 — 색은 var(--…) · rgba(var(--…-rgb), a), 글자는 var(--fs-1…5). 테마는 :root[data-theme] 에서 토큰 값만 바꾼다. 데이터 색(캔버스 · 고르개 값)은 이유를 단 표식으로 가린다',
+    // @complexity time=O(n) space=O(n) cc=20?
+    scan(files) {
+      const out = [];
+      const hit = (file, line, snippet) => { if (!excusedBlock(files[file] || '', line, 'U-16')) out.push({ file, line, snippet }); };
+
+      // ① CSS 규칙(index.html <style> + 뷰의 CSS 템플릿) — 선언마다
+      const rules = collectCss(files);
+      const fontSteps = new Set();
+      const rootProps = new Set();
+      let rootSeen = false;
+      for (const r of rules) {
+        const isRoot = r.selectors.length && r.selectors.every(s => s.trim() === ':root');
+        if (isRoot) rootSeen = true;
+        for (const d of declarations(r.body)) {
+          if (isRoot) rootProps.add(d.prop);
+          if (isRoot && /^--fs-\d+$/.test(d.prop)) fontSteps.add(d.prop);
+          const why = tokenBreach(d.prop, d.value, r.selectors);
+          if (why) hit(r.file, lineAt(files[r.file], r.bodyAt + d.at), `${r.selectors.join(', ')} { ${d.prop}: ${d.value.slice(0, 60)} } — ${why}`);
+        }
+      }
+      if (rootSeen) {
+        const html = files['index.html'] || '';
+        const rootLine = lineAt(html, Math.max(0, html.search(/:root\s*\{/)));
+        const missing = TOKEN_STEPS.filter(n => !rootProps.has(n));
+        if (missing.length) hit('index.html', rootLine, `:root 에 단계 토큰이 없다 — ${missing.join(' · ')}`);
+        if (fontSteps.size > MAX_FONT_STEPS) hit('index.html', rootLine, `글자 크기 단계가 ${fontSteps.size}개 — ${MAX_FONT_STEPS}개까지(${[...fontSteps].join(' · ')})`);
+      }
+
+      // ② index.html 마크업의 style="…"
+      const html = files['index.html'] || '';
+      const bodyAt = Math.max(0, html.indexOf('<body'));
+      const styleBlocks = [...html.matchAll(/<style[^>]*>[\s\S]*?<\/style>/g)].map(m => [m.index, m.index + m[0].length]);
+      for (const a of styleAttrs(html.slice(bodyAt), bodyAt)) {
+        if (styleBlocks.some(([s, e]) => a.at >= s && a.at < e)) continue;
+        for (const d of declarations(a.body)) {
+          const why = tokenBreach(d.prop, d.value, null);
+          if (why) hit('index.html', lineAt(html, a.at + d.at), `style="${d.prop}: ${d.value.slice(0, 50)}" — ${why}`);
+        }
+      }
+
+      // ③ JS 문자열(도메인 밖) — CSS 템플릿 밖에서 손으로 적은 스타일(cssText · style 속성 · style.x = …)
+      for (const f of jsFiles(files).filter(f => !f.startsWith('src/domain/'))) {
+        const src = files[f];
+        const cssSpans = templatesAfter(src, /const\s+[A-Z_]*(?:CSS|STYLE)[A-Z_]*\s*=\s*`/g).map(t => [t.offset, t.offset + t.body.length]);
+        for (const s of scanJs(src).strings) {
+          if (cssSpans.some(([a, b]) => s.offset >= a && s.offset < b)) continue; // ①에서 선언 단위로 봤다
+          const text = s.text;
+          if (!COLOR_RE.test(text) && !/!\s*important/i.test(text) && !/font-size|fontSize/.test(text)) continue;
+          // 선언 꼴이면 선언마다, 아니면 문자열 통째로(style.color = '#fff' 처럼 값만 든 것)
+          const decls = /[\w-]+\s*:/.test(text) ? declarations(text) : [{ prop: 'color', value: text, at: 0 }];
+          for (const d of decls) {
+            const why = tokenBreach(d.prop, d.value, null);
+            if (why) hit(f, lineAt(src, s.offset + d.at), `'${text.slice(0, 70)}' — ${why}`);
+          }
         }
       }
       return out;

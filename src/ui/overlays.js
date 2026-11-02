@@ -27,7 +27,7 @@ const PLACEMENT_GHOST_ID = 'touchPlacementGhost';
 const PALETTE_GHOST_ID = 'touchGhost';
 
 /** 플로팅 툴팁의 인라인 스타일. 원본 2778 의 cssText 를 **글자 그대로** 옮겼다. */
-const FLOATING_TIP_CSS = 'display:none;position:fixed;background:rgba(0,0,0,.85);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.3);';
+const FLOATING_TIP_CSS = 'display:none;position:fixed;background:rgba(var(--black-rgb), .85);color:var(--white);padding:4px 10px;border-radius:var(--r-1);font-size:var(--fs-2);font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:var(--shadow-sm);';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // body 포털 싱글턴 — 툴팁과 리사이즈 카운트 배지
@@ -437,11 +437,11 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
   function showPlacementGhost(spec) {
     const ghost = spawnGhost(PLACEMENT_GHOST_ID, CLS.ghostDrag, {
       padding: '8px 12px',
-      borderRadius: '12px',
+      borderRadius: 'var(--r-2)',
       background: spec.background,
-      color: '#08111f',
+      color: 'var(--bg)',
       fontWeight: '900',
-      boxShadow: '0 8px 18px rgba(0,0,0,0.2)',
+      boxShadow: '0 8px 18px rgba(var(--black-rgb), 0.2)',
     }, spec.text);
     movePlacementGhost(spec.x, spec.y);
     return ghost;

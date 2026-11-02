@@ -119,20 +119,22 @@ export function createBoardView(options) {
    * @param {{rows:number, cols:number, hasIntroRow?:boolean}} board
    * @returns {void}
    */
+  // @complexity time=O(r*c) space=O(r*c) cc=3
   function buildBoardSkeleton(board) {
     const { cols, rows } = board;
     el.innerHTML = '';
     rowRefs.clear();
     const header = document.createElement('div');
     header.className = CLS.boardHeader;
-    header.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${cols}) var(--noteW)`;
+    header.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${cols}) var(--noteCol, var(--noteW))`;
     header.innerHTML = `<div class="${CLS.corner}">마디</div><div class="${CLS.headerCells}" style="grid-template-columns:repeat(${cols}, var(--cellW));">${Array.from({ length: cols }, (_, i) => `<div>${i + 1}</div>`).join('')}</div><div class="${CLS.noteHeader}">비고</div>`;
     el.appendChild(header);
 
+    // @complexity time=O(c) space=O(c) cc=1
     function buildRow(row, labelText) {
       const rowEl = document.createElement('div');
       rowEl.className = CLS.boardRow;
-      rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${cols}) var(--noteW)`;
+      rowEl.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${cols}) var(--noteCol, var(--noteW))`;
       const label = document.createElement('div');
       label.className = CLS.rowLabel;
       label.textContent = labelText;

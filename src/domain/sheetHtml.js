@@ -93,6 +93,7 @@ function videoSection(video, cols) {
   return `<section class="video"><h2>영상</h2><p>${head}</p>${list}</section>`;
 }
 
+// 원칙-예외(U-16): 받는 사람이 file:// 로 따로 여는 한 파일이라 앱의 토큰(:root)이 없다 — 종이처럼 흰 바탕 · 검은 글자를 글자 그대로 적는다
 const STYLE = `
   :root { color-scheme: light; }
   body { margin: 24px; font: 13px/1.45 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; color: #111; background: #fff; }
