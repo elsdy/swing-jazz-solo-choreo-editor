@@ -52,7 +52,7 @@ function labelledElements(html) {
 test('용어집이 문서 등록표에 있고 명사·동사마다 뜻이 한 줄씩 있다', () => {
   const entry = DOCS.find(d => d.path === 'docs/GLOSSARY.md');
   assert.ok(entry, '용어집이 docsRegistry 의 DOCS 에 없다 — 저장소에만 있는 문서는 없는 문서다');
-  assert.equal(entry.group, 'usage');
+  assert.equal(entry.group, 'help');
   const md = read('docs/GLOSSARY.md');
   const nouns = ['안무표', '영상', '동작', '루틴', '구간', '마커', '마디', '카운트', '박자'];
   const verbs = ['지우기', '삭제', '비우기', '초기화', '내보내기', '저장'];

@@ -1,4 +1,8 @@
-// src/ui/linksBarView.js — 보드 위 링크바(YouTube · ClickUp · 커스텀 링크) 렌더와 자기 입력 바인딩 (ui 계층)
+// src/ui/linksBarView.js — 링크 칸들(YouTube · ClickUp · 커스텀 링크) 렌더와 자기 입력 바인딩 (ui 계층)
+//
+// ⚠ 유튜브 줄(#youtubeLinkRow · #ytUrlGroup · #youtubeUrlInput · #ytResetBtn)은 RM-20(2026-11-02)부터 안무표 위 링크 줄이
+//   아니라 영상 패널 `① 영상 고르기` 맨 위에 있다. **같은 엘리먼트를 옮긴 것**이라 이 뷰는 id 로 묶어 그대로 소유한다 —
+//   저장 · 제목 조회 · 영상 소스 확정 모두 여기다. 링크 줄(#linksBar)에는 ClickUp 과 커스텀 링크만 남는다.
 //
 // 원본 index.html 의 renderYoutubeExtras(5129-5152) · renderClickupExtras(5154-5164) ·
 // renderCustomLinks(5166-5205) · renderLinksBar(5207-5215) · initLinksBar 의 DOM 바인딩(5217-5222 · 5223-5271)을 옮겼다.

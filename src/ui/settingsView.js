@@ -167,6 +167,7 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  * @property {() => string} [getProjectName] 경로 미리보기에 쓸 지금 프로젝트 이름
  * @property {(subdir: string, projectName: string) => string[]} [previewDirParts] 미리보기 경로 조각(domain/clips.clipDirParts)
  * @property {() => void} [onChange] 설정이 바뀌었다 — 호출부가 패널 문구 등을 다시 그린다
+ * @property {{ replay: () => void }} [coach] 처음 한 번 안내 — 「안내 다시 보기」가 부른다(ui/coachmarks)
  * @property {Window} [win] `location.hostname` 으로 관리 화면을 열 수 있는 기기인지 본다
  * @property {Document} [doc]
  */
@@ -202,6 +203,8 @@ export function createSettingsView(deps) {
     // 테마(2026-09-21). 목록의 주인은 domain/themes 이고, 고르면 바깥이 담고 `<html>` 에 바른다.
     getTheme = () => DEFAULT_THEME,
     setTheme = () => {},
+    // 처음 한 번 안내(2026-11-02, RM-26). 본 기록을 지우고 첫 장부터 띄우는 것은 ui/coachmarks 의 것을 주입받는다.
+    coach = null,
     doc = document,
     // 관리 화면을 열 수 있는 기기인지 판정하고 새 탭을 여는 데 쓴다. 테스트가 가짜를 준다.
     win = typeof window === 'undefined' ? { location: { hostname: '' }, open() {} } : window
@@ -358,6 +361,15 @@ export function createSettingsView(deps) {
           <div class="settings-row">
             <button class="ghost" data-act="flow-clear" type="button">기록 지우기</button>
             <span class="settings-label" data-role="flow-note"></span>
+          </div>
+        </section>
+        <section class="settings-section" data-role="coach-section" data-cat="flow" data-available="1"
+          data-keywords="안내 코치마크 처음 한 번 다시 보기 말풍선 튜토리얼 시작 도움말">
+          <h3>처음 한 번 안내</h3>
+          <div class="helper">처음 켰을 때 <b>채우기 줄 → 동작 목록 → 영상</b> 차례로 뜨는 말풍선 세 장입니다. 한 번 끝까지 보거나 건너뛰면 다시 뜨지 않습니다 — 기본값은 「처음 한 번만」입니다. 이 브라우저에만 남고 안무표 파일에는 들어가지 않습니다.</div>
+          <div class="settings-row">
+            <button class="ghost" data-act="coach-replay" type="button">안내 다시 보기</button>
+            <span class="settings-label" data-role="coach-note"></span>
           </div>
         </section>
         <div class="settings-empty" data-role="empty" hidden></div>
@@ -801,6 +813,12 @@ export function createSettingsView(deps) {
     }
     const kind = act.dataset.act;
     if (kind === 'close') { close(); return; }
+    if (kind === 'coach-replay') {
+      // 설정 창을 먼저 닫는다 — 말풍선이 가리키는 자리가 창 뒤에 있다.
+      close();
+      if (coach && typeof coach.replay === 'function') coach.replay();
+      return;
+    }
     if (kind === 'pick') {
       // ★ await 뒤로 미루지 않는다 — showDirectoryPicker 는 클릭 콜스택 안에서만 열린다.
       clips.pickFolder().then((picked) => {
@@ -1041,10 +1059,13 @@ export function createSettingsView(deps) {
   const flowListEl = overlay.querySelector('[data-role="flow-list"]');
   const flowNoteEl = overlay.querySelector('[data-role="flow-note"]');
 
-  /** 기록의 id 를 사람 말로. 모르는 id 는 그대로 보인다(단계가 늘어도 화면이 깨지지 않는다). */
+  /**
+   * 기록의 id 를 사람 말로. 모르는 id 는 그대로 보인다(단계가 늘어도 화면이 깨지지 않는다).
+   * ⚠ step4~6 은 RM-20 부터 번호 없는 **도구**다 — 열쇠는 그대로라 2026-10-05 의 판정 기록이 끊기지 않는다.
+   */
   const FLOW_LABELS = Object.freeze({
     step1: '① 영상 고르기', step2: '② 박자 맞추기', step3: '③ 받아 적기',
-    step4: '④ 구간 잘라내기', step5: '⑤ 마커', step6: '⑥ 자세 분석',
+    step4: '구간 잡고 잘라내기(도구)', step5: '마커(도구)', step6: '자세 분석(도구)',
     play: '재생·일시정지', tap: '탭', tapok: 'BPM 정하기',
     capture: '받아 적기·끊기', skip: '건너뛰기', stop: '그만'
   });
