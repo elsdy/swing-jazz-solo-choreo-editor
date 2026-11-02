@@ -8,9 +8,12 @@
 //   · 이름 정하기 = 고른 뒤 나타나는 20px 짜리 `✎` (손끝보다 작다)
 // 이제 한 번 탭하면 이 팝업이 뜨고 셋이 나란히 보인다. 무엇을 할 수 있는지가 화면에 적힌다.
 // 2026-11-02(RM-11) 넷째 줄 「⧉ 뒤에 복사」가 붙었다 — 마우스의 Alt+끌기 복사를 손가락에도 연다.
+// 2026-11-03(RM-12) 루틴 편집 보드에도 뜬다 — 두 번 누르기가 지우기에서 「동작 고르기 창」으로 바뀌어, 고르기(Delete)가
+// 없는 그 보드에서는 이 팝업의 `× 지우기` 가 블록 하나를 지우는 길이다. 그 보드에는 고르기가 없으므로 toggleSelection 을
+// 넘기지 않고, 그러면 「☐ 선택하기」 줄이 빠진다.
 //
-// ⚠⚠ **마우스로 누르면 이것이 뜨지 않는다.** 거기서는 한 번 클릭이 고르기, 두 번이 지우기로
-//   이미 손에 익었고 과녁도 충분하다. 띄우는 판정은 domain/boardGesture.placementTapRoute 가 **그 누름의
+// ⚠⚠ **마우스 왼쪽 클릭으로는 이것이 뜨지 않는다.** 거기서는 한 번 클릭이 고르기, 두 번이 동작 고르기 창(RM-12 전에는
+//   지우기)으로 이미 손에 익었고 과녁도 충분하다(우클릭은 연다). 띄우는 판정은 domain/boardGesture.placementTapRoute 가 **그 누름의
 //   pointerType** 으로 하고(2026-11-02 RM-11 까지는 창 폭 ≤1040 이었다 — 넓은 태블릿의 손가락이 선택 토글로,
 //   좁힌 창의 마우스가 팝업으로 갔다. 우클릭은 예외로 언제나 연다), 이 파일은 **띄우라면 띄울 뿐**이다.
 // ⚠ 자리 잡는 규칙은 **형제인 routineActionPopup 과 같은 것**을 쓴다(상수 크기로 동기 계산).
@@ -30,7 +33,7 @@ import { str } from '../domain/strings.js';
 /**
  * @typedef {object} PlacementActionPopupDeps
  * @property {{
- *   toggleSelection: (groupId: string) => any,
+ *   toggleSelection?: (groupId: string) => any,
  *   removeGroup: (groupId: string) => any,
  *   copyAfter: (groupId: string) => any,
  *   openPicker: (groupId: string, clientX: number, clientY: number) => void,
@@ -42,7 +45,7 @@ import { str } from '../domain/strings.js';
  *   ⚠ removeGroup 은 **삭제와 히스토리 커밋 둘 다**여야 한다(형제 팝업과 같은 규약). copyAfter 도 커밋까지다.
  *   ⚠ 분할 · 병합(2026-11-02 RM-16)도 커밋까지 끝낸 Dirty 를 돌려준다. splitAtPlayhead 는 재생 헤드가 이 블록
  *     안에 없거나 박자가 없으면 **null** — 그러면 「몇 번째 카운트에서」 고르기로 떨어진다. mergePartner 가 null 이면
- *     「옆과 합치기」 줄을 감춘다.
+ *     「옆과 합치기」 줄을 감춘다. toggleSelection 이 없으면(고르기가 없는 루틴 편집 보드 — RM-12) 「☐ 선택하기」 줄을 감춘다.
  * @property {(groupId: string) => boolean} isSelected 지금 고른 블록인가
  * @property {(dirty: any) => void} render presenter
  */
@@ -68,7 +71,7 @@ export function createPlacementActionPopup(deps) {
    * @param {number} clientY
    * @param {number} [count] 그룹 전체 카운트. 제목에만 쓴다
    */
-  // @complexity time=O(n log n) space=O(c) cc=11
+  // @complexity time=O(n log n) space=O(c) cc=12
   function open(placement, clientX, clientY, count) {
     close();
     const groupId = placement.groupId;
@@ -117,7 +120,9 @@ export function createPlacementActionPopup(deps) {
 
     // ⚠ 차례가 뜻을 만든다: 가장 자주 하는 일이 맨 위, 되돌리기 어려운 일이 맨 아래다.
     row(str('block.pick'), () => commands.openPicker(groupId, clientX, clientY));
-    row(isSelected(groupId) ? str('block.deselect') : str('block.select'), () => render(commands.toggleSelection(groupId)));
+    if (commands.toggleSelection) {
+      row(isSelected(groupId) ? str('block.deselect') : str('block.select'), () => render(commands.toggleSelection(groupId)));
+    }
     // 손가락에는 마우스의 Alt+끌기 복사가 없다 — 그 블록 바로 뒤에 같은 복사 커맨드로 놓는다(RM-11).
     row('⧉ 뒤에 복사', () => render(commands.copyAfter(groupId)));
     // 분할 · 병합(RM-16). 1카운트 블록은 자를 데가 없고, 루틴 블록은 이 팝업에 오지 않는다.
