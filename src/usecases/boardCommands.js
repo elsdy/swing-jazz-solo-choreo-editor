@@ -9,6 +9,7 @@
 
 import * as boardOps from '../domain/boardOps.js';
 import { allGroupIds, cellAfter, clipOf, pastePlan, planNudge } from '../domain/keyboardEdit.js';
+import { presentOnly } from '../domain/selection.js';
 import { clamp, clampToGrid, totalCellsFrom } from '../domain/grid.js';
 import { affectedRowsByGroup, getGroup, groupCount, nameGroup, shiftAllPlacements } from '../domain/placements.js';
 import { BOARD_MAIN, BOARD_ROUTINE, NONE, boardOf, mergeDirty, notice } from './store.js';
@@ -506,12 +507,17 @@ export function shiftAllCounts(store, args, deps = {}) {
 // ⚠ 히스토리 커밋은 이 파일의 공통 규약대로 호출부(app/main)가 한다. 글쇠 한 번이 되돌리기 한 단계다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 이 보드에서 지금 고른 그룹 id — 보드 위에 실제로 있는 것만. */
-function selectedOn(store, boardId) {
+/**
+ * 이 보드에서 지금 고른 그룹 id — 보드 위에 실제로 있는 것만(domain/selection.presentOnly). 선택 액션 바의 「N개 고름」도 이것을 센다.
+ * @param {object} store
+ * @param {'main'|'routine'} boardId
+ * @returns {string[]}
+ */
+// @complexity time=O(p+k) space=O(g) cc=2
+export function selectedOn(store, boardId) {
   if (!store.policy(boardId).allowsSelection) return [];
   const state = store.get();
-  const present = new Set(boardOf(state, boardId).placements.map(p => p.groupId));
-  return [...state.selection].filter(id => present.has(id));
+  return presentOnly(boardOf(state, boardId), state.selection);
 }
 
 /**
