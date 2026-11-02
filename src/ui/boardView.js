@@ -19,6 +19,19 @@ import { readCellH, setNoteWidth } from './cssVars.js';
 import * as Grid from '../domain/grid.js';
 
 /**
+ * 보드에 「손가락 그리기를 받는다」를 적는다(RM-11). 값이 같으면 DOM 을 건드리지 않는다.
+ * 답은 domain/boardGesture.touchDrawArmed 가 내고, 트랙의 스크롤을 막는 것은 CSS 다.
+ * @param {HTMLElement|null} el  .board
+ * @param {boolean} armed
+ */
+// @complexity time=O(1) space=O(1) cc=3
+export function syncTouchDraw(el, armed) {
+  if (!el) return;
+  const v = armed ? '1' : '0';
+  if (el.dataset[DATA.touchDraw] !== v) el.dataset[DATA.touchDraw] = v;
+}
+
+/**
  * @typedef {Object} BoardViewOptions
  * @property {HTMLElement} el 보드 루트(#board 또는 #reBoard). 원본 ctx.el
  * @property {'main'|'routine'} boardId

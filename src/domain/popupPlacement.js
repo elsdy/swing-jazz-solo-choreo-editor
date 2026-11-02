@@ -6,7 +6,7 @@
 //   함수                        누가 부르나                   크기         커서와의 거리   가장자리 막기
 //   ──────────────────────────────────────────────────────────────────────────────────────────────────────
 //   placeCursorPopup            ui/popup.positionPopup        잰다(rAF 뒤)  +12, 넘치면 반대편   왼·위 8 / 폭 ≤1040 은 위 가운데
-//   placePlacementActionPopup   ui/placementActionPopup       160×132 가정  아래 10             네 변 모두 8
+//   placePlacementActionPopup   ui/placementActionPopup       160×152 가정  아래 10             네 변 모두 8
 //   placeRoutineActionPopup     ui/routineActionPopup         140×100 가정  아래 6              오른·아래만 8 — 왼·위는 막지 않는다
 //   placeContextMenu            ui/paletteView 동작 메뉴      잰다(동기)    커서 그 자리        네 변 모두 12
 //
@@ -39,8 +39,9 @@ export function placeCursorPopup({ clientX, clientY, width, height, viewW, viewH
   return { left: Math.max(8, left), top: Math.max(8, top), maxHeight: null };
 }
 
-/** 블록 동작 팝업의 가정 크기와 여백(2026-09-21). 재지 않는다. */
-export const PLACEMENT_ACTION_POPUP = Object.freeze({ width: 160, height: 132, gap: 8, drop: 10 });
+/** 블록 동작 팝업의 가정 크기와 여백(2026-09-21). 재지 않는다. 높이는 넷째 줄 「⧉ 뒤에 복사」가 붙을 때(RM-11, 2026-11-02)
+ *  브라우저에서 잰 152 로 고쳤다 — 그전 132 는 세 줄이었다. */
+export const PLACEMENT_ACTION_POPUP = Object.freeze({ width: 160, height: 152, gap: 8, drop: 10 });
 
 /**
  * 블록 동작 팝업(터치 폭에서 블록을 탭하면 뜨는 것). 네 변을 모두 막는다.

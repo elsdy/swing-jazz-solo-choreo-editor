@@ -94,7 +94,7 @@ test('블록 팝업: 「여기서 자르기」는 재생 헤드가 있으면 바
     render: (d) => rendered.push(d),
     isSelected: () => false,
     commands: {
-      toggleSelection: () => ({}), removeGroup: () => ({}), openPicker: () => {},
+      toggleSelection: () => ({}), removeGroup: () => ({}), openPicker: () => {}, copyAfter: () => ({}),
       splitAtPlayhead: (g) => { called.push(['head', g]); return headDirty; },
       splitAtCount: (g, n) => { called.push(['count', g, n]); return { boards: { main: { rows: [1] } } }; },
       mergePartner: () => partner,
@@ -104,10 +104,10 @@ test('블록 팝업: 「여기서 자르기」는 재생 헤드가 있으면 바
   const labelsOf = () => dom.buttons(popup.current()).map(b => b.textContent);
 
   popup.open({ groupId: 'a', name: '스윙아웃' }, 10, 10, 4);
-  assert.deepEqual(labelsOf(), ['✎ 동작 정하기', '☐ 선택하기', '✂ 여기서 자르기', '⊕ 옆과 합치기', '× 지우기']);
+  assert.deepEqual(labelsOf(), ['✎ 동작 정하기', '☐ 선택하기', '⧉ 뒤에 복사', '✂ 여기서 자르기', '⊕ 옆과 합치기', '× 지우기']);
 
-  // 재생 헤드가 이 블록 밖(null) → 팝업이 닫히지 않고 2..4 단추로 바뀐다
-  dom.buttons(popup.current())[2].click();
+  // 재생 헤드가 이 블록 밖(null) → 팝업이 닫히지 않고 2..4 단추로 바뀐다(RM-11 의 「⧉ 뒤에 복사」가 앞에 있어 자르기는 넷째 줄)
+  dom.buttons(popup.current())[3].click();
   assert.deepEqual(called, [['head', 'a']]);
   assert.ok(popup.current(), '닫히지 않는다');
   assert.equal(popup.current().children[0].textContent, '몇 번째 카운트에서');
@@ -120,21 +120,21 @@ test('블록 팝업: 「여기서 자르기」는 재생 헤드가 있으면 바
   // 재생 헤드가 블록 안 → 바로 자르고 닫는다
   headDirty = { boards: { main: { rows: [2] } } };
   popup.open({ groupId: 'a' }, 10, 10, 4);
-  dom.buttons(popup.current())[2].click();
+  dom.buttons(popup.current())[3].click();
   assert.equal(popup.current(), null);
   assert.deepEqual(rendered.at(-1), headDirty);
 
   // 합치기
   popup.open({ groupId: 'a' }, 10, 10, 4);
-  dom.buttons(popup.current())[3].click();
+  dom.buttons(popup.current())[4].click();
   assert.deepEqual(called.at(-1), ['merge', 'a']);
 
   // 짝이 없으면 합치기 줄이 없고, 1카운트 블록은 자르기 줄이 없다
   partner = null;
   popup.open({ groupId: 'a' }, 10, 10, 4);
-  assert.deepEqual(labelsOf(), ['✎ 동작 정하기', '☐ 선택하기', '✂ 여기서 자르기', '× 지우기']);
+  assert.deepEqual(labelsOf(), ['✎ 동작 정하기', '☐ 선택하기', '⧉ 뒤에 복사', '✂ 여기서 자르기', '× 지우기']);
   popup.open({ groupId: 'a' }, 10, 10, 1);
-  assert.deepEqual(labelsOf(), ['✎ 동작 정하기', '☐ 선택하기', '× 지우기']);
+  assert.deepEqual(labelsOf(), ['✎ 동작 정하기', '☐ 선택하기', '⧉ 뒤에 복사', '× 지우기']);
   popup.close();
 });
 
@@ -143,6 +143,6 @@ test('RM-16: 다섯 줄 팝업은 잰 높이로 자리를 잡아 화면 아래�
   // 브라우저에서 잰 값 — 8x4 행 라벨(clientY 572)을 723px 창에서 우클릭하면 181px 메뉴의 아래끝이 763 이었다
   const { top } = placePlacementActionPopup({ clientX: 400, clientY: 572, viewW: 1440, viewH: 723, height: 181 });
   assert.ok(top + 181 <= 723 - 8, `아래끝 ${top + 181} 이 창(723) 안이어야 한다`);
-  // 높이를 주지 않으면 예전 가정(132)대로 — 세 줄 팝업은 그대로다
-  assert.equal(placePlacementActionPopup({ clientX: 400, clientY: 572, viewW: 1440, viewH: 723 }).top, 572 + 10);
+  // 높이를 주지 않으면 가정 높이(152 — RM-11 이 네 줄일 때 잰 값)로 막는다: 572+10+152 는 723-8 을 넘어 위로 당긴다
+  assert.equal(placePlacementActionPopup({ clientX: 400, clientY: 572, viewW: 1440, viewH: 723 }).top, 723 - 8 - 152);
 });

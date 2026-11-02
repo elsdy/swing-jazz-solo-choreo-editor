@@ -264,6 +264,11 @@ export const DATA = Object.freeze({
   routineId: 'routineId',
   routineIdAttr: 'data-routine-id',
 
+  // 보드가 손가락 그리기를 받을 상태인가(RM-11). ui/boardView.syncTouchDraw 가 '1'|'0' 으로 쓰고,
+  // CSS 가 `.board[data-touch-draw="1"] .track { touch-action: none }` 으로 트랙의 스크롤을 막는다.
+  touchDraw: 'touchDraw',
+  touchDrawAttr: 'data-touch-draw',
+
   // ── 프레이즈·코러스 표시(2026-09-13). ui/boardView.syncPhrasing 이 쓰고 CSS 가 읽는다.
   //    ⚠ 값은 보여 주기용이 아니라 **CSS 선택자용**이다 — 번호는 dataset, 색은 CSS 변수로 간다.
   phrase: 'phrase',

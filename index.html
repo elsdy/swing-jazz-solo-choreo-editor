@@ -498,6 +498,9 @@
       background: linear-gradient(90deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) calc(var(--cellW) - 1px), rgba(255,255,255,0.08) calc(var(--cellW) - 1px), rgba(255,255,255,0.08) var(--cellW));
       background-size: var(--cellW) 100%;
     }
+    /* 동작을 골랐거나 빠른 배치가 켜진 보드에서는 트랙 위 손가락 끌기가 스크롤이 아니라 그리기다(RM-11).
+       touch-action 은 누르는 순간에 정해지므로 렌더가 data-touch-draw 를 미리 적어 둔다(ui/boardView.syncTouchDraw). */
+    .board[data-touch-draw="1"] .track { touch-action: none; }
     /* 병합 충돌로 레이어가 2개 이상인 행: 레이어 경계선 표시 */
     .track[data-layers]::after {
       content: '';

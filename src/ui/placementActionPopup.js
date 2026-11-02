@@ -1,16 +1,18 @@
 // src/ui/placementActionPopup.js — 안무 블록을 눌렀을 때 뜨는 동작 팝업 (ui 계층)
 //
-// 2026-09-21 신설. 터치 폭에서 블록으로 할 수 있는 일을 **한자리에 세워** 고르게 한다.
+// 2026-09-21 신설. 손가락으로 블록을 누르면 할 수 있는 일을 **한자리에 세워** 고르게 한다.
 //
 // 왜: 그전에 블록으로 하는 일이 셋이었는데 셋 다 손가락에게 불친절했다 —
 //   · 고르기   = 한 번 탭 (보이지 않는 규칙)
 //   · 지우기   = **두 번 탭** (정확히 두 번 치기가 어렵고, 첫 탭이 고르기라 화면이 먼저 바뀐다)
 //   · 이름 정하기 = 고른 뒤 나타나는 20px 짜리 `✎` (손끝보다 작다)
 // 이제 한 번 탭하면 이 팝업이 뜨고 셋이 나란히 보인다. 무엇을 할 수 있는지가 화면에 적힌다.
+// 2026-11-02(RM-11) 넷째 줄 「⧉ 뒤에 복사」가 붙었다 — 마우스의 Alt+끌기 복사를 손가락에도 연다.
 //
-// ⚠⚠ **마우스 폭에서는 이것이 뜨지 않는다.** 거기서는 한 번 클릭이 고르기, 두 번이 지우기로
-//   이미 손에 익었고 과녁도 충분하다. 띄우는 판정은 input/boardController 가 주입받은
-//   `isTouchLayout()` 로 하고(우클릭은 예외로 언제나 연다), 이 파일은 **띄우라면 띄울 뿐**이다.
+// ⚠⚠ **마우스로 누르면 이것이 뜨지 않는다.** 거기서는 한 번 클릭이 고르기, 두 번이 지우기로
+//   이미 손에 익었고 과녁도 충분하다. 띄우는 판정은 domain/boardGesture.placementTapRoute 가 **그 누름의
+//   pointerType** 으로 하고(2026-11-02 RM-11 까지는 창 폭 ≤1040 이었다 — 넓은 태블릿의 손가락이 선택 토글로,
+//   좁힌 창의 마우스가 팝업으로 갔다. 우클릭은 예외로 언제나 연다), 이 파일은 **띄우라면 띄울 뿐**이다.
 // ⚠ 자리 잡는 규칙은 **형제인 routineActionPopup 과 같은 것**을 쓴다(상수 크기로 동기 계산).
 //   ui/popup.js 의 positionPopup 은 ≤1040 에서 화면 꼭대기로 보내 버려, 누른 블록 옆이 아니라
 //   엉뚱한 데에 뜬다 — 그쪽 파일의 ⚠⚠ 주석이 그 까닭을 적어 두었다.
@@ -21,7 +23,7 @@ import { CLS } from './domContract.js';
 import { bindOutsideClose } from './popup.js';
 import { placePlacementActionPopup } from '../domain/popupPlacement.js';
 
-// 자리 잡기(가정 크기 160×132 · 가장자리 8 · 누른 자리보다 10 아래 — 손가락이 첫 줄을 덮지 않게)는
+// 자리 잡기(가정 크기 160×152 · 가장자리 8 · 누른 자리보다 10 아래 — 손가락이 첫 줄을 덮지 않게)는
 // domain/popupPlacement.placePlacementActionPopup 에 있다(RM-08). 형제 팝업과 같은 방식이라 실제로 재지 않는다.
 
 /**
@@ -29,13 +31,14 @@ import { placePlacementActionPopup } from '../domain/popupPlacement.js';
  * @property {{
  *   toggleSelection: (groupId: string) => any,
  *   removeGroup: (groupId: string) => any,
+ *   copyAfter: (groupId: string) => any,
  *   openPicker: (groupId: string, clientX: number, clientY: number) => void,
  *   splitAtPlayhead?: (groupId: string) => any,
  *   splitAtCount?: (groupId: string, countInGroup: number) => any,
  *   mergePartner?: (groupId: string) => string|null,
  *   mergeWithNeighbor?: (groupId: string) => any
  * }} commands
- *   ⚠ removeGroup 은 **삭제와 히스토리 커밋 둘 다**여야 한다(형제 팝업과 같은 규약).
+ *   ⚠ removeGroup 은 **삭제와 히스토리 커밋 둘 다**여야 한다(형제 팝업과 같은 규약). copyAfter 도 커밋까지다.
  *   ⚠ 분할 · 병합(2026-11-02 RM-16)도 커밋까지 끝낸 Dirty 를 돌려준다. splitAtPlayhead 는 재생 헤드가 이 블록
  *     안에 없거나 박자가 없으면 **null** — 그러면 「몇 번째 카운트에서」 고르기로 떨어진다. mergePartner 가 null 이면
  *     「옆과 합치기」 줄을 감춘다.
@@ -114,6 +117,8 @@ export function createPlacementActionPopup(deps) {
     // ⚠ 차례가 뜻을 만든다: 가장 자주 하는 일이 맨 위, 되돌리기 어려운 일이 맨 아래다.
     row('✎ 동작 정하기', () => commands.openPicker(groupId, clientX, clientY));
     row(isSelected(groupId) ? '☑ 선택 풀기' : '☐ 선택하기', () => render(commands.toggleSelection(groupId)));
+    // 손가락에는 마우스의 Alt+끌기 복사가 없다 — 그 블록 바로 뒤에 같은 복사 커맨드로 놓는다(RM-11).
+    row('⧉ 뒤에 복사', () => render(commands.copyAfter(groupId)));
     // 분할 · 병합(RM-16). 1카운트 블록은 자를 데가 없고, 루틴 블록은 이 팝업에 오지 않는다.
     if (commands.splitAtCount && Number.isFinite(count) && count >= 2) {
       const splitBtn = document.createElement('button');

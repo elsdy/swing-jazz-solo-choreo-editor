@@ -51,7 +51,8 @@ import { mediaSourceFromUrl, pickPlayer, pickPlayerKind } from '../adapters/medi
 import { createClockPlayer } from '../adapters/media/clockPlayer.js';
 import { createCountClicks } from '../adapters/audio/countClicks.js';
 
-import { createBoardView } from '../ui/boardView.js';
+import { createBoardView, syncTouchDraw } from '../ui/boardView.js';
+import { touchDrawArmed } from '../domain/boardGesture.js';
 import { createOverlays, ensureOverlaySingletons } from '../ui/overlays.js';
 import { createPaletteView } from '../ui/paletteView.js';
 import { createCategoryView } from '../ui/categoryView.js';
@@ -199,10 +200,23 @@ const renderCore = createRenderer(store, views, {
 let saveDraftSoon = () => {};
 
 /** @type {(d: import('../usecases/store.js').Dirty, opts?: object) => void} */
+// @complexity time=O(1) space=O(1) cc=1
 const render = (dirty, opts) => {
   renderCore(dirty, opts);
+  syncTouchDrawBoth();
   saveDraftSoon();
 };
+
+/**
+ * 두 보드에 「손가락 그리기를 받는다」를 적는다(RM-11 동작 ③). 동작 고르기 · 빠른 배치 켜기는 모두 커맨드를
+ * 거쳐 render 로 오므로 여기 한 곳이면 빠짐이 없다. 값이 같으면 DOM 을 건드리지 않는다.
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function syncTouchDrawBoth() {
+  const { activePaletteMove, quickPlaceMode } = store.session;
+  syncTouchDraw(boardEl, touchDrawArmed({ activeMove: activePaletteMove[BOARD_MAIN], quickPlaceMode: quickPlaceMode[BOARD_MAIN] }));
+  syncTouchDraw(reBoardEl, touchDrawArmed({ activeMove: activePaletteMove[BOARD_ROUTINE], quickPlaceMode: quickPlaceMode[BOARD_ROUTINE] }));
+}
 
 /**
  * 알림은 언제나 렌더 뒤다(app/render 의 마지막 단계). 급(block·toast·status)은 유스케이스가 정하고
@@ -673,7 +687,7 @@ const routineActionPopup = createRoutineActionPopup({
   }
 });
 
-// 안무 블록의 동작 팝업(2026-09-21). 터치 폭에서 한 번 탭하면 뜨고, 마우스에서는 우클릭으로 닿는다.
+// 안무 블록의 동작 팝업(2026-09-21). 손가락으로 한 번 탭하면 뜨고(창 폭과 무관 — RM-11), 마우스에서는 우클릭으로 닿는다.
 // ⚠ `openPicker` 는 **같은 quickPicker 인스턴스**를 쓴다(`✎` 가 부르는 그것) — 동작을 고르는
 //   화면이 두 벌이 되면 한쪽만 고쳐진다.
 const placementActionPopup = createPlacementActionPopup({
@@ -684,6 +698,10 @@ const placementActionPopup = createPlacementActionPopup({
     // ⚠ 삭제와 히스토리 커밋 둘 다. 커밋을 빼면 이 길로 지운 것만 되돌리기가 안 된다.
     removeGroup: (groupId) => withUndoToast(
       BoardCmd.removeGroup(store, { boardId: BOARD_MAIN, groupId }), '블록을 지웠습니다.'
+    ),
+    // 복사와 히스토리 커밋 둘 다 — Alt+끌기 복사(copyGroupTo)와 같은 커맨드를 바로 뒤 칸으로 부른다(RM-11).
+    copyAfter: (groupId) => commitIfChanged(
+      BoardCmd.copyGroupAfter(store, { boardId: BOARD_MAIN, groupId }, { ids: browserEnv }), BOARD_MAIN
     ),
     openPicker: (groupId, x, y) => quickPickers[BOARD_MAIN].openForGroup(groupId, x, y),
     // 분할 · 병합(RM-16). 재생 헤드가 이 블록 안에 없거나 박자가 없으면 null — 팝업이 카운트 고르기로 떨어진다.
@@ -756,8 +774,9 @@ function makeBoardController(boardId, extra = {}) {
 }
 
 // 원본 1525 bindBoardDelegatedEvents(mainCtx)
-// ⚠ 손가락 폭 판정은 ui/layout 의 isStacked 하나를 쓴다 — 브레이크포인트를 input 계층에 또 적지 않는다.
-makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup, rowActionPopup, longPress, isTouchLayout: () => isStacked() });
+// ⚠ 「손가락인가」는 컨트롤러가 그 누름의 pointerType 으로 안다(RM-11) — 창 폭(isStacked)은 넘기지 않는다.
+//   폭은 배치(사이드바 접기 · 영상 패널 · 팝업 자리)의 일이고 ui/layout 의 몫이다.
+makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup, rowActionPopup, longPress });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 12. bindControls (원본 1524) — ⚠ bindHotkeys 는 이 안에서 불린다
