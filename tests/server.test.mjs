@@ -29,15 +29,18 @@ const hasPython = spawnSync('python3', ['--version']).status === 0;
 
 const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
 
-/** 서버를 띄우고 {base, root, stop} 을 준다. extraArgs 로 --ffmpeg 같은 인자를 더한다. */
-async function startServer(extraArgs = []) {
+/** 서버를 띄우고 {base, root, port, stop} 을 준다. extraArgs 로 --ffmpeg 같은 인자를 더한다.
+ *  opts.root 를 주면 그 폴더를 보관 루트 · 설정 자리로 다시 쓴다(포트 기억처럼 두 번 띄워 재는 시험).
+ *  stop({ keep: true }) 는 서버만 끄고 폴더는 남긴다. */
+async function startServer(extraArgs = [], opts = {}) {
   // macOS 의 /var 는 /private/var 의 심볼릭 링크다. 서버는 resolve 한 경로를 돌려주므로 여기서도 맞춘다.
-  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'choreo-clips-')));
+  const root = opts.root || realpathSync(mkdtempSync(path.join(tmpdir(), 'choreo-clips-')));
   const config = path.join(root, 'config.json');
   // ⚠ `--models` 를 반드시 준다. 안 주면 저장소의 `models/` 로 떨어져서, 개발자가 실제로 모델을 받아 둔
   //   기계에서는 "아직 아무것도 없다" 를 전제한 검사가 깨진다(2026-09-12 에 실제로 그랬다).
   const child = spawn('python3', ['server.py', '--port', '0', '--root', root, '--config', config,
     '--models', path.join(root, 'models'), '--quiet', ...extraArgs], { cwd: REPO });
+  const exited = new Promise((resolve) => child.on('exit', resolve));
   const base = await new Promise((resolve, reject) => {
     let buf = '';
     child.stdout.on('data', (d) => {
@@ -50,9 +53,18 @@ async function startServer(extraArgs = []) {
     setTimeout(() => reject(new Error(`server did not start: ${buf}`)), 8000);
   });
   return {
-    base, root, config,
-    stop() { child.kill(); rmSync(root, { recursive: true, force: true }); }
+    base, root, config, port: Number(new URL(base).port),
+    async stop({ keep = false } = {}) {
+      child.kill();
+      await exited;
+      if (!keep) rmSync(root, { recursive: true, force: true });
+    }
   };
+}
+
+/** 서버를 띄워 끝날 때까지 기다린다 — 켜지지 못하고 물러나는 길을 잰다. 켜져 버리면 상한에서 끊는다. */
+function runServerUntilExit(args) {
+  return spawnSync('python3', ['server.py', '--quiet', ...args], { cwd: REPO, encoding: 'utf8', timeout: 8000 });
 }
 
 test('server.py: 정적 파일과 health, 설정 읽기·쓰기', { skip: !hasPython && 'python3 없음' }, async () => {
@@ -86,7 +98,7 @@ test('server.py: 정적 파일과 health, 설정 읽기·쓰기', { skip: !hasPy
     const bad2 = await fetch(`${s.base}/api/config`, { method: 'PUT', body: 'not json' });
     assert.equal(bad2.status, 400);
   } finally {
-    s.stop();
+    await s.stop();
   }
 });
 
@@ -139,7 +151,7 @@ test('server.py: 업로드는 <subdir>/<프로젝트>/<파일> 에 놓이고 겹
     assert.equal(await rawStatus(s.base, '/.clipserver.json'), 404);
     assert.equal(await rawStatus(s.base, '/.git/HEAD'), 404);
   } finally {
-    s.stop();
+    await s.stop();
   }
 });
 
@@ -308,7 +320,7 @@ test('server.py: LLM 설정은 키를 돌려주지 않고, 로컬 제공자로 �
     assert.equal((await fetch(`${s.base}/api/nope`, { method: 'POST', body: '{}' })).status, 404);
   } finally {
     ol.srv.close();
-    s.stop();
+    await s.stop();
   }
 });
 
@@ -329,7 +341,7 @@ test('server.py: 자르기는 ffmpeg 이 없으면 501 이고 health 가 그 사
     assert.match((await res.json()).error, /ffmpeg/);
     assert.equal((await fetch(`${s.base}/api/clips/trim`, { method: 'POST', body: 'nope' })).status, 400);
   } finally {
-    s.stop();
+    await s.stop();
   }
 });
 
@@ -372,7 +384,7 @@ test('server.py: ffmpeg 이 있으면 In~Out 을 다시 인코딩한 MP4 가 같
     assert.equal(named.name, 'take [8x5 ~ 8x8 Shim_Sham].mp4');
     assert.equal(named.path, 'video-clip/p/take [8x5 ~ 8x8 Shim_Sham].mp4');
   } finally {
-    s.stop();
+    await s.stop();
   }
 });
 
@@ -461,7 +473,7 @@ test('server.py: 자세 분석 모델의 보관 위치를 설정으로 바꾸고
     assert.equal((await (await fetch(`${s.base}/api/models`)).json()).ready, true);
     assert.equal((await (await fetch(`${s.base}/api/health`)).json()).pose, true);
   } finally {
-    s.stop();
+    await s.stop();
   }
 });
 
@@ -519,7 +531,7 @@ test('server.py: 안무표는 projects 폴더에 덮어쓰기로 쌓이고, 지�
     // 없는 것을 읽으면 404, 이름이 없으면 400.
     assert.equal((await fetch(`${s.base}/api/projects/없는것`)).status, 404);
     assert.equal((await fetch(`${s.base}/api/projects?name=`, { method: 'DELETE' })).status, 400);
-  } finally { s.stop(); }
+  } finally { await s.stop(); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -651,7 +663,7 @@ test('server.py: 덮어쓰기 전 판이 .history 에 남고, 삭제는 휴지�
     assert.equal((await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: '{"from":"trash","file":"없는것.json"}' })).status, 404);
     assert.equal((await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: '{"from":"trash","file":"../../탈출.json"}' })).status, 404);
     assert.equal((await fetch(`${s.base}/api/projects/.history?name=`)).status, 400);
-  } finally { s.stop(); }
+  } finally { await s.stop(); }
 });
 
 test('server.py: 이력 목록이 손 저장 판과 자동 담기 판을 가른다', { skip: !hasPython && 'python3 없음' }, async () => {
@@ -720,7 +732,7 @@ test('server.py: 이력 목록이 손 저장 판과 자동 담기 판을 가른�
     // 되살린 내용이 그 자동 담기 판의 내용이다.
     const now = await (await fetch(`${s.base}/api/projects/공연`)).json();
     assert.deepEqual(now, JSON.parse(readFileSync(path.join(hist, autoOne.file), 'utf8')));
-  } finally { s.stop(); }
+  } finally { await s.stop(); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -731,9 +743,10 @@ test('server.py: 이력 목록이 손 저장 판과 자동 담기 판을 가른�
 // 따를 것, 그리고 **옛 자리에 쌓인 것이 있으면 말없이 옮기지 않을** 것.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** server.py 를 모듈로 읽어 한 줄을 물어본다(서버를 띄우지 않는다). */
-function askPython(expr, env = {}) {
-  const res = spawnSync('python3', ['-c', `import server; print(${expr})`],
+/** server.py 를 모듈로 읽어 한 줄을 물어본다(서버를 띄우지 않는다). pre 는 묻기 전에 돌릴 문장이다 —
+ *  `sys.platform` 을 바꿔 다른 OS 의 갈래를 재거나 옛 자리를 임시 폴더로 바꿔 끼울 때 쓴다. */
+function askPython(expr, env = {}, pre = '') {
+  const res = spawnSync('python3', ['-c', `import sys, server${pre ? `; ${pre}` : ''}; print(${expr})`],
     { cwd: REPO, env: { ...process.env, ...env }, encoding: 'utf8' });
   assert.equal(res.status, 0, res.stderr);
   return res.stdout.trim();
@@ -764,6 +777,150 @@ test('server.py: XDG 환경 변수를 따른다', { skip: !hasPython && 'python3
   const fake = path.join(tmpdir(), 'choreo-xdg-데이터');
   const got = askPython('server.data_home()', { XDG_DATA_HOME: fake });
   assert.equal(got, path.join(fake, 'choreo'));
+});
+
+test('server.py: 윈도우는 APPDATA · LOCALAPPDATA 아래에 둔다', { skip: !hasPython && 'python3 없음' }, () => {
+  const roaming = path.join(tmpdir(), 'choreo-win-Roaming');
+  const local = path.join(tmpdir(), 'choreo-win-Local');
+  // XDG 를 비워야 OS 관례 갈래를 탄다 — 개발 기계에 XDG 가 걸려 있으면 그것이 이긴다.
+  const env = { APPDATA: roaming, LOCALAPPDATA: local, XDG_DATA_HOME: '', XDG_CONFIG_HOME: '', XDG_CACHE_HOME: '' };
+  const [data, config, cache] = askPython(
+    "'\\n'.join(str(f()) for f in (server.data_home, server.config_home, server.cache_home))",
+    env, "sys.platform = 'win32'"
+  ).split('\n');
+  assert.equal(config, path.join(roaming, 'choreo'), '설정(LLM 키)은 %APPDATA%\\choreo');
+  assert.equal(data, path.join(local, 'choreo', 'data'), '영상 · 안무표는 로밍하지 않는 %LOCALAPPDATA% 아래');
+  assert.equal(cache, path.join(local, 'choreo', 'cache'));
+  // ⚠ 설정에는 LLM 키가 평문으로 있다 — 윈도우에서도 데이터 폴더 안으로 들어가면 안 된다.
+  assert.notEqual(data, config);
+  assert.ok(!config.startsWith(data + path.sep) && !data.startsWith(config + path.sep), '설정과 데이터가 서로 품지 않는다');
+  assert.notEqual(data, cache);
+  // 환경 변수가 없는 윈도우(드문 일)는 홈 아래 관례 폴더로 떨어지고, 여전히 셋이 다르다.
+  const [d2, c2] = askPython(
+    "'\\n'.join(str(f()) for f in (server.data_home, server.config_home))",
+    { ...env, APPDATA: '', LOCALAPPDATA: '' }, "sys.platform = 'win32'"
+  ).split('\n');
+  assert.match(d2, /AppData[\\/]Local[\\/]choreo[\\/]data$/);
+  assert.match(c2, /AppData[\\/]Roaming[\\/]choreo$/);
+});
+
+test('server.py: 포장된 앱에서는 옛 자리를 보지 않는다', { skip: !hasPython && 'python3 없음' }, () => {
+  // 저장소 자리(REPO_DIR)를 옛 것이 모두 쌓인 임시 폴더로 바꿔 끼운다 — 얼린 앱에서 REPO_DIR 은 앱 묶음 안이다.
+  const fakeRepo = realpathSync(mkdtempSync(path.join(tmpdir(), 'choreo-bundle-')));
+  try {
+    for (const [dir, file] of [['video-clip', 'a.mp4'], ['projects', 'b.json'], ['models', 'pose.task']]) {
+      mkdirSync(path.join(fakeRepo, dir));
+      writeFileSync(path.join(fakeRepo, dir, file), 'x');
+    }
+    writeFileSync(path.join(fakeRepo, '.clipserver.json'), '{}');
+    const swap = `from pathlib import Path; server.REPO_DIR = Path(${JSON.stringify(fakeRepo)}); ` +
+      "server.LEGACY_CONFIG_FILE = server.REPO_DIR / '.clipserver.json'; server.LEGACY_MODELS_DIR = server.REPO_DIR / 'models'";
+    const ask = (env, pre) => askPython(
+      "'\\n'.join(str(f()) for f in (server.default_data_root, server.default_models_dir, server.default_config_file))",
+      { CHOREO_PACKAGED: '', ...env }, pre).split('\n');
+    const inside = (p) => p === fakeRepo || p.startsWith(fakeRepo + path.sep);
+
+    // 대조군: 포장 표시가 없으면 옛 자리를 계속 쓴다(지금까지의 약속).
+    assert.deepEqual(ask({}, swap).map(inside), [true, true, true], '대조군 — 옛 자리를 읽지 못했다');
+    // 런처가 준 표시와 얼린 실행(sys.frozen) 둘 다 옛 자리를 끈다.
+    for (const [why, env, pre] of [['CHOREO_PACKAGED=1', { CHOREO_PACKAGED: '1' }, swap],
+                                   ['sys.frozen', {}, `${swap}; sys.frozen = True`]]) {
+      const got = ask(env, pre);
+      assert.deepEqual(got.map(inside), [false, false, false], `${why}: 앱 묶음 안을 옛 자리로 읽었다 — ${got.join(' · ')}`);
+    }
+  } finally {
+    rmSync(fakeRepo, { recursive: true, force: true });
+  }
+});
+
+test('server.py: --static 으로 준 폴더의 index.html 을 낸다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const app = realpathSync(mkdtempSync(path.join(tmpdir(), 'choreo-static-')));
+  writeFileSync(path.join(app, 'index.html'), '<!doctype html><title>STATIC-MARK</title>');
+  writeFileSync(path.join(app, 'admin.html'), '<!doctype html><title>ADMIN-MARK</title>');
+  const s = await startServer(['--static', app]);
+  try {
+    const root = await (await fetch(`${s.base}/`)).text();
+    assert.match(root, /STATIC-MARK/, '/ 가 --static 폴더의 index.html 이다');
+    assert.doesNotMatch(root, /src\/app\/main\.js/, '저장소의 index.html 이 아니다');
+    assert.match(await (await fetch(`${s.base}/admin`)).text(), /ADMIN-MARK/, '관리 화면도 같은 뿌리에서 낸다');
+    assert.equal((await fetch(`${s.base}/src/domain/clips.js`)).status, 404, '저장소의 파일은 내지 않는다');
+    assert.equal((await (await fetch(`${s.base}/api/health`)).json()).ok, true, 'API 는 그대로다');
+  } finally {
+    await s.stop();
+    rmSync(app, { recursive: true, force: true });
+  }
+  // index.html 이 없는 폴더를 주면 켜지 않고 까닭을 말한다 — 빈 화면을 띄운 채 도는 것보다 낫다.
+  const empty = realpathSync(mkdtempSync(path.join(tmpdir(), 'choreo-static-empty-')));
+  try {
+    const res = runServerUntilExit(['--port', '0', '--static', empty, '--root', empty, '--config', path.join(empty, 'c.json')]);
+    assert.notEqual(res.status, 0);
+    assert.match(res.stderr, /index\.html 이 없습니다/);
+  } finally {
+    rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+test('server.py: 포트가 쓰이면 까닭을 말하고 물러난다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    const res = runServerUntilExit(['--port', String(s.port), '--root', s.root, '--config', path.join(s.root, 'other.json'),
+      '--models', path.join(s.root, 'models')]);
+    assert.equal(res.error, undefined, `상한(8초) 안에 물러나지 않았다 — 포트를 가로챈 채 도는가: ${res.error}`);
+    assert.notEqual(res.status, 0, '0 이 아닌 코드로 끝난다');
+    assert.match(res.stderr, new RegExp(`포트 ${s.port} 를 다른 프로그램이 쓰고 있습니다`), res.stderr);
+    assert.doesNotMatch(res.stderr, /Traceback/, '파이썬 오류 더미를 내지 않는다');
+    // 먼저 뜬 서버는 그대로 산다.
+    assert.equal((await fetch(`${s.base}/api/health`)).status, 200);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('server.py: --port 0 으로 잡은 포트를 기억해 다음에 다시 쓴다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const first = await startServer();
+  await first.stop({ keep: true });
+  try {
+    assert.ok(existsSync(path.join(first.root, 'config.port.json')), '설정 파일 곁에 기억이 남는다');
+    const second = await startServer([], { root: first.root });
+    await second.stop({ keep: true });
+    assert.equal(second.port, first.port, '같은 설정으로 다시 켜면 같은 포트(같은 브라우저 출처)다');
+
+    // 기억한 포트를 다른 프로그램이 쥐고 있으면 새 포트를 잡고 그 사실을 알린다 — 조용히 출처를 바꾸지 않는다.
+    const blocker = http.createServer().listen(first.port, '127.0.0.1');
+    await new Promise((resolve) => blocker.once('listening', resolve));
+    try {
+      const child = spawn('python3', ['server.py', '--port', '0', '--root', first.root, '--config',
+        path.join(first.root, 'config.json'), '--models', path.join(first.root, 'models'), '--quiet'], { cwd: REPO });
+      const out = await new Promise((resolve, reject) => {
+        let buf = '';
+        child.stdout.on('data', (d) => { buf += String(d); if (/지난번 포트/.test(buf)) resolve(buf); });
+        child.on('exit', (code) => reject(new Error(`server exited ${code}: ${buf}`)));
+        setTimeout(() => reject(new Error(`알림이 없다: ${buf}`)), 8000);
+      });
+      child.kill();
+      assert.match(out, new RegExp(`지난번 포트 ${first.port} 를 다른 프로그램이 쓰고 있어 새 포트를 잡았습니다`));
+      const moved = Number(/http:\/\/[^/\s]+:(\d+)\//.exec(out)[1]);
+      assert.notEqual(moved, first.port);
+    } finally {
+      blocker.close();
+    }
+  } finally {
+    rmSync(first.root, { recursive: true, force: true });
+  }
+});
+
+test('server.py: ffmpeg 에 libx264 가 없으면(LGPL 빌드) OS 하드웨어 인코더로 자른다', { skip: !hasPython && 'python3 없음' }, () => {
+  const pick = (names) => askPython(`server.video_encoder_args(${JSON.stringify(names)})`);
+  // 지금까지의 조합(시험된 화질 · 속도)이 있으면 그것이 이긴다.
+  assert.match(pick(['libx264', 'h264_videotoolbox', 'aac']), /'libx264', '-preset', 'veryfast', '-crf', '20'/);
+  // 설치형 앱의 LGPL 빌드 — 맥은 VideoToolbox, 윈도우는 Media Foundation. crf 를 모르니 비트레이트로 잡는다.
+  assert.match(pick(['h264_videotoolbox', 'aac']), /'h264_videotoolbox', '-b:v', '8M'/);
+  assert.match(pick(['h264_mf', 'aac']), /'h264_mf', '-b:v', '8M'/);
+  assert.match(pick(['libopenh264']), /'libopenh264'/);
+  for (const names of [['h264_videotoolbox'], ['h264_mf'], ['libx264']]) {
+    assert.match(pick(names), /'-pix_fmt', 'yuv420p'/, '브라우저가 여는 픽셀 형식은 어느 인코더든 같다');
+  }
+  assert.equal(pick(['mpeg4', 'aac']), 'None', 'H.264 인코더가 없으면 고르지 않는다 — 자르기가 까닭을 말한다');
 });
 
 test('server.py: 옛 자리에 쌓인 것이 있으면 그 자리를 계속 쓴다', { skip: !hasPython && 'python3 없음' }, () => {
@@ -798,7 +955,7 @@ test('server.py: 저장장치 목록은 지금 루트를 표시하고 남은 자
     }
     // 홈은 어느 기계에나 있다.
     assert.ok(data.volumes.some(v => v.kind === 'home'), '홈 폴더가 목록에 없다');
-  } finally { s.stop(); }
+  } finally { await s.stop(); }
 });
 
 test('server.py: 설정 하나를 바꿔도 나머지가 떨어지지 않는다(Config.replace)', { skip: !hasPython && 'python3 없음' }, async () => {
@@ -828,7 +985,7 @@ test('server.py: 설정 하나를 바꿔도 나머지가 떨어지지 않는다(
     assert.equal(cfg.subdir, '영상모음');
     models = await (await fetch(`${s.base}/api/models`)).json();
     assert.equal(models.poseModel, 'lite');
-  } finally { s.stop(); }
+  } finally { await s.stop(); }
 });
 
 test('server.py: /admin 은 로컬호스트에서만 열리고, 밖에서는 까닭을 말하며 거절한다', { skip: !hasPython && 'python3 없음' }, async () => {
@@ -863,5 +1020,5 @@ test('server.py: /admin 은 로컬호스트에서만 열리고, 밖에서는 까
       assert.equal(typeof usage[key].bytes, 'number');
     }
     assert.equal(usage.root, s.root);
-  } finally { s.stop(); }
+  } finally { await s.stop(); }
 });
