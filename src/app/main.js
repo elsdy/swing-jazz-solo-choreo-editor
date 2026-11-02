@@ -94,6 +94,7 @@ import { themeAttr, normalizeTheme } from '../domain/themes.js';
 import { createProjectPanel } from '../ui/projectPanel.js';
 import { clipsByProgress, clipsSummary, formatTakenAt } from '../domain/project/media.js';
 import * as PlanCmd from '../usecases/planCommands.js';
+import * as SheetCmd from '../usecases/sheetCommands.js';
 import * as PhrasingCmd from '../usecases/phrasingCommands.js';
 import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
@@ -912,6 +913,9 @@ function saveProjectNow(options) {
 //   `node tools/check-principles.mjs`(D-14)가 글자로 맞춰 세어 붉어진다 — 이름으로 잇는 배선은 빠져도 조용하다.
 // ⚠ 반환값은 「기본 동작을 막을까」다(글쇠일 때만 쓴다). 그리기는 각 줄이 스스로 한다.
 // ⚠ 영상 쪽 줄은 **늦게 묶는다** — 이 표가 views.video 보다 먼저 만들어지므로 누르는 시점에 읽는다.
+/** 내보내기 유스케이스의 협력자(RM-21) — 글자는 store 에서, 클립보드 · 내려받기 · 인쇄 창은 브라우저 어댑터가. */
+const sheetDeps = Object.freeze({ store, files: browserFileIO, env: browserEnv });
+
 /** @type {Readonly<Record<string, (ctx: {board: string, source: string}) => boolean>>} */
 const COMMAND_RUNNERS = Object.freeze({
   capture: () => Boolean(views.video && views.video.captureToggle()),
@@ -994,6 +998,23 @@ const COMMAND_RUNNERS = Object.freeze({
   },
   saveProject: () => { render(saveProjectNow({ fileName: byId('fileNameInput').value })); return true; },
   rename: () => { views.fileMenu?.open(); return true; },
+  // ── 내보내기(RM-21) — 파일 메뉴의 버튼 셋. 누르면 메뉴를 닫는다(내려받기 · 인쇄 창이 메뉴 위로 뜨지 않게).
+  //   클립보드는 비동기라 알림을 then 으로 그린다. 글자 · 파일은 유스케이스가, 클립보드 · 내려받기 · 인쇄 창은 browserFileIO 가.
+  copySheet: () => {
+    views.fileMenu?.close();
+    SheetCmd.copySheetText(sheetDeps, { fileName: byId('fileNameInput').value }).then(render);
+    return true;
+  },
+  downloadSheetHtml: () => {
+    views.fileMenu?.close();
+    render(SheetCmd.downloadSheetHtml(sheetDeps, { fileName: byId('fileNameInput').value }));
+    return true;
+  },
+  printSheet: () => {
+    views.fileMenu?.close();
+    render(SheetCmd.printSheet(sheetDeps));
+    return true;
+  },
   // 명령을 찾는 두 화면 — 등록부를 읽기만 한다. 실행은 다시 이 표로 돌아온다.
   palette: () => { views.commandPalette?.openPalette(); return true; },
   shortcuts: () => { views.commandPalette?.openSheet(); return true; },

@@ -239,7 +239,9 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `tempo.js` | 카운트 ↔ 초 변환. 카운트 축에 얹는 곱셈 한 겹. 2026-09-09 부터 영상 패널이 실제로 쓴다. `shiftTempo` 는 잘라내기 뒤 시간축을 통째로 민다 |
 | `bodyMesh.js` | 관절점 → 몸 표면 메시(2026-09-12). 뼈마다 통을 씌우고 몸통을 잇고 머리를 얹는다. 돌리기·평행 투영도 여기 있다(그리는 일은 `ui/meshView.js`). **몸매 복원이 아니라** 평균 몸을 관절 길이에 맞춰 늘리는 것이다 — 굵기 표(`RADII`)가 그 평균값이고, 관절이 없는 부위는 만들지 않는다 |
 | `markers.js` | 영상 구간 ↔ 안무표 카운트 구간 마커(2026-09-10). 정규화·추가·삭제·잘라내기 뒤 이동(`shiftMarkersForTrim`). id 는 값에서 결정론적으로 만들어 난수가 없다. 마커는 변환(tempo)을 건드리지 않는다 — 박자에 반영하는 것은 유스케이스의 명시적 조작이다 |
-| `choreoPlan.js` | LLM 플랜(`server.py` PLAN_SCHEMA) → 격자 항목. 이름을 동작 목록과 느슨하게 맞추고(공백·대소문자 무시, 3글자 이상 포함), 마디를 넘는 카운트를 다음 마디로 넘기며, 못 쓰는 항목은 버린 이유와 함께 남긴다 |
+| `choreoPlan.js` | LLM 플랜(`server.py` PLAN_SCHEMA) → 격자 항목. 이름을 동작 목록과 느슨하게 맞추고(공백·대소문자 무시, 3글자 이상 포함), 마디를 넘는 카운트를 다음 마디로 넘기며, 못 쓰는 항목은 버린 이유와 함께 남긴다. 행 라벨(`rowLabel` — intro / 8xN)도 여기 있어 카운트 시트가 같은 글자를 쓴다 |
+| `countSheet.js` | 카운트 시트 — 안무표 ↔ 마디 하나가 한 줄인 글(2026-11-02, RM-21). 쓰기는 행 · 층 · 칸 차례로 「카운트 이름」을 늘어놓고 길이가 다음 항목까지와 다를 때만 `[n]`, 겹친 층은 ` / `. 읽기(`parseCountSheet`)는 `normalizePlan` 이 받는 `{bar,count,length,name}` 로 돌려준다 — 왕복이 시험으로 굳어 있다 |
+| `sheetHtml.js` | 읽기 전용 HTML 한 장(RM-21). 격자 표 · 영상 마커 · 텍스트 시트를 스크립트 · 바깥 참조 없는 문자열 하나로 만든다. 모든 값을 `escapeHtml` 로 거르고, 색은 `#hex` 만 통과시킨다 |
 | `phrasing.js` | 프레이즈·코러스 구조. 마디 번호 → 몇 번째 프레이즈·코러스인가와 그 색. 색을 **전역 순번**으로 고르는 한 줄 규칙이 32마디 곡과 블루스를 함께 맞춘다(팔레트 길이를 4·6 으로 어긋나게 둔 것도 같은 이유) |
 | `moveMatch.js` | 마이크로 들은 거친 말 → 동작 목록의 동작(2026-09-22). 말버릇 제거·초성·편집 거리로 **점수**를 매기고, 확신이 안 서면 `null` 을 돌려준다. ⚠ `choreoPlan.matchMove` 와 다른 일이다 — 그쪽은 LLM 이 이미 깔끔히 내놓은 이름을 잇는 일이라 너그러워도 되지만, 이쪽은 틀리면 **엉뚱한 이름이 조용히 붙는다**. 「킥볼체인지」→`Kick Ball Change` 처럼 글자가 안 겹치는 것은 일부러 포기하고 LLM 에 넘긴다 |
 | `captureDrift.js` | 받아 적으며 격자에서 벗어난 거리를 모아 판정(2026-09-22). 치우침이 **고르면** 손(반응 지연), **커지면** 영상 속도가 BPM 과 다르다 — 기울기가 곧 상대 템포 오차라 추정 BPM 까지 낸다. 표본이 모자라거나 흩어지면 아무 말도 하지 않는다 |
@@ -295,6 +297,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `categoryCommands.js` | 카테고리 추가·색 미리보기/확정·이름 변경·삭제 |
 | `routineCommands.js` | 루틴 CRUD 와 편집기 세션(`openEditor` `syncFromEditor` `setRoutineSize`) |
 | `projectCommands.js` | 저장·불러오기·`부분 불러오기`·최근 목록 |
+| `sheetCommands.js` | 내보내기 셋 — 텍스트 시트 복사 · 읽기 전용 HTML 내려받기 · 인쇄(RM-21). 상태를 바꾸지 않고 알림만 돌려준다. 클립보드 · 내려받기 · 인쇄 창은 주입받은 `FileGateway` 가 한다 |
 | `docFields.js` | 필드 등록표의 store 쪽 한 줄씩 — 그 필드가 store 의 어디에 사는지(`library` · 보드 칸)와 바뀌면 무엇을 다시 그리나. `docView` · `writeDoc` · `docDirty` 를 되돌리기와 저장·열기가 같이 쓴다(2026-09-28) |
 | `linkCommands.js` | 링크바 상태 전이와 제목 조회 상태머신 |
 | `poseCommands.js` | 자세 분석의 화면 상태(2026-09-12). **관절점은 여기 들어오지 않는다** — 30초를 12fps 로 보면 숫자 수만 개라 undo 스냅샷이 통째로 불어난다. store 에는 요약(몇 장·몇 명·어느 궤적·앵커)만 있고 결과는 `app/main.js` 가 모듈 변수로 든다. undo 도 타지 않는다 — 분석은 안무가 아니라 영상을 들여다보는 일이다 |

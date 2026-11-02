@@ -3548,6 +3548,41 @@
     }
     .once-hint-text { flex: 1 1 auto; }
     .once-hint-ok { flex: 0 0 auto; font-size: 11px; padding: 3px 8px; }
+
+    /* ── 인쇄 (2026-11-02, RM-21) ──
+       종이에는 안무표만 간다. 앱바 · 채우기 줄 · 동작 목록 · 영상 · 엄지 바 · 편집 버튼을 숨기고, 화면용 고정 높이 ·
+       스크롤 · 어두운 배경을 걷어 격자가 A4 너비에 맞춰 여러 장으로 흐르게 한다. 행 중간에서 쪽이 넘어가지 않는다.
+       흑백 인쇄에서 루틴 색이 사라지므로 루틴 블록은 테두리(이중선)로도 가른다 — 글자의 `▶` 는 뷰가 붙인다. */
+    @media print {
+      html, body { background: #fff !important; color: #111 !important; height: auto !important; overflow: visible !important; }
+      .app { display: block !important; height: auto !important; overflow: visible !important; padding: 0 !important; }
+      .appbar, .mode-bar, .sidebar, .video-panel, .thumb-bar, .scroll-lock-btn, .canvas-bar, .links-bar,
+      .board-empty, .routine-editor-panel, .file-menu-panel, .toast, .top-actions,
+      .status-bar, .once-hint, .toast-stack { display: none !important; }
+      /* ⚠ `.panel` 을 여기 두지 않는다 — 사이드바도 `panel sidebar` 라, 같은 무게의 뒤 규칙이 위의 숨김을 이긴다(RM-21 브라우저 시험). */
+      .workspace, .boards-container, .main-board-area, .board-wrap {
+        display: block !important; height: auto !important; min-height: 0 !important; max-height: none !important;
+        overflow: visible !important; background: #fff !important; border: none !important; box-shadow: none !important;
+        padding: 0 !important; backdrop-filter: none !important;
+      }
+      .board { min-width: 0 !important; gap: 4px !important; width: 100% !important; }
+      .board-header, .board-row { break-inside: avoid; page-break-inside: avoid; gap: 4px !important; }
+      .corner, .row-label, .note-header, .note-cell {
+        background: #fff !important; color: #111 !important; border: 1px solid #999 !important; border-radius: 4px !important; min-height: 0 !important;
+      }
+      .note-cell, .note-cell * { color: #333 !important; }
+      .header-cells { background: #fff !important; }
+      .header-cells > div { background: #fff !important; color: #111 !important; }
+      .header-cells > div, .cell-overlay > div { border-color: #ccc !important; }
+      .track { background: #fff !important; }
+      .placement {
+        color: #08111f !important; box-shadow: none !important; border: 1.5px solid #333 !important; border-radius: 4px !important;
+        print-color-adjust: exact; -webkit-print-color-adjust: exact;
+      }
+      .placement.is-selected { outline: none !important; }
+      .placement[data-routine-id], .placement.is-routine { border: 3px double #333 !important; }
+      .placement .resize-handle, .placement .move-handle { display: none !important; }
+    }
   </style>
 </head>
 <body data-sheet="off" data-links="off" data-notes="off">
@@ -3583,6 +3618,14 @@
           </div>
           <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
           <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
+          <!-- 내보내기(2026-11-02, RM-21) — 남에게 줄 수 있는 꼴 셋. 저장 · 불러오기는 「나를 위한 파일」(다시 열기용
+               JSON)이고 이 줄은 「남을 위한 한 장」이라 줄을 갈라 둔다. 누름은 data-command 로 명령 등록부가 듣는다. -->
+          <div class="file-menu-label">내보내기 — 남에게 줄 한 장</div>
+          <div class="file-menu-row file-menu-export">
+            <button id="copySheetBtn" class="ghost" type="button" data-command="copySheet">📋 텍스트 시트 복사</button>
+            <button id="downloadSheetHtmlBtn" class="ghost" type="button" data-command="downloadSheetHtml">⬇ 읽기 전용 HTML</button>
+            <button id="printSheetBtn" class="ghost" type="button" data-command="printSheet">🖨 인쇄 · PDF</button>
+          </div>
           <!-- 되돌릴 수 없는 것은 자주 쓰는 것과 같은 줄에 두지 않는다(Fitts). 전에는 앱바 맨
                오른쪽에 늘 떠 있었다 — `✨ 말로 채우기` 바로 옆이었다. -->
           <div class="file-menu-danger">
