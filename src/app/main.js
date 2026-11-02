@@ -582,9 +582,11 @@ function openFromFolder(data, item, run) {
  * @param {T} dirty 그대로 돌려준다 — 호출부가 커맨드 결과를 잃지 않게
  * @returns {T}
  */
+// ⚠ 유튜브 주소만으로는 펴지 않는다(RM-20) — 그 칸은 링크 줄이 아니라 영상 패널 `① 영상 고르기` 에 있다.
+// @complexity time=O(1) space=O(1) cc=3
 function openLinksIfAny(dirty) {
   const l = store.links;
-  if (l.youtubeUrl || l.clickupUrl || l.customLinks.length) views.layout?.setLinksOpen(true);
+  if (l.clickupUrl || l.customLinks.length) views.layout?.setLinksOpen(true);
   return dirty;
 }
 
@@ -626,7 +628,7 @@ views.linksBar = createLinksBarView({
   // 2026-09 — 링크 편집의 커밋 지점(change·✕·추가·삭제)은 뷰가 소유한다. 커맨드는 히스토리를
   // 쌓지 않는다(usecases 규약). Dirty.history 는 Undo/Redo 버튼만 건드리므로 입력 중에도 안전하다.
   commitHistory: () => render(commitHistory(BOARD_MAIN)),
-  // 2026-09 — 링크바의 YouTube 칸이 그대로 영상 소스다(새 입력창을 만들지 않는다).
+  // 2026-09 — YouTube 칸(RM-20 부터 영상 패널 `① 영상 고르기` 맨 위 — 소유는 그대로 linksBarView)이 그대로 영상 소스다.
   // ⚠ 확정(change · ✕)에만 불린다. 반환 Dirty 를 그려야 패널이 새 소스를 싣는다.
   onYoutubeUrlCommit: (rawUrl) => render(VideoCmd.setSource(store, { url: rawUrl })),
   debounce,

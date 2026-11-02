@@ -17,9 +17,9 @@ export const HELP_LINKS = Object.freeze([
   { key: 'video-pick',  doc: 'tutorial', anchor: '8단계-참고-영상을-붙인다',                what: '① 영상 고르기' },
   { key: 'video-tempo', doc: 'tutorial', anchor: '9단계-영상을-옆에-띄우고-박자를-맞춘다',  what: '② 박자 맞추기' },
   { key: 'video-capture', doc: 'features', anchor: '영상-보면서-안무표에-받아-적기',what: '③ 받아 적기' },
-  { key: 'video-trim',  doc: 'features', anchor: '영상-구간-inout-잡고-잘라내기',what: '④ 구간 잡고 잘라내기' },
-  { key: 'video-markers', doc: 'features', anchor: '마커로-영상-구간과-안무표-구간-잇기',what: '⑤ 마커' },
-  { key: 'video-pose',  doc: 'features', anchor: '영상에서-자세-분석하기',what: '⑥ 자세 분석' },
+  { key: 'video-trim',  doc: 'features', anchor: '영상-구간-inout-잡고-잘라내기',what: '구간 잡고 잘라내기(도구)' },
+  { key: 'video-markers', doc: 'features', anchor: '마커로-영상-구간과-안무표-구간-잇기',what: '마커(도구)' },
+  { key: 'video-pose',  doc: 'features', anchor: '영상에서-자세-분석하기',what: '자세 분석(도구)' },
   { key: 'quick-place', doc: 'tutorial', anchor: '4단계-나머지-마디를-빠른-배치로-채운다',  what: '동작 선택 팝업(빠른 배치)' },
   { key: 'compose',     doc: 'tutorial', anchor: '말로-채우기',                              what: '✨ 말로 채우기' },
 ].map(Object.freeze));
