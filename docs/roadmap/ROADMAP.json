@@ -4506,7 +4506,7 @@
             "Q110"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "보고에 적힌 박힌 밝은 글자색(#dbe4ef)은 RM-17 디자인 토큰 작업에서 이미 걷혔다. 지금 서랍 제목(index.html 362줄)과 영상 파일 이름 알약(1903줄)은 var(--text) 를 쓰고, 솜사탕 테마는 --text 를 짙은 #452f52 로 바꾼다. 그래서 이 항목은 새로 고칠 것이 거의 없다. 할 일은 브라우저에서 고쳐졌는지 확인하고, 밝은 테마에서 글자 대비가 다시 무너지지 않게 토큰 대비를 재는 시험을 두는 것이다. RM-56 · RM-59(밝은 테마의 블록 팝업 제목)와 같은 갈래이니, 대비 시험은 그 두 항목도 함께 쓸 수 있는 꼴로 만든다.",
           "kind": "bug",
@@ -4537,7 +4537,9 @@
               "days": 14
             }
           ],
-          "plan": "docs/roadmap/plans/RM-43.md"
+          "plan": "docs/roadmap/plans/RM-43.md",
+          "branch": "rm-43-candy-theme-drawer-title-contrast-guard",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-44",
@@ -4921,7 +4923,6 @@
             "why": "그 저장소의 시험 명령이 붉다"
           },
           "slug": "close-duplicate-of-from-factoriel-track-plan-fix",
-          "priority": "top4",
           "reported": 1,
           "files": [
             "tests/unit/roadmapFile.test.mjs#trackAnchorMismatches",
