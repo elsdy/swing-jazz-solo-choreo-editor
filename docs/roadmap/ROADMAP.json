@@ -1929,7 +1929,7 @@
       {
         "id": "Q97",
         "title": "RM-38 — items-push 가 푸시 훅에 막힘 — 올릴 판 커밋 001218f(origin/main 0ae8346 위)는 시험을 지나는 내용인데, 훅이 본 트리(로컬 main 이 origin/main 보다 4 뒤 — docs/ROADMAP.md 규모가 옛 M/S)로 시험을 돌려 ",
-        "answer": null,
+        "answer": "지나감 — 2026-10-22 items-push 가 통과해 f41e6ea 로 올라갔다",
         "options": [
           {
             "label": "본 트리 로컬 main 을 origin/main 으로 fast-forward(작업 사본의 판 변경은 그대로 두고) 한 뒤 items-push 를 다시 돌린다"
@@ -1937,11 +1937,47 @@
           {
             "label": "로컬 main 은 손대지 않는다 — 이 마무리는 뺌으로 적고, 훅이 밀어 올리는 커밋이 아닌 작업 사본을 시험하는 엔진 버그로 판에 올린다"
           }
+        ],
+        "basis": {
+          "by": "human",
+          "why": "RM-38 은 #48 로 병합됐고 판 변경도 올라갔다 — 물음이 더 뜻이 없다",
+          "at": "2026-11-02T11:59:36+09:00"
+        }
+      },
+      {
+        "id": "Q98",
+        "title": "RM-40 — RM-39(판이 미룬 질문 Q4 에 답을 적으면 items-push 가 막힌다)는 이 항목의 ② 경우 그 자체다 — 두 항목을 어떻게 두나",
+        "answer": "RM-40 에 합치고 RM-39 는 판에서 거둔다(retired) (2026-11-02)",
+        "options": [
+          {
+            "label": "RM-40 에 합치고 RM-39 는 판에서 거둔다(retired)",
+            "note": "추천 — 이 계획의 요구 1 · 2 가 RM-39 의 일을 그대로 한다. 한 PR 로 끝나고 두 항목이 같은 시험 파일을 두 번 고치지 않는다"
+          },
+          {
+            "label": "RM-39 를 따로 둔다",
+            "note": "이 항목은 요구 0 · 3 · 4 만 하고, 요구 1 · 2(미룬 질문 규칙과 Q4 옮기기)는 RM-39 로 넘긴다. 그러면 이 항목만으로는 지금 판으로 시험이 초록이 되지 않아 요구 3 을 뺀다"
+          }
+        ]
+      },
+      {
+        "id": "Q99",
+        "title": "RM-40 — 판에만 있는 항목을 계획서 없이도 통과시키는 조건을 무엇으로 하나",
+        "answer": "설명(what)이 비지 않으면 통과 (2026-11-02)",
+        "options": [
+          {
+            "label": "설명(what)이 비지 않으면 통과",
+            "note": "추천 — found 로 들어온 버그 항목은 모두 what 을 갖는다 — 사람이 적은 설명이 있으면 어딘가 적힌 항목으로 본다. 이름만 있는 빈 항목은 여전히 붉다"
+          },
+          {
+            "label": "found 기록이 있으면 통과",
+            "note": "보드가 발견으로 더한 항목만 봐준다. 사람이 판에서 손으로 더한 항목은 계획서가 있어야 한다 — 더 엄격하지만 보드의 필드 이름에 묶인다"
+          }
         ]
       }
     ]
   },
   "order": [
+    "RM-40",
     "RM-38",
     "RM-36",
     "RM-10",
@@ -2481,7 +2517,7 @@
             "C"
           ],
           "what": "화면 낱말의 뜻을 용어집 한 장에 정하고, 명령이 아닌 라벨·툴팁·플레이스홀더 글자를 도메인의 문자열 표 하나로 모은다. 그 뒤 Undo/Redo·`× 삭제`·`[ In 지금 여기`·`프로젝트 저장`을 용어집대로 고친다. 명령 라벨은 이미 병합된 RM-09 의 명령 등록부가 가진다. 그래서 이 항목은 그 표를 함께 읽기만 하고 라벨을 두 곳에 적지 않는다. 판의 RM-19(안내 문장 걷기)와 같은 글자를 만진다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "docs/GLOSSARY.md",
@@ -2518,7 +2554,9 @@
             "docs/HISTORY.md"
           ],
           "plan": "docs/roadmap/plans/RM-10.md",
-          "slug": "glossary-and-label-string-table"
+          "slug": "glossary-and-label-string-table",
+          "branch": "rm-10-glossary-and-label-string-table",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-11",
@@ -2539,7 +2577,7 @@
             "B"
           ],
           "what": "보드 위 누르기·그리기·늘이기·옮기기를 마우스·터치 두 벌 리스너에서 포인터 이벤트 한 벌로 합치고, 마우스 규칙과 손가락 규칙의 갈림을 창 폭(1040px)이 아니라 그 누름의 포인터 종류로 정한다. RM-08 이 판단을 이미 domain/boardGesture 의 전이 함수로 떼어 두었으므로, 이 항목은 리스너를 옮기는 구조 커밋 하나와 불일치를 하나씩 고치는 동작 커밋들로 나누어 낸다. 뒤따르는 RM-12(직접 조작 문법)가 한 벌 입력 위에 선다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/input/boardController.js#createBoardController",
@@ -2563,7 +2601,9 @@
             "docs/HISTORY.md"
           ],
           "plan": "docs/roadmap/plans/RM-11.md",
-          "slug": "unify-mouse-touch-with-pointer-events"
+          "slug": "unify-mouse-touch-with-pointer-events",
+          "branch": "rm-11-unify-mouse-touch-with-pointer-events",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-12",
@@ -2697,7 +2737,7 @@
             "B"
           ],
           "what": "안무표에서 Shift+클릭 범위와 빈 칸 끌기 네모로 블록을 여럿 고르고, 고른 묶음을 한 번에 끌어 옮기며, 고른 것에 할 수 있는 일을 떠 있는 선택 액션 바 하나에 모은다. 고른 묶음에 먹는 명령(옮기기 · 지우기 · 복사 · 복제 · 모두 고르기)은 RM-13 이 이미 만들어 두었다(after RM-13 — 고른 블록 목록을 걸러 내는 함수와 nudgeSelection · removeSelection · copySelection · pasteClip 을 부르고, 묶음 끌기는 하나라도 못 가면 다 멈추는 RM-13 의 planNudge 규칙을 그대로 쓴다). 그래서 이번 일은 고르는 길과 바를 세우는 것이다. 액션 바는 RM-09 등록부(COMMANDS)를 읽는다(after RM-09).",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/domain/selection.js",
@@ -2735,7 +2775,9 @@
             "docs/HISTORY.md"
           ],
           "plan": "docs/roadmap/plans/RM-14.md",
-          "slug": "selection-range-marquee-action-bar"
+          "slug": "selection-range-marquee-action-bar",
+          "branch": "rm-14-selection-range-marquee-action-bar",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-15",
@@ -2752,7 +2794,7 @@
             "B"
           ],
           "what": "블록을 고른 채 글자를 치면 그 블록 위에 이름 입력이 바로 뜨고 동작 목록에서 맞는 이름이 추려 나온다. Tab 과 Shift+Tab 으로 표 위의 다음·앞 `?` 로 넘어가 받아 적은 블록을 키보드만으로 줄줄이 채운다. 판의 RM-24(? 정리함)가 이 조작 위에 서고, RM-12(두 번 누르면 이름)와 RM-14(선택)는 같은 자리를 만진다. RM-04 가 브라우저 prompt 를 이미 걷어 냈으므로 이 항목은 그 인라인 입력 위에 추천 목록과 Tab 이동만 얹는다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/domain/placements.js#pendingGroupIds",
@@ -2775,7 +2817,9 @@
             "docs/HISTORY.md"
           ],
           "plan": "docs/roadmap/plans/RM-15.md",
-          "slug": "inline-block-naming-tab-to-next-pending"
+          "slug": "inline-block-naming-tab-to-next-pending",
+          "branch": "rm-15-inline-block-naming-tab-to-next-pending",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-16",
@@ -2797,7 +2841,7 @@
             "B"
           ],
           "what": "안무표의 블록을 재생 헤드나 고른 카운트에서 둘로 자르고, 바로 붙은 같은 이름 블록을 하나로 합치며, 행 라벨 메뉴에서 마디를 통째로 끼우고 지우고 복제하고 옮기는 편집을 한 번 누름·한 번 되돌리기로 더한다. 지금은 블록을 지우고 다시 그리거나 뒤의 블록을 하나씩 끌어야 해 간격이 어긋나며, 선행이던 RM-03(선택 정리)·RM-09(명령 등록부)·RM-13(키보드 편집)은 이미 병합되어 그 자리(명령 표 · runCommand · 선택 정리)를 그대로 쓴다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/domain/boardOps.js#splitGroup",
@@ -2829,7 +2873,9 @@
             "docs/roadmap/plans/RM-16.md"
           ],
           "plan": "docs/roadmap/plans/RM-16.md",
-          "slug": "split-merge-and-bar-insert-delete"
+          "slug": "split-merge-and-bar-insert-delete",
+          "branch": "rm-16-split-merge-and-bar-insert-delete",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-17",
@@ -2851,7 +2897,7 @@
             "A"
           ],
           "what": "index.html 스타일 블록과 JS가 문자열로 품은 스타일(문서 창 · 설정 · 말로 채우기 · 오버레이)에 흩어진 색 · 글자 크기 · 간격 · 모서리 · 그림자 값을 :root 의 이름 붙은 토큰 한 벌로 모으고, 테마는 그 토큰 값만 갈아 끼우게 한다. 값을 보존한 채 옮기는 구조 걸음과 비슷한 값을 단계로 접는 겉모습 걸음을 나누고, 끝났는지는 원칙 검사기에 규칙 하나를 더해 기계로 잰다(RM-05 의 검사기 뼈대를 쓰며 RM-18 이 이 토큰을 따른다).",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/ui/docsHub.js#createDocsHub",
@@ -2871,7 +2917,9 @@
             "docs/roadmap/ROADMAP.json"
           ],
           "plan": "docs/roadmap/plans/RM-17.md",
-          "slug": "design-tokens-one-set"
+          "slug": "design-tokens-one-set",
+          "branch": "rm-17-design-tokens-one-set",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-18",
@@ -2958,7 +3006,7 @@
             "C"
           ],
           "what": "받는 중 · 듣는 중 · 담기 자리 · 되돌릴 수 있음 · 루틴 편집 중처럼 영상 배지 · 패널 안내 줄 · 엄지 바 · 파일 메뉴에 흩어진 상태를 화면 한 자리의 상태줄에 모은다. 이미 병합된 RM-04 의 「참고」 급 알림(조립부 views.notify 가 지금은 토스트로 대신 띄움)을 상태줄로 옮긴다. 늘 떠 있는 안내 문장 14곳(사이드바 셋 · 영상 패널 열하나)은 툴팁 · 「처음 한 번」 안내 · 막혔을 때만 뜨는 경고로 나눈다. 판의 RM-20(같은 영상 패널 재편) · RM-26(첫 실행 코치마크) · RM-10(라벨 표) · RM-35(부분 렌더)와 닿는다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/ui/statusBar.js",
@@ -2987,7 +3035,9 @@
             "docs/HISTORY.md"
           ],
           "plan": "docs/roadmap/plans/RM-19.md",
-          "slug": "status-bar-and-quiet-guide-lines"
+          "slug": "status-bar-and-quiet-guide-lines",
+          "branch": "rm-19-status-bar-and-quiet-guide-lines",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-20",
@@ -3004,7 +3054,7 @@
             "C"
           ],
           "what": "영상 패널의 여섯 단계를 둘로 가른다. 차례대로 하는 ①②③만 번호와 ✓를 달고, 구간 자르기 · 마커 · 자세 분석은 번호 없는 「도구」 탭으로 뺀다. 유튜브 주소 칸은 링크 줄에서 `① 영상 고르기` 안으로 옮기고, ②는 「탭 → BPM 확인 → 첫 박」 한 줄로 좁힌다. 처음 온 사람이 영상을 어디에 넣는지, 어디서 멈춰도 되는지 화면에서 읽히게 하려는 것이다. 같은 패널의 안내 줄을 걷는 RM-19와 겹친다. 패널 뼈대를 이 항목이 먼저 세우면 RM-19가 새 자리에 맞춰 한 번에 옮긴다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "index.html#videoFlowSteps",
@@ -3029,7 +3079,9 @@
             "docs/HISTORY.md"
           ],
           "plan": "docs/roadmap/plans/RM-20.md",
-          "slug": "video-panel-steps-and-tool-tabs-youtube-in-step-one"
+          "slug": "video-panel-steps-and-tool-tabs-youtube-in-step-one",
+          "branch": "rm-20-video-panel-steps-and-tool-tabs-youtube-in-step-one",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-21",
@@ -3051,7 +3103,7 @@
             "★"
           ],
           "what": "안무표를 세 가지 꼴로 내보낸다. A4 인쇄(PDF 포함), 마디 하나를 한 줄로 적어 클립보드에 담는 텍스트, `file://` 로 더블클릭하면 열리는 읽기 전용 HTML 한 장이다. 지금은 남에게 줄 수 있는 것이 화면 캡처와 다시 불러오기용 JSON 뿐이다. 판의 RM-17(디자인 토큰) · RM-10(라벨 표) · RM-23(파트)과 자리가 닿지만 그 코드를 부르지 않으므로 모두 점선으로 둔다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/domain/countSheet.js",
@@ -3067,7 +3119,9 @@
             "tests/unit/countSheet.test.mjs"
           ],
           "plan": "docs/roadmap/plans/RM-21.md",
-          "slug": "count-sheet-export-print-text-readonly-html"
+          "slug": "count-sheet-export-print-text-readonly-html",
+          "branch": "rm-21-count-sheet-export-print-text-readonly-html",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-22",
@@ -3237,7 +3291,7 @@
             "D"
           ],
           "what": "서버는 이미 덮어쓰기 전에 직전 판을 .history 에 남기고, 그 판의 목록(GET /api/projects/.history)과 되살리기(POST /api/projects/restore, from=history)도 갖추었다. 그런데 앱에는 그것을 고를 화면이 없다. 그래서 파일 서랍의 휴지통 줄 곁에 「지난 판」 줄을 두고, 한 번 누르면 묶인 파일을 그 판으로 되살려 곧바로 다시 연다. 이렇게 잘못 덮어쓴 것을 폴더를 뒤지지 않고 되돌리게 한다. 판의 RM-29(이름 붙인 판본·연습 기록)가 이 화면 위에 선다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/ui/historyView.js",
@@ -3260,7 +3314,9 @@
             "docs/HISTORY.md"
           ],
           "plan": "docs/roadmap/plans/RM-25.md",
-          "slug": "safety-net-history-restore-drawer"
+          "slug": "safety-net-history-restore-drawer",
+          "branch": "rm-25-safety-net-history-restore-drawer",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-26",
@@ -3285,7 +3341,7 @@
             "E"
           ],
           "what": "처음 켠 사람이 빈 격자 앞에서 멈추지 않게 세 가지를 둔다. 하나는 저장 포맷 그대로의 예제 안무로, 불러오기와 같은 길(최근 목록에서 여는 길)로 연다. 둘은 처음 한 번만 뜨는 코치마크 3장, 셋은 문서 창의 그 절로 곧장 가는 `?` 단추다. 판의 RM-19(상시 안내 문장 걷기)와는 안내 틀을, RM-20(영상 패널 재배치)·RM-36(빠른 배치 표시)과는 채우기 줄 · 영상 단계의 자리를, RM-10(라벨 표)과는 문구를 겹쳐 쓴다. 다만 앞 항목의 코드를 부르지는 않으므로 모두 점선 선행으로 둔다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "examples/shim-sham.json",
@@ -3316,7 +3372,9 @@
             "docs/HISTORY.md"
           ],
           "plan": "docs/roadmap/plans/RM-26.md",
-          "slug": "example-choreo-coachmarks-context-help"
+          "slug": "example-choreo-coachmarks-context-help",
+          "branch": "rm-26-example-choreo-coachmarks-context-help",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-27",
@@ -3337,7 +3395,7 @@
             "D"
           ],
           "what": "기능마다 필요한 조건(서버 · ffmpeg · 폴더 고르기 · 음성 인식 · GPU)과 OS · 브라우저별로 알려진 결과를 도메인 표 하나로 모은다. 이 표를 「지원 범위」 문서와 `⚙ 설정`의 「이 환경」 절에 같이 보여 「고장인가, 이 환경에서 원래 안 되는가」를 가를 수 있게 하고, U-10을 어기는 폰 확대 차단(`user-scalable=no` · focusout 때 `scrollTo(0,0)`)은 따로 낸 동작 변경 커밋으로 16px 입력 글자로 바꾼다. 판의 RM-33(정적 저장을 IndexedDB로) · RM-28(설치형 앱)이 이 표의 칸 · 열을 고치게 되고, RM-11 · RM-17은 같은 자리(터치 · 글자 크기)를 만진다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/domain/supportMatrix.js",
@@ -3362,7 +3420,65 @@
             "docs/PRINCIPLES.md"
           ],
           "plan": "docs/roadmap/plans/RM-27.md",
-          "slug": "support-matrix-and-mobile-zoom-unlock"
+          "slug": "support-matrix-and-mobile-zoom-unlock",
+          "branch": "rm-27-support-matrix-and-mobile-zoom-unlock",
+          "startedAt": "2026-11-02"
+        },
+        {
+          "id": "RM-40",
+          "name": "items-push 가 올린 판 변경이 저장소의 roadmapFile 시험에 걸려 푸시 훅이 막는다",
+          "size": "S",
+          "after": [],
+          "soft": [],
+          "questions": [
+            "Q98",
+            "Q99"
+          ],
+          "defaults": [],
+          "stage": "branch",
+          "pr": null,
+          "what": "푸시 훅이 돌리는 roadmapFile 시험이 D-19(문서 ⊆ 판)보다 엄격한 두 자리 — 「판에만 있으면 계획서가 있어야 한다」와 「문서가 미룬 질문은 판에도 답이 없어야 한다」 — 때문에 보드가 found 로 더한 항목(RM-39 · RM-40)과 사람이 답한 Q4 가 items-push 를 막는다. 그 두 규칙을 판이 원본인 꼴로 고치고, Q4 는 결정 기록으로 옮겨 지금 판으로 시험이 초록이 되게 한다. RM-39 와 겹친다(RM-39 는 이 항목의 ② 경우 그 자체다 — 합치기를 권한다).",
+          "kind": "bug",
+          "seat": "code",
+          "addedAt": "2026-11-02T03:07:06Z",
+          "found": {
+            "by": "claude",
+            "kind": "bug",
+            "in": "RM-15",
+            "at": "2026-11-02T03:07:06Z",
+            "side": "feature",
+            "why": "그 저장소의 시험 명령이 붉다"
+          },
+          "slug": "roadmap-test-accepts-board-answers-and-found-items",
+          "priority": "top4",
+          "reported": 4,
+          "files": [
+            "tests/unit/roadmapFile.test.mjs#mismatches",
+            "tests/unit/roadmapFile.test.mjs#hasPlan",
+            "tests/unit/roadmapFile.test.mjs#deferredMismatches",
+            "docs/ROADMAP.md",
+            "docs/DECISIONS.md",
+            "docs/BUG_REPORTS.md",
+            "docs/PRINCIPLES.md"
+          ],
+          "effects": [
+            {
+              "metric": "redMain",
+              "way": "down",
+              "size": "",
+              "days": 14
+            },
+            {
+              "metric": "humanTouches",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-40.md",
+          "branch": "rm-40-roadmap-test-accepts-board-answers-and-found-items",
+          "startedAt": "2026-11-02",
+          "note": "RM-39 를 합침(2026-11-02 — 명령줄 중복 닫기)\nRM-41 를 합침(2026-11-02 — 명령줄 중복 닫기)"
         }
       ]
     },
@@ -3578,7 +3694,7 @@
             "D"
           ],
           "what": "서버 없이 연 앱에서는 최근 프로젝트 목록(안무표 10개를 통째로 담는다)과 1.2초마다 담는 작업 문서가 localStorage 한 칸에 들어간다. 이 둘을 IndexedDB 의 「목록」과 「내용」 두 칸으로 옮겨, 용량이 차서 조용히 실패하던 일을 없애고 실패하면 알린다. 선행 항목은 없다. RM-25 · RM-29 · RM-30 이 서버 없이 무엇을 남기려면 이 바닥 위에 서야 하므로, 이 항목이 그들보다 앞이다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "src/ports/storage.js#SnapshotStore",
@@ -3602,7 +3718,9 @@
             "docs/HISTORY.md"
           ],
           "plan": "docs/roadmap/plans/RM-33.md",
-          "slug": "static-path-recents-and-draft-to-indexeddb"
+          "slug": "static-path-recents-and-draft-to-indexeddb",
+          "branch": "rm-33-static-path-recents-and-draft-to-indexeddb",
+          "startedAt": "2026-11-02"
         },
         {
           "id": "RM-34",
@@ -3655,7 +3773,7 @@
             "D"
           ],
           "what": "큰 안무표(64마디 × 3층 × 동작 300개)에서 옮기기·복사·늘이기·되돌리기의 렌더 시간, 스냅샷 문자열화 시간, 자동 담기 직렬화 시간을 잰다. 빠르면 「보드는 전 행을 다시 그린다」를 원칙으로 정해 세 곳에 흩어진 미결 문장을 닫고, 느리면 바뀐 마디만 그리는 동작 변경 커밋을 따로 낸다. 판의 다른 항목과 겹치는 일은 없다. 다만 RM-12·RM-14 의 「움직이는 동안 그리기」는 이 규칙을 따르게 된다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "flags": [
             "measure"
@@ -3677,14 +3795,18 @@
             "docs/roadmap/plans/RM-35.md"
           ],
           "plan": "docs/roadmap/plans/RM-35.md",
-          "slug": "board-render-scale-measure-then-rule"
+          "slug": "board-render-scale-measure-then-rule",
+          "branch": "rm-35-board-render-scale-measure-then-rule",
+          "startedAt": "2026-11-02"
         }
       ]
     }
   ],
   "retired": [
     "RM-32",
-    "RM-37"
+    "RM-37",
+    "RM-39",
+    "RM-41"
   ],
   "bugs": [
     {
@@ -3698,6 +3820,79 @@
       ],
       "reportedAt": "2026-10-20",
       "fixedBy": "RM-38"
+    },
+    {
+      "id": "BUG-2",
+      "title": "items-push 가 올린 판 변경이 저장소의 roadmapFile 시험에 걸려 푸시 훅이 막는다",
+      "symptom": "swing-jazz-choreo 본 트리의 ROADMAP.json(보드가 쓴 것)을 items-push 로 origin/main 에 올리려 하니 푸시 훅의 tests/unit/roadmapFile.test.mjs 가 붉다 — ① RM-39 가 판 파일에만 있고 계획서(docs/roadmap/plans)도 문서(ROADMAP.md)도 없다 ② Q4 는 문서에서 미룬 것인데 판 파일에는 답(「RM-11 첫 커밋을 졸업일로 한다 — Q56 과 같은 답」)이 있다. 보드가 판에 항목 · 답을 쓸 때 계획서와 문서를 함께 두거나, items-push 가 올리기 전에 그 시험을 돌려 무엇이 빠졌는지 알려야 한다. RM-15 자리에서 2026-11-02 12:06 에 겪음 — RM-15 자체는 막히지 않아 그대로 이어 간다.",
+      "elements": [
+        {
+          "name": "items-push 가 올린 판 변경이 저장소의 roadmapFile 시험에 걸려 푸시 훅이 막는다"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-40"
+    },
+    {
+      "id": "BUG-3",
+      "title": "items-push 가 올리는 판 변경이 저장소의 roadmapFile 시험을 붉힌다 — RM-39 계획서 없음 · Q4 답",
+      "symptom": "swing-jazz-choreo 본 트리의 ROADMAP.json 을 items-push 로 올리자 푸시 훅의 tests/unit/roadmapFile.test.mjs 셋이 붉다: ① RM-39 가 판 파일에만 있고 계획서(docs/roadmap/plans/RM-39.md)가 없다 ② 문서가 미룬 Q4 에 판 파일이 답(「RM-11 첫 커밋을 졸업일로 한다 — Q56 과 같은 답」)을 갖고 있다. 보드가 판에 쓴 것이 저장소의 판 ↔ 문서 검사와 어긋나 판 변경을 main 에 올릴 수 없다. RM-16 자리는 ROADMAP.json 을 고치지 말라는 지시라 손대지 않고 origin/main 을 그대로 받아 시작했다.",
+      "elements": [
+        {
+          "name": "items-push 가 올리는 판 변경이 저장소의 roadmapFile 시험을 붉힌다 — RM-39 계획서 "
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-40"
+    },
+    {
+      "id": "BUG-4",
+      "title": "items-push 가 계획서 없는 새 항목 · 미룬 결정의 답으로 푸시 훅에 막힌다",
+      "symptom": "RM-19 자리에서 items-push -p swing-jazz-choreo 를 돌리자 푸시 훅의 tests/unit/roadmapFile.test.mjs 세 시험이 붉어 막혔다: ① RM-39 · RM-40 가 판 파일에만 있고 계획서가 없다 ② 문서(docs/ROADMAP.md)에서 미룬 Q4 에 판 파일은 답(RM-11 첫 커밋을 졸업일로 한다 — Q56 과 같은 답)을 갖고 있다. 보드가 판 변경을 올리기 전에 계획서를 함께 두거나, 답한 결정은 문서의 미룸 목록에서도 빼야 올라간다. 로드맵 파일은 병렬 자리에서 고치지 말라는 지시라 이 자리에서는 손대지 않고 origin/main(f41e6ea)으로 이어 간다",
+      "elements": [
+        {
+          "name": "docs/roadmap/ROADMAP.json",
+          "where": "docs/roadmap/ROADMAP.json"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-40"
+    },
+    {
+      "id": "BUG-5",
+      "title": "items-push 가 계획서 없는 새 항목(RM-39 · RM-40)과 문서가 미룬 Q4 의 답을 판 파일에만 적어 로드맵 시험이 붉다",
+      "symptom": "swing-jazz-choreo 에서 RM-20 자리가 items-push 를 돌리자 보드가 만든 커밋 fe2170c(ROADMAP.json 만 고침)가 푸시 훅의 tests/unit/roadmapFile.test.mjs 셋에 막혔다 — 「RM-39 · RM-40 는 판 파일에만 있고 계획서도 없다」 · 「Q4 는 문서에서 미룬 것인데 파일에는 답이 있다(RM-11 첫 커밋을 졸업일로 한다)」. 보드가 새 항목을 판 파일에 쓸 때 docs/roadmap/plans/RM-nn.md 계획서를 함께 두거나 문서에 적어야 그 저장소의 시험(문서 ⊆ 판 · 계획서 있음)이 지난다. Q4 의 답은 docs/ROADMAP.md 의 「정하기를 미룬 것」에서도 내려야 한다. RM-20 자리의 기능 push 는 막히지 않아 이어 간다.",
+      "elements": [
+        {
+          "name": "items-push 가 계획서 없는 새 항목(RM-39 · RM-40)과 문서가 미룬 Q4 의 답을 판 파일"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-40"
+    },
+    {
+      "id": "BUG-6",
+      "title": "items-push 가 올리려는 판 변경이 저장소의 roadmapFile 시험에 걸린다",
+      "symptom": "swing-jazz-choreo 의 본 트리 ROADMAP.json 에 보드가 RM-39 · RM-40 을 계획서 없이 더하고 Q4 에 답을 적어(문서는 아직 미룸), items-push 가 푸시 훅의 tests/unit/roadmapFile.test.mjs 세 개에 붉어 main 에 올라가지 못했다. 보드가 항목을 더할 때 계획서를 함께 두거나, 답을 옮겨 적을 때 문서도 맞추거나, 시험이 그 꼴을 허용해야 한다.",
+      "elements": [
+        {
+          "name": "items-push 가 올리려는 판 변경이 저장소의 roadmapFile 시험에 걸린다"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-40"
+    },
+    {
+      "id": "BUG-7",
+      "title": "items-push 가 계획서 없는 버그 항목(RM-39 · RM-40)과 문서에 아직 미룬 것으로 남은 Q4 의 답으로 푸시 훅에 막힌다",
+      "symptom": "swing-jazz-choreo 의 본 트리 ROADMAP.json 에 보드가 kind=bug 인 RM-39 · RM-40 을 계획서(docs/roadmap/plans/RM-nn.md) 없이 더했고, Q4 에 answer 를 적었는데 docs/ROADMAP.md 의 「정하기를 미룬 것」 표에는 Q4 가 그대로다. 그래서 RM-27 자리에서 items-push 를 돌리자 tests/unit/roadmapFile.test.mjs 의 세 시험(「RM-39 는 판 파일에만 있고 계획서도 없다」 · 「Q4 는 문서에서 미룬 것인데 파일에는 답이 있다」)이 붉어 푸시 훅이 막았다. 보드가 「claude 가 찾음」 버그 항목을 더할 때 계획서를 함께 두거나, 판이 질문에 답을 옮겨 적을 때 문서의 미룬 것 표도 같이 고치거나 문서 기준을 바꿔야 한다. RM-27 은 origin/main f41e6ea 에서 그대로 이어 간다.",
+      "elements": [
+        {
+          "name": "items-push 가 계획서 없는 버그 항목(RM-39 · RM-40)과 문서에 아직 미룬 것으로 남은 Q"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-40"
     }
   ]
 }
