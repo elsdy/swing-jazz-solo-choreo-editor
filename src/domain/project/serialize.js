@@ -8,6 +8,7 @@ import { LEGACY_FILE_VERSION, FIELD_TABLE, LINK_FIELDS } from './schema.js';
 import { serializeMedia } from './media.js';
 import { serializePhrasing } from '../phrasing.js';
 import { serializeStepTodos } from '../stepTodos.js';
+import { serializeParts } from '../parts.js';
 import { byField } from './fields.js';
 
 /**
@@ -34,7 +35,8 @@ const FILE_OPS = byField({
   //   **바이트 단위로 같아야** 한다.
   media:       s => { const v = serializeMedia(s.media); return v ? { media: v } : null; },
   phrasing:    s => { const v = serializePhrasing(s.phrasing); return v ? { phrasing: v } : null; },
-  stepTodos:   s => { const v = serializeStepTodos(s.stepTodos); return v ? { stepTodos: v } : null; }
+  stepTodos:   s => { const v = serializeStepTodos(s.stepTodos); return v ? { stepTodos: v } : null; },
+  parts:       s => { const v = serializeParts(s.parts); return v ? { parts: v } : null; }
 }, 'domain/project/serialize.js');
 
 /** 카테고리 사전을 키 오름차순으로 재조립한다. 동작목록·카테고리 두 파일이 같은 규칙을 쓴다(4051·4062). */

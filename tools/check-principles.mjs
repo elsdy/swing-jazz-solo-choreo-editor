@@ -391,7 +391,7 @@ export function commandRunnerTable(mainText) {
 
 /** @typedef {{ file: string, line: number, principle: string, what: string, fix: string }} Violation */
 
-// ── U-17 라벨 앞의 그림 글자 ─────────────────────────────────────────────────
+// ── U-18 라벨 앞의 그림 글자 ─────────────────────────────────────────────────
 /**
  * 단추 라벨 앞에 붙던 그림 글자 — 이모지 · 딩뱃 · 화살표 · 수학 기호(≡ ⊕) · 도형 · 기술 기호(⏯ ⏮) · 곱셈표 · 「+ 」. 뒤에 빈칸이 와야 라벨 앞붙이다.
  * ①②③ 단계 번호는 이 범위 밖이고, ⚠ 경고 문장은 단추 라벨 자리가 아니라서 아래 자리 판정이 걸러 낸다.
@@ -404,7 +404,7 @@ const LABEL_SLOT_RE = /(?:\.textContent|\.innerText)\s*=[^,;{}]*$|(?:^|[\s{,])(?
 const buttonText = (inner) => inner.replace(/<svg\b[\s\S]*?<\/svg>/g, '').replace(/<[^>]*>/g, '').replace(/\$\{[^}]*\}/g, '').trim();
 
 /**
- * U-17 이 보는 자리 셋: ① index.html 의 `<button>` 글자 ② JS 문자열 속 `<button …>` 마크업 ③ 단추 라벨 자리에 대입하는 JS 문자열.
+ * U-18 이 보는 자리 셋: ① index.html 의 `<button>` 글자 ② JS 문자열 속 `<button …>` 마크업 ③ 단추 라벨 자리에 대입하는 JS 문자열.
  * @param {Record<string, string>} files
  * @returns {{ file: string, line: number, snippet: string }[]}
  */
@@ -765,12 +765,12 @@ export const RULES = [
     },
   },
   {
-    principle: 'U-17',
+    principle: 'U-18',
     what: '단추 라벨이 이모지 · 기호 글자로 시작한다 — OS 마다 모양 · 크기가 다르고 글자색 · 테마를 따르지 않는다',
     fix: '그림은 스프라이트 한 벌에서 — ui/icon 의 iconLabel(el, 이름, 글자) · 마크업은 <svg class="icon"><use href="#i-이름"></use></svg><span class="lbl">글자</span>. 명령의 그림은 등록부의 icon 열',
     // @complexity time=O(n) space=O(n) cc=2
     scan(files) {
-      return pictoLabels(files).filter(v => !excused(files[v.file] || '', v.line, 'U-17'));
+      return pictoLabels(files).filter(v => !excused(files[v.file] || '', v.line, 'U-18'));
     },
   },
 ];

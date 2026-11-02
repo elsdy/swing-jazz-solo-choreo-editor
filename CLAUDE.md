@@ -6,7 +6,7 @@
 
 스윙/재즈 솔로 안무를 격자에 배치하는 편집기다. 행이 한 마디(8카운트), 칸이 1카운트이고, 동작 블록을 놓아 안무표를 만든다. 개인 도구다. 앱은 브라우저에서 도는 정적 파일이고, 그 옆에 **영상 클립을 보관하는 로컬 서버 `server.py` 하나**가 있다(2026-09-09). 서버 없이 정적 호스팅으로 열어도 앱은 그대로 동작한다 — 영상 보관만 브라우저 폴더 방식으로 떨어진다.
 
-빌드 도구, 번들러, npm/pip 의존성, 프레임워크가 **없다**. 앱은 브라우저가 그대로 읽는 ES 모듈로만 쓰고, 서버는 파이썬 표준 라이브러리로만 쓴다. 이 제약을 깨는 변경은 하지 않는다.
+빌드 도구, 번들러, npm/pip 의존성, 프레임워크가 **없다**. 앱은 브라우저가 그대로 읽는 ES 모듈로만 쓰고, 서버는 파이썬 표준 라이브러리로만 쓴다. 이 제약을 깨는 변경은 하지 않는다. 예외는 **설치형 앱을 싸는 단계**(`packaging/`) 하나다(2026-11-03, RM-28) — 그 단계만 PyInstaller · Inno Setup 을 쓰고, 앱 코드와 `server.py` 는 그 폴더를 모른다([결정](docs/DECISIONS.md)).
 
 ## 실행
 
@@ -16,14 +16,16 @@ python3 server.py
 
 그리고 `http://localhost:8000` 을 연다. **보관 자리는 저장소 밖이다**(2026-09-13) — 영상은 `<데이터 폴더>/video-clip/<프로젝트>/`, 안무표는 그 형제인 `projects/`, 모델은 캐시 폴더, 설정과 LLM 키는 또 다른 설정 폴더다. 서버가 켜질 때 네 자리를 첫 줄에 찍는다. 저장소는 코드의 자리이고 안무표·영상은 잃으면 복구 못 하는 사용자의 것이라 수명이 다르기 때문이다. **옛 자리(저장소 안 `video-clip/`·`projects/`·`models/`·`.clipserver.json`)에 이미 쌓인 것이 있으면 그 자리를 계속 쓴다** — 말없이 옮기지 않는다. `--root` · `--subdir` · `--projects` · `--models` · `--config` 또는 앱의 `⚙ 설정` 에서 바꾼다. `python3 -m http.server 8000` 으로 열어도 앱은 뜨지만 영상 보관이 서버가 아니라 브라우저 폴더 방식이 된다. `index.html` 을 더블클릭하면 안 된다 — `file://` 에서는 ES 모듈과 문서 뷰어의 `fetch` 가 모두 막힌다.
 
+**설치형 앱**(2026-11-03, RM-28)은 같은 서버를 런처가 `--port 0 --open --static <앱 파일>` 로 부른 것이다 — 포트는 지난번 것을 먼저 써서(`<설정>.port.json`) 브라우저 출처가 켤 때마다 바뀌지 않고, 포장된 채로는 옛 자리를 보지 않는다(윈도우는 `%LOCALAPPDATA%\choreo` · `%APPDATA%\choreo`). 짓는 법과 두 OS 의 손 점검표는 `packaging/README.md`. 포장 없이 같은 길을 시험하려면 `python3 packaging/launcher.py`.
+
 ## 고치기 전에 돌리는 것
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 631개 (도메인·어댑터·유스케이스·뷰 578 + 원칙 검사기 자기 시험 19 + 문서 검사 자기 시험 18(라벨 대조 · 도움말 `?` 앵커 · 문서 갈래) + server.py 실물 16, ffmpeg 이 있으면 실제로 한 번 자른다)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 657개 (도메인·어댑터·유스케이스·뷰 595 + 원칙 검사기 자기 시험 19 + 문서 검사 자기 시험 18(라벨 대조 · 도움말 `?` 앵커 · 문서 갈래) + 계층 검사 자기 시험 3 + server.py 실물 22, ffmpeg 이 있으면 실제로 한 번 자른다)
 node tests/run.mjs                # 격자 알고리즘 골든 173개
-node tools/check-arch.mjs         # 계층 방향과 순수성
+node tools/check-arch.mjs         # 계층 방향과 순수성, src/ · server.py 가 packaging/ 를 모르는지
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 튜토리얼·기능 설명서가 인용한 라벨이 화면에 있는지, 도움말 `?` 가 가리키는 절이 있는지
-node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 열(U-10 · U-11 · U-12 · D-5 · R-6 · R-10 · D-14 · U-15 · U-16 · U-17)
+node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 열(U-10 · U-11 · U-12 · D-5 · R-6 · R-10 · D-14 · U-15 · U-16 · U-18)
 ```
 
 다섯 다 의존성이 0이고 몇 초 안에 끝난다(서버 테스트는 `python3` 을 띄운다). 고친 뒤에도 돌린다.
@@ -44,6 +46,8 @@ node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 열(U-10 �
 - `src/app/` — 조립과 렌더 라우팅.
 - `admin.html` — **서버가 내는 관리 화면**(`/admin`). 보관 위치·모델·LLM 을 정하는 자리다. `src/` 를 import 하지 않는다 — 앱의 모듈이 아니라 서버의 화면이고, 앱이 깨져도 떠야 한다. 앱(`ui/settingsView`)은 서버 설정을 **읽기만** 하고 이 화면으로 보낸다.
 - `server.py` — 저장소 밖의 두 번째 런타임. 정적 파일 + 클립 API(`/api/*`, `/clips/*`, 자르기 `/api/clips/trim` 은 **선택 의존성 ffmpeg** 을 자식 프로세스로 띄운다 — 없으면 그 기능만 501) + 자세 분석 모델 보관(`/api/models/*`, `/models/*` — 파일을 받아 두고 내주기만 한다. 계산은 브라우저가 하므로 파이썬 패키지는 늘지 않는다) + LLM 중계(`/api/llm/*`, Claude·OpenAI·Ollama, 키는 서버에만). `src/` 를 import 하지 않고 `src/` 도 서버 코드를 모른다 — 둘 사이는 HTTP 뿐이다. 경로 규칙(`<subdir>/<프로젝트>/<파일>`)은 `src/domain/clips.js` 와, 안무표 스키마(`PLAN_SCHEMA`)는 `src/domain/choreoPlan.js` 와 **같은 모양으로 두 번** 적혀 있으니 한쪽을 고치면 다른 쪽도 고친다.
+
+- `packaging/` — **설치형 앱의 껍데기**(2026-11-03, RM-28). 런처(`launcher.py` — `server.main` 을 부르고 「켜져 있음」 창을 띄운다) · 빌드(`build.py` — 맥 `.dmg`, 윈도우 설치 파일) · 아이콘을 코드로 그리는 `make_icon.py` · 앱 정보 `app.json`. 화살표는 `packaging → server.py` 한쪽이다 — `src/` 와 `server.py` 는 이 폴더의 이름을 쓰지 않고, 포장된 채 도는지는 `server.is_packaged()` 로만 안다. 빌드 중간물(`packaging/build/` · `dist/`)은 git 밖이다. 손 점검표는 `packaging/README.md`.
 
 `node tools/check-arch.mjs` 가 이 규칙을 강제한다. 규칙을 우회하고 싶어지면 대개 파일 위치가 틀린 것이다.
 

@@ -34,6 +34,8 @@ export const ROW_MENU = Object.freeze([
  * }} commands  행 번호를 받아 **커밋까지 끝낸** Dirty 를 돌려준다
  * @property {(dirty: any) => void} render presenter
  * @property {(row: number) => string} [labelOf] 제목에 쓸 행 이름(기본 `마디 N`)
+ * @property {(row: number) => ({ label: string, run: (clientX: number, clientY: number) => void }|null)} [extraItem]
+ *   맨 아래에 더할 한 줄(2026-11-03 RM-23 — `파트로 묶기…` · `파트 고치기…`). 다른 팝업을 여는 줄이라 Dirty 를 돌려주지 않는다
  */
 
 /**
@@ -42,7 +44,7 @@ export const ROW_MENU = Object.freeze([
  */
 // @complexity time=O(1) space=O(1) cc=1
 export function createRowActionPopup(deps) {
-  const { commands, render, labelOf = (row) => `마디 ${row}` } = deps;
+  const { commands, render, labelOf = (row) => `마디 ${row}`, extraItem = null } = deps;
 
   /** @type {HTMLElement|null} */
   let popupEl = null;
@@ -58,7 +60,7 @@ export function createRowActionPopup(deps) {
    * @param {number} clientX
    * @param {number} clientY
    */
-  // @complexity time=O(1) space=O(1) cc=8
+  // @complexity time=O(1) space=O(1) cc=10
   function open(target, clientX, clientY) {
     close();
     const { row, first = false, last = false } = target;
@@ -80,6 +82,15 @@ export function createRowActionPopup(deps) {
       const run = () => { close(); render(commands[item.key](row)); };
       // 지우기는 두 번 — 첫 누름은 `정말요?` 로 바뀌고 2초 안의 둘째 누름이 지운다. 그동안 팝업은 열려 있다.
       btn.addEventListener('click', () => (item.confirm ? confirmOnce(btn, item.label, run) : run()));
+      popup.appendChild(btn);
+    }
+
+    const extra = typeof extraItem === 'function' ? extraItem(row) : null;
+    if (extra) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = extra.label;
+      btn.addEventListener('click', () => { close(); extra.run(clientX, clientY); });
       popup.appendChild(btn);
     }
 

@@ -55,7 +55,7 @@ test('위반이 있으면 종료 코드 1과 파일:줄 — 원칙 꼴로 찍는
   assert.match(good.stdout, /원칙 검사 통과 — 어긴 자리 0/);
 
   // 원칙마다 규칙이 표 한 줄 — { 원칙, 무엇, 고치는 법, scan }
-  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14', 'U-15', 'U-16', 'U-17']);
+  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14', 'U-15', 'U-16', 'U-18']);
   for (const r of RULES) {
     assert.equal(typeof r.scan, 'function');
     assert.ok(r.what && r.fix, `${r.principle}: 무엇 · 고치는 법이 비었다`);
@@ -327,7 +327,7 @@ test('라벨이 이모지로 시작하면 잡는다', () => {
     'src/ui/v.js': "btn.textContent = '✨ 말로 채우기';\nconst items = [{ id: 'x', label: '≡ 동작' }];\nbox.innerHTML = '<button type=\"button\">✕ 닫기</button>';\nmic.textContent = on ? '⏹ 그만 듣기' : '🎤 말하기';\n",
     'src/domain/commands.js': "export const COMMANDS = [{ id: 'stop', button: '■ 그만' }];\n",
   };
-  const v = run('U-17', bad);
+  const v = run('U-18', bad);
   assert.deepEqual(v.map(x => `${x.file}:${x.line}`), [
     'index.html:1', 'index.html:2',
     'src/domain/commands.js:1',
@@ -339,11 +339,11 @@ test('라벨이 이모지로 시작하면 잡는다', () => {
     'src/ui/v.js': "iconLabel(btn, 'sparkles', '말로 채우기');\nconst items = [{ id: 'x', icon: 'menu', label: '동작' }];\nmic.textContent = on ? '그만 듣기' : '말하기';\n",
     'src/domain/commands.js': "export const COMMANDS = [{ id: 'stop', button: '그만', icon: 'square' }];\n",
   };
-  assert.equal(run('U-17', good).length, 0);
+  assert.equal(run('U-18', good).length, 0);
   // 단추 라벨이 아닌 자리는 넘긴다 — ⚠ 경고 문장 · ①②③ 단계 머리 · 주석 · 데이터 글자(박자 × 행)
   const notLabels = {
     'index.html': page('', '<summary>① 영상 고르기</summary>\n<!-- <button>▶ 옛 단추</button> -->'),
     'src/ui/v.js': "// btn.textContent = '▶ 재생' 이었다\nwarn('⚠ 담기를 멈췄습니다');\nmeta.textContent = `${n}박자 × ${m}행`;\n",
   };
-  assert.equal(run('U-17', notLabels).length, 0);
+  assert.equal(run('U-18', notLabels).length, 0);
 });

@@ -27,7 +27,7 @@ const FAVORITE_QUICK = '즐겨찾기 (빠른 배치에 표시)';
 export const LABELS = Object.freeze({
   // ── 안무표 블록 팝업 (ui/placementActionPopup) ───────────────────────────
   'block.untitled': '이름 없는 블록',
-  // 아래 단추 글자는 그림 글자 없이 적는다 — 그림은 부르는 자리가 iconLabel 로 붙인다(RM-18, 개발 원칙 U-17)
+  // 아래 단추 글자는 그림 글자 없이 적는다 — 그림은 부르는 자리가 iconLabel 로 붙인다(RM-18, 개발 원칙 U-18)
   'block.pick': '동작 정하기',
   'block.select': '선택하기',
   'block.deselect': '선택 풀기',
@@ -98,6 +98,29 @@ export const LABELS = Object.freeze({
 
   // ── 말로 채우기의 결과 문장 꼬리 (ui/composeView) ─────────────────────────
   'compose.undoHint': '되돌리기(Ctrl/Cmd+Z)로 되돌릴 수 있습니다.',   // 「Undo 로 …」였다(~2026-11-02). undo 글쇠는 고정이라 적어도 거짓이 되지 않는다
+
+  // ── 파트(섹션) — 마디 이름 칸의 띠 · 마디 메뉴 · 파트 팝업 (ui/partView · ui/rowActionPopup · app/render, RM-23) ──
+  'part.menu.new': '파트로 묶기…',
+  'part.menu.edit': '파트 고치기…',
+  'part.new.title': '새 파트 — {from}마디부터',
+  'part.pick.range': '{from}~{to}마디 — 다른 마디 이름을 누르면 끝이 바뀝니다',
+  'part.edit.title': '{name} 파트 — {from}~{to}마디',
+  'part.name.label': '이름',
+  'part.name.placeholder': 'A파트 · 인트로 · 브레이크',
+  'part.end.label': '끝 마디',
+  'part.color.label': '색',
+  'part.create': '파트로 묶기',
+  'part.apply': '이름 · 끝 · 색 바꾸기',
+  'part.fold': '접기',
+  'part.unfold': '펴기',
+  'part.repeat': '한 번 더',
+  'part.moveUp': '파트를 위로',
+  'part.moveDown': '파트를 아래로',
+  'part.remove': '파트 지우기',
+  'part.removed': '파트를 지웠습니다 — 마디와 블록은 그대로입니다.',
+  'part.emptySummary': '빈 파트',
+  'part.label.title': '{name} 파트 ({from}~{to}마디) — 누르면 접고, 우클릭 · 길게 누르면 고칩니다',
+  'part.label.titleFolded': '{name} 파트가 접혀 있습니다({from}~{to}마디) — 누르면 폅니다',
 
   // ── 여러 자리가 같이 쓰는 것 ──────────────────────────────────────────────
   'favorite.quickPlace.title': FAVORITE_QUICK,
