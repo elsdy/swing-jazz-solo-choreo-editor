@@ -117,9 +117,11 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
    * @see index.html:3900
    * @param {{row:number, startIndex:number, length:number}[]} segments domain/grid.buildSegments 의 결과
    * @param {number} previewCount 첫 블록에 적을 카운트
+   * @param {string} [label] 있으면 카운트 대신 첫 블록에 적는다(묶음 끌기의 「N개 함께」, RM-14)
    * @returns {void}
    */
-  function showPreview(segments, previewCount) {
+  // @complexity time=O(s) space=O(s) cc=4
+  function showPreview(segments, previewCount, label) {
     clearPreview();
     const rowRefs = refs();
     (segments || []).forEach((seg, index) => {
@@ -135,7 +137,7 @@ function buildOverlays(el, rowRefsOrGetter, boardId) {
       block.dataset[DATA.preview] = DATA.FLAG_ON;
       block.style.left = `calc(${seg.startIndex} * var(--cellW) + 4px)`;
       block.style.width = `calc(${seg.length} * var(--cellW) - 8px)`;
-      block.textContent = index === 0 ? `${previewCount}c` : '';
+      block.textContent = index === 0 ? (label ?? `${previewCount}c`) : '';
       ref.track.appendChild(block);
     });
   }

@@ -24,6 +24,9 @@ import { SEL, CLS, DATA } from '../ui/domContract.js';
 import { dragPreviewCount } from '../domain/gestureMath.js';
 import * as gesture from '../domain/boardGesture.js';
 import { groupCount } from '../domain/placements.js';
+import { linearOf } from '../domain/grid.js';
+import { planNudge } from '../domain/keyboardEdit.js';
+import { groupSpan, presentOnly } from '../domain/selection.js';
 
 /**
  * 보드 하나에 위임 리스너를 건다.
@@ -58,6 +61,8 @@ import { groupCount } from '../domain/placements.js';
  *   selectOnly({ groupId })                                 -> Dirty   그냥 클릭(RM-14)
  *   toggleSelection({ groupId })                            -> Dirty   Ctrl/Cmd+클릭
  *   selectRange({ groupId })                                -> Dirty   Shift+클릭
+ *   selectInRect({ rect })                                  -> Dirty   빈 칸 끌기 네모(RM-14)
+ *   moveSelection({ delta })                                -> Dirty   고른 묶음을 같은 거리로(RM-14 묶음 끌기)
  *   commitHistory()                                         -> Dirty|void   (saveHistory / saveHistoryRe)
  */
 export function createBoardController(deps) {
@@ -110,9 +115,53 @@ export function createBoardController(deps) {
    * ⚠ drag 가 없으면 원본은 clearPreview() 를 부른 **뒤** 조기 반환한다(3901-3902).
    */
   function updatePreviewFromDrag(row, startIndex) {
+    const bundleDrag = currentDrag();
+    if (bundleDrag?.type === 'placement-move' && bundleDrag.bundle) { updateBundlePreview(bundleDrag, row, startIndex); return; }
     const count = dragPreviewCount(currentDrag(), defaultCount(), board().placements);
     if (count == null) { overlays.clearPreview(boardId); return; }
     overlays.updatePreview(boardId, row, startIndex, count);
+  }
+
+  // ── 묶음 끌기 (RM-14) ──────────────────────────────────────────────────────
+  // 고른 블록(둘 이상) 가운데 하나의 손잡이를 끌면 묶음 전체가 같은 거리로 간다. 거리는 「끄는 블록의 시작 → 놓은 칸」의
+  // 선형 카운트 차이이고, 옮기기는 화살표와 같은 moveSelection(planNudge — 하나라도 못 가면 아무것도 안 옮김)이다.
+
+  /**
+   * 이 블록을 끌면 함께 갈 묶음. 고른 블록이고 고른 것이 둘 이상일 때만 — 하나뿐이면 지금처럼 그 블록만 옮긴다.
+   * @param {string} groupId
+   * @returns {string[]|null}
+   */
+  // @complexity time=O(p+k) space=O(k) cc=3
+  function bundleOf(groupId) {
+    const selection = store.get().selection;
+    if (!policy.allowsSelection || !selection.has(groupId)) return null;
+    const ids = presentOnly(board(), selection);
+    return ids.length > 1 ? ids : null;
+  }
+
+  /**
+   * 끄는 블록의 시작에서 놓을 칸까지의 거리(선형 카운트). 블록이 사라졌으면 null.
+   * @returns {number|null}
+   */
+  // @complexity time=O(p) space=O(1) cc=2
+  function bundleDelta(drag, row, startIndex) {
+    const span = groupSpan(board(), drag.groupId);
+    return span ? linearOf(row, startIndex, board().cols) - span.start : null;
+  }
+
+  /**
+   * 묶음이 놓일 자리를 블록마다 프리뷰로 그린다 — 미리보기 = 결과. 하나라도 못 가면(놓아도 안 옮겨지면) 프리뷰를 지운다.
+   * @returns {void}
+   */
+  // @complexity time=O(k·p) space=O(k) cc=3
+  function updateBundlePreview(drag, row, startIndex) {
+    const delta = bundleDelta(drag, row, startIndex);
+    const plan = delta === null ? null : planNudge(board(), presentOnly(board(), drag.bundle), delta);
+    if (!plan) { overlays.clearPreview(boardId); return; }
+    const placements = board().placements;
+    overlays.updateBundlePreview(boardId,
+      plan.map(step => ({ row: step.row, startIndex: step.startIndex, count: groupCount(placements, step.groupId) })),
+      `${plan.length}개 함께`);
   }
 
   // ── 그리기·빠른 배치·더블탭의 상태 (RM-08) ──────────────────────────────────
@@ -217,6 +266,12 @@ export function createBoardController(deps) {
     if (drag?.type === 'palette') {
       apply(commands.placeMove({ moveId: drag.moveId, startRow: row, startIndex, totalCount: defaultCount() }));
       commit();
+    } else if (drag?.type === 'placement-move' && drag.bundle) {
+      // 묶음 끌기(RM-14) — 옮겼을 때만 한 번 커밋한다. 막혔거나(표 밖) 제자리면 히스토리에 한 칸도 늘지 않는다.
+      const delta = bundleDelta(drag, row, startIndex);
+      const dirty = delta ? commands.moveSelection({ delta }) : null;
+      if (dirty) apply(dirty);
+      if (dirty?.boards) commit();
     } else if (drag?.type === 'placement-move') {
       if (drag.copyMode) {
         apply(commands.copyGroup({ groupId: drag.groupId, targetRow: row, targetStartIndex: startIndex }));
@@ -321,10 +376,12 @@ export function createBoardController(deps) {
     if (!placementEl) return;
     const groupId = placementEl.dataset[DATA.groupId];
     const copyMode = e.altKey;
-    dragSession.begin('placement-move', { groupId, copyMode }, { boards: [boardId] });
+    // 고른 블록을 끌면 고른 묶음 전체가 함께 간다(RM-14). Alt 복사는 지금처럼 그 블록 하나다.
+    const bundle = copyMode ? null : bundleOf(groupId);
+    dragSession.begin('placement-move', { groupId, copyMode, bundle }, { boards: [boardId] });
     e.dataTransfer.effectAllowed = copyMode ? 'copy' : 'move';
     e.dataTransfer.setData('text/plain', groupId);
-    if (!copyMode) overlays.markDraggingGroup(boardId, groupId);
+    if (!copyMode) for (const id of bundle || [groupId]) overlays.markDraggingGroup(boardId, id);
   });
 
   // ── ⑦ dragend (2489-2495) ──────────────────────────────────────────────────

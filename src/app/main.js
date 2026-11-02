@@ -351,6 +351,13 @@ const overlays = {
     const capped = Math.min(count, Grid.totalCellsFrom(row, startIndex, board));   // 3906
     ov(boardId).showPreview(Grid.buildSegments(row, startIndex, capped, board), count);
   },
+  // 묶음 끌기(RM-14) — 블록마다의 놓일 자리를 한꺼번에 그리고, 첫 조각에 「N개 함께」를 적는다
+  updateBundlePreview: (boardId, items, label) => {
+    const board = store.board(boardId);
+    const segments = items.flatMap(it =>
+      Grid.buildSegments(it.row, it.startIndex, Math.min(it.count, Grid.totalCellsFrom(it.row, it.startIndex, board)), board));
+    ov(boardId).showPreview(segments, items.length, label);
+  },
   clearTrackHighlights: (boardId) => ov(boardId).clearTrackHighlights(),
   // 네모 고르기(RM-14) — 끄는 동안 점선 네모만 그리고 행은 다시 그리지 않는다
   showMarquee: (boardId, rect) => ov(boardId).showMarquee(rect),

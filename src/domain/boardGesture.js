@@ -84,7 +84,7 @@ export function mouseDown(state, ev, env) {
   if (!ev.track || ev.onPlacement) return same(state);
   if (!env.activeMove) {
     // 동작도 빠른 배치도 아닌 빈 칸 누름 — 네모 고르기 후보(RM-14). 임계를 넘기 전까지는 네모가 없고(rect:null),
-    // 떼면 아무 할 일이 없다 — 그 click 은 보드 click 의 원래 길(빈 곳이면 아무 일 없음)로 간다.
+    // 떼면 아무 할 일이 없다 — 그 click 은 보드의 「빈 곳 누름 = 선택 풀기」(input/controls) 길로 간다.
     if (env.quickPlaceMode || !env.marquee) return same(state);
     const startIndex = env.colAt(ev.track, ev.x);
     return {
