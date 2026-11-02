@@ -105,7 +105,7 @@ export const DOCS = [
     group: 'dev',
     title: '개발 원칙',
     path: 'docs/PRINCIPLES.md',
-    desc: '버그 기록에서 뽑아낸 재발 방지 규칙 25개',
+    desc: '버그 기록에서 뽑아낸 재발 방지 규칙 43개',
   },
   {
     id: 'bugs',

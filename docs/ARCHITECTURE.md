@@ -231,6 +231,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `boardGesture.js` | 보드 위 그리기·빠른 배치·더블탭의 **전이 함수**(2026-10-01, RM-08). `(상태, 이벤트, env) → (다음 상태, 할 일 목록)` 꼴이고 `input/boardController` 는 이벤트를 값으로 바꿔 넘긴 뒤 할 일을 차례대로 실행할 뿐이다. 측정(사각형 재기·포인터 밑 찾기)은 env 의 함수로 받아 원본이 부르던 그 자리에서만 부른다. 마우스와 터치의 다른 규칙이 그대로 들어 있다 — 시험은 `tests/unit/boardGesture.test.mjs` |
 | `popupPlacement.js` | 떠 있는 창 넷(빠른 배치 팝업 · 블록 동작 팝업 · 루틴 블록 팝업 · 동작 메뉴)의 자리 산술(2026-10-01, RM-08). 넷은 일부러 다르다 — **합치지 않고** 따로 떼어 지금 값을 시험에 굳혔다. 크기를 재는 일과 한 프레임 기다리는 순서는 화면 쪽에 남는다 |
 | `commands.js` | **명령 등록부**(2026-10-01, RM-09). 명령마다 한 줄 — id · 라벨 · 설명 · 기본 글쇠 · 버튼 글자 · 툴팁 몸말 · 글자를 치는 중에도 듣는가(`whileTyping`). 실행 함수는 없다 — 실행은 `app/main` 의 `COMMAND_RUNNERS` 가 같은 id 로 잇는다. id 는 바꾼 글쇠가 저장되는 이름이라 바꾸지 않는다 |
+| `strings.js` | **라벨 문자열 표**(2026-11-02, RM-10). 명령이 **아닌** 화면 글자 — 팝업 줄 · 목록의 지우기 단추 · 툴팁 · 플레이스홀더 · 그 글자를 인용하는 안내 문장 — 의 주인 하나. `str(키)` 는 없는 키에 던지고 `fill(키, {이름})` 은 `{이름}` 구멍을 채운다. 명령의 글자는 여기 없다(`commands.js` 가 주인) — 안내 문장이 명령 이름을 인용하면 구멍을 두고 부르는 쪽이 등록부의 `button` 을 채운다. ui · input 이 함께 읽게 domain 에 둔다. 낱말의 뜻은 [용어집](GLOSSARY.md) |
 | `keyboardEdit.js` | 키보드 편집의 **자리 계산**(2026-10-01, RM-13). 화살표 한 칸 · 한 행 · 한 마디의 목표 자리(`shiftedStart` — 표 끝에서 잘리기 전에 null), 고른 묶음의 이동 계획(`planNudge` — 하나라도 못 가면 null), 붙일 자리(`cellAfter`), 담기(`clipOf` — 이름 · 길이 · 서로의 간격)와 붙이기 계획(`pastePlan`). 옮기기 · 붙이기 자체는 `boardOps` 의 `moveGroup` · `pasteBlock`(= `copyGroup` 과 같은 규칙)이 한다 — 끌기와 층 규칙이 갈라지지 않게 |
 | `hotkeys.js` | 단축키 규칙. 단축키 표(`HOTKEY_ACTIONS`)는 등록부에서 글쇠가 있는 줄을 고른 것이다. 글쇠 이름 정규화 · 사용자가 바꾼 표의 정규화 · 충돌(한 글쇠는 한 명령) · 눌린 글쇠 → 명령(`commandForKey`) |
 | `links.js` | YouTube URL 정규화와 커스텀 링크 목록 규칙 |
@@ -399,6 +400,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 놓기·이동·복사·리사이즈 동작을 바꾼다 | `src/domain/boardOps.js` 의 `*_POLICY` 상수 | 해당 골든 갱신. 반환값의 `renderRows` 와 `changedRows` 를 혼동하지 말 것 |
 | 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
 | 명령(글쇠 · 버튼 · 명령 찾기로 부르는 일)을 더한다 | `src/domain/commands.js` 한 줄 + `src/app/main.js` 의 `COMMAND_RUNNERS` 한 줄 + 버튼이면 마크업에 `data-command="<id>"` | 마크업 글자는 등록부의 `button` 과 같게, `title` 은 적지 않는다(시험이 본다). 셋이 어긋나면 원칙 검사 D-14 가 붉어진다 |
+| 명령이 아닌 화면 글자(팝업 줄 · 툴팁 · 플레이스홀더 · 안내 문장)를 바꾸거나 더한다 | `src/domain/strings.js` 의 `LABELS` 한 줄 + 부르는 자리의 `str` · `fill` | 마크업에 글자가 남은 정적 단추는 `data-label` · `data-title` 키를 달고 글자를 표와 같게 둔다(시험이 본다). 낱말은 [용어집](GLOSSARY.md)을 따르고, 바꿨으면 [기능 설명서](FEATURES.md) · [튜토리얼](TUTORIAL.md)을 같은 커밋에서 |
 | 화면이 안 다시 그려진다 | 그 조작의 커맨드가 돌려주는 `Dirty` | `dev: true` 로 `assertDirtyCovers` 를 켜 본다 |
 | 저장 파일 포맷을 바꾼다 | `src/domain/project/schema.js` | `serialize` `normalize` `merge` `migrations` 넷을 함께([개발 원칙 D-4](PRINCIPLES.md#d-4)) |
 | 저장 위치·최근 목록을 바꾼다 | `src/ports/storage.js` + `src/adapters/localStore.js` | 용량 상한을 먼저 확인한다 |
