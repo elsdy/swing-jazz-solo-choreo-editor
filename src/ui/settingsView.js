@@ -30,7 +30,7 @@ const CSS = `
 .settings-theme b { display: block; font-size: var(--fs-3); }
 .settings-theme small { display: block; font-size: var(--fs-1); color: var(--muted); margin-top: 1px; }
 .settings-theme-swatch {
-  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px;
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: var(--r-2);
   border: 1px solid rgba(var(--muted-rgb), 0.3);
 }
 /* 원칙-예외(U-15): 테마 견본은 그 테마의 색 자체라 지금 테마의 토큰을 따르면 안 된다 */
@@ -78,8 +78,8 @@ const CSS = `
 .settings-shell { position: absolute; left: 50%; top: 8vh; transform: translateX(-50%);
   width: min(780px, 96vw); max-height: 84vh;
   display: flex; flex-direction: column; overflow: hidden;
-  background: var(--bg-2); border: 1px solid rgba(var(--muted-rgb), 0.22); border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(var(--black-rgb), 0.45); }
+  background: var(--bg-2); border: 1px solid rgba(var(--muted-rgb), 0.22); border-radius: var(--r-2);
+  box-shadow: var(--shadow); }
 .settings-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
   border-bottom: 1px solid rgba(var(--muted-rgb), 0.16); flex: 0 0 auto; }
 .settings-head h2 { margin: 0; font-size: var(--fs-4); font-weight: 800; color: var(--text); white-space: nowrap; }
@@ -90,7 +90,7 @@ const CSS = `
 .settings-side { border-right: 1px solid rgba(var(--muted-rgb), 0.16); padding: 10px 8px;
   overflow-y: auto; display: grid; gap: var(--sp-1); align-content: start; }
 .settings-nav-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
-  min-height: 38px; padding: 6px 9px; cursor: pointer; border: 1px solid transparent; border-radius: 8px;
+  min-height: 38px; padding: 6px 9px; cursor: pointer; border: 1px solid transparent; border-radius: var(--r-1);
   background: transparent; color: var(--text); font-size: var(--fs-2); font-weight: 700; }
 .settings-nav-item:hover { background: rgba(var(--muted-rgb), 0.10); transform: none; }
 .settings-nav-item[aria-current="true"] { background: rgba(var(--accent-rgb), 0.14); border-color: rgba(var(--accent-rgb), 0.30); color: var(--text); }
@@ -131,7 +131,7 @@ const CSS = `
 .settings-volume { display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
   min-height: 44px; width: 100%; text-align: left; padding: 6px 10px; cursor: pointer;
   color: var(--text); background: rgba(var(--muted-rgb), 0.08); border: 1px solid rgba(var(--muted-rgb), 0.18);
-  border-radius: 8px; font-size: var(--fs-2); }
+  border-radius: var(--r-1); font-size: var(--fs-2); }
 .settings-volume:hover:not(:disabled) { background: rgba(var(--muted-rgb), 0.16); }
 .settings-volume.is-current { border-color: rgba(var(--accent-rgb), 0.45); background: rgba(var(--accent-rgb), 0.10); }
 .settings-volume span { font-size: var(--fs-1); color: var(--muted); word-break: break-all; }

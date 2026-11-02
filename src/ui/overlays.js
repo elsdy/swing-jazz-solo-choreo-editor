@@ -27,7 +27,7 @@ const PLACEMENT_GHOST_ID = 'touchPlacementGhost';
 const PALETTE_GHOST_ID = 'touchGhost';
 
 /** 플로팅 툴팁의 인라인 스타일. 원본 2778 의 cssText 를 **글자 그대로** 옮겼다. */
-const FLOATING_TIP_CSS = 'display:none;position:fixed;background:rgba(var(--black-rgb), .85);color:var(--white);padding:4px 10px;border-radius:var(--r-1);font-size:var(--fs-2);font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 2px 8px rgba(var(--black-rgb), .3);';
+const FLOATING_TIP_CSS = 'display:none;position:fixed;background:rgba(var(--black-rgb), .85);color:var(--white);padding:4px 10px;border-radius:var(--r-1);font-size:var(--fs-2);font-weight:700;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:var(--shadow-sm);';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // body 포털 싱글턴 — 툴팁과 리사이즈 카운트 배지

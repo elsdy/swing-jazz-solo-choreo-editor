@@ -18,8 +18,8 @@ const CSS = `
 .compose-overlay[data-open="1"] { display: block; }
 .compose-shell { position: absolute; left: 50%; top: 5vh; transform: translateX(-50%);
   width: min(760px, 96vw); max-height: 90vh; overflow-y: auto; display: grid; gap: var(--sp-3);
-  background: var(--bg-2); border: 1px solid rgba(var(--muted-rgb), 0.22); border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(var(--black-rgb), 0.45); padding: 0 0 14px; }
+  background: var(--bg-2); border: 1px solid rgba(var(--muted-rgb), 0.22); border-radius: var(--r-2);
+  box-shadow: var(--shadow); padding: 0 0 14px; }
 .compose-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
   border-bottom: 1px solid rgba(var(--muted-rgb), 0.16); position: sticky; top: 0; background: var(--bg-2); z-index: 1; }
 .compose-head h2 { margin: 0; font-size: var(--fs-4); font-weight: 800; color: var(--text); }
@@ -32,7 +32,7 @@ const CSS = `
   border-radius: var(--r-pill); padding: 1px 7px; }
 .compose-step textarea { width: 100%; min-height: 84px; resize: vertical; font: inherit; font-size: var(--fs-3);
   line-height: 1.5; color: var(--text); background: var(--bg); border: 1px solid rgba(var(--muted-rgb), 0.22);
-  border-radius: 8px; padding: 8px 10px; box-sizing: border-box; }
+  border-radius: var(--r-1); padding: 8px 10px; box-sizing: border-box; }
 .compose-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .compose-row .compose-grow { flex: 1; }
 .compose-status { font-size: var(--fs-1); color: var(--muted); line-height: 1.45; min-height: 1.4em; }

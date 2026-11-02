@@ -74,7 +74,7 @@ export const ROUTINE_OPTIONS = Object.freeze({
 function makeAddBtn() {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.style.cssText = 'padding:var(--sp-1) var(--sp-3);width:auto;flex-shrink:0;font-size:var(--fs-4);font-weight:bold;border-radius:8px;display:none;background:rgba(var(--accent-rgb), 0.16);border:1px solid rgba(var(--accent-rgb), 0.45);color:var(--accent);cursor:pointer;line-height:1;';
+  btn.style.cssText = 'padding:var(--sp-1) var(--sp-3);width:auto;flex-shrink:0;font-size:var(--fs-4);font-weight:bold;border-radius:var(--r-1);display:none;background:rgba(var(--accent-rgb), 0.16);border:1px solid rgba(var(--accent-rgb), 0.45);color:var(--accent);cursor:pointer;line-height:1;';
   btn.textContent = '+';
   return btn;
 }
@@ -179,7 +179,7 @@ export function createQuickPicker(deps, options = {}) {
     clickZone.addEventListener('click', onClick);
 
     const dot = document.createElement('span');
-    dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(categories, move.category)};flex-shrink:0;`;
+    dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:var(--r-1);background:${categoryColor(categories, move.category)};flex-shrink:0;`;
     const label = document.createElement('span');
     label.textContent = move.name;
     label.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
@@ -213,7 +213,7 @@ export function createQuickPicker(deps, options = {}) {
     clickZone.addEventListener('click', onClick);
 
     const dot = document.createElement('span');
-    dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${categoryColor(categories, key)};flex-shrink:0;`;
+    dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:var(--r-1);background:${categoryColor(categories, key)};flex-shrink:0;`;
     const label = document.createElement('span');
     label.textContent = categories[key].label;
     clickZone.append(dot, label);

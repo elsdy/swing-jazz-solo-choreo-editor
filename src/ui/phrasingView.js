@@ -17,7 +17,7 @@ const CSS = `
   position: fixed; z-index: 5200; width: min(340px, 92vw);
   display: grid; gap: var(--sp-2); padding: var(--sp-3);
   background: var(--bg-2); border: 1px solid rgba(var(--muted-rgb), 0.22);
-  border-radius: 12px; box-shadow: 0 18px 44px rgba(var(--black-rgb), 0.45);
+  border-radius: var(--r-2); box-shadow: var(--shadow);
 }
 /* ⚠ 반드시 있어야 한다. 위의 display:grid 가 브라우저 기본 스타일의 [hidden]{display:none} 을
    이겨서, 이 줄이 없으면 닫아도(hidden=true) 팝업이 화면에 그대로 떠 있는다.
@@ -30,12 +30,12 @@ const CSS = `
 .phrasing-num { width: 3.6em; text-align: center; }
 .phrasing-summary {
   font-size: var(--fs-1); line-height: 1.5; color: var(--text);
-  background: rgba(var(--muted-rgb), 0.10); border-radius: 8px; padding: 6px 9px;
+  background: rgba(var(--muted-rgb), 0.10); border-radius: var(--r-1); padding: 6px 9px;
 }
 .phrasing-legend { display: grid; gap: 3px; font-size: var(--fs-1); color: var(--muted); }
-.phrasing-legend b { display: inline-block; width: 22px; height: 8px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
+.phrasing-legend b { display: inline-block; width: 22px; height: 8px; border-radius: var(--r-1); vertical-align: middle; margin-right: 5px; }
 .phrasing-swatches { display: flex; gap: 3px; align-items: center; }
-.phrasing-swatches i { width: 14px; height: 8px; border-radius: 3px; }
+.phrasing-swatches i { width: 14px; height: 8px; border-radius: var(--r-1); }
 `;
 
 /**
