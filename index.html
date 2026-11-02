@@ -3491,6 +3491,63 @@
     :root[data-theme] .inline-prompt { border-color: rgba(var(--t-glow), 0.55); }
     :root[data-theme] .toast-status { border-left-color: rgb(var(--t-glow)); }
 
+
+    /* ── 상태줄 (RM-19) ──────────────────────────────────────────────────────
+       창 맨 아래 한 줄. 받는 중 · 듣는 중 · 루틴 편집 중 · 담기 자리 · 되돌릴 수 있음을 기존 판정에서 읽어
+       적고(ui/statusBar.js), 참고(status) 급 알림도 토스트 대신 여기 오른쪽에 몇 초 뜬다.
+       ⚠ 앱 높이를 상태줄만큼 줄인다 — 위의 `.app` 규칙들(폭마다 100vh)보다 **뒤에** 있어야 이긴다.
+       ⚠ 폰 · 태블릿(≤1040)에서 엄지 바가 떠 있으면 그 바로 위로 올라간다(엄지 바는 bottom:0 고정). */
+    :root { --status-h: 22px; }
+    .app { height: calc(100vh - var(--status-h)); min-height: 0; }
+    .status-bar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 2440;              /* 엄지 바(2450) 바로 아래, 배경막(2400) 위 */
+      height: var(--status-h);
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+      font-size: 11px;
+      color: var(--muted);
+      background: rgba(12,18,32,0.92);
+      border-top: 1px solid rgba(148,163,184,0.14);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .status-bar-parts { display: flex; gap: 12px; min-width: 0; overflow: hidden; flex: 1 1 auto; }
+    .status-part { overflow: hidden; text-overflow: ellipsis; }
+    .status-part[data-tone="on"] { color: #86efac; font-weight: 700; }
+    .status-part[data-tone="warn"] { color: #fcd34d; font-weight: 700; }
+    .status-bar-notice { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #bbf7d0; }
+    /* ⚠ 개발 원칙 U-12 — display 를 준 클래스에는 [hidden] 짝을 붙인다. */
+    .status-bar-notice[hidden] { display: none; }
+    .helper[hidden] { display: none; }
+    .toast-stack { bottom: calc(16px + var(--status-h)); }
+    @media (max-width: 720px) {
+      .toast-stack { bottom: calc(12px + var(--status-h)); }
+    }
+    @media (max-width: 1040px) {
+      body:has(.thumb-bar:not([hidden])) .status-bar { bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+    }
+
+    /* ── 처음 한 번 안내 (RM-19) ── ui/onceHint.js 의 말풍선. 단계 머리 바로 아래에 끼워진다. */
+    .once-hint {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin: 6px 0;
+      padding: 8px 10px;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--text, #e2e8f0);
+      background: rgba(34,197,94,0.10);
+      border: 1px solid rgba(34,197,94,0.35);
+      border-radius: 8px;
+    }
+    .once-hint-text { flex: 1 1 auto; }
+    .once-hint-ok { flex: 0 0 auto; font-size: 11px; padding: 3px 8px; }
   </style>
 </head>
 <body data-sheet="off" data-links="off" data-notes="off">
@@ -3627,9 +3684,8 @@
         <summary>루틴 목록 — 동작 여러 개를 한 덩이로</summary>
         <div class="stack">
           <div class="row wrap" style="justify-content:flex-end;">
-            <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;">+ 새 루틴</button>
+            <button id="addRoutineBtn" class="warn" style="font-size:10px;padding:4px 8px;" title="루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.">+ 새 루틴</button>
           </div>
-          <div class="helper">루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.</div>
           <div class="palette-list" id="routineList"></div>
         </div>
       </details>
@@ -3638,14 +3694,12 @@
         <summary>카테고리 관리 — 색과 이름</summary>
         <div class="stack">
           <div id="categoryManager" class="stack"></div>
-          <div class="helper">동작 카테고리는 팔레트에서 바로 수정되고, 카테고리 이름을 바꾸면 전체 UI에 반영됩니다.</div>
         </div>
       </details>
 
       <details class="drawer">
         <summary>파일 — 최근 프로젝트 · 동작 · 카테고리</summary>
         <div class="stack">
-          <div class="helper">내보낸 파일에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다. 내보내기·불러오기 버튼은 맨 위 줄의 파일 메뉴에 있습니다.</div>
           <div class="row" style="gap:4px;">
             <button id="savedSortRecentBtn" class="sort-mode-btn active" title="최근 작업순">최근순</button>
             <button id="savedSortAlphaBtn" class="sort-mode-btn" title="이름순">이름순</button>
@@ -3852,7 +3906,7 @@
                    (두 점을 찍으려면 영상을 두 번 정확히 멈춰야 한다) 처음 오는 사람이 먼저 찾는 것이 이쪽이다.
                    정확도는 아래 도움줄이 **카운트 단위로** 말해 준다. 두 점 앵커 · 직접 입력 · 보정점은 아래 접힌 칸으로 내렸다. -->
               <div class="video-field">
-                <button id="videoTapBtn" class="warn" type="button">탭</button>
+                <button id="videoTapBtn" class="warn" type="button" title="박자에 맞춰 네 번 이상 두드린 뒤 탭으로 BPM 정하기">탭</button>
                 <button id="videoTapCommitBtn" class="ghost accent" type="button">탭으로 BPM 정하기</button>
                 <button id="videoTapClearBtn" class="ghost" type="button">탭 지우기</button>
               </div>
@@ -3870,7 +3924,7 @@
                 <span class="video-label">의</span>
                 <input id="videoAnchorCount" class="video-num" type="number" min="1" value="1" />
                 <span class="video-label">카운트</span>
-                <button id="videoMarkBtn" class="primary" type="button">지금 여기</button>
+                <button id="videoMarkBtn" class="primary" type="button" title="박자가 딱 떨어지는 순간에 누릅니다. 두 지점을 찍으면 그 사이로 BPM 을 정합니다 — 멀수록 정확합니다">지금 여기</button>
                 <button id="videoMarkCancelBtn" class="ghost" type="button">취소</button>
               </div>
               <div class="helper" id="videoMarkHelp"></div>
@@ -4047,6 +4101,12 @@
        그래서 **지금 할 일 서넛**을 화면 맨 아래, 엄지가 닿는 자리에 고정한다.
        ⚠ 여기에만 있는 기능은 없다. 전부 이미 있는 버튼을 대신 누르는 자리다(ui/thumbBar.js). -->
   <nav class="thumb-bar" id="thumbBar" hidden aria-label="빠른 조작"></nav>
+
+  <!-- 상태줄(RM-19) — 지금 무엇이 켜져 있고 어디에 담기는지 한 줄. 안내 문장 대신 여기를 본다(ui/statusBar.js). -->
+  <footer class="status-bar" id="statusBar" aria-label="상태줄" aria-live="polite">
+    <span class="status-bar-parts" id="statusBarParts"></span>
+    <span class="status-bar-notice" id="statusBarNotice" role="status" hidden></span>
+  </footer>
 
   <!-- 스크롤 락 버튼 (모바일용, 항상 화면에 고정) -->
   <div class="scroll-locks" id="scrollLocks">

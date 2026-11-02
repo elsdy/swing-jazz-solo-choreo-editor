@@ -200,6 +200,8 @@ export function createSettingsView(deps) {
     saveHotkeys = () => {},
     // 작업 차례 기록(2026-09-21). 이 화면은 **읽고 지우기만** 한다 — 세는 것도 담는 것도 바깥이다.
     flow = { top: () => [], total: () => 0, clear: () => {} },
+    // 「처음 한 번」 안내(RM-19). 이 화면은 본 기록을 **비우기만** 한다 — 띄우는 것은 ui/onceHint 와 조립부다.
+    hints = { reset: () => {}, count: () => 0 },
     // 테마(2026-09-21). 목록의 주인은 domain/themes 이고, 고르면 바깥이 담고 `<html>` 에 바른다.
     getTheme = () => DEFAULT_THEME,
     setTheme = () => {},
@@ -364,12 +366,17 @@ export function createSettingsView(deps) {
           </div>
         </section>
         <section class="settings-section" data-role="coach-section" data-cat="flow" data-available="1"
-          data-keywords="안내 코치마크 처음 한 번 다시 보기 말풍선 튜토리얼 시작 도움말">
+          data-keywords="안내 코치마크 처음 한 번 다시 보기 말풍선 튜토리얼 시작 도움말 hint 설명">
           <h3>처음 한 번 안내</h3>
           <div class="helper">처음 켰을 때 <b>채우기 줄 → 동작 목록 → 영상</b> 차례로 뜨는 말풍선 세 장입니다. 한 번 끝까지 보거나 건너뛰면 다시 뜨지 않습니다 — 기본값은 「처음 한 번만」입니다. 이 브라우저에만 남고 안무표 파일에는 들어가지 않습니다.</div>
           <div class="settings-row">
             <button class="ghost" data-act="coach-replay" type="button">안내 다시 보기</button>
             <span class="settings-label" data-role="coach-note"></span>
+          </div>
+          <div class="helper" data-role="hints-section">영상 패널의 단계 · 연습 줄 · 사이드바 서랍을 처음 열 때 한 번씩 뜨는 설명 말풍선도 있습니다. 이미 본 것은 다시 뜨지 않습니다.</div>
+          <div class="settings-row">
+            <button class="ghost" data-act="hints-reset" type="button">처음 한 번 안내 다시 보기</button>
+            <span class="settings-label" data-role="hints-note"></span>
           </div>
         </section>
         <div class="settings-empty" data-role="empty" hidden></div>
@@ -701,6 +708,7 @@ export function createSettingsView(deps) {
     renderKeys();
     renderThemes();
     renderFlow();
+    renderHints();
     await renderModels();
     await renderLlm();
     await renderProjects();
@@ -1116,6 +1124,24 @@ export function createSettingsView(deps) {
       if (typeof flow.clear === 'function') flow.clear();
       renderFlow();
       if (flowNoteEl) flowNoteEl.textContent = '기록을 지웠습니다.';
+    };
+  }
+
+  // ── 처음 한 번 안내 (RM-19) ──────────────────────────────────────────────
+  const hintsResetBtn = overlay.querySelector('[data-act="hints-reset"]');
+  const hintsNoteEl = overlay.querySelector('[data-role="hints-note"]');
+
+  // @complexity time=O(1) space=O(1) cc=3
+  function renderHints() {
+    if (!hintsNoteEl) return;
+    const n = typeof hints.count === 'function' ? hints.count() : 0;
+    hintsNoteEl.textContent = n > 0 ? `본 안내 ${n}개` : '아직 본 안내가 없습니다.';
+  }
+  if (hintsResetBtn) {
+    hintsResetBtn.onclick = () => {
+      if (typeof hints.reset === 'function') hints.reset();
+      renderHints();
+      if (hintsNoteEl) hintsNoteEl.textContent = '되살렸습니다 — 그 단계를 다시 열면 안내가 뜹니다.';
     };
   }
 

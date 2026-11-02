@@ -32,6 +32,7 @@ import { askText } from './inlinePrompt.js';
 import { cellOf, clamp, linearOf, rowIndices } from '../domain/grid.js';
 import { bpmFromTaps, driftCounts, isTempoUsable, normalizeTempo, tapSpread } from '../domain/tempo.js';
 import { driftReport } from '../domain/captureDrift.js';
+import { QUIET, applyGuide, captureGuide, exportGuide, markGuide, markerGuide, pointGuide, tapGuide, trimGuide, voiceGuide } from './guideLines.js';
 import { isStacked } from './layout.js';
 import { flowTrack } from '../domain/flowTrack.js';
 import { openCount } from '../domain/stepTodos.js';
@@ -52,27 +53,8 @@ const SECOND_POINT_ROW_GAP = 4;
 /** session.video 가 없을 때의 기본값(옛 스냅샷 복원 뒤에도 안전하도록). */
 const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null, practice: null });
 
-/** 잘라내기가 안 되는 이유 → 안내 문구. 어댑터·서버는 코드/사실만 주고 문구는 여기서 만든다. */
-const TRIM_TEXT = Object.freeze({
-  'no-inout': 'In 과 Out 을 먼저 찍으세요. 잘라 낸 구간은 새 파일이 되고 원본은 그대로 남습니다.',
-  'not-file': '잘라내기는 영상 파일에만 됩니다 — 유튜브 영상은 `📁 영상 파일 열기` 로 받아 온 파일이어야 합니다.',
-  'no-server': '로컬 서버(server.py)가 없어 잘라낼 수 없습니다. `python3 server.py` 로 열면 됩니다.',
-  'no-ffmpeg': '서버에 ffmpeg 이 없습니다. 설치하고(`brew install ffmpeg`) 서버를 다시 켜면 잘라낼 수 있습니다.',
-  'not-stored': '이 파일은 아직 보관 폴더에 없습니다. 보관이 끝나면(파일명 옆 경로가 생기면) 잘라낼 수 있습니다.',
-  'busy': '잘라내는 중… 구간 길이에 따라 수십 초가 걸릴 수 있습니다. 끝나면 새 클립으로 바뀝니다.',
-  'ready': '이 구간만 남긴 새 클립(MP4)을 만들고 그 클립으로 갈아 끼웁니다. 박자 설정과 마커도 새 시간축으로 따라갑니다.'
-});
-
-/**
- * 고른 대목 내보내기(RM-31)가 잠긴 이유 → 안내 문구. 자르기와 같은 서버·파일 조건은 TRIM_TEXT 를 그대로 쓰고,
- * 내보내기에만 있는 셋(선택 없음 · 박자 없음 · 영상 밖)만 여기 둔다.
- */
-const EXPORT_TEXT = Object.freeze({
-  'no-selection': '안무표에서 블록을 고르면(여럿은 하나씩 더해 고르기) 그 대목만 박자로 계산해 잘라 냅니다. 지금 영상은 그대로 둡니다.',
-  'no-tempo': '박자를 먼저 맞추세요(`② 박자 맞추기`). 그래야 고른 마디가 영상의 몇 초인지 계산할 수 있습니다.',
-  'outside': '고른 대목이 이 영상 밖입니다 — 박자 기준점보다 앞이거나 영상이 끝난 뒤입니다.',
-  'busy': '잘라내는 중… 구간 길이에 따라 수십 초가 걸릴 수 있습니다. 끝나면 영상 목록에 새 클립이 생깁니다.'
-});
+// 잘라내기 · 내보내기가 안 되는 이유의 문구는 ui/guideLines.js(trimGuide · exportGuide)에 있다(RM-19).
+// 평소 설명(In/Out 을 먼저 · 블록을 고르면 …)은 버튼 툴팁과 「처음 한 번」 안내로 갔다.
 
 /**
  * 재생기 오류 코드 → 한국어 문구. **어댑터는 문구를 만들지 않는다** — 코드만 준다.
@@ -590,15 +572,13 @@ export function createVideoPanel(deps) {
    * @param {number[]} taps
    * @param {{bpm:number}} t 지금 확정된 템포
    * @param {{rows:number, cols:number}} board
-   * @returns {string}
+   * @returns {string|null} 둘 미만이면 빈 문자열, 간격을 못 읽었으면 null
    */
   function tapHelpText(taps, t, board) {
     const totalCounts = Math.max(1, board.rows * board.cols);
-    if (taps.length < 2) {
-      return '박자에 맞춰 네 번 이상 두드리세요. 재생 중이면 영상 시계로, 멈춰 있으면 지금 시각으로 잽니다.';
-    }
+    if (taps.length < 2) return '';
     const bpm = bpmFromTaps(taps, 1);
-    if (bpm === null) return '두드린 간격을 읽지 못했습니다 — `탭 지우기` 로 다시 시작하세요.';
+    if (bpm === null) return null;   // 간격을 못 읽었다 — tapGuide 가 경고로 바꾼다
 
     const parts = [`탭 ${taps.length}번 → ${formatBpm(bpm)} BPM`];
     const spread = tapSpread(taps);
@@ -637,18 +617,15 @@ export function createVideoPanel(deps) {
     }
 
     // 두 점 앵커의 진행 상태. 사용자가 "두 번 찍어야 한다"를 모르면 이 기능을 못 쓴다.
+    // 평소에는 빈 줄이다(RM-19) — 설명은 `지금 여기` 의 툴팁과 처음 한 번 안내에 있다. 첫 점을 찍은 뒤만 진행을 말한다.
     if (markHelp) {
       const points = p.tempoPoints || [];
-      if (points.length === 0) {
-        markHelp.textContent = ready
-          ? '박자가 딱 떨어지는 순간에 두 지점을 다시 찍으면 BPM 을 새로 잽니다. 두 지점은 멀수록 정확합니다.'
-          : '영상을 재생하다가 박자가 딱 떨어지는 순간에 `지금 여기` 를 누릅니다. 두 번 찍으면 BPM 과 시작 지점이 함께 정해집니다 — 두 지점은 멀수록 정확합니다.';
-      } else {
-        const first = points[points.length - 1];
-        markHelp.textContent =
-          `${points.length}/${POINTS_NEEDED} — 첫 지점 ${formatCell(first.count, board.cols)} = ${formatClock(first.sec)}. `
-          + '이제 한참 뒤의 카운트를 골라 한 번 더 누르세요.';
-      }
+      const first = points[points.length - 1];
+      applyGuide(markHelp, markGuide({
+        points: points.length,
+        needed: POINTS_NEEDED,
+        firstLabel: first ? `${formatCell(first.count, board.cols)} = ${formatClock(first.sec)}` : ''
+      }), CLS.isError);
     }
     if (markCancelBtn) markCancelBtn.disabled = (p.tempoPoints || []).length === 0;
 
@@ -657,7 +634,7 @@ export function createVideoPanel(deps) {
     if (tapBtn) tapBtn.textContent = taps.length ? `탭 (${taps.length})` : '탭';
     if (tapCommitBtn) tapCommitBtn.disabled = taps.length < 2;
     if (tapClearBtn) tapClearBtn.disabled = taps.length === 0;
-    if (tapHelp) tapHelp.textContent = tapHelpText(taps, t, board);
+    if (tapHelp) applyGuide(tapHelp, tapGuide({ taps: taps.length, measured: tapHelpText(taps, t, board) }), CLS.isError);
 
     // 직접 입력 — ⚠ 타이핑 중에는 되쓰지 않는다(커서가 끝으로 튀고 입력이 잘린다).
     if (bpmInput && document.activeElement !== bpmInput) bpmInput.value = ready ? formatBpm(t.bpm) : '';
@@ -672,16 +649,11 @@ export function createVideoPanel(deps) {
     if (pointSelBtn) pointSelBtn.disabled = !ready || selStart === null;
     if (pointClearBtn) pointClearBtn.disabled = pts.length === 0;
     if (pointHelp) {
-      if (pointRejected) {
-        pointHelp.textContent = '앞뒤 보정점과 순서가 맞지 않아 넣지 않았습니다 — 앞 카운트는 앞 시각에, 뒤 카운트는 뒤 시각에 와야 합니다.';
-      } else if (!ready) {
-        pointHelp.textContent = 'BPM 을 먼저 정한 뒤, 템포가 흔들리는 대목마다 보정점을 찍으면 그 사이가 저절로 맞습니다.';
-      } else if (pts.length === 0) {
-        pointHelp.textContent = '보정점 없음 — 세로선이 실제 동작보다 앞서거나 뒤처지는 대목에서 그 카운트(또는 선택한 블록)가 시작하는 순간에 누르세요.';
-      } else {
-        const shown = pts.slice(0, 6).map(pt => `${formatCell(pt.count, board.cols)} = ${formatClock(pt.sec)}`).join(' · ');
-        pointHelp.textContent = `보정점 ${pts.length}개: ${shown}${pts.length > 6 ? ' · …' : ''}`;
-      }
+      const shown = pts.slice(0, 6).map(pt => `${formatCell(pt.count, board.cols)} = ${formatClock(pt.sec)}`).join(' · ');
+      applyGuide(pointHelp, pointGuide({
+        rejected: pointRejected,
+        listed: pts.length ? `보정점 ${pts.length}개: ${shown}${pts.length > 6 ? ' · …' : ''}` : ''
+      }), CLS.isError);
     }
   }
 
@@ -702,32 +674,12 @@ export function createVideoPanel(deps) {
     //    일은 첫 타든 열째 타든 **같은 한 번의 누름**(`K`)인데 버튼만 둘이라, "지금은 어느 쪽인가"를
     //    도로 읽게 만들었다 — 가르지 않는 편이 낫다.
     // ⚠ 라벨도 바뀌지 않는다. 한 자리에서 글자가 오락가락하면 그것도 읽어야 하는 일이 된다.
-    //   지금 받는 중인지는 **안내 줄**(captureHelp)이 시각까지 들어 말해 준다.
+    //   지금 받는 중인지는 **창 맨 아래 상태줄**(ui/statusBar)이 시각까지 들어 말해 준다(RM-19).
     if (captureBtn) {
       captureBtn.disabled = !ready;
     }
     if (captureSkipBtn) captureSkipBtn.disabled = !ready;
     if (captureCancelBtn) captureCancelBtn.disabled = !running;
-    // 받는 중에만 붙는 꼬리 문장 — 오른쪽 위 배지와 **같은 판정**을 말로 푼다(2026-09-22).
-    // ⚠ 배지는 짧게(`· 영상이 더 느림 ≈126`), 여기는 **무엇을 하면 되는지**까지 적는다.
-    //   같은 사실을 두 번 적는 것이 아니라, 눈길이 닿는 자리마다 필요한 만큼만 적는 것이다.
-    function driftSentence() {
-      const t = tempo();
-      const report = driftReport(panelState().captureDrift, t.bpm);
-      if (report.state === 'fast' || report.state === 'slow') {
-        const dir = report.state === 'fast' ? '빠릅니다' : '느립니다';
-        const est = report.bpmEstimate ? ` 끊은 자리로 다시 재면 약 ${formatBpm(report.bpmEstimate)} BPM 입니다 —` : '';
-        return ` ⚠ 끊은 자리가 갈수록 밀립니다: 영상이 지금 BPM(${formatBpm(t.bpm)})보다 ${dir}.${est}`
-          + ' 지금 받는 것을 끝내고 `② 박자 맞추기` 에서 고치면 그다음부터 맞습니다(여기서 저절로 바꾸지는 않습니다).';
-      }
-      if (report.state === 'lag') {
-        const dir = report.mean > 0 ? '늦게' : '일찍';
-        return ` 끊은 자리가 고르게 ${dir} 찍힙니다(평균 ${Math.abs(report.mean).toFixed(2)}카운트).`
-          + ' 박자가 아니라 손이라서, 다 받은 뒤 아래 `표 전체 옮기기` 한 번이면 됩니다.';
-      }
-      return '';
-    }
-
     // 표 전체 옮기기는 박자와 무관하다 — 놓인 블록이 있으면 쓸 수 있다.
     const hasBlocks = typeof commands.canShiftAll === 'function' ? commands.canShiftAll() : false;
     if (shiftBackBtn) shiftBackBtn.disabled = !hasBlocks;
@@ -738,20 +690,14 @@ export function createVideoPanel(deps) {
       nameSelBtn.disabled = pending === 0;
       nameSelBtn.textContent = pending > 1 ? `고른 블록 ${pending}개에 이름 붙이기` : '고른 블록에 이름 붙이기';
     }
+    // 평소에는 빈 줄이다(RM-19). 박자가 없을 때의 막힘과, 받는 중 박자 밀림(오른쪽 위 배지와 **같은 판정**)만 적는다 —
+    // 배지는 짧게(`· 영상이 더 느림 ≈126`), 여기는 **무엇을 하면 되는지**까지. 받는 중이라는 사실과 시각은 상태줄이 말한다.
     if (captureHelp) {
-      if (!ready) {
-        captureHelp.textContent = '먼저 `② 박자 맞추기` 에서 BPM 을 정하세요 — 영상의 초를 안무표의 카운트로 바꾸는 데 박자가 필요합니다.';
-      } else if (running) {
-        captureHelp.textContent = `${formatClock(start)} 부터 받는 중 — 동작이 바뀌는 자리마다 \`B\` 나 \`K\`. `
-          + '안무가 아닌 대목은 `N` 으로 건너뛰고, 스페이스로 재생을 멈췄다 이어 갑니다. 다 되면 `Esc` 나 `■ 그만`.'
-          + driftSentence();
-      } else {
-        captureHelp.textContent = '`⏮ 처음으로` 로 되감고, 안무가 시작하는 순간 `▮ 끊기`(`K` 나 `B`)를 누르세요 — '
-          + '**처음 누른 자리가 1카운트**입니다. 그 뒤로는 동작이 바뀌는 자리마다 한 번씩 누르면 그 사이가 이름 없는 블록(`?`)으로 놓입니다. '
-          + '누른 자리는 **두 카운트 격자**(1·3·5·7박)에 붙습니다 — 한 카운트 어긋난 자리에서 시작하는 동작은 없으므로 손의 오차는 여기서 걸러집니다. '
-          + '한 동작의 끝이 곧 다음 동작의 시작이라 두 번 누를 필요가 없습니다. 이름은 나중에 붙입니다. 스페이스로 재생을 멈췄다 이어 갑니다.';
-      }
-      captureHelp.classList.toggle(CLS.isError, false);
+      const t = tempo();
+      applyGuide(captureHelp, captureGuide({
+        ready, running, bpm: t.bpm, formatBpm,
+        drift: running ? driftReport(panelState().captureDrift, t.bpm) : null
+      }), CLS.isError);
     }
     renderVoice(ready, running);
   }
@@ -785,27 +731,9 @@ export function createVideoPanel(deps) {
         voiceNow.dataset.sure = heard.needsLlm ? 'no' : 'yes';
       }
     }
-    if (voiceHelp) {
-      const err = voice.error();
-      voiceHelp.classList.toggle(CLS.isError, Boolean(err));
-      if (err) {
-        voiceHelp.textContent = err;
-      } else if (!ready) {
-        voiceHelp.textContent = '박자를 먼저 정해야 합니다 — 붙일 구간이 있어야 이름을 받을 수 있습니다.';
-      } else if (!wanted) {
-        voiceHelp.textContent = '받아 적는 동안 동작 이름을 말하면 **그때 열려 있던 구간**에 붙습니다. '
-          + '`▮ 끊기` 로 구간을 연 뒤 영상을 보면서 말하세요. 잘못 들었으면 그 구간 안에서 한 번 더 말하면 나중 것이 이깁니다. '
-          + '⚠ 크롬은 음성을 **구글 서버로 보내** 인식합니다(끌 수 없습니다).';
-      } else if (!listening) {
-        voiceHelp.textContent = '⏸ 잠깐 멈췄습니다 — 다시 켜는 중입니다. 지금 말한 것은 놓칠 수 있습니다.';
-      } else if (heard) {
-        voiceHelp.textContent = heard.needsLlm
-          ? `“${heard.heard}” 로 붙습니다. 동작 목록에서 못 찾아서, 놓인 뒤 LLM 이 정식 이름으로 고쳐 끼웁니다.`
-          : `\`${heard.name}\` 으로 붙습니다 — 동작 목록에 있는 이름입니다.`;
-      } else {
-        voiceHelp.textContent = '🎤 듣고 있습니다. 이 구간의 동작 이름을 말하세요.';
-      }
-    }
+    // 평소에는 빈 줄이다(RM-19). 오류 · 다시 켜는 중 · 지금 붙을 이름만 적는다 — 듣는 중은 상태줄 · 엄지 바가 말하고,
+    // 설명(그때 열려 있던 구간에 붙는다 · 크롬은 구글 서버로 보낸다)은 마이크 버튼의 툴팁과 처음 한 번 안내에 있다.
+    if (voiceHelp) applyGuide(voiceHelp, voiceGuide({ error: voice.error(), ready, wanted, listening, heard }), CLS.isError);
   }
 
   /**
@@ -832,11 +760,8 @@ export function createVideoPanel(deps) {
     const { clips: list, activeId } = clips();
     const board = mainBoard();
     const total = Math.max(1, (board.rows + (board.hasIntroRow ? 1 : 0)) * board.cols);
-    if (clipHelp) {
-      clipHelp.textContent = list.length === 0
-        ? '영상을 고르면 여기 쌓입니다. 같은 안무를 여러 번 찍었으면 영상마다 박자와 마커가 따로 삽니다.'
-        : `영상 ${list.length}개 — 줄을 누르면 그 영상으로 갈아탑니다(박자·마커가 함께 바뀝니다).`;
-    }
+    // 설명 줄은 걷었다(RM-19) — 처음 한 번 안내(step1)가 말한다. 영상 수는 목록 자체가 보여 준다.
+    if (clipHelp) applyGuide(clipHelp, QUIET, CLS.isError);
     clipList.innerHTML = '';
     for (const c of list) {
       const li = document.createElement('li');
@@ -1448,14 +1373,16 @@ export function createVideoPanel(deps) {
       loopBtn.disabled = !range;
     }
     if (inOutText) {
-      if (!hasIn && !hasOut) {
-        inOutText.textContent = str('video.inout.empty');            // 글자는 문자열 표(RM-10) — 단추 글자를 인용한다
-      } else if (range) {
-        inOutText.textContent = fill('video.inout.range', { in: formatClock(range.inSec), out: formatClock(range.outSec), len: (range.outSec - range.inSec).toFixed(1) })
+      // 평소에는 빈 줄이다(RM-19) — 찍은 값이 있을 때만 적는다. 찍는 법은 처음 한 번 안내(step4)와 버튼 툴팁으로 갔다.
+      // 글자는 문자열 표(RM-10)에 있다.
+      let text = '';
+      if (range) {
+        text = fill('video.inout.range', { in: formatClock(range.inSec), out: formatClock(range.outSec), len: (range.outSec - range.inSec).toFixed(1) })
           + (p.loop && !p.practice ? str('video.inout.looping') : '');
-      } else {
-        inOutText.textContent = hasIn ? fill('video.inout.needOut', { in: formatClock(p.inSec) }) : fill('video.inout.needIn', { out: formatClock(p.outSec) });
+      } else if (hasIn || hasOut) {
+        text = hasIn ? fill('video.inout.needOut', { in: formatClock(p.inSec) }) : fill('video.inout.needIn', { out: formatClock(p.outSec) });
       }
+      applyGuide(inOutText, { text, tone: 'info' }, CLS.isError);
     }
 
     // 잘라내기 — 할 수 있는가, 안 되면 왜인가.
@@ -1464,11 +1391,8 @@ export function createVideoPanel(deps) {
       trimBtn.disabled = state !== 'ready';
       trimBtn.textContent = state === 'busy' ? '✂ 잘라내는 중…' : '✂ 잘라서 새 클립으로';
     }
-    if (trimHelp) {
-      const err = getTrimError();
-      trimHelp.textContent = err && state !== 'busy' ? `잘라내기 실패: ${err}` : (TRIM_TEXT[state] || TRIM_TEXT.ready);
-      trimHelp.classList.toggle(CLS.isError, !!err && state !== 'busy');
-    }
+    // 평소에는 빈 줄이다(RM-19) — 실패 · 도는 중 · 환경 막힘(서버 · ffmpeg · 보관 전)만 적는다.
+    if (trimHelp) applyGuide(trimHelp, trimGuide({ state, error: getTrimError() }), CLS.isError);
     renderExport(board);
 
     // 마커 — 만들기 버튼과 목록.
@@ -1477,17 +1401,16 @@ export function createVideoPanel(deps) {
     if (markerSelBtn) markerSelBtn.disabled = !range || !sel;
     if (markerRowBtn) markerRowBtn.disabled = !range;
     if (markerClearBtn) markerClearBtn.disabled = list.length === 0;
+    // 평소(In~Out 없음)에는 빈 줄이다(RM-19). 순서 거부는 경고, In~Out 이 있으면 어디에 맵핑되는지를 적는다.
     if (markerHelp) {
-      if (markerRejectedId) {
-        markerHelp.textContent = '이 마커의 양 끝이 앞뒤 보정점과 순서가 맞지 않아 박자에 넣지 않았습니다 — 앞 카운트는 앞 시각에, 뒤 카운트는 뒤 시각에 와야 합니다.';
-      } else if (!range) {
-        markerHelp.textContent = 'In~Out 을 찍은 뒤, 안무표에서 그 구간에 해당하는 블록을 선택하고 `선택한 블록에 맵핑` 을 누르면 영상 구간과 안무표 구간이 짝지어집니다.';
-      } else if (sel) {
-        markerHelp.textContent = `선택: ${formatRange(sel.from, sel.to, board.cols)} (${sel.names.slice(0, 4).join(' · ')}${sel.names.length > 4 ? ' …' : ''}) ← In~Out 을 여기에 맵핑합니다.`;
-      } else {
+      let target = '';
+      if (range && sel) {
+        target = `선택: ${formatRange(sel.from, sel.to, board.cols)} (${sel.names.slice(0, 4).join(' · ')}${sel.names.length > 4 ? ' …' : ''}) ← In~Out 을 여기에 맵핑합니다.`;
+      } else if (range) {
         const r = markerRowRange();
-        markerHelp.textContent = `블록을 선택하지 않았습니다 — \`이 마디에 맵핑\` 은 왼쪽 \`마디\` 칸의 ${formatRange(r.from, r.to, board.cols)} 전체에 맵핑합니다.`;
+        target = `블록을 선택하지 않았습니다 — \`이 마디에 맵핑\` 은 왼쪽 \`마디\` 칸의 ${formatRange(r.from, r.to, board.cols)} 전체에 맵핑합니다.`;
       }
+      applyGuide(markerHelp, markerGuide({ rejected: !!markerRejectedId, hasRange: !!range, target }), CLS.isError);
     }
     if (markerList) {
       markerList.innerHTML = '';
@@ -1803,23 +1726,24 @@ export function createVideoPanel(deps) {
       exportBtn.textContent = plan.state === 'busy' ? '🎞 잘라내는 중…' : '🎞 고른 대목 잘라 내보내기';
     }
     if (!exportHelp) return;
-    const err = getExportError();
-    let text;
-    if (err && plan.state !== 'busy') text = `내보내기 실패: ${err}`;
-    else if (plan.state === 'ready') {
+    // 평소(고른 블록 없음)에는 빈 줄이다(RM-19). 고른 뒤에는 — 준비됐으면 잘릴 초 구간, 아니면 왜 안 되는지.
+    let readyText = '';
+    if (plan.state === 'ready') {
       const { span, label } = plan;
       const notes = [];
       if (span.leadSec > 0) notes.push(`앞 ${EXCERPT_LEAD_COUNTS}카운트 여유 포함`);
       if (span.clippedStart) notes.push('앞부분이 영상 0초보다 앞이라 잘렸습니다');
       if (span.clippedEnd) notes.push('뒷부분이 영상 끝을 넘어 잘렸습니다');
-      text = `「${label}」 → ${formatClock(span.startSec)} ~ ${formatClock(span.endSec)} (${(span.endSec - span.startSec).toFixed(1)}초`
+      readyText = `「${label}」 → ${formatClock(span.startSec)} ~ ${formatClock(span.endSec)} (${(span.endSec - span.startSec).toFixed(1)}초`
         + `${notes.length ? ' · ' + notes.join(' · ') : ''}). 새 클립은 영상 목록에 더해지고 지금 영상은 그대로입니다.`;
-    } else {
-      text = EXPORT_TEXT[plan.state] || TRIM_TEXT[plan.state] || '';
-      if (plan.sel && plan.state !== 'busy') text = `선택: ${formatRange(plan.sel.from, plan.sel.to, board.cols)} — ${text}`;
     }
-    exportHelp.textContent = text;
-    exportHelp.classList.toggle(CLS.isError, !!err && plan.state !== 'busy');
+    applyGuide(exportHelp, exportGuide({
+      state: plan.state,
+      error: getExportError(),
+      selected: !!plan.sel,
+      selectionLabel: plan.sel ? formatRange(plan.sel.from, plan.sel.to, board.cols) : '',
+      readyText
+    }), CLS.isError);
   }
 
   if (exportBtn) {
@@ -1985,9 +1909,13 @@ export function createVideoPanel(deps) {
    */
   function noteGrew(rows, capped) {
     if (!captureHelp) return;
+    // 평소 비어 있는 줄이라(RM-19) 적을 때 함께 보이게 한다. 다음 렌더가 도로 비운다.
+    const rest = captureHelp.hidden ? '' : captureHelp.textContent;
+    captureHelp.hidden = false;
+    captureHelp.classList.toggle(CLS.isError, capped);
     captureHelp.textContent = capped
       ? `안무표를 ${rows}마디까지 늘렸습니다 — 더 늘리지 않습니다. 박자가 실제와 맞는지 \`② 박자 맞추기\` 에서 확인하세요.`
-      : `영상 길이에 맞춰 안무표를 ${rows}마디로 늘렸습니다. ` + captureHelp.textContent;
+      : `영상 길이에 맞춰 안무표를 ${rows}마디로 늘렸습니다.` + (rest ? ' ' + rest : '');
   }
 
   // ⚠ 한 커맨드다. 처음 누르면 열고(그 시각이 1카운트), 그 뒤로는 경계를 찍는다 — 그 판정은
@@ -2015,11 +1943,13 @@ export function createVideoPanel(deps) {
     render(dirty);
     renderCapture();
     if (shiftHelp) {
-      shiftHelp.textContent = blocked
+      // 결과일 때만 적고 평소에는 숨는다(RM-19). 막혔으면 경고 색.
+      const text = blocked
         ? (delta < 0
           ? '더 당길 수 없습니다 — 인트로 마디 앞으로 나가는 블록이 있습니다.'
           : '더 밀 수 없습니다 — 표 끝을 넘는 블록이 있습니다. 안무표 크기를 늘린 뒤 다시 누르세요.')
         : (moved ? `표 전체를 ${delta < 0 ? '한 카운트 앞으로 당겼습니다' : '한 카운트 뒤로 밀었습니다'}.` : '');
+      applyGuide(shiftHelp, { text, tone: blocked ? 'warn' : 'info' }, CLS.isError);
     }
     if (moved) commitHistory();
   }

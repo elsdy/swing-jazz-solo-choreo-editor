@@ -11,6 +11,7 @@
 //   되읽지 않는다 — 두 군데가 값을 들고 있으면 둘이 어긋나는 날이 온다.
 
 import { bindOutsideClose } from './popup.js';
+import { saveTargetState } from './statusBar.js';
 import { commandById } from '../domain/commands.js';
 import { fill, str } from '../domain/strings.js';
 
@@ -47,27 +48,28 @@ export function createFileMenu(options = {}) {
   function syncSaveNote() {
     if (!saveNote) return;
     if (!getSaveTarget) { saveNote.hidden = true; return; }
-    const { bound = '', kind = 'browser', blocked = false, reason = '' } = getSaveTarget() || {};
+    // 판정은 상태줄과 한 함수(ui/statusBar.saveTargetState)다 — 두 자리가 다른 말을 하지 않게.
+    const { state, bound } = saveTargetState(getSaveTarget());
     saveNote.hidden = false;
     // ⚠ **막힌 것을 가장 먼저 말한다.** 담기가 멈춘 채로 「담기고 있습니다」라고 적으면 그 거짓말이
     //   이 줄을 둔 뜻을 통째로 무너뜨린다(실측으로 그렇게 나왔다).
     // 문장은 문자열 표(domain/strings, RM-10)에 있고, 인용하는 단추 글자 `{save}` 는 명령 등록부의 것이다 — 같은 글자를 두 곳에 적지 않는다.
     const save = commandById('saveProject').button;
-    if (blocked) {
+    if (state === 'stop-conflict' || state === 'stop-future') {
       const what = bound || '작업 문서';
       saveNote.dataset.bound = 'stop';
-      saveNote.textContent = reason === 'conflict'
+      saveNote.textContent = state === 'stop-conflict'
         // 덮어쓰지 않기로 한 것이므로 사용자에게 고를 것을 준다 — 새로고침(저쪽) 또는 다른 이름(이쪽).
         ? fill('file.note.conflict', { what, save })
         : fill('file.note.newer', { what });
       return;
     }
-    if (kind !== 'server') {
+    if (state === 'browser') {
       saveNote.dataset.bound = 'off';
       saveNote.textContent = fill('file.note.browser', { save });
       return;
     }
-    if (bound) {
+    if (state === 'bound') {
       saveNote.dataset.bound = 'on';
       saveNote.textContent = fill('file.note.bound', { bound });
       return;
