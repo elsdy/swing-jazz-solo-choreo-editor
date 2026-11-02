@@ -323,6 +323,15 @@
     /* 캔버스 바 — 안무표 자체를 만지는 것만. `.top-actions` 와 같은 모양이되 이름을 갈라
        `document.querySelector('.top-actions')` 가 앱바를 집게 한다(문서·설정이 거기 붙는다). */
     .canvas-actions { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    /* 선택 액션 바(RM-14) — 캔버스 바 바로 밑에 떠 있다(흐름에서 빠져 안무표를 밀지 않는다). 숨김은 hidden 속성(U-11). */
+    .canvas-bar { position: relative; }
+    .selection-bar { position: absolute; top: calc(100% + 4px); right: 8px; z-index: 30; max-width: calc(100% - 16px);
+      display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+      padding: 5px 8px; border-radius: 10px; background: var(--panel, #1f2937);
+      border: 1px solid rgba(250, 204, 21, 0.55); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+    .selection-bar[hidden] { display: none; }
+    .selection-bar-count { font-weight: 700; font-size: 12px; margin-right: 4px; color: #facc15; }
+    .selection-bar button { font-size: 11px; padding: 4px 8px; }
 
     /* 사이드바 아래의 파일 서랍. 자주 안 쓰는 것은 접어 둔다(점진적 공개). */
     .drawer { border-top: 1px solid rgba(148, 163, 184, 0.12); margin-top: 6px; }
@@ -3618,10 +3627,13 @@
               <!-- ⚠ `🎵 프레이즈` · `+ 빠른 배치` · `▶ 영상으로 채우기` 는 2026-09-21 에 **채우기 줄**
                    (앱바 바로 아래)로 옮겼다. 여기 남은 것은 이 안무표의 **표시 설정**뿐이다.
                    같은 버튼을 두 곳에 두지 마라 — 라벨을 고칠 때마다 두 곳을 같이 고쳐야 한다. -->
-              <button id="createRoutineFromSelectionBtn" class="primary special" style="font-size:10px;padding:4px 8px;display:none;">루틴으로 편성</button>
               <button id="linksToggleBtn" class="ghost" type="button" title="링크 줄(YouTube · ClickUp)을 보이거나 숨깁니다">🔗 링크</button>
               <button id="notesToggleBtn" class="ghost only-stacked" type="button" title="비고 칸을 보이거나 숨깁니다">비고</button>
             </div>
+            <!-- 선택 액션 바(RM-14) — 고른 블록이 있을 때만 이 줄 바로 밑에 **떠서** 뜬다(아래 줄을 밀지 않는다 —
+                 고른 직후 손 밑의 칸이 움직이지 않게). 안은 ui/selectionBar 가 명령 등록부의 글자로 채운다.
+                 ⚠ 단추를 여기 손으로 적지 마라. 도구 모음의 「루틴으로 편성 (N)」 단추도 이 바 안으로 옮겼다. -->
+            <div id="selectionBar" class="selection-bar" role="toolbar" aria-label="고른 블록에 할 일" hidden></div>
           </div>
           <div class="links-bar" id="linksBar">
             <div class="link-row" id="youtubeLinkRow">

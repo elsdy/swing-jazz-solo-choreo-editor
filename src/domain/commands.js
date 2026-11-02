@@ -158,6 +158,8 @@ export const COMMANDS = Object.freeze([
     // macOS 자판의 delete 글쇠는 브라우저에 `Backspace` 로 들어온다.
     keys: ['Delete', 'Backspace'],
     fixed: true,
+    button: '지우기',
+    title: '고른 블록을 모두 지웁니다. 지운 뒤 뜨는 알림의 되돌리기나 Ctrl+Z 로 살립니다',
   }),
   def({
     id: 'copySelection',
@@ -165,6 +167,8 @@ export const COMMANDS = Object.freeze([
     hint: '이름 · 카테고리 · 길이와 서로의 간격을 담는다. 이 창 안에서만 붙는다',
     keys: ['Ctrl+C', 'Cmd+C'],
     fixed: true,
+    button: '복사',
+    title: '고른 블록을 담습니다 — 붙여넣기(Ctrl+V)로 다른 자리에 놓습니다',
   }),
   def({
     id: 'paste',
@@ -179,6 +183,25 @@ export const COMMANDS = Object.freeze([
     hint: '고른 블록을 바로 뒤에 한 벌 더 놓는다. 담아 둔 복사본은 그대로다',
     keys: ['Ctrl+D', 'Cmd+D'],
     fixed: false,
+    button: '복제',
+    title: '고른 블록을 바로 뒤에 한 벌 더 놓습니다',
+  }),
+  // ── 선택 액션 바에만 단추가 있는 것(RM-14) — 글쇠는 없다. 팔레트(Ctrl+K)로도 부른다 ──────────
+  def({
+    id: 'practiceSelection',
+    label: '고른 블록 반복',
+    hint: '고른 블록이 덮는 구간을 반복 구간으로 잡고 그 처음부터 재생한다. 박자(BPM)와 영상 · 박자 시계가 있어야 한다',
+    fixed: false,
+    button: '고른 블록 반복',
+    title: '안무표에서 고른 블록들이 덮는 구간을 반복합니다',
+  }),
+  def({
+    id: 'routineFromSelection',
+    label: '루틴으로 편성',
+    hint: '고른 블록을 묶어 루틴 하나로 만들고 루틴 편집기에서 연다',
+    fixed: false,
+    button: '루틴으로 편성',
+    title: '고른 블록을 묶어 루틴으로 만듭니다',
   }),
   def({
     id: 'selectAll',

@@ -57,6 +57,7 @@ import { createPaletteView } from '../ui/paletteView.js';
 import { createCategoryView } from '../ui/categoryView.js';
 import { createQuickPicker, ROUTINE_OPTIONS } from '../ui/quickPicker.js';
 import { createToolbarView } from '../ui/toolbarView.js';
+import { createSelectionBar } from '../ui/selectionBar.js';
 import { createSavedListsView } from '../ui/savedListsView.js';
 import { createLinksBarView } from '../ui/linksBarView.js';
 import { createRoutineListView } from '../ui/routineListView.js';
@@ -762,7 +763,7 @@ const CONTROL_IDS = [
   'fileNameInput', 'moveListFileNameInput', 'categoryFileNameInput',
   'boardColsInput', 'boardColsDec', 'boardColsInc',
   'defaultCountInput', 'defaultCountDec', 'defaultCountInc',
-  'quickPlaceBtn', 'addRoutineBtn', 'createRoutineFromSelectionBtn'
+  'quickPlaceBtn', 'addRoutineBtn'
 ];
 const els = Object.fromEntries(CONTROL_IDS.map(id => [id, byId(id)]));
 els.mainBoardEl = boardEl;   // 빈 영역 클릭 선택 해제(1527-1529)
@@ -831,6 +832,13 @@ function nudge(board, dir) {
 
 /** 명령 하나의 지금 글쇠. 툴팁 · 일람이 읽는다. */
 const keysNow = (id) => hotkeyMap[id];
+// 선택 액션 바(RM-14) — 단추 글자 · 툴팁은 등록부에서, 누름은 bindCommandButtons 의 data-command 길로 간다.
+// ⚠ 연습 바는 이보다 뒤에 만들어진다 — canRun 은 누를 때마다 views.practice 를 다시 읽는다.
+views.selectionBar = createSelectionBar({
+  store,
+  keysOf: keysNow,
+  canRun: (id) => (id === 'practiceSelection' ? Boolean(views.practice?.canPracticeSelection?.()) : true),
+});
 
 /**
  * 프로젝트 저장 — `프로젝트 저장` 버튼과 명령 팔레트가 같은 이 함수를 부른다(RM-09).
@@ -900,6 +908,14 @@ const COMMAND_RUNNERS = Object.freeze({
     const count = BoardCmd.copySelection(store, { boardId }).length;
     if (!count) return false;
     render(withUndoToast(BoardCmd.removeSelection(store, { boardId }), count > 1 ? `블록 ${count}개를 지웠습니다.` : '블록을 지웠습니다.', boardId));
+    return true;
+  },
+  // ── 선택 액션 바(RM-14) — 바에만 단추가 있고 글쇠는 없다. 팔레트로도 부른다.
+  // 고른 블록 반복은 영상 패널의 `고른 블록 반복` 과 같은 길(ui/practiceBar)이다. 박자 · 재생기가 없으면 거짓.
+  practiceSelection: () => Boolean(views.practice?.practiceSelection?.()),
+  routineFromSelection: () => {
+    if (!store.selection.size) return false;
+    render(RoutineCmd.createFromSelection(routineDeps));
     return true;
   },
   copySelection: ({ board }) => {
@@ -1008,8 +1024,7 @@ bindControls({
     setBoardRows: (args) => BoardCmd.setBoardRows(store, { boardId: BOARD_MAIN, ...args }),
     setDefaultCount: (value) => BoardCmd.setDefaultCount(store, { value }),
     clearSelection: () => BoardCmd.clearSelection(store),
-    createRoutine: () => RoutineCmd.createRoutine(routineDeps),
-    createRoutineFromSelection: () => RoutineCmd.createFromSelection(routineDeps)
+    createRoutine: () => RoutineCmd.createRoutine(routineDeps)
   }
 });
 
