@@ -200,7 +200,6 @@ export const SEL = Object.freeze({
   app: '.app',                           // 1600
   sidebar: '.sidebar',                   // 1601
   sidebarScroll: '.sidebar-scroll',      // 1546
-  viewportMeta: 'meta[name="viewport"]', // 1668 — focusout 줌 리셋
 
   // ── 링크바 ──
   linkTitleChips: '.link-title-chip, .link-title-fetching', // 5134 — 복합, 순서 그대로

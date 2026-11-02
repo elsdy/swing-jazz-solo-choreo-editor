@@ -60,7 +60,12 @@ export const STORAGE_KEYS = Object.freeze({
    * 2026-11-02 신설(RM-26). 처음 한 번 안내(코치마크)를 끝까지 봤거나 건너뛰었다는 표시 하나.
    * ⚠ 이 브라우저의 것이라 안무표 파일에 들어가지 않는다. ⚙ 설정의 「안내 다시 보기」가 지운다.
    */
-  coachSeen: 'choreo_coach_seen'
+  coachSeen: 'choreo_coach_seen',
+  /**
+   * 2026-11-02 신설(RM-27). 「이 환경에서 안 되는 것」 알림 — 끔/켬과 마지막으로 알린 환경 지문(`{enabled, seen}`).
+   * ⚠ 환경이 바뀐 때만 다시 알리려고 지문을 남긴다. 이 브라우저의 것이라 안무표 파일에 들어가지 않는다.
+   */
+  supportNotice: 'choreo_support_notice'
 });
 
 /**
