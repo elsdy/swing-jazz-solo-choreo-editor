@@ -75,6 +75,7 @@ import { createComposeView } from '../ui/composeView.js';
 import { createModeBar } from '../ui/modeBar.js';
 import { createBpmBadge } from '../ui/bpmBadge.js';
 import { createTrashView } from '../ui/trashView.js';
+import { createHistoryView } from '../ui/historyView.js';
 import { createSpeechInput } from '../adapters/speechInput.js';
 import * as VoiceCmd from '../usecases/voiceNameCommands.js';
 import { createFileMenu } from '../ui/fileMenu.js';
@@ -512,6 +513,7 @@ views.toolbar = createToolbarView({ store, canUndo, canRedo });
  */
 function refreshProjectFolder() {
   views.trash?.render();                          // 휴지통도 폴더가 주인이다 — 같은 때 다시 읽는다
+  views.history?.render();                        // 지난 판도(RM-25) — 저장 · 되살리기마다 이력이 는다
   return projectServer.list().then((items) => {
     const fromFolder = items
       .filter(it => it.name.replace(/\.json$/i, '') !== DRAFT_NAME)
@@ -553,6 +555,44 @@ function openFromFolder(data, item, run) {
     if (run === ProjectCmd.loadProjectFromRecent) { draftStore.bind(name); syncSaveTargetNote(); }
   });
   return undefined;
+}
+
+/**
+ * 파일 서랍의 `지난 판` 에서 하나를 골라 **묶인 파일을 그 판으로 되돌리고 곧바로 다시 연다**(RM-25).
+ *
+ * 차례가 곧 안전이다 — 되살리면 파일의 표식(mtimeNs)이 바뀌므로:
+ *   ① 기다리던 담기를 버리고(1.2초 타이머에 걸린 옛 화면) ② 나가 있던 담기가 끝나기를 기다린 뒤
+ *   ③ 서버가 되살리고(지금 판은 서버가 먼저 이력에 남긴다) ④ 그 파일을 다시 읽어 ⑤ 전체 불러오기와 같은 길로
+ *   열고 ⑥ 되돌리기 스택을 새 문서 기준으로 비우고 ⑦ 자동 담기에 새 표식을 넣는다.
+ * ⑦ 이 빠지면 다음 담기가 409 로 멈추거나, 표식 없이 나가 **옛 화면으로 되살린 판을 덮어쓴다.**
+ * ①·② 가 빠지면 옛 화면을 실은 담기가 ⑦ 의 표식을 달고 끼어든다 — tests/unit/domain.test 의 draftStore 시험이 잰다.
+ * ⑥ — 되살림은 Undo 로 되돌리지 않는다(부팅 되살리기와 같은 까닭). 돌아가는 길은 ③ 이 남긴 이력 한 장이다.
+ *
+ * @param {string} file 이력 목록 항목의 `file`
+ * @returns {Promise<boolean>} 되살려 열었으면 true. 실패하면 토스트로 알리고 false — 뷰가 버튼을 되돌린다
+ */
+// @complexity time=O(n) space=O(n) cc=6
+async function restoreFromHistory(file) {
+  const fail = (why) => { render({ notify: notice('toast', why) }); return false; };
+  draftSaver.cancel();
+  await draftStore.settled();
+  const res = await projectServer.restore(file, 'history');
+  if (!res) return fail('지난 판으로 되살리지 못했습니다 — 서버가 응답하지 않았습니다.');
+  const name = String(res.name || '').replace(/\.json$/i, '');
+  const got = await projectServer.readWithMeta(name);
+  if (!got) return fail(`되살린 '${name}' 을 다시 읽지 못했습니다.`);
+  const dirty = ProjectCmd.loadProjectFromRecent(projectDeps, got.data);
+  render(dirty);
+  if (dirty.notify) return false;                 // 못 여는 판(깨졌거나 더 새 판의 앱이 담은 것) — 문구는 커맨드가 띄웠다
+  openLinksIfAny(undefined);
+  render(History.reset(hist, BOARD_MAIN));
+  draftStore.adopt(name, got.mtimeNs);
+  draftBlocked = false;
+  draftStopReason = '';
+  syncSaveTargetNote();
+  refreshProjectFolder();
+  render({ notify: notice('toast', `'${name}' 을 지난 판으로 되살렸습니다. 되살리기 전 판은 지난 판 목록에 남았습니다.`) });
+  return true;
 }
 
 /**
@@ -600,6 +640,14 @@ views.trash = createTrashView({
   listTrash: () => projectServer.trash(),
   restore: (file) => projectServer.restore(file, 'trash'),
   onRestored: () => { refreshProjectFolder(); }
+});
+
+// 지난 판(RM-25) — 서버가 덮어쓰기 전에 남긴 묶인 안무표의 판을 고르는 자리. 묶인 이름은 게터로 준다 —
+// draftStore 는 아래(24절 앞)에서 서는데 render 는 그 뒤에야 불린다(refreshProjectFolder · syncSaveTargetNote).
+views.history = createHistoryView({
+  listHistory: (name) => projectServer.history(name),
+  boundName: () => draftStore.bound(),
+  restore: restoreFromHistory
 });
 
 views.linksBar = createLinksBarView({
@@ -1295,9 +1343,10 @@ let draftBlocked = false;
  */
 let draftStopReason = '';
 
-/** 묶인 파일이 바뀌었다 — 파일 메뉴의 「어디에 담기는가」 줄을 다시 적는다. */
+/** 묶인 파일이 바뀌었다 — 파일 메뉴의 「어디에 담기는가」 줄과 서랍의 지난 판 목록을 다시 적는다. */
 function syncSaveTargetNote() {
   views.fileMenu?.syncName();
+  views.history?.render();                        // 묶인 이름이 바뀌면 목록도 바뀐다(RM-25) — 비면 감춘다
 }
 /** 서버에 있다고 확인한 경로. 소스가 바뀌면 다시 확인한다. */
 let serverClipOk = '';

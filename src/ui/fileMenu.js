@@ -67,7 +67,8 @@ export function createFileMenu(options = {}) {
     }
     if (bound) {
       saveNote.dataset.bound = 'on';
-      saveNote.textContent = `보관 폴더의 \`${bound}.json\` 에 자동으로 담기고 있습니다. 덮어쓰기 전 판은 폴더의 .history 에 남습니다.`;
+      // 되돌릴 길을 같은 문장에 둔다(RM-25) — 「남습니다」만 적으면 폴더를 뒤지라는 말이 된다.
+      saveNote.textContent = `보관 폴더의 \`${bound}.json\` 에 자동으로 담기고 있습니다. 덮어쓰기 전 판은 왼쪽 \`파일\` 서랍의 \`지난 판\` 에서 되살립니다.`;
       return;
     }
     saveNote.dataset.bound = 'off';
