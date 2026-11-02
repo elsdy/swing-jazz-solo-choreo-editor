@@ -252,6 +252,31 @@ export const COMMANDS = Object.freeze([
     title: '안무표 이름을 바꿉니다',
     fixed: false,
   }),
+  // ── 내보내기 (2026-11-02, RM-21) — 파일 메뉴의 버튼 셋. 글쇠는 없다 ─────────────────
+  def({
+    id: 'copySheet',
+    label: '텍스트 시트 복사',
+    hint: '마디 하나를 한 줄로 적은 글(8x3 · 1 Swing Out · 5 Kick …)을 클립보드에 담는다. 메신저 · 메모장에 붙인다',
+    title: '마디 하나를 한 줄로 적은 글을 클립보드에 담습니다 — 메신저 · 메모장에 바로 붙일 수 있습니다',
+    button: '📋 텍스트 시트 복사',
+    fixed: false,
+  }),
+  def({
+    id: 'downloadSheetHtml',
+    label: '읽기 전용 HTML 내려받기',
+    hint: '앱 없이 더블클릭으로 열리는 한 장짜리 HTML 파일로 받는다. 안무표 · 텍스트 시트 · 영상 마커가 들어 있다',
+    title: '앱 없이 더블클릭으로 열리는 한 장짜리 HTML 파일로 받습니다',
+    button: '⬇ 읽기 전용 HTML',
+    fixed: false,
+  }),
+  def({
+    id: 'printSheet',
+    label: '인쇄 · PDF',
+    hint: '편집 도구 · 동작 목록 · 영상을 빼고 안무표만 A4 에 맞춰 인쇄한다. 인쇄 창에서 PDF 로 저장할 수 있다',
+    title: '안무표만 A4 에 맞춰 인쇄합니다. 인쇄 창에서 PDF 로 저장할 수 있습니다',
+    button: '🖨 인쇄 · PDF',
+    fixed: false,
+  }),
   def({
     id: 'openSettings',
     label: '설정 열기',

@@ -109,6 +109,12 @@ export class StorageError extends Error {
  *   "저장은 됐는데 목록에 없음"이 되는데, 순서를 바꾸면 동작이 바뀐다 — 어댑터가 순서를 보존한다
  * @property {(file: unknown) => Promise<unknown>} readJsonFile
  *   파싱 실패는 StorageError('CORRUPT'). 오늘은 호출부마다 alert('올바른 프로젝트 파일이 아닙니다.')
+ * @property {(text: string, fileName: string, mime?: string) => void} downloadText
+ *   2026-11-02 신설(RM-21). 글자 그대로를 파일로 내려받는다 — 텍스트 시트 · 읽기 전용 HTML. downloadJson 과 같은 꼴(a 클릭 · 즉시 revoke)이다
+ * @property {(text: string) => Promise<boolean>} copyText
+ *   2026-11-02 신설(RM-21). 클립보드에 담는다. 담지 못하면 던지지 않고 false — 유스케이스가 알림으로 바꾼다
+ * @property {() => void} print
+ *   2026-11-02 신설(RM-21). 브라우저 인쇄 창을 연다(index.html 의 @media print 가 편집 도구를 숨긴다)
  */
 
 /**

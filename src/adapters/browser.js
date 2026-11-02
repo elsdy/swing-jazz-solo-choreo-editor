@@ -90,6 +90,63 @@ export const browserFileIO = {
   },
 
   /**
+   * 글자 그대로를 파일로 내려받는다(RM-21). downloadJson 과 같은 꼴이다 — a 엘리먼트 클릭, 즉시 revoke.
+   * @param {string} text
+   * @param {string} filename
+   * @param {string} [mime] 기본 text/plain. HTML 은 text/html
+   * @returns {void}
+   */
+  // @complexity time=O(n) space=O(n) cc=1
+  downloadText(text, filename, mime = 'text/plain') {
+    const blob = new Blob([String(text)], { type: `${mime};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  /**
+   * 클립보드에 글을 담는다(RM-21). navigator.clipboard 가 없거나(http · 오래된 브라우저) 막히면 숨긴 textarea 와
+   * execCommand('copy') 로 한 번 더 해 본다. 둘 다 안 되면 **던지지 않고** false — 유스케이스가 「복사하지 못했습니다」로 바꾼다.
+   * @param {string} text
+   * @returns {Promise<boolean>}
+   */
+  // @complexity time=O(n) space=O(n) cc=5
+  async copyText(text) {
+    const value = String(text);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+    } catch {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = value;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand && document.execCommand('copy');
+      ta.remove();
+      return Boolean(ok);
+    } catch {
+      return false;
+    }
+  },
+
+  /** 브라우저 인쇄 창(RM-21). 쪽 나눔 · 숨김은 index.html 의 @media print 가 한다. */
+  // @complexity time=O(1) space=O(1) cc=1
+  print() {
+    window.print();
+  },
+
+  /**
    * File → 파싱된 JSON. 원본 `file.text().then(text => JSON.parse(text))` 부분만 떼어낸 것이다.
    * ⚠ 파싱 실패를 StorageError('CORRUPT')로 감싸지 않고 JSON.parse 가 던진 SyntaxError 를 그대로
    *   흘려보낸다 — 오늘 호출부의 `catch { alert(...) }` 가 오류 종류를 보지 않기 때문이고,
