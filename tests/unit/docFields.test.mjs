@@ -48,7 +48,8 @@ const SAMPLES = {
   media: { activeId: '', clips: [{ name: '테이크 1', source: { kind: 'youtube', url: 'https://youtu.be/abc' },
     tempo: { bpm: 172, anchorSec: 1.5, anchorCount: 1 } }] },
   phrasing: { on: true, rowsPerPhrase: 2, phrasesPerChorus: 4, startRow: 2 },
-  stepTodos: { pick: [{ id: 't1', text: '곡 고르기', done: true }] }
+  stepTodos: { pick: [{ id: 't1', text: '곡 고르기', done: true }] },
+  parts: [{ name: 'A파트', startRow: 1, endRow: 4, color: '#38bdf8' }, { name: '브레이크', startRow: 6, endRow: 6, color: '#f472b6' }]
 };
 
 /** 견본을 앱이 파일을 열 때와 같은 정규화에 한 번 통과시킨 기대값 — 등록표의 모든 필드를 싣는다. */

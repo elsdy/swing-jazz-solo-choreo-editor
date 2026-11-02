@@ -59,6 +59,7 @@ export function syncTouchDraw(el, armed) {
  *   renderRow(row: number, deps?: any): void,
  *   setSelected(ids: Iterable<string>|Set<string>): void,
  *   syncPhrasing(markOf: ((row:number) => object|null)|null): void,
+ *   syncParts(markOf: ((row:number) => object|null)|null, fold?: object): void,
  *   signature(): string|null
  * }}
  */
@@ -334,6 +335,56 @@ export function createBoardView(options) {
     }
   }
 
+  /**
+   * 파트 표시를 행에 입힌다(2026-11-03, RM-23). syncPhrasing 과 같은 결 — **행을 다시 그리지 않고** dataset 과
+   * CSS 변수만 건드린다. 띠 = 마디 이름 칸 왼쪽 변(--partColor), 이름 꼬리표 = 첫 마디의 `data-part-tag` + ::after.
+   * 접힌 파트는 첫 마디만 남기고 나머지 행에 `data-part-hidden` 을 단다 — **행을 지우지 않는다**(rowRefs · 자가치유
+   * 가드 · 행 번호가 그대로라 끌기 좌표와 재생 헤드가 어긋나지 않는다). 첫 마디의 트랙에는 한 줄 요약이 뜬다.
+   *
+   * ⚠ 무엇을 칠할지는 app/render 가 domain/parts 로 셈해 넘긴다 — 여기서는 셈하지 않는다.
+   * ⚠ 골격을 다시 세우면 dataset 이 날아간다 — 호출부가 skeleton 뒤에 다시 부른다(프레이즈와 같다).
+   * @param {((row:number) => {name:string,color:string,isStart:boolean,startRow:number,endRow:number}|null)|null} markOf
+   * @param {{ hidden?: Set<number>, folded?: Set<number>, summaryOf?: (startRow:number) => string, title?: (mark:object) => string }} [fold]
+   * @returns {void}
+   */
+  // @complexity time=O(r) space=O(1) cc=8
+  function syncParts(markOf, fold = {}) {
+    const hidden = fold.hidden || new Set();
+    const folded = fold.folded || new Set();
+    for (const [row, ref] of rowRefs) {
+      const mark = typeof markOf === 'function' ? markOf(row) : null;
+      const { rowEl, label, track } = ref;
+      if (hidden.has(row)) rowEl.dataset[DATA.partHidden] = DATA.FLAG_ON; else delete rowEl.dataset[DATA.partHidden];
+      if (!mark) {
+        delete rowEl.dataset[DATA.part];
+        delete rowEl.dataset[DATA.partStart];
+        delete rowEl.dataset[DATA.partFolded];
+        delete track.dataset[DATA.partSummary];
+        rowEl.style.removeProperty('--partColor');
+        delete label.dataset[DATA.partTag];
+        continue;
+      }
+      rowEl.dataset[DATA.part] = mark.name;
+      rowEl.style.setProperty('--partColor', mark.color);
+      if (mark.isStart) {
+        rowEl.dataset[DATA.partStart] = DATA.FLAG_ON;
+        label.dataset[DATA.partTag] = mark.name;
+      } else {
+        delete rowEl.dataset[DATA.partStart];
+        delete label.dataset[DATA.partTag];
+      }
+      if (mark.isStart && folded.has(row)) {
+        rowEl.dataset[DATA.partFolded] = DATA.FLAG_ON;
+        track.dataset[DATA.partSummary] = fold.summaryOf ? fold.summaryOf(row) : mark.name;
+      } else {
+        delete rowEl.dataset[DATA.partFolded];
+        delete track.dataset[DATA.partSummary];
+      }
+      // 프레이즈 꼬리표의 title 을 덮는다 — 파트가 있는 마디에는 프레이즈 표시가 없다(파트가 이긴다)
+      label.title = fold.title ? fold.title(mark) : mark.name;
+    }
+  }
+
   function setSelected(ids) {
     const next = ids instanceof Set ? ids : new Set(ids || []);
     // ① 빠진 것 제거
@@ -362,6 +413,7 @@ export function createBoardView(options) {
     renderRow,
     setSelected,
     syncPhrasing,
+    syncParts,
     /** 지금 세워져 있는 골격의 시그니처(테스트·디버그용). */
     signature() { return boardSig; },
   };

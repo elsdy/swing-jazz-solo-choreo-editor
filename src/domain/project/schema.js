@@ -86,7 +86,10 @@ export const FIELD_TABLE = Object.freeze([
   Object.freeze({ key: 'links',       undo: 6, file: LINK_FIELDS }),
   Object.freeze({ key: 'media',       undo: 7, file: Object.freeze(['media']), optional: true }),
   Object.freeze({ key: 'phrasing',    undo: 8, file: Object.freeze(['phrasing']), optional: true }),
-  Object.freeze({ key: 'stepTodos',   undo: 9, file: Object.freeze(['stepTodos']), optional: true })
+  Object.freeze({ key: 'stepTodos',   undo: 9, file: Object.freeze(['stepTodos']), optional: true }),
+  // 2026-11-03(RM-23) 파트(섹션) — 마디 구간에 붙인 곡 구조. 맨 뒤(undo 10)다 — 앞에 끼우면 스냅샷 문자열과
+  // 파일 키 차례가 통째로 달라진다. 비면 파일에서 키째로 빠진다(파트를 안 쓴 사람의 저장 바이트가 그대로다).
+  Object.freeze({ key: 'parts',       undo: 10, file: Object.freeze(['parts']), optional: true })
 ]);
 
 /**
