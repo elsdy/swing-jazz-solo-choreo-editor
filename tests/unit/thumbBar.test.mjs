@@ -27,6 +27,9 @@ function fakeDom() {
       setAttribute: (k, v) => { attrs[k] = String(v); },
       removeAttribute: (k) => { delete attrs[k]; },
       getAttribute: (k) => (k in attrs ? attrs[k] : null),
+      // 단추 안의 아이콘 · 글자 칸(ui/icon.iconLabel, RM-18)
+      appendChild(c) { this.children.push(c); return c; },
+      replaceChildren(...kids) { this.children = kids; },
       remove() {}
     };
   }
@@ -52,7 +55,7 @@ function setup(state) {
 
 test('빠른 배치가 켜지면 quick 버튼이 quick-btn-active 를 입고 꺼지면 ghost 로 돌아간다', () => {
   const { view, quick, set, calls } = setup({ quickPlaceOn: false });
-  assert.ok(quick(), '영상이 닫힌 상태에 `+ 빠른 배치` 가 있다');
+  assert.ok(quick(), '영상이 닫힌 상태에 `빠른 배치` 가 있다');
   assert.equal(quick().className, CLS.ghost);
   set({ quickPlaceOn: true });
   view.render();

@@ -18,7 +18,6 @@
 // 자주 인용되는 단추 글자 — 안내 문장이 같은 글자를 두 번 적지 않게 여기서 한 번만.
 const VIDEO_IN = '[ 시작점 지금 여기';      // 「[ In 지금 여기」였다(~2026-11-02) — 용어집: 찍는 단추는 긴 말, 시각 표시는 In · Out
 const VIDEO_OUT = '끝점 ] 지금 여기';
-const ICON_DELETE = '×';
 const FAVORITE_QUICK = '즐겨찾기 (빠른 배치에 표시)';
 
 /**
@@ -28,17 +27,18 @@ const FAVORITE_QUICK = '즐겨찾기 (빠른 배치에 표시)';
 export const LABELS = Object.freeze({
   // ── 안무표 블록 팝업 (ui/placementActionPopup) ───────────────────────────
   'block.untitled': '이름 없는 블록',
-  'block.pick': '✎ 동작 정하기',
-  'block.select': '☐ 선택하기',
-  'block.deselect': '☑ 선택 풀기',
-  'block.remove': '× 지우기',
+  // 아래 단추 글자는 그림 글자 없이 적는다 — 그림은 부르는 자리가 iconLabel 로 붙인다(RM-18, 개발 원칙 U-17)
+  'block.pick': '동작 정하기',
+  'block.select': '선택하기',
+  'block.deselect': '선택 풀기',
+  'block.remove': '지우기',
   // 블록 양쪽 가장자리 손잡이의 툴팁(ui/placementView, RM-12). 왼쪽은 「위치 이동」이었다(~2026-11-03) — 옮기기는 이제 몸통 끌기다.
   'block.trimStart.title': '시작점 조절',
   'block.resize.title': '길이 조절',
 
   // ── 루틴 블록 팝업 (ui/routineActionPopup) ────────────────────────────────
-  'routineBlock.edit': '✏ 편집',
-  'routineBlock.remove': '× 지우기',          // 「× 삭제」였다(~2026-11-02) — 되돌리기로 돌아오니 지우기다. 안무표 블록 팝업과 같은 말
+  'routineBlock.edit': '편집',
+  'routineBlock.remove': '지우기',            // 「× 삭제」였다(~2026-11-02) — 되돌리기로 돌아오니 지우기다. 안무표 블록 팝업과 같은 말
 
   // ── 영상 구간 — ④ 구간 잡고 잘라내기 (index.html data-label · ui/videoPanel) ──
   'video.in': VIDEO_IN,
@@ -100,7 +100,6 @@ export const LABELS = Object.freeze({
   'compose.undoHint': '되돌리기(Ctrl/Cmd+Z)로 되돌릴 수 있습니다.',   // 「Undo 로 …」였다(~2026-11-02). undo 글쇠는 고정이라 적어도 거짓이 되지 않는다
 
   // ── 여러 자리가 같이 쓰는 것 ──────────────────────────────────────────────
-  'icon.delete': ICON_DELETE,
   'favorite.quickPlace.title': FAVORITE_QUICK,
 });
 

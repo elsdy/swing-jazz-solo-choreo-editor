@@ -15,13 +15,14 @@
 /**
  * 한 자리에 놓을 버튼. `main` 은 그 순간의 주 동작이라 넓고 밝게 그린다.
  * `pressed` 는 켜고 끄는 버튼만 단다 — 있으면 `aria-pressed` 로 실린다.
- * @typedef {{ id: string, label: string, title?: string, cls?: string, main?: boolean, disabled?: boolean, pressed?: boolean, run: () => void }} ThumbAction
+ * @typedef {{ id: string, label: string, icon?: string, iconOnly?: boolean, title?: string, cls?: string, main?: boolean, disabled?: boolean, pressed?: boolean, run: () => void }} ThumbAction
  */
 
 
 import { commandFace } from './commandButtons.js';
 import { CLS } from './domContract.js';
 import { voiceLabel } from './statusBar.js';
+import { iconLabel } from './icon.js';
 /**
  * @param {{
  *   elements?: Record<string, HTMLElement|null>,
@@ -37,7 +38,7 @@ import { voiceLabel } from './statusBar.js';
  *     toggleSheet: () => void,
  *     quickPlace: () => void
  *   },
- *   face?: (commandId: string) => { label: string, title: string }
+ *   face?: (commandId: string) => { label: string, title: string, icon?: string }
  * }} options
  *   face: 명령 등록부의 글자 · 툴팁(RM-09). 영상 패널 · 채우기 줄의 같은 버튼과 글자 · 툴팁이 같아진다 —
  *   툴팁에는 지금 글쇠가 실린다. 없으면 등록부의 기본값이다.
@@ -57,11 +58,12 @@ export function createThumbBar(options) {
    * 상태마다 버튼이 서넛을 넘지 않게 한다. 엄지로 고르는 자리라 다섯이 넘으면 하나도 안 읽힌다.
    * @returns {ThumbAction[]}
    */
+  // @complexity time=O(n)? space=O(n)? cc=20
   function plan() {
     const st = getState();
 
     // 넓은 화면에서 이 줄은 **영상 띠 바로 아래**에 붙는다(2026-09-21, docked). 그 폭에서는
-    // 동작 목록이 왼쪽에 늘 펼쳐져 있으므로 `≡ 동작`(시트를 여는 버튼)은 할 일이 없다 —
+    // 동작 목록이 왼쪽에 늘 펼쳐져 있으므로 `동작`(시트를 여는 버튼)은 할 일이 없다 —
     // 여기 남는 것은 **영상을 보면서 누르는 것**뿐이다.
     const keep = (items) => (st.docked ? items.filter(it => it.id !== 'sheet') : items);
 
@@ -73,7 +75,8 @@ export function createThumbBar(options) {
       const micItems = voice.available
         ? [{
           id: 'mic',
-          label: voiceLabel(voice) || '🎤 말로', // 상태줄과 같은 판정(ui/statusBar.voiceLabel)
+          icon: 'mic',
+          label: voiceLabel(voice) || '말로', // 상태줄과 같은 판정(ui/statusBar.voiceLabel)
           title: voice.wanted ? '마이크를 끕니다' : '마이크를 켜고 동작 이름을 말하면 지금 열려 있는 구간에 붙습니다',
           cls: voice.wanted ? 'warn' : 'ghost',
           run: actions.voice
@@ -113,14 +116,14 @@ export function createThumbBar(options) {
       // ⚠ 차례가 왼쪽에서 오른쪽이다 — **되감으면 바로 재생되고 → 안무가 시작할 때 누른다**. ② 박자 맞추기는
       //   영상의 일부로 싱크를 맞추는 일이라, 여기 올 때 영상은 늘 중간 어딘가에 서 있다.
       return keep([
-        { id: 'sheet', label: '≡ 동작', title: '동작 목록을 연다', cls: 'ghost', run: actions.toggleSheet },
-        ...(actions.rewind ? [{ id: 'rewind', label: '⏮ 처음으로', title: '영상을 맨 처음으로 되감고 바로 재생한다', cls: 'ghost', run: actions.rewind }] : []),
+        { id: 'sheet', icon: 'menu', label: '동작', title: '동작 목록을 연다', cls: 'ghost', run: actions.toggleSheet },
+        ...(actions.rewind ? [{ id: 'rewind', icon: 'skip-back', label: '처음으로', title: '영상을 맨 처음으로 되감고 바로 재생한다', cls: 'ghost', run: actions.rewind }] : []),
         cmd('play', { id: 'play', cls: 'ghost', run: actions.togglePlay }),
         ...tapItems,
         // ⚠ 받는 중의 `cut` 과 **같은 id·같은 라벨·같은 자리**다(2026-09-22). 첫 타든 열째 타든
         //   손이 하는 일은 같은 한 번의 누름이라, 버튼이 갈리면 "지금은 어느 쪽인가"를 읽게 된다.
         //   id 가 같으므로 받기 시작해도 **버튼이 갈아 끼워지지 않고** 그 자리에 그대로 있다.
-        // ⚠ 못 누를 때만 툴팁이 까닭을 말한다. 누를 수 있으면 등록부의 툴팁(영상 패널의 `▮ 끊기` 와 같은 글)이다.
+        // ⚠ 못 누를 때만 툴팁이 까닭을 말한다. 누를 수 있으면 등록부의 툴팁(영상 패널의 `끊기` 와 같은 글)이다.
         cmd('capture', {
           id: 'cut',
           ...(st.canCapture ? {} : { title: '먼저 ② 박자 맞추기에서 BPM 을 정하세요' }),
@@ -133,12 +136,12 @@ export function createThumbBar(options) {
     }
 
     // 영상이 닫혀 있다 — 아직 아무것도 안 정한 상태다.
-    // ⚠ 주 동작은 `≡ 동작` 이 아니라 **`▶ 영상으로 채우기`** 다. 손으로 놓는 길은 격자를 보면
+    // ⚠ 주 동작은 `동작` 이 아니라 **`영상으로 채우기`** 다. 손으로 놓는 길은 격자를 보면
     //   짐작이 되지만 영상에서 받아 적는 길은 누르기 전에는 있는 줄도 모른다 — 안 보이는 쪽을
     //   크게 둔다. 캔버스 바에도 같은 버튼이 첫 자리에 있다(눈이 가는 자리와 엄지가 닿는 자리).
     return [
-      { id: 'sheet', label: '≡ 동작', title: '동작 목록을 연다', cls: 'ghost', run: actions.toggleSheet },
-      // ⚠ 토글이다(RM-36). 폰 폭에서는 캔버스 바의 `+ 빠른 배치` 가 숨고 이것만 보이므로, 켜짐을 여기서
+      { id: 'sheet', icon: 'menu', label: '동작', title: '동작 목록을 연다', cls: 'ghost', run: actions.toggleSheet },
+      // ⚠ 토글이다(RM-36). 폰 폭에서는 캔버스 바의 `빠른 배치` 가 숨고 이것만 보이므로, 켜짐을 여기서
       //   보이지 않으면 켰는지 모른 채 칸을 누르게 된다 — 캔버스 바(ui/toolbarView)와 같은 활성 모양을 입는다.
       cmd('quickPlace', {
         id: 'quick',
@@ -154,6 +157,7 @@ export function createThumbBar(options) {
    * 다시 그린다. **버튼을 통째로 갈아 끼우지 않는다** — 같은 id 가 남아 있으면 그 자리를 고쳐 쓴다.
    * 누르는 순간에 엘리먼트가 사라지면 그 탭이 허공에 떨어지고, 폰에서는 그것이 「안 눌린다」로 보인다.
    */
+  // @complexity time=O(n)? space=O(n)? cc=13
   function render() {
     if (!bar) return;
     const items = plan();
@@ -175,7 +179,7 @@ export function createThumbBar(options) {
       }
       keep.delete(item.id);
       btn.className = item.cls || 'ghost';
-      btn.textContent = item.label;
+      iconLabel(btn, item.icon || '', item.label, doc);
       btn.title = item.title || '';
       btn.disabled = Boolean(item.disabled);
       // ⚠ onclick 이다(addEventListener 가 아니다) — 다시 그릴 때마다 붙이면 한 번 누른 것이

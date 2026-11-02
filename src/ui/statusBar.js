@@ -6,7 +6,7 @@
 //
 // ⚠ 판정을 새로 하지 않는다. 받는 중은 captureSec, 듣는 중은 음성 어댑터의 상태, 담기 자리는 파일 메뉴가
 //   쓰던 담기 판정, 되돌릴 수 있음은 히스토리를 그대로 읽는다 — getState 가 그것을 모아 준다.
-// ⚠ 같은 판정을 쓰는 다른 자리(파일 메뉴의 「어디에 담기는가」 · 엄지 바의 `🎤 듣는 중`)는 여기의
+// ⚠ 같은 판정을 쓰는 다른 자리(파일 메뉴의 「어디에 담기는가」 · 엄지 바의 `듣는 중`)는 여기의
 //   순수 함수(saveTargetState · voiceLabel)를 **import 해서** 쓴다. 두 곳이 따로 말하면 둘이 어긋나는 날이 온다.
 // ⚠ 상태줄은 보드 렌더에 묶이지 않는다. app/render 가 video · history · routineEditor 가 더러울 때만
 //   render() 를 부르고, 음성 상태 · 담기 판정이 바뀌면 조립부가 render() 를 직접 부른다 — 받아 적는 중
@@ -15,6 +15,7 @@
 //   급은 그대로 toastView 다 — 갈래는 app/noticeRouter 가 정한다.
 
 import { commandById } from '../domain/commands.js';
+import { iconLabel } from './icon.js';
 
 /** 참고 급 알림이 상태줄에 떠 있는 시간(ms). 토스트(3.2초)보다 조금 길다 — 한 줄이라 눈에 덜 띈다. */
 export const STATUS_NOTICE_MS = 5000;
@@ -49,14 +50,24 @@ export function saveTargetState(target) {
 
 /**
  * 마이크 버튼 · 엄지 바 · 상태줄이 함께 쓰는 「듣는 중」 라벨. 켜지 않았으면 빈 문자열.
- * ⚠ 「켜져 있다」와 「듣고 있다」는 다르다 — 크롬은 조용하면 스스로 멈추고 우리가 다시 켠다. 그 틈이 `🎤 …` 다.
+ * ⚠ 「켜져 있다」와 「듣고 있다」는 다르다 — 크롬은 조용하면 스스로 멈추고 우리가 다시 켠다. 그 틈이 `…` 다(앞에 마이크 아이콘, RM-18).
  * @param {VoiceState|null|undefined} voice
  * @returns {string}
  */
 // @complexity time=O(1) space=O(1) cc=4
 export function voiceLabel(voice) {
   if (!voice || !voice.available || !voice.wanted) return '';
-  return voice.listening ? '🎤 듣는 중' : '🎤 …';
+  return voice.listening ? '듣는 중' : '…';
+}
+
+/**
+ * 「듣는 중」 조각의 색. 듣고 있으면 on, 켰는데 틈이면 warn — 라벨 글자를 견주지 않고 상태에서 바로 정한다.
+ * @param {VoiceState|null|undefined} voice
+ * @returns {'on'|'warn'}
+ */
+// @complexity time=O(1) space=O(1) cc=3
+export function voiceTone(voice) {
+  return voice && voice.listening ? 'on' : 'warn';
 }
 
 /**
@@ -79,18 +90,18 @@ export function statusParts(state, deps = {}) {
   const parts = [];
   const save = saveTargetState(state.save);
   if (save.state === 'stop-conflict') {
-    parts.push({ id: 'save', text: `⚠ 담기 멈춤 — \`${save.bound || '작업 문서'}\` 이 다른 탭이나 기기에서 바뀌었습니다`, tone: 'warn' });
+    parts.push({ id: 'save', icon: 'alert', text: `담기 멈춤 — \`${save.bound || '작업 문서'}\` 이 다른 탭이나 기기에서 바뀌었습니다`, tone: 'warn' });
   } else if (save.state === 'stop-future') {
-    parts.push({ id: 'save', text: `⚠ 담기 멈춤 — \`${save.bound || '작업 문서'}\` 는 더 새 판의 앱이 담은 것입니다`, tone: 'warn' });
+    parts.push({ id: 'save', icon: 'alert', text: `담기 멈춤 — \`${save.bound || '작업 문서'}\` 는 더 새 판의 앱이 담은 것입니다`, tone: 'warn' });
   } else if (save.state === 'stop-failed') {
-    parts.push({ id: 'save', text: '⚠ 담기 실패 — 이 브라우저에 담지 못하고 있습니다', tone: 'warn' });
+    parts.push({ id: 'save', icon: 'alert', text: '담기 실패 — 이 브라우저에 담지 못하고 있습니다', tone: 'warn' });
   }
 
   const start = state.capture ? state.capture.startSec : null;
-  if (Number.isFinite(start)) parts.push({ id: 'capture', text: `● ${fmt(start)} 부터 받는 중`, tone: 'on' });
+  if (Number.isFinite(start)) parts.push({ id: 'capture', icon: 'circle-dot', text: `${fmt(start)} 부터 받는 중`, tone: 'on' });
 
   const mic = voiceLabel(state.voice);
-  if (mic) parts.push({ id: 'voice', text: mic, tone: mic === '🎤 듣는 중' ? 'on' : 'warn' });
+  if (mic) parts.push({ id: 'voice', icon: 'mic', text: mic, tone: voiceTone(state.voice) });
 
   if (state.routine && state.routine.editing) parts.push({ id: 'routine', text: '루틴 편집 중', tone: 'on' });
 
@@ -137,10 +148,11 @@ export function createStatusBar(options) {
    * 다시 그린다. 조각이 글자 하나 안 바뀌었으면 DOM 을 건드리지 않는다 — 음성 어댑터가 초당 몇 번 부른다.
    * ⚠ 조각 하나가 `<span>` 하나다. 통째 문자열로 적지 않는 까닭은 조각마다 색(tone)이 다르기 때문이다.
    */
+  // @complexity time=O(n)? space=O(n)? cc=10
   function render() {
     if (!partsEl) return;
     const list = parts();
-    const sig = list.map(p => `${p.id}:${p.tone || ''}:${p.text}`).join('\u0001');
+    const sig = list.map(p => `${p.id}:${p.tone || ''}:${p.icon || ''}:${p.text}`).join('\u0001');
     if (sig === lastSig) return;
     lastSig = sig;
     partsEl.textContent = '';
@@ -149,7 +161,7 @@ export function createStatusBar(options) {
       span.className = 'status-part';
       span.dataset.part = p.id;
       if (p.tone) span.dataset.tone = p.tone;
-      span.textContent = p.text;
+      iconLabel(span, p.icon || '', p.text, doc);
       partsEl.appendChild(span);
     }
     if (root) root.dataset.warn = list.some(p => p.tone === 'warn') ? 'on' : 'off';

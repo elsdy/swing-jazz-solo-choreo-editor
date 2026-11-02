@@ -76,6 +76,7 @@ export function heardName(store) {
  * LLM 에게 물어야 할 것들. `[{groupId, heard}]`
  * @param {object} store
  */
+// @complexity time=O(1) space=O(1) cc=3
 export function llmQueue(store) {
   const v = store.get().session.video;
   const q = v ? v.voiceQueue : null;
@@ -89,7 +90,7 @@ export function llmQueue(store) {
 /**
  * 한마디를 들었다. 지금 열려 있는 구간의 이름으로 삼는다.
  *
- * ⚠ **`atSec` 이 지금 열린 구간보다 앞이면 버린다.** 말하는 도중에 `▮ 끊기` 를 누르면 그 말은
+ * ⚠ **`atSec` 이 지금 열린 구간보다 앞이면 버린다.** 말하는 도중에 `끊기` 를 누르면 그 말은
  *   앞 구간의 것인데, 그 구간은 이미 놓였다. 뒤늦게 다음 구간에 붙이면 한 칸 밀린 이름이 된다 —
  *   이름이 없는 것보다 **틀린 이름이 붙는 것이 나쁘다**(영상을 다시 보기 전에는 모른다).
  *

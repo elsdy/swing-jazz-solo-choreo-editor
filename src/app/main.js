@@ -57,6 +57,7 @@ import { createBoardView, syncTouchDraw } from '../ui/boardView.js';
 import { touchDrawArmed } from '../domain/boardGesture.js';
 import { createOverlays, ensureOverlaySingletons } from '../ui/overlays.js';
 import { createPaletteView } from '../ui/paletteView.js';
+import { installIconMasks } from '../ui/icon.js';
 import { createCategoryView } from '../ui/categoryView.js';
 import { createQuickPicker, ROUTINE_OPTIONS } from '../ui/quickPicker.js';
 import { createToolbarView } from '../ui/toolbarView.js';
@@ -1567,6 +1568,7 @@ function mediaSourceKey(source) {
 }
 
 /** 지금 소스에 맞는 재생기를 준비한다. 멱등이며, 바뀐 것이 없으면 아무 일도 하지 않는다. */
+// @complexity time=O(n)? space=O(n)? cc=10
 function ensurePlayer() {
   const source = currentMediaSource();
   const kind = source ? pickPlayerKind(source) : (wantsClockPlayer() ? 'clock' : 'null');
@@ -1583,7 +1585,7 @@ function ensurePlayer() {
     //   그래서 **`data-keep` 이 붙은 것만 남기고** 나머지를 걷는다. YT 는 host <div> 를 <iframe> 으로
     //   갈아치우므로 "우리가 만든 host" 를 기억해 두는 것으로는 부족하다.
     // ⚠ 2026-09-20 에 표식 방식으로 바꿨다. 그전에는 캔버스 하나만 이름으로 비교해서, 재생기를 처음
-    //   만드는 순간 `⤡ 제자리로` 손잡이(#videoFloatBar)가 조용히 사라졌다 — 띄워 놓고 되돌릴 길이
+    //   만드는 순간 `제자리로` 손잡이(#videoFloatBar)가 조용히 사라졌다 — 띄워 놓고 되돌릴 길이
     //   없어지는 버그였고, 화면에는 "버튼이 원래 없는 것"처럼 보여 드러나지 않았다.
     for (const child of [...videoFrameEl.children]) {
       if (!child.dataset.keep) child.remove();
@@ -1925,12 +1927,15 @@ const clipServerReady = clipServer.probe().then((cfg) => {
  * ⚠ 어느 테마인지의 주인은 domain/themes 이고, 여기는 담고 바르기만 한다.
  * @param {string} id
  */
+// @complexity time=O(1) space=O(1) cc=2
 function applyTheme(id) {
   const attr = themeAttr(id);
   if (attr) document.documentElement.dataset.theme = attr;
   else delete document.documentElement.dataset.theme;
 }
 applyTheme(loadTheme());
+// 스타일시트의 `::before` · `::after` 가 쓰는 아이콘 마스크(`--icon-이름`)를 스프라이트에서 만든다(RM-18). 그리기 전에 한 번.
+installIconMasks(document);
 
 /**
  * 어떤 버튼 다음에 어떤 버튼을 눌렀나(2026-09-21). 표는 domain/flowStats 가 세고 어댑터가 담는다 —
@@ -2562,6 +2567,7 @@ views.practice = createPracticeBar({
  * ⚠ play() 는 **클릭 콜스택 안에서** 불러야 한다(capabilities.needsUserGesture) — await 뒤로
  *   미루면 브라우저가 차단한다. 그래서 seek 을 기다리지 않고 곧바로 부른다.
  */
+// @complexity time=O(1) space=O(1) cc=3
 function seekToSpanStart(startSec) {
   const tempo = VideoCmd.mediaState(store).tempo;
   const tolerance = player.capabilities.seekToleranceSec;
@@ -2703,7 +2709,7 @@ views.settings = createSettingsView({
   // 「안내 다시 보기」(RM-26). 코치마크는 아래 채우기 줄 뒤에 만들어지므로 부를 때 찾는다.
   coach: { replay: () => coach?.replay() },
   // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
-  // LLM 키를 넣거나 뺐으면 `✨ 말로 채우기` 의 막힘도 다시 잰다(RM-26).
+  // LLM 키를 넣거나 뺐으면 `말로 채우기` 의 막힘도 다시 잰다(RM-26).
   onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); syncEntryStates(); }
 });
 
@@ -2713,7 +2719,7 @@ views.settings = createSettingsView({
 
 const composeView = createComposeView({
   // ⚠ 앱바가 아니라 **채우기 줄**이다(2026-09-21). 말로 채우기는 앱 수준 조작이 아니라
-  //   안무표를 채우는 네 길 중 하나다 — `▶ 영상으로 채우기` 와 같은 줄에 있어야 한다.
+  //   안무표를 채우는 네 길 중 하나다 — `영상으로 채우기` 와 같은 줄에 있어야 한다.
   container: byId('modeComposeSlot'),
   llm: llmServer,
   getContext: () => {
@@ -2768,8 +2774,8 @@ openLinksIfAny(undefined);
 // ─────────────────────────────────────────────────────────────────────────────
 // 21. 채우기 줄 — 앱바 아래 한 줄과 빈 안무표 안내 (2026-09-21)
 //
-// ⚠ 줄 위의 버튼은 **전부 이미 있던 것**이다. `✨ 말로 채우기`(19절)와 `🎵 프레이즈`(20절)는
-//   위에서 이 줄의 슬롯에 붙었고, `▶ 영상으로 채우기`·`+ 빠른 배치` 는 마크업이 이 줄로 옮겨
+// ⚠ 줄 위의 버튼은 **전부 이미 있던 것**이다. `말로 채우기`(19절)와 `프레이즈`(20절)는
+//   위에서 이 줄의 슬롯에 붙었고, `영상으로 채우기`·`빠른 배치` 는 마크업이 이 줄로 옮겨
 //   왔다(id 가 그대로라 배선은 한 줄도 바뀌지 않는다). 이 뷰가 쥔 것은 `✋ 직접 놓기` 뿐이다.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2846,7 +2852,7 @@ async function syncEntryStates() {
 }
 
 // 기준 박자 배지 — 오른쪽 위 고정석(2026-09-22). 누르면 박자를 정하는 자리로 보낸다.
-// ⚠ 새 커맨드를 만들지 않는다. `▶ 영상으로 채우기` 와 같은 진입점이다.
+// ⚠ 새 커맨드를 만들지 않는다. `영상으로 채우기` 와 같은 진입점이다.
 views.bpm = createBpmBadge({
   store,
   onOpenTempo: () => {

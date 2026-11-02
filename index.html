@@ -99,6 +99,27 @@
     button.ghost.accent { background: rgba(var(--focus-rgb), 0.18); border: 1px solid rgba(var(--focus-rgb), 0.38); color: var(--text); font-weight: 800; }
     button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
+    /* ── 아이콘 한 벌(RM-18, 2026-11-03 · 개발 원칙 U-17) ─────────────────────────────────────
+       그림은 <body> 맨 앞의 #icon-sprite 에서만 온다. 높이는 글자 한 단(1em 남짓) · 색은 글자색(currentColor)이라
+       테마와 글자 크기 토큰을 그대로 따른다. 단추의 글자는 .lbl 칸에 있고 아이콘은 그 앞에서 돕기만 한다 —
+       상태에 따라 글자가 바뀌어도(마이크 켜기/끄기) ui/icon.js 의 setLabel 이 글자 칸만 간다. */
+    .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .icon { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.22em; flex: none;
+      fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .icon + .lbl { margin-left: 0.35em; }
+    .lbl + .icon { margin-left: 0.35em; }
+    /* 스타일시트가 그리는 그림 — ::before · ::after 는 <use> 를 못 부르므로, installIconMasks 가 스프라이트에서 만든
+       --icon-이름 마스크를 --mask 로 받아 글자색으로 칠한다. 규칙마다 --mask 만 고른다.
+       ⚠ 마스크가 아직 없을 때(부팅 중 · installIconMasks 전)는 투명 그림으로 물러선다 — 물러설 자리가 없으면 mask 가
+       none 이 되어 글자색 네모(■)가 잠깐 보였다(2026-11-03 브라우저에서 잼). */
+    .drawer > summary::before, .vstep > summary::before, .vsub > summary::before, .move-chip::before,
+    .scroll-lock-btn .lock-icon::after, .routine-chip::before, .routine-color-popup .rcp-swatches button.is-current::after,
+    .video-frame .video-clock-title::before {
+      background-color: currentColor;
+      -webkit-mask: var(--mask, linear-gradient(transparent, transparent)) center / contain no-repeat;
+      mask: var(--mask, linear-gradient(transparent, transparent)) center / contain no-repeat;
+    }
+
     /* ⚠ 접힌 `<details>` 를 **명시적으로** 숨긴다. 브라우저 기본 동작에 기대면, 자식에 `display` 를 주는
        규칙(`.video-field{display:flex}` 같은 것)이 그것을 이기고, 환경에 따라 아예 안 접히기도 한다
        (2026-09-12 에 이 자동화 크롬에서 손대지 않은 `<details>` 도 안 접혔다). 규칙으로 못박아 두면
@@ -364,14 +385,14 @@
       font-size: var(--fs-1); font-weight: 800; color: var(--text); user-select: none;
     }
     .drawer > summary::-webkit-details-marker { display: none; }
-    .drawer > summary::before { content: '▸ '; color: var(--muted); }
-    .drawer[open] > summary::before { content: '▾ '; }
+    .drawer > summary::before { content: ''; display: inline-block; width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 0.3em; color: var(--muted); --mask: var(--icon-chevron-right); }
+    .drawer[open] > summary::before { --mask: var(--icon-chevron-down); }
     .drawer > .stack, .drawer > .compact-grid { padding-bottom: 8px; }
     /* 서랍이 사이드바 안에 들어가면 좌우 여백이 `.section` 의 것과 맞아야 한다(2026-09-20). */
     .sidebar-scroll > .drawer { padding: 0 10px; }
-    /* 새 동작 만들기 서랍만 `▸` 대신 `+` 를 쓴다 — 여는 것이 아니라 더하는 일이다. */
-    .drawer-plus > summary::before { content: '+ '; }
-    .drawer-plus[open] > summary::before { content: '− '; }
+    /* 새 동작 만들기 서랍만 꺾쇠 대신 더하기를 쓴다 — 여는 것이 아니라 더하는 일이다. */
+    .drawer-plus > summary::before { --mask: var(--icon-plus); }
+    .drawer-plus[open] > summary::before { --mask: var(--icon-minus); }
 
     .panel-header, .section, .toolbar {
       padding: 8px 10px;
@@ -813,9 +834,9 @@
       user-select: none;
     }
     .move-chip::before {
-      content: "⋮⋮";
-      font-size: var(--fs-1);
-      letter-spacing: -1px;
+      content: "";
+      display: inline-block; width: 1em; height: 1em; flex: none;
+      --mask: var(--icon-grip);
       opacity: 0.72;
     }
     .move-meta {
@@ -1082,14 +1103,16 @@
     .scroll-lock-btn .lock-icon {
       font-size: var(--fs-4);
       line-height: 1;
+      display: inline-flex;
     }
     .scroll-lock-btn.locked {
       background: rgba(var(--accent-rgb), 0.18);
       border-color: rgba(var(--accent-rgb), 0.5);
       color: var(--accent);
     }
-    .scroll-lock-btn.locked .lock-icon::after { content: '🔒'; }
-    .scroll-lock-btn:not(.locked) .lock-icon::after { content: '🔓'; }
+    .scroll-lock-btn .lock-icon::after { content: ''; display: inline-block; width: 1em; height: 1em; }
+    .scroll-lock-btn.locked .lock-icon::after { --mask: var(--icon-lock); }
+    .scroll-lock-btn:not(.locked) .lock-icon::after { --mask: var(--icon-lock-open); }
 
     /* ── 리사이즈 디바이더 (모바일/태블릿 전용) ── */
     .resize-divider {
@@ -1467,6 +1490,7 @@
     }
     .star-btn:not(.active):hover { color: rgba(var(--now-rgb), 0.45); }
     .star-btn.active { color: var(--now); }
+    .star-btn.active .icon { fill: currentColor; }
     .sort-mode-btn {
       flex: 1;
       font-size: var(--fs-1);
@@ -1573,7 +1597,7 @@
       flex-shrink: 0;
       box-shadow: var(--shadow-sm);
     }
-    .routine-chip::before { content: "▶"; font-size:var(--fs-1); }
+    .routine-chip::before { content: ""; display: inline-block; width: 0.9em; height: 0.9em; flex: none; --mask: var(--icon-play); }
     /* 칩을 누르면 견본판이 열린다(RM-34). 끌기는 카드 전체가 하므로 칩은 커서만 바꾼다. */
     .routine-chip[role="button"] { cursor: pointer; }
     .routine-chip[role="button"]:hover,
@@ -1667,7 +1691,7 @@
     .routine-color-popup .rcp-swatches button:hover,
     .routine-color-popup .rcp-swatches button:focus-visible { border-color: var(--text); background-clip: padding-box; }
     .routine-color-popup .rcp-swatches button.is-current { border-color: var(--text); }
-    .routine-color-popup .rcp-swatches button.is-current::after { content: "✓"; color: var(--bg); font-weight: 800; font-size: var(--fs-3); }
+    .routine-color-popup .rcp-swatches button.is-current::after { content: ""; display: inline-block; width: 1em; height: 1em; color: var(--bg); font-size: var(--fs-3); --mask: var(--icon-check); }
 
     /* 링크바 — 2026-09-20 부터 **모든 폭에서** 기본으로 접혀 있다(전에는 좁은 화면에서만).
        비어 있는 안무표에서 YouTube·ClickUp 두 줄이 도구와 격자 사이를 갈라놓고 있었고, 처음
@@ -1895,6 +1919,7 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
       width: 100%; height: 100%; color: var(--muted); font-size: var(--fs-2);
     }
+    .video-frame .video-clock-title::before { content: ""; display: inline-block; width: 1em; height: 1em; margin-right: 0.35em; vertical-align: -0.15em; --mask: var(--icon-music); }
     .video-frame .video-clock-time { font-size: var(--fs-5); font-variant-numeric: tabular-nums; color: var(--text); }
     .video-status.is-error { color: var(--danger); }
     .video-cut .helper.is-error { color: var(--danger); }
@@ -1949,8 +1974,8 @@
       font-size: var(--fs-1); font-weight: 800; color: rgba(var(--accent-rgb), 0.92); letter-spacing: 0.02em;
     }
     .vstep > summary::-webkit-details-marker, .vsub > summary::-webkit-details-marker { display: none; }
-    .vstep > summary::before, .vsub > summary::before { content: '▸ '; color: var(--muted); font-weight: 400; }
-    .vstep[open] > summary::before, .vsub[open] > summary::before { content: '▾ '; }
+    .vstep > summary::before, .vsub > summary::before { content: ''; display: inline-block; width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 0.3em; color: var(--muted); --mask: var(--icon-chevron-right); }
+    .vstep[open] > summary::before, .vsub[open] > summary::before { --mask: var(--icon-chevron-down); }
     /* ⚠ **열렸을 때만** display 를 준다. `.vstep > .vstep-body { display: grid }` 로 두면 그 규칙이
        `<details>` 의 기본 숨김을 이겨서, 접어도 안이 그대로 보인다(2026-09-12 에 실제로 그랬다 —
        개발 원칙 U-12 가 경고하는 바로 그것이다). 닫힌 동안에는 어떤 display 도 주지 않는다. */
@@ -3236,17 +3261,18 @@
     body[data-videoband="on"] .panel.workspace { backdrop-filter: none; }
 
     body[data-capturing="on"]:not([data-videofloat="on"]) .video-frame::after {
-      content: '● 받는 중';
+      /* 앞의 점은 글자가 아니라 배경이 그린다 — 기호 글자(●)는 OS 마다 굵기가 다르다(RM-18) */
+      content: '받는 중';
       position: absolute;
       top: 5px; left: 5px;
       z-index: 2;
       pointer-events: none;
       font-size: var(--fs-1); font-weight: 800; letter-spacing: .2px;
       color: var(--text);
-      background: rgba(var(--bg-rgb), 0.66);
+      background: radial-gradient(circle at 9px 50%, currentColor 3px, transparent 3.5px), rgba(var(--bg-rgb), 0.66);
       border: 1px solid rgba(var(--accent-rgb), 0.4);
       border-radius: var(--r-pill);
-      padding: 1px 7px;
+      padding: 1px 7px 1px 16px;
     }
     /* 좁은 화면에서는 프레임이 흐름에서 빠져 패널에 머리줄만 남는다 — 그 줄까지 얇게 만든다. */
     @media (max-width: 1040px) {
@@ -3567,6 +3593,68 @@
   </style>
 </head>
 <body data-sheet="off" data-links="off" data-notes="off">
+  <!-- 아이콘 한 벌(RM-18, 2026-11-03) — 버튼 · 단계 머리 · 스타일시트의 그림은 모두 여기서 온다(개발 원칙 U-17).
+       모양은 Lucide(ISC 라이선스, https://lucide.dev — 저장소의 docs/ICONS.md 에 문구)에서 필요한 것만 베꼈다.
+       모두 같은 viewBox(24)이고 칠은 symbol 에 적지 않는다 — 스타일시트의 .icon 이 선 굵기(2) · 색(currentColor)을 준다.
+       그래서 글자색과 테마를 따르고, 켜진 별(.star-btn.active)처럼 채움만 바꿀 수도 있다.
+       버튼은 <svg class="icon"><use href="#i-이름"></use></svg> 로 부르고(ui/icon.js), 스타일시트의 ::before 는
+       ui/icon.js 의 installIconMasks 가 이 덩어리에서 만든 --icon-이름 마스크로 그린다 — 경로를 두 번 적지 않는다. -->
+  <svg id="icon-sprite" class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
+    <symbol id="i-play-pause" viewBox="0 0 24 24"><polygon points="3 5 11 12 3 19 3 5"/><path d="M15 5v14"/><path d="M20 5v14"/></symbol>
+    <symbol id="i-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></symbol>
+    <symbol id="i-square-check" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-mark" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="18" rx="1"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></symbol>
+    <symbol id="i-minimize" viewBox="0 0 24 24"><path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M3 21l7-7"/></symbol>
+    <symbol id="i-pip" viewBox="0 0 24 24"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4"/><rect x="12" y="13" width="10" height="7" rx="2"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol>
+    <symbol id="i-skip-back" viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"/><path d="M5 19V5"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-flip" viewBox="0 0 24 24"><path d="m3 7 5 5-5 5V7"/><path d="m21 7-5 5 5 5V7"/><path d="M12 20v2"/><path d="M12 14v2"/><path d="M12 8v2"/><path d="M12 2v2"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/></symbol>
+    <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><path d="m9 20 3-6 3 6"/><path d="m6 8 6 2 6-2"/><path d="M12 10v4"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-lock-open" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></symbol>
+    <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></symbol>
+    <symbol id="i-circle-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></symbol>
+    <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="currentColor"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  </svg>
   <div class="app">
     <!-- 앱바 — 문서 수준(이 파일)과 앱 수준(도구) 조작만. 안무표 자체를 만지는 것은 캔버스 바에 있다. -->
     <header class="appbar">
@@ -3578,7 +3666,7 @@
         <h1>
           <button id="fileMenuBtn" class="file-menu-btn" type="button" aria-expanded="false" aria-haspopup="true" title="이름 바꾸기 · 저장 · 불러오기 · 초기화">
             <span class="file-menu-name" id="fileMenuName">제목 없는 안무</span>
-            <span class="file-menu-caret">▾</span>
+            <span class="file-menu-caret"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-down"></use></svg></span>
           </button>
         </h1>
         <div class="file-menu-panel" id="fileMenuPanel" hidden>
@@ -3603,9 +3691,9 @@
                JSON)이고 이 줄은 「남을 위한 한 장」이라 줄을 갈라 둔다. 누름은 data-command 로 명령 등록부가 듣는다. -->
           <div class="file-menu-label">내보내기 — 남에게 줄 한 장</div>
           <div class="file-menu-row file-menu-export">
-            <button id="copySheetBtn" class="ghost" type="button" data-command="copySheet">📋 텍스트 시트 복사</button>
-            <button id="downloadSheetHtmlBtn" class="ghost" type="button" data-command="downloadSheetHtml">⬇ 읽기 전용 HTML</button>
-            <button id="printSheetBtn" class="ghost" type="button" data-command="printSheet">🖨 인쇄 · PDF</button>
+            <button id="copySheetBtn" class="ghost" type="button" data-command="copySheet"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-clipboard"></use></svg><span class="lbl">텍스트 시트 복사</span></button>
+            <button id="downloadSheetHtmlBtn" class="ghost" type="button" data-command="downloadSheetHtml"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg><span class="lbl">읽기 전용 HTML</span></button>
+            <button id="printSheetBtn" class="ghost" type="button" data-command="printSheet"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-printer"></use></svg><span class="lbl">인쇄 · PDF</span></button>
           </div>
           <!-- 되돌릴 수 없는 것은 자주 쓰는 것과 같은 줄에 두지 않는다(Fitts). 전에는 앱바 맨
                오른쪽에 늘 떠 있었다 — `✨ 말로 채우기` 바로 옆이었다. -->
@@ -3646,9 +3734,9 @@
       <button class="help-q" type="button" data-help="fill-bar" aria-label="채우기 줄 설명 보기" title="설명서의 이 절로">?</button>
       <!-- app/main.js 가 여기에 `✨ 말로 채우기` 를 붙인다(전에는 앱바였다). -->
       <span class="mode-slot" id="modeComposeSlot"></span>
-      <button id="videoPanelBtn" class="ghost" type="button" data-command="videoPanel">▶ 영상으로 채우기</button>
-      <button id="quickPlaceBtn" class="ghost" type="button" data-command="quickPlace">+ 빠른 배치</button>
-      <button id="modeManualBtn" class="ghost" type="button" title="왼쪽 동작 목록에서 끌어다 놓습니다">✋ 직접 놓기</button>
+      <button id="videoPanelBtn" class="ghost" type="button" data-command="videoPanel"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-play"></use></svg><span class="lbl">영상으로 채우기</span></button>
+      <button id="quickPlaceBtn" class="ghost" type="button" data-command="quickPlace"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg><span class="lbl">빠른 배치</span></button>
+      <button id="modeManualBtn" class="ghost" type="button" title="왼쪽 동작 목록에서 끌어다 놓습니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-hand"></use></svg><span class="lbl">직접 놓기</span></button>
       <span class="mode-sep"></span>
       <!-- app/main.js 가 여기에 `🎵 프레이즈` 를 붙인다(전에는 캔버스 바였다). -->
       <span class="mode-slot" id="phrasingSlot"></span>
@@ -3660,7 +3748,7 @@
       <div class="panel-header">
         <h2 style="font-size:var(--fs-3);">넣을 것</h2>
         <p>동작을 끌어다 놓거나, 카드를 눌러 고른 뒤 격자를 쓴다</p>
-        <button id="sheetCloseBtn" class="ghost only-stacked" type="button" title="닫기">✕</button>
+        <button id="sheetCloseBtn" class="ghost only-stacked" type="button" title="닫기" aria-label="닫기"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-x"></use></svg></button>
       </div>
 
       <div class="sidebar-scroll">
@@ -3690,7 +3778,7 @@
           <button id="sortAlphaBtn" class="sort-mode-btn active" title="가나다 순">가나다</button>
           <button id="sortAddedBtn" class="sort-mode-btn" title="추가된 순">추가순</button>
           <button id="sortCategoryBtn" class="sort-mode-btn" title="카테고리별 정렬">카테고리</button>
-          <button id="sortDirBtn" class="sort-dir-btn" title="정렬 방향">↑</button>
+          <button id="sortDirBtn" class="sort-dir-btn" title="정렬 방향" aria-label="정렬 방향"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up"></use></svg></button>
         </div>
         <div class="palette-list" id="paletteList"></div>
 
@@ -3708,7 +3796,7 @@
         <summary>루틴 목록 — 동작 여러 개를 한 덩이로</summary>
         <div class="stack">
           <div class="row wrap" style="justify-content:flex-end;">
-            <button id="addRoutineBtn" class="warn" style="font-size:var(--fs-1);padding:var(--sp-1) var(--sp-2);" title="루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.">+ 새 루틴</button>
+            <button id="addRoutineBtn" class="warn" style="font-size:var(--fs-1);padding:var(--sp-1) var(--sp-2);" title="루틴을 드래그해서 안무표에 배치하거나, 연필 버튼으로 편집하세요."><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg><span class="lbl">새 루틴</span></button>
           </div>
           <div class="palette-list" id="routineList"></div>
         </div>
@@ -3777,13 +3865,13 @@
               <p>몸통을 끌어 옮기기 · 양 끝을 끌어 자르기 · 두 번 눌러 동작 정하기</p>
             </div>
             <div class="canvas-actions">
-              <button id="sidebarSheetBtn" class="ghost accent only-stacked" type="button" title="동작 목록을 아래에서 엽니다">≡ 동작</button>
-              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><button id="boardColsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
-              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
+              <button id="sidebarSheetBtn" class="ghost accent only-stacked" type="button" title="동작 목록을 아래에서 엽니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg><span class="lbl">동작</span></button>
+              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">안무표 크기</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;">8 x <input id="boardColsInput" type="number" min="1" max="128" value="8" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="boardColsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;" title="안무표 크기 줄이기" aria-label="안무표 크기 줄이기"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-minus"></use></svg></button><button id="boardColsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;" title="안무표 크기 늘리기" aria-label="안무표 크기 늘리기"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></button></span></span>
+              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;"><span class="size-pill-label">기본 카운트</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="defaultCountDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;" title="기본 카운트 줄이기" aria-label="기본 카운트 줄이기"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-minus"></use></svg></button><input id="defaultCountInput" type="number" min="1" max="64" value="1" style="width:2.8em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="defaultCountInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;" title="기본 카운트 늘리기" aria-label="기본 카운트 늘리기"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></button></span></span>
               <!-- ⚠ `🎵 프레이즈` · `+ 빠른 배치` · `▶ 영상으로 채우기` 는 2026-09-21 에 **채우기 줄**
                    (앱바 바로 아래)로 옮겼다. 여기 남은 것은 이 안무표의 **표시 설정**뿐이다.
                    같은 버튼을 두 곳에 두지 마라 — 라벨을 고칠 때마다 두 곳을 같이 고쳐야 한다. -->
-              <button id="linksToggleBtn" class="ghost" type="button" title="링크 줄(ClickUp · 직접 더한 링크)을 보이거나 숨깁니다">🔗 링크</button>
+              <button id="linksToggleBtn" class="ghost" type="button" title="링크 줄(ClickUp · 직접 더한 링크)을 보이거나 숨깁니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-link"></use></svg><span class="lbl">링크</span></button>
               <button id="notesToggleBtn" class="ghost only-stacked" type="button" title="비고 칸을 보이거나 숨깁니다">비고</button>
             </div>
             <!-- 선택 액션 바(RM-14) — 고른 블록이 있을 때만 이 줄 바로 밑에 **떠서** 뜬다(아래 줄을 밀지 않는다 —
@@ -3795,12 +3883,12 @@
             <!-- ⚠ 유튜브 주소 칸은 여기 없다(RM-20 · 2026-11-02) — 영상 패널 `① 영상 고르기` 맨 위로 옮겼다.
                  영상을 넣는 입구는 그 한 자리다. 여기는 ClickUp 과 직접 더한 참고 링크만 둔다. -->
             <div class="link-row" id="clickupLinkRow">
-              <span class="link-badge clickup">☑ ClickUp</span>
+              <span class="link-badge clickup"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-square-check"></use></svg><span class="lbl">ClickUp</span></span>
               <input type="url" id="clickupUrlInput" placeholder="ClickUp 태스크 URL 입력..." autocomplete="off" spellcheck="false" />
-              <button id="clickupResetBtn" class="ghost link-reset-btn" type="button" title="초기화">✕</button>
+              <button id="clickupResetBtn" class="ghost link-reset-btn" type="button" title="초기화" aria-label="초기화"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-x"></use></svg></button>
             </div>
             <div id="customLinksContainer"></div>
-            <div><button id="addCustomLinkBtn" class="ghost link-add-btn">+ 링크 추가</button></div>
+            <div><button id="addCustomLinkBtn" class="ghost link-add-btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg><span class="lbl">링크 추가</span></button></div>
           </div>
           <!-- 놓인 블록이 하나도 없을 때만 보인다(ui/modeBar.js 가 켜고 끈다).
                ⚠ 방향(`왼쪽`)으로 가리키지 않는다 — 좁은 화면(≤1040)에서는 줄이 옆으로 밀리므로
@@ -3825,13 +3913,13 @@
               <p id="reSubtitle">이름을 클릭해 편집</p>
             </div>
             <div class="top-actions" style="flex-wrap:wrap;">
-              <span style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><span class="size-pill-label">박자</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="reColsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><input id="reColsInput" type="number" min="1" max="64" value="8" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reColsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
-              <span style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><span class="size-pill-label">행</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="reRowsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;">−</button><input id="reRowsInput" type="number" min="1" max="32" value="4" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reRowsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;">+</button></span></span>
-              <button id="reQuickPlaceBtn" class="ghost" data-command="quickPlace" data-board="routine">+ 빠른 배치</button>
+              <span style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><span class="size-pill-label">박자</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="reColsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;" title="박자 수 줄이기" aria-label="박자 수 줄이기"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-minus"></use></svg></button><input id="reColsInput" type="number" min="1" max="64" value="8" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reColsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;" title="박자 수 늘리기" aria-label="박자 수 늘리기"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></button></span></span>
+              <span style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><span class="size-pill-label">행</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:var(--sp-1);white-space:nowrap;"><button id="reRowsDec" class="ghost" style="padding:0 var(--sp-1);line-height:1;" title="행 수 줄이기" aria-label="행 수 줄이기"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-minus"></use></svg></button><input id="reRowsInput" type="number" min="1" max="32" value="4" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reRowsInc" class="ghost" style="padding:0 var(--sp-1);line-height:1;" title="행 수 늘리기" aria-label="행 수 늘리기"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></button></span></span>
+              <button id="reQuickPlaceBtn" class="ghost" data-command="quickPlace" data-board="routine"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg><span class="lbl">빠른 배치</span></button>
               <button id="reUndoBtn" class="ghost" data-command="undo" data-board="routine" disabled>되돌리기</button>
               <button id="reRedoBtn" class="ghost" data-command="redo" data-board="routine" disabled>다시 하기</button>
               <button id="reClearBtn" class="danger">초기화</button>
-              <button id="closeRoutineEditorBtn" class="re-close-btn">✕ 닫기</button>
+              <button id="closeRoutineEditorBtn" class="re-close-btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-x"></use></svg><span class="lbl">닫기</span></button>
             </div>
           </div>
           <div class="board-wrap" id="reBoardWrap"><div class="board" id="reBoard"></div></div>
@@ -3850,35 +3938,35 @@
             </div>
             <div class="video-head-actions">
               <button id="videoFollowBtn" class="ghost" type="button" title="재생 위치를 안무표가 따라 스크롤합니다">따라가기</button>
-              <button id="videoPipBtn" class="ghost" type="button" title="영상을 화면 위에 떠 있는 작은 창으로 뺍니다. 다른 화면을 보는 동안에도 계속 보입니다" hidden>⧉ PiP</button>
-              <button id="videoFloatBtn" class="ghost only-wide" type="button" title="영상을 큰 창으로 띄웁니다. 창은 끌어 옮기고 오른쪽 아래 모서리로 크기를 바꿉니다">⤢ 크게</button>
+              <button id="videoPipBtn" class="ghost" type="button" title="영상을 화면 위에 떠 있는 작은 창으로 뺍니다. 다른 화면을 보는 동안에도 계속 보입니다" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-pip"></use></svg><span class="lbl">PiP</span></button>
+              <button id="videoFloatBtn" class="ghost only-wide" type="button" title="영상을 큰 창으로 띄웁니다. 창은 끌어 옮기고 오른쪽 아래 모서리로 크기를 바꿉니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-maximize"></use></svg><span class="lbl">크게</span></button>
               <button id="videoCollapseBtn" class="ghost" type="button">접기</button>
-              <button id="videoCloseBtn" class="ghost" type="button">✕ 닫기</button>
+              <button id="videoCloseBtn" class="ghost" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-x"></use></svg><span class="lbl">닫기</span></button>
             </div>
           </div>
           <div class="video-body" id="videoBody">
             <div class="video-frame" id="videoFrame">
               <!-- 띄웠을 때만 보인다. 여기를 잡아 끈다. ⚠ 프레임 **안**에 둔다 — 밖에 두면 같이 안 움직인다. -->
-              <div class="video-float-bar" id="videoFloatBar" data-keep="1"><span>영상</span><span style="flex:1"></span><button id="videoFloatDockBtn" class="ghost" type="button">⤡ 제자리로</button></div>
+              <div class="video-float-bar" id="videoFloatBar" data-keep="1"><span>영상</span><span style="flex:1"></span><button id="videoFloatDockBtn" class="ghost" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-minimize"></use></svg><span class="lbl">제자리로</span></button></div>
               <canvas class="video-pose" id="videoPoseCanvas" data-keep="1" hidden></canvas>
               <!-- 받아 적는 동안 영상이 작은 창으로 뜨면 안무표의 그 귀퉁이를 가린다(2026-09-20).
                    가린 자리를 보려고 영상을 끄는 대신 반대쪽으로 보낸다. 받는 동안에만 보인다. -->
-              <button id="videoPipSideBtn" class="video-pip-side" type="button" data-keep="1" title="영상을 반대쪽 구석으로 보냅니다">⇄</button>
+              <button id="videoPipSideBtn" class="video-pip-side" type="button" data-keep="1" title="영상을 반대쪽 구석으로 보냅니다" aria-label="영상을 반대쪽 구석으로"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-swap"></use></svg></button>
             </div>
             <!-- 띄운 동안 패널에 남는 빈 자리. 영상이 어디로 갔는지 말해 준다. -->
-            <div class="video-frame-slot" id="videoFrameSlot">영상은 큰 창으로 띄워 두었습니다 — 창의 <b>⤡ 제자리로</b> 로 되돌립니다</div>
+            <div class="video-frame-slot" id="videoFrameSlot">영상은 큰 창으로 띄워 두었습니다 — 창의 <b>제자리로</b> 로 되돌립니다</div>
             <div class="video-status" id="videoStatus"></div>
             <!-- 연습 조작 줄(RM-22 · 2026-10-01) — 유튜브 · 내 영상 · 영상 없는 박자 시계가 함께 쓴다.
                  반복 구간은 초가 아니라 마디·블록(카운트)으로 잡는다. 전부 화면 상태라 저장하지 않는다.
                  그리는 것은 ui/practiceBar.js 다. -->
             <div class="video-practice" id="videoPractice">
               <div class="video-field">
-                <button id="practicePlayBtn" class="primary" type="button" title="재생과 멈춤을 번갈아 합니다. 영상이 없으면 박자 시계가 돕니다">▶ 재생</button>
+                <button id="practicePlayBtn" class="primary" type="button" title="재생과 멈춤을 번갈아 합니다. 영상이 없으면 박자 시계가 돕니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-play"></use></svg><span class="lbl">재생</span></button>
                 <span class="video-label">배속</span>
                 <select id="practiceRate" class="video-pick" title="재생 빠르기. 카운트 소리도 함께 느려집니다"></select>
-                <button id="practiceLoopBtn" class="ghost" type="button" title="반복 구간의 끝에 닿으면 처음으로 되감습니다">🔁 반복</button>
-                <button id="practiceMirrorBtn" class="ghost" type="button" title="영상을 좌우로 뒤집어 거울 보듯 봅니다">⇋ 미러</button>
-                <button id="practiceClickBtn" class="ghost" type="button" title="박자에 맞춰 카운트마다 틱 소리를 냅니다. 마디의 1이 가장 높습니다">🔔 카운트 소리</button>
+                <button id="practiceLoopBtn" class="ghost" type="button" title="반복 구간의 끝에 닿으면 처음으로 되감습니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-repeat"></use></svg><span class="lbl">반복</span></button>
+                <button id="practiceMirrorBtn" class="ghost" type="button" title="영상을 좌우로 뒤집어 거울 보듯 봅니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-flip"></use></svg><span class="lbl">미러</span></button>
+                <button id="practiceClickBtn" class="ghost" type="button" title="박자에 맞춰 카운트마다 틱 소리를 냅니다. 마디의 1이 가장 높습니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-bell"></use></svg><span class="lbl">카운트 소리</span></button>
               </div>
               <div class="video-field">
                 <select id="practiceFromRow" class="video-pick" title="반복할 첫 마디"></select>
@@ -3902,31 +3990,31 @@
                  **읽어서** 채우므로 이름과 순서의 주인은 여전히 그 `<summary>` 들이다.
                  ⚠ 여기에 버튼을 손으로 적지 마라. 차례를 하나 더하면 `<details data-step>` 만 더하면 된다. -->
             <nav class="flow-steps" id="videoFlowSteps" aria-label="작업 차례"></nav>
-            <details class="vstep" open data-icon="▶" data-step="step1">
+            <details class="vstep" open data-icon="play" data-step="step1">
               <summary>① 영상 고르기<button class="help-q" type="button" data-help="video-pick" aria-label="영상 고르기 설명 보기" title="설명서의 이 절로">?</button></summary>
               <div class="vstep-body">
             <!-- 유튜브 주소 칸 — 영상을 넣는 첫 입구라 ① 맨 위다(RM-20). 안무표 위 링크 줄에서 **같은 엘리먼트를** 옮겼다 —
                  저장 · 제목 조회 · 영상 소스 확정은 ui/linksBarView 가 id 로 묶어 그대로 한다. 칸을 둘 두지 마라(상태를 두 곳에 두지 않는다). -->
             <div class="link-row" id="youtubeLinkRow">
-              <span class="link-badge yt">▶ YouTube</span>
+              <span class="link-badge yt"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-play"></use></svg><span class="lbl">YouTube</span></span>
               <div class="yt-url-group" id="ytUrlGroup">
                 <input type="url" id="youtubeUrlInput" placeholder="YouTube URL 입력..." autocomplete="off" spellcheck="false" />
               </div>
-              <button id="ytResetBtn" class="ghost link-reset-btn" type="button" title="초기화">✕</button>
+              <button id="ytResetBtn" class="ghost link-reset-btn" type="button" title="초기화" aria-label="초기화"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-x"></use></svg></button>
             </div>
             <div class="video-field video-source">
               <input id="videoFileInput" type="file" accept="video/*" hidden />
-              <button id="videoFileBtn" class="ghost" type="button" data-command="videoFile">📁 영상 파일 열기</button>
+              <button id="videoFileBtn" class="ghost" type="button" data-command="videoFile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-folder"></use></svg><span class="lbl">영상 파일 열기</span></button>
               <span class="video-file-name" id="videoFileName" hidden></span>
-              <button id="videoFileLibBtn" class="ghost accent" type="button" title="설정에서 지정한 보관 폴더에서 이 안무표의 영상을 다시 읽어 옵니다" hidden>📂 보관 폴더에서 불러오기</button>
-              <button id="videoFileClearBtn" class="ghost" type="button" title="영상 파일을 놓고 위 칸의 유튜브 주소로 돌아갑니다" hidden>✕ 파일 놓기</button>
+              <button id="videoFileLibBtn" class="ghost accent" type="button" title="설정에서 지정한 보관 폴더에서 이 안무표의 영상을 다시 읽어 옵니다" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-folder-open"></use></svg><span class="lbl">보관 폴더에서 불러오기</span></button>
+              <button id="videoFileClearBtn" class="ghost" type="button" title="영상 파일을 놓고 위 칸의 유튜브 주소로 돌아갑니다" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-x"></use></svg><span class="lbl">파일 놓기</span></button>
             </div>
             <!-- 이 안무에 달린 영상들(2026-09-12). 같은 안무를 여러 번 찍으면 여기 쌓인다. -->
             <div class="helper" id="videoClipHelp"></div>
             <ul class="video-clips" id="videoClipList"></ul>
               </div>
             </details>
-            <details class="vstep" id="videoTempoStep" open data-icon="♪" data-step="step2">
+            <details class="vstep" id="videoTempoStep" open data-icon="music" data-step="step2">
               <summary>② 박자 맞추기<button class="help-q" type="button" data-help="video-tempo" aria-label="박자 맞추기 설명 보기" title="설명서의 이 절로">?</button></summary>
               <div class="vstep-body">
             <div class="video-tempo">
@@ -3985,7 +4073,7 @@
             </details>
 
             <!-- 받아 적기(2026-09-12). 영상을 보면서 표에 바로 놓는 길 — docs/EDITING_FLOWS.md 1단계. -->
-            <details class="vstep" open data-icon="✎" data-step="step3">
+            <details class="vstep" open data-icon="pencil" data-step="step3">
               <summary>③ 받아 적기 — 보면서 표에 놓기<button class="help-q" type="button" data-help="video-capture" aria-label="받아 적기 설명 보기" title="설명서의 이 절로">?</button></summary>
               <div class="vstep-body">
             <div class="video-cut" style="border-top:none; padding-top:0;">
@@ -3997,10 +4085,10 @@
                       갈라 보니 손이 하는 일은 똑같은 한 번의 누름이었고 — 첫 타든 열째 타든 `K` 다 —
                       버튼만 둘이라 "지금은 어느 쪽인가"를 도로 읽게 만들었다. 하나로 되돌린다. -->
               <div class="video-field">
-                <button id="videoRewindBtn" class="ghost" type="button" title="영상을 맨 처음으로 되감고 바로 재생합니다. 받아 적기는 처음부터 훑는 일이라 여기서 시작합니다">⏮ 처음으로</button>
-                <button id="videoCaptureBtn" class="warn" type="button" data-command="capture">▮ 끊기</button>
+                <button id="videoRewindBtn" class="ghost" type="button" title="영상을 맨 처음으로 되감고 바로 재생합니다. 받아 적기는 처음부터 훑는 일이라 여기서 시작합니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-skip-back"></use></svg><span class="lbl">처음으로</span></button>
+                <button id="videoCaptureBtn" class="warn" type="button" data-command="capture"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mark"></use></svg><span class="lbl">끊기</span></button>
                 <button id="videoCaptureSkipBtn" class="ghost" type="button" data-command="skip">건너뛰기</button>
-                <button id="videoCaptureCancelBtn" class="ghost" type="button" data-command="stop">■ 그만</button>
+                <button id="videoCaptureCancelBtn" class="ghost" type="button" data-command="stop"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-square"></use></svg><span class="lbl">그만</span></button>
                 <button id="videoMarkerBlocksBtn" class="ghost accent" type="button" title="찍어 둔 마커를 전부 안무표의 블록으로 옮깁니다. 마커는 그대로 남습니다">마커를 블록으로</button>
                 <button id="videoNameSelBtn" class="ghost accent" type="button" title="안무표에서 고른 이름 없는 블록에 이름을 붙입니다">고른 블록에 이름 붙이기</button>
               </div>
@@ -4013,7 +4101,7 @@
                    ⚠ 이 버튼은 음성 인식이 없는 브라우저에서는 app/main 이 감춘다. -->
               <div class="video-field video-voice" id="videoVoiceField">
                 <span class="video-voice-label">말로 이름</span>
-                <button id="videoVoiceBtn" class="ghost" type="button" title="마이크를 켜고 동작 이름을 말하면 지금 열려 있는 구간에 붙습니다">🎤 마이크 켜기</button>
+                <button id="videoVoiceBtn" class="ghost" type="button" title="마이크를 켜고 동작 이름을 말하면 지금 열려 있는 구간에 붙습니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"></use></svg><span class="lbl">마이크 켜기</span></button>
                 <span class="video-voice-now" id="videoVoiceNow" hidden></span>
               </div>
               <div class="helper" id="videoVoiceHelp"></div>
@@ -4022,8 +4110,8 @@
                    칸으로 붙이므로 반 칸까지만 흡수한다 — 그 이상 밀린 날은 여기서 표 전체를 옮긴다. -->
               <div class="video-field video-shift">
                 <span class="video-shift-label">표 전체 옮기기</span>
-                <button id="videoShiftBackBtn" class="ghost" type="button" title="놓인 블록 전부를 한 카운트 앞으로 당깁니다. 하나라도 인트로 앞으로 나가면 옮기지 않습니다">← 1카운트 당기기</button>
-                <button id="videoShiftFwdBtn" class="ghost" type="button" title="놓인 블록 전부를 한 카운트 뒤로 밉니다. 하나라도 표 끝을 넘으면 옮기지 않습니다">1카운트 밀기 →</button>
+                <button id="videoShiftBackBtn" class="ghost" type="button" title="놓인 블록 전부를 한 카운트 앞으로 당깁니다. 하나라도 인트로 앞으로 나가면 옮기지 않습니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-left"></use></svg><span class="lbl">1카운트 당기기</span></button>
+                <button id="videoShiftFwdBtn" class="ghost" type="button" title="놓인 블록 전부를 한 카운트 뒤로 밉니다. 하나라도 표 끝을 넘으면 옮기지 않습니다"><span class="lbl">1카운트 밀기</span><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-right"></use></svg></button>
               </div>
               <div class="helper" id="videoShiftHelp"></div>
             </div>
@@ -4040,7 +4128,7 @@
                 <nav class="vtool-tabs" id="videoToolTabs" aria-label="도구 탭"></nav>
               </div>
             <!-- 구간 자르기와 마커(2026-09-10). In/Out 은 확정 전 값이라 화면 상태이고, 마커와 잘라 낸 클립은 안무의 일부다. -->
-            <details class="vstep vtool" data-icon="✂" data-step="step4">
+            <details class="vstep vtool" data-icon="scissors" data-step="step4">
               <summary>구간 잡고 잘라내기</summary>
               <div class="vtool-help"><button class="help-q" type="button" data-help="video-trim" aria-label="구간 잡고 잘라내기 설명 보기" title="설명서의 이 절로">?</button></div>
               <div class="vstep-body">
@@ -4055,20 +4143,20 @@
               </div>
               <div class="helper" id="videoInOutText"></div>
               <div class="video-field">
-                <button id="videoTrimBtn" class="primary" type="button" title="In~Out 구간을 잘라 다시 인코딩한 새 클립을 보관 폴더에 만들고 그 클립으로 갈아 끼웁니다. 원본은 그대로 남습니다">✂ 잘라서 새 클립으로</button>
+                <button id="videoTrimBtn" class="primary" type="button" title="In~Out 구간을 잘라 다시 인코딩한 새 클립을 보관 폴더에 만들고 그 클립으로 갈아 끼웁니다. 원본은 그대로 남습니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-scissors"></use></svg><span class="lbl">잘라서 새 클립으로</span></button>
               </div>
               <div class="helper" id="videoTrimHelp"></div>
               <!-- 반대 방향(RM-31 · 2026-10-01) — 안무표에서 고른 블록을 박자로 초 구간으로 바꿔 잘라 낸다.
                    지금 영상은 그대로 두고 새 클립을 영상 목록에 더하기만 한다(위 자르기는 갈아 끼운다). -->
               <div class="video-field">
-                <button id="videoExportBtn" class="ghost accent" type="button" title="안무표에서 고른 블록의 대목을 박자로 계산해(앞 2카운트 여유) 잘라 낸 새 클립을 보관 폴더에 만들고 영상 목록에 더합니다. 지금 영상은 그대로입니다">🎞 고른 대목 잘라 내보내기</button>
+                <button id="videoExportBtn" class="ghost accent" type="button" title="안무표에서 고른 블록의 대목을 박자로 계산해(앞 2카운트 여유) 잘라 낸 새 클립을 보관 폴더에 만들고 영상 목록에 더합니다. 지금 영상은 그대로입니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-film"></use></svg><span class="lbl">고른 대목 잘라 내보내기</span></button>
               </div>
               <div class="helper" id="videoExportHelp"></div>
             </div>
               </div>
             </details>
 
-            <details class="vstep vtool" data-icon="⚑" data-step="step5">
+            <details class="vstep vtool" data-icon="flag" data-step="step5">
               <summary>마커 — 영상 구간 ↔ 안무표 구간</summary>
               <div class="vtool-help"><button class="help-q" type="button" data-help="video-markers" aria-label="마커 설명 보기" title="설명서의 이 절로">?</button></div>
               <div class="vstep-body">
@@ -4087,15 +4175,15 @@
             </details>
 
             <!-- 자세 분석(2026-09-12). 영상에서 관절을 찾아 영상 위에 몸을 겹쳐 그린다. -->
-            <details class="vstep vtool" data-icon="◎" data-step="step6">
+            <details class="vstep vtool" data-icon="target" data-step="step6">
               <summary>자세 분석</summary>
               <div class="vtool-help"><button class="help-q" type="button" data-help="video-pose" aria-label="자세 분석 설명 보기" title="설명서의 이 절로">?</button></div>
               <div class="vstep-body">
             <div class="video-pose-section" style="border-top:none; padding-top:0;">
               <div class="video-field">
                 <!-- 재생하며 실시간(2026-09-13). 파일 영상에서만 된다 — 유튜브는 iframe 이라 픽셀을 못 읽는다. -->
-                <button id="videoPoseLiveBtn" class="ghost" type="button" title="재생하면서 그 프레임의 관절을 그 자리에서 찾아 그립니다. 내 컴퓨터의 영상에서만 됩니다">▶ 따라 그리기</button>
-                <button id="videoPoseRunBtn" class="ghost accent" type="button" title="In~Out 구간(없으면 영상 전체)에서 관절을 찾습니다. 가동 범위·가속도 요약은 이쪽이 필요합니다">🧍 자세 분석</button>
+                <button id="videoPoseLiveBtn" class="ghost" type="button" title="재생하면서 그 프레임의 관절을 그 자리에서 찾아 그립니다. 내 컴퓨터의 영상에서만 됩니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-play"></use></svg><span class="lbl">따라 그리기</span></button>
+                <button id="videoPoseRunBtn" class="ghost accent" type="button" title="In~Out 구간(없으면 영상 전체)에서 관절을 찾습니다. 가동 범위·가속도 요약은 이쪽이 필요합니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-person"></use></svg><span class="lbl">자세 분석</span></button>
                 <button id="videoPoseMeshBtn" class="ghost" type="button" title="관절에 몸을 씌워 그립니다. 끄면 뼈대만 나옵니다">메시</button>
                 <button id="videoPoseClearBtn" class="ghost" type="button">분석 지우기</button>
               </div>
@@ -4103,7 +4191,7 @@
               <div class="video-field" id="videoPosePeopleRow" hidden>
                 <span class="video-label">인물</span>
                 <span class="video-people" id="videoPosePeople"></span>
-                <button id="videoPoseAddBtn" class="ghost" type="button" title="영상에서 한 사람을 더 고릅니다">+ 사람 추가</button>
+                <button id="videoPoseAddBtn" class="ghost" type="button" title="영상에서 한 사람을 더 고릅니다"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg><span class="lbl">사람 추가</span></button>
                 <button id="videoPosePickClearBtn" class="ghost" type="button">고른 것 지우기</button>
               </div>
               <div class="helper" id="videoPoseHelp"></div>

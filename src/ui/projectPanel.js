@@ -16,6 +16,8 @@
 // ⚠ 이름칸의 주인은 여전히 `#fileNameInput` 이다. 여기는 그 값을 비추고 되돌려줄 뿐이라,
 //   두 군데가 각자 이름을 들고 있다가 어긋나는 일이 없다.
 
+import { iconLabel, iconOnly } from './icon.js';
+
 /**
  * @param {{
  *   elements?: Record<string, HTMLElement|null>,
@@ -76,6 +78,7 @@ export function createProjectPanel(options) {
   }
 
   /** 목록의 한 줄. 접혀 있을 때는 날짜·이름·상태만 보이고, 펴면 날짜·메모를 고친다. */
+  // @complexity time=O(1) space=O(1) cc=12
   function clipRow(clip, isActive) {
     const row = doc.createElement('div');
     row.className = 'project-clip' + (isActive ? ' is-active' : '');
@@ -99,7 +102,7 @@ export function createProjectPanel(options) {
     if (isActive) {
       const now = doc.createElement('span');
       now.className = 'project-clip-now';
-      now.textContent = '▶ 지금';
+      iconLabel(now, 'play', '지금', doc);
       head.appendChild(now);
     }
     // ⚠ 지금 보고 있는 것을 다시 누르면 **영상 패널을 연다**(갈아타기가 아니다). 폰에서는 패널이
@@ -120,7 +123,8 @@ export function createProjectPanel(options) {
     const edit = doc.createElement('button');
     edit.className = 'ghost project-clip-edit';
     edit.type = 'button';
-    edit.textContent = openId === clip.id ? '접기' : '✎';
+    if (openId === clip.id) iconLabel(edit, '', '접기', doc);
+    else iconOnly(edit, 'pencil', '고치기', doc);
     edit.title = '날짜·이름·메모를 고칩니다';
     edit.onclick = () => { openId = openId === clip.id ? '' : clip.id; render(); };
     meta.appendChild(edit);

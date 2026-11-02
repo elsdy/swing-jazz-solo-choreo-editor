@@ -55,7 +55,7 @@ test('위반이 있으면 종료 코드 1과 파일:줄 — 원칙 꼴로 찍는
   assert.match(good.stdout, /원칙 검사 통과 — 어긴 자리 0/);
 
   // 원칙마다 규칙이 표 한 줄 — { 원칙, 무엇, 고치는 법, scan }
-  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14', 'U-15', 'U-16']);
+  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14', 'U-15', 'U-16', 'U-17']);
   for (const r of RULES) {
     assert.equal(typeof r.scan, 'function');
     assert.ok(r.what && r.fix, `${r.principle}: 무엇 · 고치는 법이 비었다`);
@@ -316,4 +316,34 @@ test('U-15 · 팝업 자리 함수에 잰 높이를 주지 않으면 잡는다',
   assert.equal(run('U-15', { 'src/ui/p.js': good }).length, 0);
   // 정의(domain)와 시험은 넘긴다 — ui · input 의 호출만 본다
   assert.equal(run('U-15', { 'src/domain/popupPlacement.js': 'export function placePlacementActionPopup({ clientX }) {}\n' }).length, 0);
+});
+
+test('라벨이 이모지로 시작하면 잡는다', () => {
+  // 2026-11-03(RM-18) — 단추 라벨 앞에 그때 떠오른 이모지 · 기호(✨ 📁 ▶ ⤢ ▮)를 붙여, 같은 줄에 컬러 그림과 흑백 기호가 섞였다.
+  // 그림은 스프라이트 한 벌(svg.icon > use)에서 오고 글자 칸(span.lbl)은 글자만 든다.
+  const icon = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-play"></use></svg>';
+  const bad = {
+    'index.html': page('', '<button id="a" type="button">▶ 재생</button>\n<button id="b" type="button">+ 새 루틴</button>'),
+    'src/ui/v.js': "btn.textContent = '✨ 말로 채우기';\nconst items = [{ id: 'x', label: '≡ 동작' }];\nbox.innerHTML = '<button type=\"button\">✕ 닫기</button>';\nmic.textContent = on ? '⏹ 그만 듣기' : '🎤 말하기';\n",
+    'src/domain/commands.js': "export const COMMANDS = [{ id: 'stop', button: '■ 그만' }];\n",
+  };
+  const v = run('U-17', bad);
+  assert.deepEqual(v.map(x => `${x.file}:${x.line}`), [
+    'index.html:1', 'index.html:2',
+    'src/domain/commands.js:1',
+    'src/ui/v.js:1', 'src/ui/v.js:2', 'src/ui/v.js:3', 'src/ui/v.js:4', 'src/ui/v.js:4',
+  ]);
+  // 고친 꼴 — 아이콘 + 글자 칸, 등록부는 글자와 icon 열
+  const good = {
+    'index.html': page('', `<button id="a" type="button">${icon}<span class="lbl">재생</span></button>\n<button class="help-q" type="button">?</button>`),
+    'src/ui/v.js': "iconLabel(btn, 'sparkles', '말로 채우기');\nconst items = [{ id: 'x', icon: 'menu', label: '동작' }];\nmic.textContent = on ? '그만 듣기' : '말하기';\n",
+    'src/domain/commands.js': "export const COMMANDS = [{ id: 'stop', button: '그만', icon: 'square' }];\n",
+  };
+  assert.equal(run('U-17', good).length, 0);
+  // 단추 라벨이 아닌 자리는 넘긴다 — ⚠ 경고 문장 · ①②③ 단계 머리 · 주석 · 데이터 글자(박자 × 행)
+  const notLabels = {
+    'index.html': page('', '<summary>① 영상 고르기</summary>\n<!-- <button>▶ 옛 단추</button> -->'),
+    'src/ui/v.js': "// btn.textContent = '▶ 재생' 이었다\nwarn('⚠ 담기를 멈췄습니다');\nmeta.textContent = `${n}박자 × ${m}행`;\n",
+  };
+  assert.equal(run('U-17', notLabels).length, 0);
 });
