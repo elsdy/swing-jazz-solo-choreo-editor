@@ -19,6 +19,7 @@
 
 
 import { commandFace } from './commandButtons.js';
+import { voiceLabel } from './statusBar.js';
 /**
  * @param {{
  *   elements?: Record<string, HTMLElement|null>,
@@ -70,7 +71,7 @@ export function createThumbBar(options) {
       const micItems = voice.available
         ? [{
           id: 'mic',
-          label: voice.wanted ? (voice.listening ? '🎤 듣는 중' : '🎤 …') : '🎤 말로',
+          label: voiceLabel(voice) || '🎤 말로', // 상태줄과 같은 판정(ui/statusBar.voiceLabel)
           title: voice.wanted ? '마이크를 끕니다' : '마이크를 켜고 동작 이름을 말하면 지금 열려 있는 구간에 붙습니다',
           cls: voice.wanted ? 'warn' : 'ghost',
           run: actions.voice

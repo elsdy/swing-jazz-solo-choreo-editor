@@ -94,7 +94,11 @@ import * as PhrasingCmd from '../usecases/phrasingCommands.js';
 import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
 import { clipDirParts, findStoredClip } from '../domain/clips.js';
-import { createVideoPanel } from '../ui/videoPanel.js';
+import { createVideoPanel, formatClock } from '../ui/videoPanel.js';
+import { createStatusBar } from '../ui/statusBar.js';
+import { createOnceHints, createHintBubble } from '../ui/onceHint.js';
+import { loadOnceHints, saveOnceHints } from '../adapters/localStore.js';
+import { createNoticeRouter } from './noticeRouter.js';
 import { createPracticeBar } from '../ui/practiceBar.js';
 import { createPoseView } from '../ui/poseView.js';
 import { createPoseOverlay } from '../ui/poseOverlay.js';
@@ -203,10 +207,10 @@ const render = (dirty, opts) => {
 
 /**
  * 알림은 언제나 렌더 뒤다(app/render 의 마지막 단계). 급(block·toast·status)은 유스케이스가 정하고
- * 어디에 띄울지는 여기서 정한다(RM-04).
+ * 어디에 띄울지는 app/noticeRouter 가 정한다(RM-04 · RM-19).
  *   block  → 앱 안 모달(ui/toastView) — 브라우저 alert 는 더 쓰지 않는다
  *   toast  → 토스트
- *   status → 상태줄(RM-19)이 서기 전까지 토스트로 대신 띄운다
+ *   status → 창 맨 아래 상태줄(ui/statusBar, 21절에서 선다). 그 전에 오는 것은 토스트로 떨어진다
  *
  * ⚠ 「되돌리기」 버튼은 **그 지우기가 아직 맨 위 단계일 때만** 되돌린다. 토스트가 떠 있는 몇 초 사이에
  *   다른 것을 놓으면 Undo 가 그것을 되돌리게 된다 — 지운 것을 살리려다 방금 한 일을 잃는다.
@@ -224,13 +228,13 @@ const toastView = createToastView({
     render(undo(action.boardId));
   }
 });
-views.notify = (n) => {
-  if (n.action && n.action.command === 'undo') {
-    toastView.show({ ...n, action: { ...n.action, depth: hist.stack(n.action.boardId).past.length } });
-    return;
-  }
-  toastView.show(n);
-};
+views.notify = createNoticeRouter({
+  toast: toastView,
+  modal: toastView,                       // block 급은 toastView 가 앱 안 모달로 그린다
+  // 상태줄은 21절에서 선다 — 그 전(부팅 첫 렌더)에 오는 status 급은 토스트로 떨어진다.
+  statusBar: { show: (n) => { if (views.status) views.status.show(n); else toastView.show(n); } },
+  historyDepth: (boardId) => hist.stack(boardId).past.length
+});
 
 /**
  * 지우기 뒤에 「지웠습니다 · 되돌리기」 토스트를 붙인다(RM-04). 실제로 지운 것이 있을 때만 붙인다.
@@ -1295,9 +1299,18 @@ let draftBlocked = false;
  */
 let draftStopReason = '';
 
-/** 묶인 파일이 바뀌었다 — 파일 메뉴의 「어디에 담기는가」 줄을 다시 적는다. */
+/**
+ * 지금 무엇에 담기고 있나 — 파일 메뉴의 「어디에 담기는가」 와 상태줄이 **같은 값**을 읽는다(RM-19).
+ * ⚠ 게터다. 묶임은 저장·열기로 세션 중에 바뀐다.
+ */
+const saveTarget = () => ({
+  bound: draftStore.bound(), kind: draftStore.kind, blocked: draftBlocked, reason: draftStopReason
+});
+
+/** 묶인 파일이 바뀌었다 — 파일 메뉴의 「어디에 담기는가」 줄과 상태줄을 다시 적는다. */
 function syncSaveTargetNote() {
   views.fileMenu?.syncName();
+  views.status?.render();
 }
 /** 서버에 있다고 확인한 경로. 소스가 바뀌면 다시 확인한다. */
 let serverClipOk = '';
@@ -1966,7 +1979,7 @@ const voiceInput = (() => {
       if (!u.final) return;
       render(VoiceCmd.hearUtterance(store, { text: u.text, atSec: u.startedAt }));
     },
-    onState: () => { views.video?.syncVoice(); views.thumb?.render(); }
+    onState: () => { views.video?.syncVoice(); views.thumb?.render(); views.status?.render(); }
   });
 
   return {
@@ -2229,8 +2242,39 @@ const llmServer = createLlmServer();
 // (ports/pose.js 계약과 domain/pose·rom·poseTracks 만 있다) — 설정에서 위치를 정해 두면 그것이 붙을 자리다.
 const modelServer = createModelServer();
 
+// ── 「처음 한 번」 안내(RM-19) ──────────────────────────────────────────────
+// 늘 떠 있던 안내 문장(사이드바 셋 · 영상 패널 열하나)을 걷은 자리다. 그 단계에 **처음 손을 대는 순간**(누름 · 포커스)
+// 한 번만 말풍선이 뜨고, 서랍은 처음 펼칠 때 뜬다. 본 기록은 이 브라우저에만 남는다(adapters/localStore).
+// ⚠ 영상 패널의 단계는 `details.vstep` 의 차례가 곧 열쇠(step1~step6)다 — 단계를 더하면 ONCE_HINTS 에 문장을 더한다.
+const hintBubble = createHintBubble({
+  resolveAnchor: (key) => {
+    if (/^step\d$/.test(key)) return document.querySelectorAll('details.vstep')[Number(key.slice(4)) - 1] || null;
+    if (key === 'practice') return byId('videoPractice');
+    const id = { routine: 'routineList', category: 'categoryManager', file: 'savedList' }[key];
+    return id ? (byId(id)?.closest('details.drawer') || null) : null;
+  }
+});
+const onceHints = createOnceHints({
+  load: loadOnceHints,
+  save: saveOnceHints,
+  present: (key, text) => hintBubble.show(key, text)
+});
+document.querySelectorAll('details.vstep').forEach((step, i) => {
+  const key = `step${i + 1}`;
+  const first = () => { if (VideoCmd.panelState(store).open) onceHints.show(key); };
+  step.addEventListener('pointerdown', first, true);
+  step.addEventListener('focusin', first, true);
+});
+byId('videoPractice')?.addEventListener('pointerdown', () => onceHints.show('practice'), true);
+for (const [key, id] of Object.entries({ routine: 'routineList', category: 'categoryManager', file: 'savedList' })) {
+  const drawer = byId(id)?.closest('details.drawer');
+  drawer?.addEventListener('toggle', () => { if (drawer.open) onceHints.show(key); });
+}
+
 views.settings = createSettingsView({
   container: document.querySelector('.top-actions'),
+  // 처음 한 번 안내의 본 기록을 비우는 단추(RM-19). 세는 것도 담는 것도 바깥(onceHints)이다.
+  hints: { reset: () => { onceHints.reset(); hintBubble.close(); }, count: () => onceHints.seenKeys().length },
   getClipSetting: loadClipSetting,
   saveClipSetting,
   clips: clipLibrary,
@@ -2329,9 +2373,22 @@ openLinksIfAny(undefined);
 
 views.fileMenu = createFileMenu({
   // 자동 담기가 「저장했다」는 착각을 주던 것을 끝내는 한 줄이다(2026-09-22) — 무엇에 담기는지를 적는다.
-  getSaveTarget: () => ({
-    bound: draftStore.bound(), kind: draftStore.kind, blocked: draftBlocked, reason: draftStopReason
-  })
+  getSaveTarget: saveTarget
+});
+
+// 상태줄(RM-19) — 창 맨 아래 한 줄. 판정을 새로 하지 않고 이미 있는 것을 모아 읽는다:
+//   받는 중 captureSec · 듣는 중 음성 어댑터 · 루틴 편집 중 session · 담기 자리 saveTarget · 되돌릴 수 있음 히스토리.
+// ⚠ app/render 가 video · history · routineEditor 에서 render() 를 부른다. 음성 · 담기는 Dirty 를 타지 않으므로
+//   speech.onState 와 syncSaveTargetNote 가 직접 부른다.
+views.status = createStatusBar({
+  getState: () => ({
+    capture: { startSec: CaptureCmd.captureStartSec(store) },
+    voice: views.video?.voiceState?.(),
+    routine: { editing: !!store.get().session.editingRoutineId },
+    save: saveTarget(),
+    history: { canUndo: canUndo(BOARD_MAIN) }
+  }),
+  formatClock
 });
 
 views.start = createModeBar({
@@ -2417,7 +2474,7 @@ views.thumb = createThumbBar({
     // 박자 잡기도 영상을 보면서 하는 일이다 — 영상 밑 조작 줄에서 바로 두드린다(2026-09-21).
     rewind: () => { flowLog.note('rewind'); views.video?.rewind(); views.thumb?.render(); },
     tap: () => { flowLog.note('tap'); views.video?.tap(); views.thumb?.render(); },
-    voice: () => { flowLog.note('voice'); views.video?.voiceToggle(); views.thumb?.render(); },
+    voice: () => { flowLog.note('voice'); views.video?.voiceToggle(); views.thumb?.render(); views.status?.render(); },
     toggleSheet: () => { byId('sidebarSheetBtn')?.click(); },
     quickPlace: () => { runCommand('quickPlace'); }
   },

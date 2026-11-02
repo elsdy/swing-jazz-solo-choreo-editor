@@ -295,3 +295,23 @@ export function loadTheme() {
 export function saveTheme(id) {
   localKv.set(STORAGE_KEYS.theme, String(id || ''));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 「처음 한 번」 안내의 본 기록 (2026-11-02 신설, RM-19). 열쇠 목록 하나다 — 가르는 일은 ui/onceHint 가 한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 본 안내의 열쇠 목록. 손상된 값은 빈 배열 — 그러면 안내가 다시 뜰 뿐이라 잃는 것이 없다.
+ * @returns {string[]}
+ */
+// @complexity time=O(k) space=O(k) cc=3
+export function loadOnceHints() {
+  const raw = localKv.get(STORAGE_KEYS.onceHints, []);
+  return Array.isArray(raw) ? raw.filter(k => typeof k === 'string') : [];
+}
+
+/** @param {string[]} seen ui/onceHint 가 들고 있는 목록 그대로. 비우면 키는 남고 값만 `[]` 다. */
+// @complexity time=O(k) space=O(k) cc=1
+export function saveOnceHints(seen) {
+  localKv.set(STORAGE_KEYS.onceHints, Array.isArray(seen) ? seen : []);
+}
