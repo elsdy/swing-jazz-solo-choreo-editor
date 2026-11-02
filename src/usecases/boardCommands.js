@@ -214,6 +214,31 @@ export function resizeGroupTo(store, args, deps = {}) {
 }
 
 /**
+ * 시작점 트리밍을 확정한다 — 왼쪽 가장자리를 끌어 놓은 때(RM-12). 끝 칸은 그대로다.
+ *
+ * resizeGroupTo 와 같은 **호출부 클램프**를 한다: newCount 가 비면(0 · 빈 값) 지금 길이, 그리고 1 ..(보드 첫 칸부터 끝 칸까지).
+ * 보드 앞 끝 자르기는 boardOps.trimGroupStart 도 하지만, 여기서 먼저 잘라 두어야 「바뀌지 않음」을 알아본다 —
+ * 길이가 그대로면 아무것도 하지 않고 NONE 이다(커밋할 것도 없다).
+ *
+ * @param {{ boardId:'main'|'routine', groupId:string, newCount:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=3
+export function trimGroupStartTo(store, args, deps = {}) {
+  const { boardId, groupId, newCount } = args;
+  const board = boardOf(store.get(), boardId);
+  const span = spanOfGroup(board, groupId);
+  if (!span) return NONE;
+  const front = linearOf(board.hasIntroRow ? 0 : 1, 0, board.cols);
+  const end = span.from + span.total - 1;
+  const finalCount = clamp(newCount || span.total, 1, end - front + 1);
+  if (finalCount === span.total) return NONE;
+  const result = boardOps.trimGroupStart(board, { groupId, newCount: finalCount }, deps.ids);
+  return applyBoardResult(store, boardId, result) || NONE;
+}
+
+/**
  * 그룹을 삭제한다. removePlacementGroup(3567-3576).
  *
  * ⚠ 원본 3570-3572 는 메인 보드일 때 selectedGroupIds 에서도 지우고

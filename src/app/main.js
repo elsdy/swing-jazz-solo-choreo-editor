@@ -457,7 +457,12 @@ const pointerSession = createPointerSession({
   readCellW: () => readCellW(),           // input 은 ui/cssVars 를 import 할 수 없다
   overlays,
   // 원본 3766. ⚠ newCount 는 **미클램프 previewCount** — 상한 클램프는 커맨드가 한다(3832).
-  commit: (boardId, groupId, newCount) => {
+  // 왼쪽 가장자리(RM-12)는 시작점 트리밍이다 — 길이가 그대로면 커맨드가 NONE 을 돌려주고 히스토리도 늘지 않는다.
+  commit: (boardId, groupId, newCount, edge) => {
+    if (edge === 'left') {
+      render(commitIfChanged(BoardCmd.trimGroupStartTo(store, { boardId, groupId, newCount }, { ids: browserEnv }), boardId));
+      return;
+    }
     render(BoardCmd.resizeGroupTo(store, { boardId, groupId, newCount }, { ids: browserEnv }));
     render(commitHistory(boardId));
   }
@@ -841,34 +846,48 @@ const routineActionPopup = createRoutineActionPopup({
 // 안무 블록의 동작 팝업(2026-09-21). 손가락으로 한 번 탭하면 뜨고(창 폭과 무관 — RM-11), 마우스에서는 우클릭으로 닿는다.
 // ⚠ `openPicker` 는 **같은 quickPicker 인스턴스**를 쓴다(`✎` 가 부르는 그것) — 동작을 고르는
 //   화면이 두 벌이 되면 한쪽만 고쳐진다.
-const placementActionPopup = createPlacementActionPopup({
-  render,
-  isSelected: (groupId) => store.get().selection?.has(groupId) || false,
-  commands: {
-    toggleSelection: (groupId) => BoardCmd.toggleSelection(store, { boardId: BOARD_MAIN, groupId }),
-    // ⚠ 삭제와 히스토리 커밋 둘 다. 커밋을 빼면 이 길로 지운 것만 되돌리기가 안 된다.
-    removeGroup: (groupId) => withUndoToast(
-      BoardCmd.removeGroup(store, { boardId: BOARD_MAIN, groupId }), '블록을 지웠습니다.'
-    ),
-    // 복사와 히스토리 커밋 둘 다 — Alt+끌기 복사(copyGroupTo)와 같은 커맨드를 바로 뒤 칸으로 부른다(RM-11).
-    copyAfter: (groupId) => commitIfChanged(
-      BoardCmd.copyGroupAfter(store, { boardId: BOARD_MAIN, groupId }, { ids: browserEnv }), BOARD_MAIN
-    ),
-    openPicker: (groupId, x, y) => quickPickers[BOARD_MAIN].openForGroup(groupId, x, y),
-    // 분할 · 병합(RM-16). 재생 헤드가 이 블록 안에 없거나 박자가 없으면 null — 팝업이 카운트 고르기로 떨어진다.
-    splitAtPlayhead: (groupId) => {
-      const sec = playheadSec();
-      if (sec === null) return null;
-      const dirty = BoardCmd.splitGroupAt(store, { boardId: BOARD_MAIN, groupId, sec }, { ids: browserEnv });
-      return dirty.boards ? commitIfChanged(dirty, BOARD_MAIN) : null;
-    },
-    splitAtCount: (groupId, countInGroup) =>
-      commitIfChanged(BoardCmd.splitGroupAt(store, { boardId: BOARD_MAIN, groupId, countInGroup }, { ids: browserEnv }), BOARD_MAIN),
-    mergePartner: (groupId) => BoardCmd.mergePartnerOf(store, { boardId: BOARD_MAIN, groupId }),
-    mergeWithNeighbor: (groupId) =>
-      commitIfChanged(BoardCmd.mergeWithNeighbor(store, { boardId: BOARD_MAIN, groupId }, { ids: browserEnv }), BOARD_MAIN)
-  }
-});
+// RM-12(2026-11-03) — 루틴 편집 보드에도 하나 둔다. 두 번 누르기가 더는 지우지 않아, 고르기가 없는 그 보드에서 블록 하나를
+//   지우는 길이 이 팝업뿐이다. 그 보드에는 고르기가 없어 toggleSelection 을 넘기지 않고(「☐ 선택하기」 줄이 빠진다),
+//   재생 헤드는 안무표의 시간이라 splitAtPlayhead 도 넘기지 않는다(자르기는 「몇 번째 카운트에서」로 고른다).
+/**
+ * @param {string} boardId
+ * @returns {ReturnType<typeof createPlacementActionPopup>}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+function makePlacementActionPopup(boardId) {
+  const isMain = boardId === BOARD_MAIN;
+  return createPlacementActionPopup({
+    render,
+    isSelected: (groupId) => store.get().selection?.has(groupId) || false,
+    commands: {
+      ...(isMain ? { toggleSelection: (groupId) => BoardCmd.toggleSelection(store, { boardId, groupId }) } : {}),
+      // ⚠ 삭제와 히스토리 커밋 둘 다. 커밋을 빼면 이 길로 지운 것만 되돌리기가 안 된다.
+      removeGroup: (groupId) => withUndoToast(
+        BoardCmd.removeGroup(store, { boardId, groupId }), '블록을 지웠습니다.', boardId
+      ),
+      // 복사와 히스토리 커밋 둘 다 — Alt+끌기 복사(copyGroupTo)와 같은 커맨드를 바로 뒤 칸으로 부른다(RM-11).
+      copyAfter: (groupId) => commitIfChanged(
+        BoardCmd.copyGroupAfter(store, { boardId, groupId }, { ids: browserEnv }), boardId
+      ),
+      openPicker: (groupId, x, y) => quickPickers[boardId].openForGroup(groupId, x, y),
+      // 분할 · 병합(RM-16). 재생 헤드가 이 블록 안에 없거나 박자가 없으면 null — 팝업이 카운트 고르기로 떨어진다.
+      ...(isMain ? {
+        splitAtPlayhead: (groupId) => {
+          const sec = playheadSec();
+          if (sec === null) return null;
+          const dirty = BoardCmd.splitGroupAt(store, { boardId, groupId, sec }, { ids: browserEnv });
+          return dirty.boards ? commitIfChanged(dirty, boardId) : null;
+        },
+      } : {}),
+      splitAtCount: (groupId, countInGroup) =>
+        commitIfChanged(BoardCmd.splitGroupAt(store, { boardId, groupId, countInGroup }, { ids: browserEnv }), boardId),
+      mergePartner: (groupId) => BoardCmd.mergePartnerOf(store, { boardId, groupId }),
+      mergeWithNeighbor: (groupId) =>
+        commitIfChanged(BoardCmd.mergeWithNeighbor(store, { boardId, groupId }, { ids: browserEnv }), boardId)
+    }
+  });
+}
+const placementActionPopup = makePlacementActionPopup(BOARD_MAIN);
 
 // 파트(섹션) 팝업(2026-11-03, RM-23). 마디 이름을 누르면 범위 고르기 · 접고 펴기, 마디 메뉴에서 긋기 · 고치기.
 // ⚠ 긋기 · 고치기 · 지우기 · 옮기기 · 한 번 더는 커밋까지 끝낸다(블록과 파트가 한 스냅샷 — 되돌리기 한 단계).
@@ -1409,7 +1428,9 @@ views.layout = initLayout({ getCols: () => store.board(BOARD_MAIN).cols });
 // 15. 루틴 편집기 (원본 initRoutineEditorEvents IIFE 4889 — init 이후에 평가된다)
 // ─────────────────────────────────────────────────────────────────────────────
 
-makeBoardController(BOARD_ROUTINE);
+// longPress — 손가락으로 몸통을 길게 눌러 옮긴다(RM-12). 옛 이동 손잡이는 길게 누르지 않아도 됐다.
+// placementActionPopup — 손가락 탭 · 우클릭의 블록 팝업. 두 번 누르기가 더는 지우지 않아 이 보드의 `× 지우기` 길이다(RM-12).
+makeBoardController(BOARD_ROUTINE, { longPress, placementActionPopup: makePlacementActionPopup(BOARD_ROUTINE) });
 views.routineEditor.sync();   // 패널은 마크업이 이미 display:none 이라 무동작이다(상태와 한 번 맞춘다)
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2590,7 +2611,7 @@ function seekToSpanStart(startSec) {
 boardEl.addEventListener('click', (e) => {
   if (!VideoCmd.panelState(store).open) return;
   if (!VideoCmd.isTempoReady(store)) return;
-  if (e.target.closest(SEL.moveHandle) || e.target.closest(SEL.resizeHandle)) return;
+  if (e.target.closest(SEL.edgeHandles)) return;
   const placementEl = e.target.closest(SEL.placement);
   if (!placementEl) return;
   const groupId = placementEl.dataset[DATA.groupId];

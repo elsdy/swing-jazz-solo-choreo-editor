@@ -28,7 +28,7 @@ import {
 } from '../usecases/store.js';
 import {
   copyGroupTo, deleteRowAt, duplicateRowAt, insertRowAt, mergeWithNeighbor, moveGroupTo, moveRowBy, placeMoveAt, placeRoutineAt,
-  removeGroup, resizeGroupTo, setBoardRows, splitGroupAt
+  removeGroup, resizeGroupTo, setBoardRows, splitGroupAt, trimGroupStartTo
 } from '../usecases/boardCommands.js';
 import { loadProjectFromRecent, mergeProjectFromRecent } from '../usecases/projectCommands.js';
 import { setRoutineSize, syncFromEditor } from '../usecases/routineCommands.js';
@@ -299,6 +299,14 @@ export function createAdapter() {
         { boardId: idOf(board), groupId: resize.groupId, newCount: resize.previewCount },
         { ids: env }
       ));
+    },
+
+    /**
+     * 왼쪽 가장자리 트리밍 확정(RM-12) — 원본에 대응물이 없다. 끝 칸을 고정하고 끝에서 거꾸로 센 count 로 시작을 정한다.
+     * 화면 길(pointerSession.finalize → main 의 commit)과 같이 **유스케이스**를 부른다 — 1..보드 앞 끝까지의 클램프가 거기 있다.
+     */
+    trimStart({ board, groupId, count }) {
+      record(trimGroupStartTo(store, { boardId: idOf(board), groupId, newCount: count }, { ids: env }));
     },
 
     remove({ board, groupId }) {

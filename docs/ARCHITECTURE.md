@@ -228,7 +228,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `moves.js` | 동작 라이브러리 트랜잭션과 팔레트 검색·정렬 파이프라인 |
 | `routines.js` | 루틴 값 객체와 변환. `buildFromSelection` `redistributeBlocks` |
 | `gestureMath.js` | 제스처 판정의 순수 부분. `resolveDragCount` 의 `lowerBound` 가 곳마다 다른 하한을 담는다. 히트 판정의 행·칸 산술(`resolveHitCell`), 드래그 프리뷰 카운트(`dragPreviewCount` — 두 입력 파일에 두 벌이던 것), 늘이기 세 갈래의 우선순위(`resizeHitKind`)도 여기 있다(RM-08) |
-| `boardGesture.js` | 보드 위 그리기·빠른 배치·더블탭의 **전이 함수**(2026-10-01, RM-08). `(상태, 이벤트, env) → (다음 상태, 할 일 목록)` 꼴이고 `input/boardController` 는 이벤트를 값으로 바꿔 넘긴 뒤 할 일을 차례대로 실행할 뿐이다. 측정(사각형 재기·포인터 밑 찾기)은 env 의 함수로 받아 원본이 부르던 그 자리에서만 부른다. 마우스와 터치의 다른 규칙이 그대로 들어 있다 — 시험은 `tests/unit/boardGesture.test.mjs` |
+| `boardGesture.js` | 보드 위 그리기·빠른 배치·두 번 탭·블록 몸통 끌기와 양 끝 트리밍 시작의 **전이 함수**(2026-10-01, RM-08 · 2026-11-03, RM-12). 누른 자리가 몸통인지 양 끝인지는 `gestureMath.resolveGrabZone` 이 블록 사각형으로 가른다. `(상태, 이벤트, env) → (다음 상태, 할 일 목록)` 꼴이고 `input/boardController` 는 이벤트를 값으로 바꿔 넘긴 뒤 할 일을 차례대로 실행할 뿐이다. 측정(사각형 재기·포인터 밑 찾기)은 env 의 함수로 받아 원본이 부르던 그 자리에서만 부른다. 마우스와 터치의 다른 규칙이 그대로 들어 있다 — 시험은 `tests/unit/boardGesture.test.mjs` |
 | `popupPlacement.js` | 떠 있는 창 넷(빠른 배치 팝업 · 블록 동작 팝업 · 루틴 블록 팝업 · 동작 메뉴)의 자리 산술(2026-10-01, RM-08). 넷은 일부러 다르다 — **합치지 않고** 따로 떼어 지금 값을 시험에 굳혔다. 크기를 재는 일과 한 프레임 기다리는 순서는 화면 쪽에 남는다 |
 | `commands.js` | **명령 등록부**(2026-10-01, RM-09). 명령마다 한 줄 — id · 라벨 · 설명 · 기본 글쇠 · 버튼 글자 · 툴팁 몸말 · 글자를 치는 중에도 듣는가(`whileTyping`). 실행 함수는 없다 — 실행은 `app/main` 의 `COMMAND_RUNNERS` 가 같은 id 로 잇는다. id 는 바꾼 글쇠가 저장되는 이름이라 바꾸지 않는다 |
 | `strings.js` | **라벨 문자열 표**(2026-11-02, RM-10). 명령이 **아닌** 화면 글자 — 팝업 줄 · 목록의 지우기 단추 · 툴팁 · 플레이스홀더 · 그 글자를 인용하는 안내 문장 — 의 주인 하나. `str(키)` 는 없는 키에 던지고 `fill(키, {이름})` 은 `{이름}` 구멍을 채운다. 명령의 글자는 여기 없다(`commands.js` 가 주인) — 안내 문장이 명령 이름을 인용하면 구멍을 두고 부르는 쪽이 등록부의 `button` 을 채운다. ui · input 이 함께 읽게 domain 에 둔다. 낱말의 뜻은 [용어집](GLOSSARY.md) |
@@ -321,7 +321,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `placementView.js` | placement 1개 → DOM, 그리고 비고 칸 문자열 |
 | `bpmBadge.js` | 오른쪽 위 기준 박자 배지(2026-09-22). 받아 적는 중에는 `domain/captureDrift` 의 판정을 꼬리말로 단다. **BPM 을 스스로 바꾸지 않는다** — 저절로 바꾸면 이미 놓인 블록이 통째로 어긋난다 |
 | `modeBar.js` | 앱바 아래 `채우기` 줄(2026-09-21). 줄 위의 버튼은 전부 이미 있던 진입점이다 |
-| `placementActionPopup.js` | 안무표의 블록을 눌렀을 때 뜨는 팝업(`✎ 동작 정하기` · `☐ 선택하기` · `✂ 여기서 자르기` · `⊕ 옆과 합치기` · `× 지우기`). 폰에서 더블클릭이 안 맞아 만든 길이다. 자르기는 재생 헤드로 못 자르면 팝업 안에서 `몇 번째 카운트에서` 를 고르게 한다 |
+| `placementActionPopup.js` | 안무표 · 루틴 편집 패널의 블록을 눌렀을 때(마우스는 우클릭) 뜨는 팝업(`✎ 동작 정하기` · `☐ 선택하기` · `✂ 여기서 자르기` · `⊕ 옆과 합치기` · `× 지우기`). 폰에서 더블클릭이 안 맞아 만든 길이고, 2026-11-03(RM-12) 부터는 블록 하나를 지우는 길이 이 팝업으로 모였다. 고르기가 없는 루틴 편집 패널에는 `☐ 선택하기` 줄이 빠진다. 자르기는 재생 헤드로 못 자르면 팝업 안에서 `몇 번째 카운트에서` 를 고르게 한다 |
 | `paletteView.js` | `동작 목록` 렌더와 카드 팩토리, 동작 컨텍스트 메뉴 |
 | `categoryView.js` | 범례·카테고리 관리 행·`<select>` 세 렌더 |
 | `toolbarView.js` | 메인 보드 툴바. `루틴으로 편성` 버튼의 선택 개수 표시를 갱신한다 |

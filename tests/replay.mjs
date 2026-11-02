@@ -25,6 +25,7 @@ export const REPLAY_VERSION = 1;
 //   copyGroup({board, groupId, row, startIndex})
 //   rebuild({board, groupId, count})                  리사이즈 확정(클램프 없음)
 //   finalizeResize({board, resize})                   클램프 포함 리사이즈 확정
+//   trimStart({board, groupId, count})               왼쪽 가장자리 트리밍 확정 — 끝 칸 고정, 클램프 포함(RM-12)
 //   remove({board, groupId})
 //   repack({board, rows})
 //   clearArea({board, segments, ignoreGroupId, subRow})  → 반환값이 values 에 기록됨
@@ -52,6 +53,7 @@ const OP_TO_METHOD = {
   copy: 'copyGroup',
   rebuild: 'rebuild',
   finalizeResize: 'finalizeResize',
+  trimStart: 'trimStart',
   remove: 'remove',
   repack: 'repack',
   clearArea: 'clearArea',
