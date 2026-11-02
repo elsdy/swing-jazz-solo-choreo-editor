@@ -2047,10 +2047,27 @@
             "note": "RM-53 설명의 길대로 이름 접두만 보고 건너뛴다. 그러면 RM-49 가 정한 「설명이 있어야 통과」 문턱과 어긋나 두 규칙이 생긴다"
           }
         ]
+      },
+      {
+        "id": "Q103",
+        "title": "RM-58 — 띠가 마디와 이름을 다 담지 못할 때 무엇을 줄일까 — 길 띠 높이(104px)를 지킬지",
+        "answer": "띠 높이 104px 를 지키고 길의 활을 낮춘다 (2026-11-03)",
+        "options": [
+          {
+            "label": "띠 높이 104px 를 지키고 길의 활을 낮춘다",
+            "note": "추천 — 아래 ③ 받아 적기 칸과 안무표 자리는 그대로다. 대신 낮은 띠에서는 길이 덜 휘어 그림의 맛이 조금 줄어든다"
+          },
+          {
+            "label": "띠를 마디와 이름에 맞춰 키운다",
+            "note": "길의 활은 그대로 살지만, 영상 띠가 그만큼 길어져 779px 창에서 안무표의 몫이 줄어든다(BOARD_MIN_H 와 부딪칠 수 있다)"
+          }
+        ]
       }
     ]
   },
   "order": [
+    "RM-60",
+    "RM-58",
     "RM-53",
     "RM-49",
     "RM-40",
@@ -4451,6 +4468,102 @@
             "why": "claude 가 골랐다(근거 없음)"
           },
           "slug": "body-drag-keeps-grab-offset"
+        },
+        {
+          "id": "RM-58",
+          "name": "테마의 흐름 길 단추가 영상 패널 본문 위에 뜬다",
+          "size": "S",
+          "after": [],
+          "soft": [],
+          "questions": [
+            "Q103"
+          ],
+          "defaults": [],
+          "stage": "branch",
+          "pr": null,
+          "what": "테마를 켠 영상 띠에서 흐름 길 단추(마디와 이름)가 길 띠(.flow-steps, 104px) 아래로 떨어져 ③ 받아 적기 칸의 단추와 말로 이름 줄을 덮는다. 이 일은 먼저 실제 화면에서 그대로 재현해 원인을 잰 뒤 고친다. 좌표는 domain/flowTrack 이 띠 높이 안에 들도록 보장하고, ui/videoPanel 의 drawFlowTrack 은 띠 크기가 바뀌면 다시 그리게 한다. 같은 차례 줄이 기본 테마에서 패널 밖으로 밀리는 RM-55 와 자리(index.html 의 band CSS · videoPanel 의 차례 줄)가 겹치지만, RM-55 가 만들 코드를 부르지는 않으므로 선행으로 두지 않는다.",
+          "kind": "bug",
+          "seat": "code",
+          "addedAt": "2026-11-02T22:25:11Z",
+          "found": {
+            "by": "claude",
+            "kind": "bug",
+            "in": "RM-24",
+            "at": "2026-11-02T22:25:11Z",
+            "side": "feature",
+            "why": "테마(:root[data-theme]) 의 흐름 길 단추가 104px 띠 밖으로 떠 영상 패널 본문을 가린다 — RM-24 브라우저 시험 중 발견, RM-24 변경 전(정리함을 열기 전 첫 화면)에도 같은 자리에 떠 있었다"
+          },
+          "slug": "themed-flow-step-buttons-stay-inside-track-band",
+          "priority": "top4",
+          "files": [
+            "src/domain/flowTrack.js#flowTrack",
+            "src/ui/videoPanel.js#drawFlowTrack",
+            "src/ui/videoPanel.js#renderFlowSteps",
+            "index.html",
+            "tests/unit/domain.test.mjs",
+            "tests/unit/videoPanelMarkup.test.mjs",
+            "docs/BUG_REPORTS.md",
+            "docs/HISTORY.md"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-58.md",
+          "branch": "rm-58-themed-flow-step-buttons-stay-inside-track-band",
+          "startedAt": "2026-11-03"
+        },
+        {
+          "id": "RM-59",
+          "name": "밝은 테마에서 블록 팝업 제목이 안 보임 · 지우기가 손가락에선 빨갛지 않음",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "stage": null,
+          "pr": null,
+          "what": "RM-12 마무리 확인(2026-11-03, 폰 폭 390px 손가락 탭)에서 잼: ① 솜사탕(candy, 유일한 밝은 테마)에서 블록을 탭해 뜨는 팝업(.routine-action-popup)의 제목(.rap-title, 블록 이름)의 계산된 글자색이 rgba(255,255,255,0.55) 로 네 테마 모두 같다 — index.html .routine-action-popup .rap-title 이 color: rgba(var(--white-rgb),0.55) 로 고정이라 밝은 배경 위에서 사라진다(스크린샷으로도 빈 줄). 구분선 border-bottom 도 같은 white-rgb. ② 기능 설명서는 「빨간 × 지우기」라 적었지만 빨강은 button.danger:hover 에만 있어 손가락(hover 없음)에서는 네 테마 모두 보통 글자색(basic rgb(229,231,235) · candy rgb(69,47,82))이다. 고침: 제목 · 구분선은 테마 글자 토큰(--text 계열 · 흐림)으로, × 지우기는 늘 var(--danger) 글자색으로(hover 는 배경만). 시험: candy 에서 제목 색이 배경과 대비가 있는지, .danger 의 기본 color 가 --danger 인지.",
+          "kind": "bug",
+          "seat": "code",
+          "addedAt": "2026-11-02T22:27:34Z",
+          "found": {
+            "by": "claude",
+            "kind": "bug",
+            "at": "2026-11-02T22:27:34Z",
+            "side": "feature",
+            "why": "claude 가 골랐다(근거 없음)"
+          },
+          "slug": "block-popup-title-invisible-light-theme"
+        },
+        {
+          "id": "RM-60",
+          "name": "null 초가 카운트 0 으로 읽히는 자리와 그 꼴의 기계 검사",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "stage": null,
+          "pr": null,
+          "what": "src/domain/tempo.js 의 boundaryCount 는 Number.isFinite(Number(sec)) 로 초를 거르는데 Number(null) 은 0 이라 null 이 「0초」로 통과한다(추론함 — 지금 호출부 둘이 null 을 넘기는지는 재지 않았다). 이 꼴을 check-principles 의 D-5 규칙으로 잡으려면 이 자리를 고치거나 예외 이유를 달아야 한다.",
+          "kind": "bug",
+          "seat": "codify",
+          "addedAt": "2026-11-02T22:28:18Z",
+          "found": {
+            "by": "claude",
+            "kind": "bug",
+            "in": "RM-24",
+            "at": "2026-11-02T22:28:18Z",
+            "side": "feature",
+            "why": "RM-24 에서 같은 꼴(Number.isFinite(Number(x)) 가 null 을 0 으로 통과시킴)을 시험이 잡아 고쳤다. 원칙 D-5 에 더했고, 기계 검사로 만들려면 남은 한 자리(tempo.boundaryCount)부터 판정해야 한다"
+          },
+          "slug": "number-null-is-finite-check",
+          "priority": "top4"
         }
       ]
     }
@@ -4804,6 +4917,45 @@
       ],
       "reportedAt": "2026-11-02",
       "fixedBy": "RM-57"
+    },
+    {
+      "id": "BUG-26",
+      "title": "테마의 흐름 길 단추가 영상 패널 본문 위에 뜬다",
+      "symptom": "테마를 켠 화면에서 영상 패널의 흐름 길 단추(▶ 영상 고르기 · ♪ 박자 맞추기, .flow-step)가 길 띠(.flow-steps, height 104px) 아래로 80px 쯤 떨어져 ③ 받아 적기 칸의 단추 · 말로 이름 줄을 덮는다. 1440x779 창 · 영상 패널 열림에서 보았다. 좌표는 ui/videoPanel 이 domain/flowTrack 으로 인라인으로 준다 — 띠 높이와 좌표 셈이 어긋나는 것으로 보인다(추론함).",
+      "elements": [
+        {
+          "name": "index.html",
+          "where": "index.html"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-58"
+    },
+    {
+      "id": "BUG-27",
+      "title": "밝은 테마에서 블록 팝업 제목이 안 보임 · 지우기가 손가락에선 빨갛지 않음",
+      "symptom": "RM-12 마무리 확인(2026-11-03, 폰 폭 390px 손가락 탭)에서 잼: ① 솜사탕(candy, 유일한 밝은 테마)에서 블록을 탭해 뜨는 팝업(.routine-action-popup)의 제목(.rap-title, 블록 이름)의 계산된 글자색이 rgba(255,255,255,0.55) 로 네 테마 모두 같다 — index.html .routine-action-popup .rap-title 이 color: rgba(var(--white-rgb),0.55) 로 고정이라 밝은 배경 위에서 사라진다(스크린샷으로도 빈 줄). 구분선 border-bottom 도 같은 white-rgb. ② 기능 설명서는 「빨간 × 지우기」라 적었지만 빨강은 button.danger:hover 에만 있어 손가락(hover 없음)에서는 네 테마 모두 보통 글자색(basic rgb(229,231,235) · candy rgb(69,47,82))이다. 고침: 제목 · 구분선은 테마 글자 토큰(--text 계열 · 흐림)으로, × 지우기는 늘 var(--danger) 글자색으로(hover 는 배경만). 시험: candy 에서 제목 색이 배경과 대비가 있는지, .danger 의 기본 color 가 --danger 인지.",
+      "elements": [
+        {
+          "name": "index.html",
+          "where": "index.html"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-59"
+    },
+    {
+      "id": "BUG-28",
+      "title": "null 초가 카운트 0 으로 읽히는 자리와 그 꼴의 기계 검사",
+      "symptom": "src/domain/tempo.js 의 boundaryCount 는 Number.isFinite(Number(sec)) 로 초를 거르는데 Number(null) 은 0 이라 null 이 「0초」로 통과한다(추론함 — 지금 호출부 둘이 null 을 넘기는지는 재지 않았다). 이 꼴을 check-principles 의 D-5 규칙으로 잡으려면 이 자리를 고치거나 예외 이유를 달아야 한다.",
+      "elements": [
+        {
+          "name": "src/domain/tempo.js",
+          "where": "src/domain/tempo.js"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-60"
     }
   ]
 }
