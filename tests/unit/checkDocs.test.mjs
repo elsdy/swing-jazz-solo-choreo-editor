@@ -175,3 +175,51 @@ test('RM-16 새 라벨이 기능 설명서와 튜토리얼에 백틱으로 적�
   for (const label of labels) assert.ok(texts.some(t => contains(t, normalize(label))), `화면 글자에 「${label}」 이 없다`);
   assert.deepEqual(checkDocLabels(repoDocs(), repoScreenFiles()).misses.map(formatMiss), []);
 });
+
+// ── RM-26: 도움말 `?` 표와 문서 갈래 ───────────────────────────────────────────
+// 이름은 계획서(docs/roadmap/plans/RM-26.md)의 「요구 ↔ 시험」 표 6 · 7 · 8 과 같다.
+
+import { renderMarkdown } from '../../src/ui/docsHub.js';
+import { DOCS, DOC_GROUPS, resolveDoc } from '../../src/ui/docsRegistry.js';
+import { HELP_LINKS, missingHelpAnchors, unmatchedHelpKeys } from '../../src/ui/helpLinks.js';
+
+/** 등록부의 문서마다 뷰어가 만드는 id 집합 — check-docs 의 anchorsOf 와 같은 셈. */
+function repoAnchors() {
+  const m = new Map();
+  for (const d of DOCS) {
+    const { html } = renderMarkdown(readFileSync(join(ROOT, d.path), 'utf8'));
+    m.set(d.id, new Set([...html.matchAll(/id="([^"]+)"/g)].map(x => x[1])));
+  }
+  return m;
+}
+
+test('도움말 ? 표의 문서 id 와 앵커가 모두 실제 문서에 있다', () => {
+  assert.ok(HELP_LINKS.length >= 8, '영상 단계 · 파일 메뉴 · 팝업의 `?` 가 표에 있어야 한다');
+  for (const l of HELP_LINKS) assert.ok(['tutorial', 'features'].includes(l.doc), `${l.key}: 도움말은 튜토리얼이나 기능 설명서로 간다`);
+  assert.deepEqual(missingHelpAnchors(HELP_LINKS, repoAnchors(), resolveDoc), []);
+});
+
+test('허공을 가리키는 ? 앵커는 줄과 함께 붉어진다', () => {
+  const bad = [
+    { key: 'ok', doc: 'tutorial', anchor: '첫-실행', what: '' },
+    { key: 'gone', doc: 'tutorial', anchor: '없어진-절', what: '' },
+    { key: 'nodoc', doc: 'nowhere', anchor: 'x', what: '' },
+  ];
+  const problems = missingHelpAnchors(bad, repoAnchors(), resolveDoc);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /'gone'.*#없어진-절/);
+  assert.match(problems[1], /'nodoc'.*nowhere/);
+  // 화면의 키와 표도 서로 맞춘다 — 표에 없는 키, 쓰이지 않는 줄이 둘 다 찍힌다
+  const keys = unmatchedHelpKeys([{ key: 'a' }, { key: 'b' }], ['a', 'c']);
+  assert.deepEqual(keys.length, 2);
+  assert.ok(keys.some(p => p.includes('"c"')) && keys.some(p => p.includes("'b'")));
+});
+
+test('문서 갈래는 도움말과 개발 둘이고 튜토리얼 · 기능 · 바뀐 것은 도움말이다', () => {
+  assert.deepEqual(DOC_GROUPS.map(g => [g.id, g.label]), [['help', '도움말'], ['dev', '개발']]);
+  assert.equal(DOC_GROUPS.find(g => g.id === 'dev').hidden, true, '개발 갈래는 평소에 접혀 있다');
+  const groupOf = (id) => DOCS.find(d => d.id === id)?.group;
+  for (const id of ['tutorial', 'features', 'history']) assert.equal(groupOf(id), 'help', `${id} 는 도움말`);
+  for (const id of ['principles', 'bugs', 'architecture']) assert.equal(groupOf(id), 'dev', `${id} 는 개발`);
+  assert.ok(resolveDoc('principles'), '숨긴 갈래의 문서도 링크 · 주소로는 열린다');
+});

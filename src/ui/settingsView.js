@@ -165,6 +165,7 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  * @property {() => string} [getProjectName] 경로 미리보기에 쓸 지금 프로젝트 이름
  * @property {(subdir: string, projectName: string) => string[]} [previewDirParts] 미리보기 경로 조각(domain/clips.clipDirParts)
  * @property {() => void} [onChange] 설정이 바뀌었다 — 호출부가 패널 문구 등을 다시 그린다
+ * @property {{ replay: () => void }} [coach] 처음 한 번 안내 — 「안내 다시 보기」가 부른다(ui/coachmarks)
  * @property {Window} [win] `location.hostname` 으로 관리 화면을 열 수 있는 기기인지 본다
  * @property {Document} [doc]
  */
@@ -200,6 +201,8 @@ export function createSettingsView(deps) {
     // 테마(2026-09-21). 목록의 주인은 domain/themes 이고, 고르면 바깥이 담고 `<html>` 에 바른다.
     getTheme = () => DEFAULT_THEME,
     setTheme = () => {},
+    // 처음 한 번 안내(2026-11-02, RM-26). 본 기록을 지우고 첫 장부터 띄우는 것은 ui/coachmarks 의 것을 주입받는다.
+    coach = null,
     doc = document,
     // 관리 화면을 열 수 있는 기기인지 판정하고 새 탭을 여는 데 쓴다. 테스트가 가짜를 준다.
     win = typeof window === 'undefined' ? { location: { hostname: '' }, open() {} } : window
@@ -356,6 +359,15 @@ export function createSettingsView(deps) {
           <div class="settings-row">
             <button class="ghost" data-act="flow-clear" type="button">기록 지우기</button>
             <span class="settings-label" data-role="flow-note"></span>
+          </div>
+        </section>
+        <section class="settings-section" data-role="coach-section" data-cat="flow" data-available="1"
+          data-keywords="안내 코치마크 처음 한 번 다시 보기 말풍선 튜토리얼 시작 도움말">
+          <h3>처음 한 번 안내</h3>
+          <div class="helper">처음 켰을 때 <b>채우기 줄 → 동작 목록 → 영상</b> 차례로 뜨는 말풍선 세 장입니다. 한 번 끝까지 보거나 건너뛰면 다시 뜨지 않습니다 — 기본값은 「처음 한 번만」입니다. 이 브라우저에만 남고 안무표 파일에는 들어가지 않습니다.</div>
+          <div class="settings-row">
+            <button class="ghost" data-act="coach-replay" type="button">안내 다시 보기</button>
+            <span class="settings-label" data-role="coach-note"></span>
           </div>
         </section>
         <div class="settings-empty" data-role="empty" hidden></div>
@@ -799,6 +811,12 @@ export function createSettingsView(deps) {
     }
     const kind = act.dataset.act;
     if (kind === 'close') { close(); return; }
+    if (kind === 'coach-replay') {
+      // 설정 창을 먼저 닫는다 — 말풍선이 가리키는 자리가 창 뒤에 있다.
+      close();
+      if (coach && typeof coach.replay === 'function') coach.replay();
+      return;
+    }
     if (kind === 'pick') {
       // ★ await 뒤로 미루지 않는다 — showDirectoryPicker 는 클릭 콜스택 안에서만 열린다.
       clips.pickFolder().then((picked) => {
