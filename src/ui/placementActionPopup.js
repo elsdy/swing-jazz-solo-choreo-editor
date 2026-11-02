@@ -20,6 +20,7 @@
 import { CLS } from './domContract.js';
 import { bindOutsideClose } from './popup.js';
 import { placePlacementActionPopup } from '../domain/popupPlacement.js';
+import { str } from '../domain/strings.js';
 
 // 자리 잡기(가정 크기 160×132 · 가장자리 8 · 누른 자리보다 10 아래 — 손가락이 첫 줄을 덮지 않게)는
 // domain/popupPlacement.placePlacementActionPopup 에 있다(RM-08). 형제 팝업과 같은 방식이라 실제로 재지 않는다.
@@ -68,7 +69,7 @@ export function createPlacementActionPopup(deps) {
 
     const title = document.createElement('div');
     title.className = CLS.rapTitle;
-    const name = placement.pending || !placement.name ? '이름 없는 블록' : placement.name;
+    const name = placement.pending || !placement.name ? str('block.untitled') : placement.name;
     title.textContent = Number.isFinite(count) ? `${name} ${count}c` : name;
     popup.appendChild(title);
 
@@ -84,9 +85,9 @@ export function createPlacementActionPopup(deps) {
     };
 
     // ⚠ 차례가 뜻을 만든다: 가장 자주 하는 일이 맨 위, 되돌리기 어려운 일이 맨 아래다.
-    row('✎ 동작 정하기', () => commands.openPicker(groupId, clientX, clientY));
-    row(isSelected(groupId) ? '☑ 선택 풀기' : '☐ 선택하기', () => render(commands.toggleSelection(groupId)));
-    row('× 지우기', () => render(commands.removeGroup(groupId)), CLS.danger);
+    row(str('block.pick'), () => commands.openPicker(groupId, clientX, clientY));
+    row(isSelected(groupId) ? str('block.deselect') : str('block.select'), () => render(commands.toggleSelection(groupId)));
+    row(str('block.remove'), () => render(commands.removeGroup(groupId)), CLS.danger);
 
     document.body.appendChild(popup);
 

@@ -45,6 +45,13 @@ export const DOCS = [
     desc: '기능마다 무엇을 하는지·어디에 있는지·어떻게 쓰는지',
   },
   {
+    id: 'glossary',
+    group: 'usage',
+    title: '용어집',
+    path: 'docs/GLOSSARY.md',
+    desc: '화면 낱말의 뜻 — 지우기와 삭제, 구간과 마디 반복, 내보내기와 저장을 가른다',
+  },
+  {
     id: 'history',
     group: 'changes',
     title: '개발 이력',

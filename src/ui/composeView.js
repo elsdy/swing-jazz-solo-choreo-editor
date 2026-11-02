@@ -10,6 +10,7 @@
 // ⚠ 음성 인식(webkitSpeechRecognition)은 크롬 계열에서만 있고, 없으면 🎤 버튼이 그 사실을 말한다.
 
 import { cellLabel } from '../domain/choreoPlan.js';
+import { str } from '../domain/strings.js';
 
 const STYLE_ID = 'compose-view-style';
 const CSS = `
@@ -306,7 +307,7 @@ export function createComposeView(deps) {
     const { placed = 0, skipped = 0, ...dirty } = applyPlan(lastPlan, { mode }) || {};
     render(dirty);
     commitHistory();
-    setStatus(status3, `${placed}개를 놓았습니다${skipped ? `, ${skipped}개는 자리가 없어 건너뛰었습니다` : ''}. Undo 로 되돌릴 수 있습니다.`);
+    setStatus(status3, `${placed}개를 놓았습니다${skipped ? `, ${skipped}개는 자리가 없어 건너뛰었습니다` : ''}. ${str('compose.undoHint')}`);
     if (placed) close();
   }
 

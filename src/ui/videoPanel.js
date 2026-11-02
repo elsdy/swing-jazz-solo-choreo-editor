@@ -37,6 +37,7 @@ import { openCount } from '../domain/stepTodos.js';
 import { markersAt, normalizeMarkers } from '../domain/markers.js';
 import { activeClipOf, clipCoverage, normalizeMedia } from '../domain/project/media.js';
 import { EXCERPT_LEAD_COUNTS, excerptLabel, excerptSpan } from '../domain/excerpt.js';
+import { fill, str } from '../domain/strings.js';
 
 /** 메인 보드의 store 상 id. usecases/store.BOARD_MAIN 과 같은 문자열이다(ui 는 usecases 를 import 하지 않는다). */
 const BOARD_MAIN = 'main';
@@ -1370,12 +1371,12 @@ export function createVideoPanel(deps) {
     }
     if (inOutText) {
       if (!hasIn && !hasOut) {
-        inOutText.textContent = '영상을 보다가 구간의 시작에서 `[ In 지금 여기`, 끝에서 `Out ] 지금 여기` 를 누르세요. 재생 중이든 멈춘 채든 지금 시각이 찍힙니다.';
+        inOutText.textContent = str('video.inout.empty');            // 글자는 문자열 표(RM-10) — 단추 글자를 인용한다
       } else if (range) {
-        inOutText.textContent = `In ${formatClock(range.inSec)} · Out ${formatClock(range.outSec)} · 길이 ${(range.outSec - range.inSec).toFixed(1)}초`
-          + (p.loop && !p.practice ? ' · 구간 반복 중' : '');
+        inOutText.textContent = fill('video.inout.range', { in: formatClock(range.inSec), out: formatClock(range.outSec), len: (range.outSec - range.inSec).toFixed(1) })
+          + (p.loop && !p.practice ? str('video.inout.looping') : '');
       } else {
-        inOutText.textContent = hasIn ? `In ${formatClock(p.inSec)} — 이제 구간의 끝에서 Out 을 찍으세요.` : `Out ${formatClock(p.outSec)} — 이제 구간의 시작에서 In 을 찍으세요.`;
+        inOutText.textContent = hasIn ? fill('video.inout.needOut', { in: formatClock(p.inSec) }) : fill('video.inout.needIn', { out: formatClock(p.outSec) });
       }
     }
 

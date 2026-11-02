@@ -35,6 +35,7 @@
 
 import { CLS, SEL } from './domContract.js';
 import { normalizeYoutubeUrl } from '../domain/links.js';
+import { str } from '../domain/strings.js';
 
 /** 제목 조회 디바운스. 원본 5243 의 리터럴. */
 export const TITLE_FETCH_DEBOUNCE_MS = 700;
@@ -115,7 +116,7 @@ export function createLinksBarView(deps) {
     const openBtn = document.createElement('button');
     openBtn.className = CLS.ghost + ' ' + CLS.linkOpenBtn;
     openBtn.type = 'button';
-    openBtn.title = '새 창에서 열기';
+    openBtn.title = str('link.open.title');
     openBtn.textContent = '↗';
     openBtn.addEventListener('click', () => {
       const u = getUrl();
@@ -190,7 +191,7 @@ export function createLinksBarView(deps) {
       const labelInput = document.createElement('input');
       labelInput.type = 'text';
       labelInput.className = CLS.linkLabelInput;                     // 5179
-      labelInput.placeholder = '레이블';                              // 5180
+      labelInput.placeholder = str('link.label.placeholder');         // 5180
       labelInput.value = link.label;
       // ⚠ 5181 — 저장만 하고 **다시 그리지 않는다**. 여기서 재렌더하면 입력 중 행이 재생성된다.
       //   커맨드는 NONE 을 돌려주므로 반환값을 버린다(presenter 를 부르지 않는다).
@@ -202,7 +203,7 @@ export function createLinksBarView(deps) {
 
       const urlInput = document.createElement('input');
       urlInput.type = 'url';
-      urlInput.placeholder = 'URL 입력...';                           // 5185 — '...'는 마침표 3개다
+      urlInput.placeholder = str('link.url.placeholder');             // 5185 — '...'는 마침표 3개다
       urlInput.value = link.url;
       // ⚠ 5186 — trim 은 커맨드가 한다(뷰에서 미리 자르지 마라). 저장 뒤 목록만 다시 그린다.
       urlInput.addEventListener('change', () => {
@@ -218,8 +219,8 @@ export function createLinksBarView(deps) {
       const delBtn = document.createElement('button');
       delBtn.className = CLS.linkDelBtn;                             // 5198
       delBtn.type = 'button';
-      delBtn.title = '삭제';
-      delBtn.textContent = '×';
+      delBtn.title = str('link.delete.title');                       // 글자는 문자열 표(RM-10)
+      delBtn.textContent = str('icon.delete');
       // ⚠ confirmOnce 가 없다(원본 5199-5202). 한 번 누르면 바로 지워진다.
       delBtn.addEventListener('click', () => {
         commands.removeCustomLink(link.id);
