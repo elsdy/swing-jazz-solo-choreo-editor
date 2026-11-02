@@ -49,6 +49,8 @@ import { groupSpan, presentOnly } from '../domain/selection.js';
  *   2026-11-02 RM-11 까지는 창 폭(isTouchLayout)으로 갈랐고, 이제 그 누름의 pointerType 으로 가른다)
  * @param {Object} [deps.rowActionPopup]     ui/rowActionPopup (2026-11-02 RM-16, 행 라벨 우클릭 · 길게 누르기 — 메인 보드만)
  * @param {Function} [deps.longPress]        adapters/browser.longPress — 행 라벨 길게 누르기에 쓴다(없으면 우클릭만)
+ * @param {Function} [deps.rowLabelTap]      (row, clientX, clientY) => void — 행 라벨을 한 번 눌렀다(2026-11-03 RM-23,
+ *   파트 범위 고르기 · 접고 펴기 — 메인 보드만). input 은 ui 를 import 하지 않으므로 app/main 이 ui/partView 를 묶어 준다
  * @param {Object} [deps.policy]             기본값 store.policy(boardId)
  * @param {Document} [deps.doc]              기본값 document (document pointerup 등록 대상)
  * @returns {{ boardId: string, el: HTMLElement }}
@@ -82,6 +84,7 @@ export function createBoardController(deps) {
     placementActionPopup = null,
     rowActionPopup = null,
     longPress = null,
+    rowLabelTap = null,
     routineActionPopup = null,
     policy = store.policy(boardId),
     doc = document
@@ -389,6 +392,20 @@ export function createBoardController(deps) {
         onLongPress: ({ x, y, event }) => step(gesture.rowLabelPress, event, rowLabelEv(event.target, x, y)),
       });
     }
+  }
+
+  // ── ④-d 행 라벨 한 번 누르기 — 파트 범위 고르기 · 접고 펴기 (2026-11-03, RM-23) ──────────
+  // 우클릭(④-c)과 겹치지 않는다(우클릭은 click 이 아니다). 길게 누르기 뒤에 오는 합성 click 은 마디 메뉴가 떠 있으면 버린다.
+  // intro 행(row 0)은 파트가 될 수 없어 넘긴다 — 판정의 주인은 domain/parts(draftPart 가 null) 지만 여기서 일찍 거른다.
+  if (typeof rowLabelTap === 'function') {
+    // @complexity time=O(d) space=O(1) cc=4
+    el.addEventListener('click', (e) => {
+      const label = e.target.closest(SEL.rowLabel);
+      if (!label || rowActionPopup?.current?.()) return;
+      const row = Number(label.dataset[DATA.row]);
+      if (!(row >= 1)) return;
+      rowLabelTap(row, e.clientX, e.clientY);
+    });
   }
 
   // ── ⑤ dblclick — 마우스 삭제 (2467-2474) ───────────────────────────────────
