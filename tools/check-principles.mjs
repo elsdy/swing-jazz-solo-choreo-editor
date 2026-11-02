@@ -517,12 +517,31 @@ export const RULES = [
   },
   {
     principle: 'D-5',
-    what: '`Number(x) || 기본값` — 0 이 들어오면 기본값으로 덮인다',
-    fix: '`x != null ? Number(x) : 기본값` 으로 바꾸거나, 0 이 뜻 없는 자리면 그 줄에 `// 원칙-예외(D-5): 이유` 를 단다',
+    what: '`Number(x) || 기본값` — 0 이 들어오면 기본값으로 덮인다 · `Number.isFinite(Number(x))` — null · 빈 글이 0 으로 바뀌어 수로 통과한다',
+    fix: "`x != null ? Number(x) : 기본값` 으로, 수 거르기는 `typeof x === 'number' && Number.isFinite(x)` 로 바꾸거나, 검사기가 잘못 읽은 자리면 그 줄에 `// 원칙-예외(D-5): 이유` 를 단다",
+    // @complexity time=O(F·L^2)? space=O(L) cc=13
     scan(files) {
       const out = [];
+      const push = (f, at) => {
+        const line = lineAt(files[f], at);
+        if (!excused(files[f], line, 'D-5')) out.push({ file: f, line, snippet: files[f].split('\n')[line - 1].trim() });
+      };
       for (const f of jsFiles(files)) {
         const code = blankJs(files[f]);
+        // ② `(Number.)isFinite(Number(x))` — 괄호 안이 `Number(…)` 하나로 닫히는 꼴만 잡는다(RM-60).
+        //    `Number(a) + b` 처럼 Number 가 식의 일부면 넘긴다 — 거기까지 잡으면 경보가 잦아진다.
+        for (const m of code.matchAll(/(?<![\w$.])(?:Number\.)?isFinite\(/g)) {
+          const open = m.index + m[0].length - 1;
+          const close = matchBrace(code, open);
+          if (close < 0) continue;
+          const inner = code.slice(open + 1, close);
+          const lead = inner.length - inner.trimStart().length;
+          if (!inner.startsWith('Number(', lead)) continue;
+          const innerClose = matchBrace(code, open + 1 + lead + 'Number'.length);
+          if (innerClose < 0 || code.slice(innerClose + 1, close).trim() !== '') continue;
+          push(f, m.index);
+        }
+        // ① `Number(x) || 기본값` — 0 이 기본값으로 덮인다
         for (const m of code.matchAll(/Number\(/g)) {
           const close = matchBrace(code, m.index + 'Number'.length);
           if (close < 0) continue;
@@ -533,9 +552,7 @@ export const RULES = [
           // 하한이 1 이상인 clamp 안이면 0 은 애초에 그 도메인 밖이다
           const before = code.slice(code.lastIndexOf('\n', m.index) + 1, m.index);
           if (/Math\.max\(\s*[1-9]\d*\s*,\s*(?:Math\.(?:floor|round|trunc)\()?\s*$/.test(before)) continue;
-          const line = lineAt(files[f], m.index);
-          if (excused(files[f], line, 'D-5')) continue;
-          out.push({ file: f, line, snippet: files[f].split('\n')[line - 1].trim() });
+          push(f, m.index);
         }
       }
       return out;

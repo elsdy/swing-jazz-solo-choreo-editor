@@ -226,3 +226,19 @@ test('[RM-49 요구 3] 트랙이 가리키는 문서 앵커가 문서 뷰어에�
   const anchors = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
   assert.deepEqual(trackAnchorMismatches({ tracks: doc.tracks, anchors }), []);
 });
+
+test('[RM-53 요구 1] 판의 출처 트랙(from-*)은 plan 없이 설명만으로 앵커 대조를 지난다', () => {
+  const { html } = renderMarkdown(mdText);
+  const anchors = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
+  // 보드가 실제로 남긴 출처 트랙을 잰다 — 하나도 없으면 아무것도 재지 않고 통과하므로 있는지부터 본다(보드가 이름을 바꾸면 붉다)
+  const sources = doc.tracks.filter(t => t.id.startsWith('from-'));
+  assert.ok(sources.length >= 1, '판에 from- 으로 시작하는 출처 트랙이 없다 — 보드가 트랙 이름을 바꿨나');
+  for (const t of sources) {
+    // 같은 TypeError(RM-49 · RM-53 — plan 없는 트랙에서 t.plan.split)가 또 나면 이 트랙 이름으로 붉다
+    assert.deepEqual(trackAnchorMismatches({ tracks: [t], anchors }), [], `${t.id} 가 앵커 대조를 지나지 못한다`);
+    // 설명까지 비면 붉다 — 빈 트랙을 통과시키지 않는다
+    const bare = { ...t, what: '' };
+    delete bare.plan;
+    assert.deepEqual(trackAnchorMismatches({ tracks: [bare], anchors }), [`${t.id} 는 plan 도 설명도 없다 — 문서 앵커나 설명(what)을 둔다`]);
+  }
+});
