@@ -25,6 +25,7 @@ function env(over = {}) {
   return {
     quickPlaceMode: false,
     activeMove: null,
+    marquee: true,
     defaultCount: 4,
     board: BOARD,
     colAt: (_track, x) => colOf(x),
@@ -99,11 +100,47 @@ test('마우스 그리기: 블록 위나 트랙 밖을 누르면 아무 일도 �
   }
 });
 
-test('마우스 그리기: 동작을 고르지 않았으면 움직이고 떼도 아무 일이 없다', () => {
-  const s = G.initialGestureState();
-  assert.deepEqual(G.mouseDown(s, mouse(2, 3), env()).effects, []);
-  assert.deepEqual(G.mouseMove(s, at(2, 3), env()).effects, []);
-  assert.deepEqual(G.mouseUp(s, at(2, 3), env()).effects, []);
+test('마우스 그리기: 동작을 고르지 않았으면 그리지 않는다 — 끌지 않고 떼면 아무 일이 없다(네모 고르기 후보만, RM-14)', () => {
+  const down = G.mouseDown(G.initialGestureState(), mouse(2, 3), env());
+  assert.deepEqual(kinds(down), ['preventDefault']);
+  assert.equal(down.state.draw, null);
+  // 임계(4px) 안의 떨림은 네모를 만들지 않는다.
+  const jitter = G.mouseMove(down.state, { x: at(2, 3).x + 2, y: at(2, 3).y + 1 }, env());
+  assert.deepEqual(jitter.effects, []);
+  const up = G.mouseUp(jitter.state, at(2, 3), env());
+  assert.deepEqual(up.effects, []);
+  assert.equal(up.state.marquee, null);
+  // 블록 위 누름 · 트랙 밖 누름은 네모를 시작하지 않는다.
+  assert.deepEqual(G.mouseDown(G.initialGestureState(), mouse(2, 3, { onPlacement: true }), env()).effects, []);
+  assert.deepEqual(G.mouseDown(G.initialGestureState(), { ...at(2, 3), track: null, row: null, onPlacement: false }, env()).effects, []);
+  // 고르기를 허락하지 않는 보드(루틴 편성 보드)는 네모도 시작하지 않는다 — 옛 동작 그대로.
+  assert.deepEqual(G.mouseDown(G.initialGestureState(), mouse(2, 3), env({ marquee: false })).effects, []);
+});
+
+test('마퀴: 빈 칸에서 끌면 점선 네모만 그리고 행은 다시 그리지 않다가, 떼면 행을 넘어 네모에 한 조각이라도 닿은 그룹을 모두 고른다', async () => {
+  const { groupsInRect } = await import('../../src/domain/selection.js');
+  const r1 = run([[G.mouseDown, mouse(2, 5)], [G.mouseMove, at(2, 7)]], env());
+  assert.deepEqual(r1.effects, [{ kind: 'marquee', rect: { rowFrom: 2, rowTo: 2, colFrom: 5, colTo: 7 } }]);
+  // 다음 행으로, 그리고 시작보다 왼쪽으로 — 네모는 정규화되어 자란다.
+  const r2 = G.mouseMove(r1.state, at(3, 1), env());
+  assert.deepEqual(r2.effects, [{ kind: 'marquee', rect: { rowFrom: 2, rowTo: 3, colFrom: 1, colTo: 5 } }]);
+  // 끄는 동안 나온 효과는 점선 네모뿐 — 프리뷰 · 놓기 · 커밋 · 선택 바꾸기가 없다.
+  for (const fx of [...r1.effects, ...r2.effects]) assert.equal(fx.kind, 'marquee');
+  const up = G.mouseUp(r2.state, at(3, 1), env());
+  assert.deepEqual(up.effects, [
+    { kind: 'selectRect', rect: { rowFrom: 2, rowTo: 3, colFrom: 1, colTo: 5 } },
+    { kind: 'clearMarquee' },
+  ]);
+  assert.equal(up.state.marquee, null);
+  // 그 네모(2~3행 · 1~5칸)로 고르면: 2행 7칸 → 3행 0~1칸으로 행을 넘는 그룹은 3행 1칸 한 조각만 닿아도 통째로,
+  // 아래층(subRow 1) 블록도, 3행 4~7칸 블록(4칸이 닿음)도 들어가고, 2행 6칸만 덮는 블록은 빠진다.
+  const board = { cols: 8, placements: [
+    { groupId: 'far', row: 2, startIndex: 6, length: 1 },
+    { groupId: 'wrap', row: 2, startIndex: 7, length: 1 }, { groupId: 'wrap', row: 3, startIndex: 0, length: 2 },
+    { groupId: 'low', row: 2, startIndex: 1, length: 1, subRow: 1 },
+    { groupId: 'tail', row: 3, startIndex: 4, length: 4 },
+  ] };
+  assert.deepEqual(groupsInRect(board, up.effects[0].rect), ['low', 'wrap', 'tail']);
 });
 
 // ── 마우스 빠른 배치 ─────────────────────────────────────────────────────────

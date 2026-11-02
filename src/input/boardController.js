@@ -24,6 +24,9 @@ import { SEL, CLS, DATA } from '../ui/domContract.js';
 import { dragPreviewCount, resizeBlocked } from '../domain/gestureMath.js';
 import * as gesture from '../domain/boardGesture.js';
 import { groupCount } from '../domain/placements.js';
+import { linearOf } from '../domain/grid.js';
+import { planNudge } from '../domain/keyboardEdit.js';
+import { groupSpan, presentOnly } from '../domain/selection.js';
 
 /**
  * 보드 하나에 위임 리스너를 건다.
@@ -56,7 +59,11 @@ import { groupCount } from '../domain/placements.js';
  *   moveGroup({ groupId, targetRow, targetStartIndex })     -> Dirty
  *   copyGroup({ groupId, targetRow, targetStartIndex })     -> Dirty
  *   removeGroup({ groupId })                                -> Dirty
- *   toggleSelection({ groupId })                            -> Dirty
+ *   selectOnly({ groupId })                                 -> Dirty   그냥 클릭(RM-14)
+ *   toggleSelection({ groupId })                            -> Dirty   Ctrl/Cmd+클릭
+ *   selectRange({ groupId })                                -> Dirty   Shift+클릭
+ *   selectInRect({ rect })                                  -> Dirty   빈 칸 끌기 네모(RM-14)
+ *   moveSelection({ delta })                                -> Dirty   고른 묶음을 같은 거리로(RM-14 묶음 끌기)
  *   commitHistory()                                         -> Dirty|void   (saveHistory / saveHistoryRe)
  */
 export function createBoardController(deps) {
@@ -110,9 +117,53 @@ export function createBoardController(deps) {
    * ⚠ drag 가 없으면 원본은 clearPreview() 를 부른 **뒤** 조기 반환한다(3901-3902).
    */
   function updatePreviewFromDrag(row, startIndex) {
+    const bundleDrag = currentDrag();
+    if (bundleDrag?.type === 'placement-move' && bundleDrag.bundle) { updateBundlePreview(bundleDrag, row, startIndex); return; }
     const count = dragPreviewCount(currentDrag(), defaultCount(), board().placements);
     if (count == null) { overlays.clearPreview(boardId); return; }
     overlays.updatePreview(boardId, row, startIndex, count);
+  }
+
+  // ── 묶음 끌기 (RM-14) ──────────────────────────────────────────────────────
+  // 고른 블록(둘 이상) 가운데 하나의 손잡이를 끌면 묶음 전체가 같은 거리로 간다. 거리는 「끄는 블록의 시작 → 놓은 칸」의
+  // 선형 카운트 차이이고, 옮기기는 화살표와 같은 moveSelection(planNudge — 하나라도 못 가면 아무것도 안 옮김)이다.
+
+  /**
+   * 이 블록을 끌면 함께 갈 묶음. 고른 블록이고 고른 것이 둘 이상일 때만 — 하나뿐이면 지금처럼 그 블록만 옮긴다.
+   * @param {string} groupId
+   * @returns {string[]|null}
+   */
+  // @complexity time=O(p+k) space=O(k) cc=3
+  function bundleOf(groupId) {
+    const selection = store.get().selection;
+    if (!policy.allowsSelection || !selection.has(groupId)) return null;
+    const ids = presentOnly(board(), selection);
+    return ids.length > 1 ? ids : null;
+  }
+
+  /**
+   * 끄는 블록의 시작에서 놓을 칸까지의 거리(선형 카운트). 블록이 사라졌으면 null.
+   * @returns {number|null}
+   */
+  // @complexity time=O(p) space=O(1) cc=2
+  function bundleDelta(drag, row, startIndex) {
+    const span = groupSpan(board(), drag.groupId);
+    return span ? linearOf(row, startIndex, board().cols) - span.start : null;
+  }
+
+  /**
+   * 묶음이 놓일 자리를 블록마다 프리뷰로 그린다 — 미리보기 = 결과. 하나라도 못 가면(놓아도 안 옮겨지면) 프리뷰를 지운다.
+   * @returns {void}
+   */
+  // @complexity time=O(k·p) space=O(k) cc=3
+  function updateBundlePreview(drag, row, startIndex) {
+    const delta = bundleDelta(drag, row, startIndex);
+    const plan = delta === null ? null : planNudge(board(), presentOnly(board(), drag.bundle), delta);
+    if (!plan) { overlays.clearPreview(boardId); return; }
+    const placements = board().placements;
+    overlays.updateBundlePreview(boardId,
+      plan.map(step => ({ row: step.row, startIndex: step.startIndex, count: groupCount(placements, step.groupId) })),
+      `${plan.length}개 함께`);
   }
 
   // ── 그리기·빠른 배치·더블탭의 상태 (RM-08) ──────────────────────────────────
@@ -122,10 +173,18 @@ export function createBoardController(deps) {
   // ⚠ 같은 pointerdown 에서 세 갈래(⑨ → ⑱ → ㉒)가 차례로 돈다. 앞 갈래가 바꾼 상태를 뒤 갈래가 본다 —
   //   그래서 상태는 갈래마다가 아니라 이 한 변수에 둔다.
   let gestureState = gesture.initialGestureState();
+  /**
+   * 네모 고르기를 놓은 뒤 따라오는 합성 click 을 한 번 삼킨다(RM-14). mousedown(빈 칸)과 mouseup(다른 칸)의 공통 조상에 click 이
+   * 오고, 그것이 보드의 「빈 곳 누름 = 선택 풀기」(input/controls) 로 가 방금 고른 것을 풀어 버리기 때문이다.
+   * ⚠ 다음 mousedown 에서 되돌린다 — 보드 밖에서 뗀 끌기는 click 이 오지 않아 그대로 두면 다음 진짜 클릭을 삼킨다.
+   * ⚠ 보드 click 리스너 가운데 이 컨트롤러의 것이 먼저 등록된다(app/main 의 차례) — stopImmediatePropagation 이 그래서 먹는다.
+   */
+  let swallowClick = false;
 
   /** 전이 함수가 이벤트마다 읽는 세션 값과 측정 함수. 측정은 전이 함수가 부를 때만 일어난다. */
   const gestureEnv = () => ({
     quickPlaceMode: !!quickPlaceMode(),
+    marquee: !!policy.allowsSelection,
     activeMove: activePaletteMove() || null,
     defaultCount: defaultCount(),
     board: board(),
@@ -153,6 +212,13 @@ export function createBoardController(deps) {
         case 'remove': apply(commands.removeGroup({ groupId: fx.groupId })); break;
         case 'commit': commit(); break;
         case 'openPicker': quickPicker.open(fx.row, fx.startIndex, fx.clientX, fx.clientY, fx.count); break;
+        // RM-14 네모 고르기 — 끄는 동안은 점선 네모만, 뗄 때 한 번 고른다(커밋 없음 — 선택은 히스토리에 들지 않는다)
+        case 'marquee': overlays.showMarquee(boardId, fx.rect); break;
+        case 'clearMarquee': overlays.clearMarquee(boardId); break;
+        case 'selectRect':
+          if (typeof commands.selectInRect === 'function') apply(commands.selectInRect({ rect: fx.rect }));
+          swallowClick = true;
+          break;
         case 'openRowMenu': rowActionPopup?.open({ row: fx.row, first: fx.first, last: fx.last }, fx.clientX, fx.clientY); break;
         default: throw new Error(`boardController: 모르는 할 일 ${fx.kind}`);
       }
@@ -210,6 +276,12 @@ export function createBoardController(deps) {
     if (drag?.type === 'palette') {
       apply(commands.placeMove({ moveId: drag.moveId, startRow: row, startIndex, totalCount: defaultCount() }));
       commit();
+    } else if (drag?.type === 'placement-move' && drag.bundle) {
+      // 묶음 끌기(RM-14) — 옮겼을 때만 한 번 커밋한다. 막혔거나(표 밖) 제자리면 히스토리에 한 칸도 늘지 않는다.
+      const delta = bundleDelta(drag, row, startIndex);
+      const dirty = delta ? commands.moveSelection({ delta }) : null;
+      if (dirty) apply(dirty);
+      if (dirty?.boards) commit();
     } else if (drag?.type === 'placement-move') {
       if (drag.copyMode) {
         apply(commands.copyGroup({ groupId: drag.groupId, targetRow: row, targetStartIndex: startIndex }));
@@ -227,6 +299,8 @@ export function createBoardController(deps) {
 
   // ── ④ click — 선택 토글 / 루틴 팝업 (2435-2465) ────────────────────────────
   el.addEventListener('click', (e) => {
+    // 네모 고르기 · 묶음 끌기 뒤의 합성 click — 방금 고른 것을 풀지 않게 한 번 삼킨다(RM-14)
+    if (swallowClick) { swallowClick = false; e.stopImmediatePropagation(); e.preventDefault(); return; }
     // 핸들 클릭은 무시 (드래그/리사이즈 용도)
     if (e.target.closest(SEL.moveHandle) || e.target.closest(SEL.resizeHandle)) return;
     const placementEl = e.target.closest(SEL.placement);
@@ -274,11 +348,14 @@ export function createBoardController(deps) {
       return;
     }
 
-    // 일반 배치 클릭 → 선택 토글
+    // 일반 배치 클릭 → 고르기(RM-14 · Q84 편집기 관습). 그냥 클릭은 **그것만**, Ctrl/Cmd+클릭은 더하기/빼기, Shift+클릭은 범위.
+    // 2026-11-02 전에는 클릭이 더하기/빼기였다(원본 2453-2465). 뜻의 판정은 domain/selection 이 하고 여기는 글쇠만 읽는다.
     // ⚠ 클래스 토글(2461-2463)은 Dirty.selection → boardView.setSelected 가 한다.
     //   행을 다시 그리는 것으로 대체하지 마라(드래그·툴팁·포커스가 끊긴다).
     e.stopPropagation();
-    apply(commands.toggleSelection({ groupId }));
+    if (e.shiftKey) apply(commands.selectRange({ groupId }));
+    else if (e.ctrlKey || e.metaKey) apply(commands.toggleSelection({ groupId }));
+    else apply(commands.selectOnly({ groupId }));
   });
 
   // ── ④-b contextmenu — 마우스에서도 같은 팝업에 닿는 길 (2026-09-21) ───────
@@ -339,10 +416,12 @@ export function createBoardController(deps) {
     if (!placementEl) return;
     const groupId = placementEl.dataset[DATA.groupId];
     const copyMode = e.altKey;
-    dragSession.begin('placement-move', { groupId, copyMode }, { boards: [boardId] });
+    // 고른 블록을 끌면 고른 묶음 전체가 함께 간다(RM-14). Alt 복사는 지금처럼 그 블록 하나다.
+    const bundle = copyMode ? null : bundleOf(groupId);
+    dragSession.begin('placement-move', { groupId, copyMode, bundle }, { boards: [boardId] });
     e.dataTransfer.effectAllowed = copyMode ? 'copy' : 'move';
     e.dataTransfer.setData('text/plain', groupId);
-    if (!copyMode) overlays.markDraggingGroup(boardId, groupId);
+    if (!copyMode) for (const id of bundle || [groupId]) overlays.markDraggingGroup(boardId, id);
   });
 
   // ── ⑦ dragend (2489-2495) ──────────────────────────────────────────────────
@@ -380,9 +459,10 @@ export function createBoardController(deps) {
   /** 한 단계의 전이 함수들을 차례대로 돌린다. */
   const steps = (fns, e, ev) => { for (const fn of fns) step(fn, e, ev); };
 
-  // ── pointerdown — 손잡이(⑧ · ⑨) → 더블탭(⑨) → 그리기 · 빠른 배치(⑮ · ⑱ · ㉒) ────────────────
+  // ── pointerdown — 손잡이(⑧ · ⑨) → 더블탭(⑨) → 그리기 · 빠른 배치 · 네모 고르기(⑮ · ⑱ · ㉒ · RM-14) ──────
   el.addEventListener('pointerdown', (e) => {
     lastPointerType = e.pointerType || 'mouse';
+    swallowClick = false;   // RM-14 — 지난 네모가 남긴 「다음 click 삼키기」는 새 누름에서 풀린다
     const finger = isFinger(e);
 
     const resizeHandle = e.target.closest(SEL.resizeHandle);

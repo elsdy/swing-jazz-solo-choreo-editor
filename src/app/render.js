@@ -38,7 +38,8 @@ import { phraseMark } from '../domain/phrasing.js';
  * @param {{
  *   layout?: { syncCellSize(): void },
  *   board?: { main?: object, routine?: object },
- *   toolbar?: { render(): void, syncHistory(): void, syncSelection(): void },
+ *   toolbar?: { render(): void, syncHistory(): void },
+ *   selectionBar?: { render(): void },
  *   palette?: { render(): void },
  *   category?: { renderOptions(): void, renderManager(): void, renderLegend(): void },
  *   routineList?: { render(): void },
@@ -116,7 +117,8 @@ export function createRenderer(store, views, options = {}) {
     //   (policy.allowsSelection === false).
     if (d.selection) {
       views.board?.main?.setSelected(store.selection);
-      views.toolbar?.syncSelection();
+      // 선택 액션 바(RM-14) — 「N개 고름」과 고른 것에 할 일. 도구 모음의 `루틴으로 편성 (N)` 이 여기로 왔다.
+      views.selectionBar?.render();
       // 영상 패널의 `선택한 블록이 여기서 시작` 은 선택에 따라 켜지고 꺼진다. 패널 전체가 아니라 템포 구획만 다시 그린다.
       views.video?.syncSelection();
     }
@@ -138,7 +140,11 @@ export function createRenderer(store, views, options = {}) {
     // ⚠ 재생 헤드는 이 경로를 타지 **않는다**. 초당 60회 재렌더가 된다(ui/playhead.js 채널 B).
     if (d.video || d.routineEditor) { views.video?.render(); views.pose?.render(); }
     // 연습 조작 줄(RM-22)은 영상 패널의 상태와 **고른 블록**(`고른 블록 반복` 의 켜짐) · 보드 모양(마디 칸)을 따른다.
-    if (d.video || d.routineEditor || d.selection || d.boards?.[BOARD_MAIN]) views.practice?.render();
+    if (d.video || d.routineEditor || d.selection || d.boards?.[BOARD_MAIN]) {
+      views.practice?.render();
+      // 바의 `고른 블록 반복` 은 연습 바와 같은 판정(박자 · 재생기)으로 켜진다 — 박자만 바뀌어도 다시 본다(RM-14).
+      if (!d.selection) views.selectionBar?.render();
+    }
     // 엄지 바는 「지금 할 일」을 보이므로 영상 패널의 상태(열림·받는 중)를 따라간다(2026-09-20).
     // ⚠ 보드가 바뀌어도 부른다 — `+ 빠른 배치` 의 켜짐이 그쪽을 본다.
     if (d.video || d.boards?.[BOARD_MAIN] || d.toolbar) views.thumb?.render();

@@ -9,6 +9,7 @@
 //   quickDraw   빠른 배치 모드의 마우스 끌기          { row, startIndex, track, count, clientX, clientY }
 //   quickTouch  빠른 배치 모드의 손가락 끌기          { x, y, track, row, startIndex, count, isDrag, clientX?, clientY? }
 //   tap         더블탭 판정의 지난 탭                 { time, groupId }
+//   marquee     빈 칸에서 시작한 네모 고르기(RM-14)   { row, startIndex, track, x, y, rect|null }  — rect 가 생기면 끌기가 됐다
 //
 // ⚠ track 은 DOM 요소지만 여기서는 **열어 보지 않는** 꼬리표다. 칸을 재야 할 때는 env 의 측정 함수에 되넘긴다.
 //   측정(getBoundingClientRect·elementFromPoint)은 원본이 부르던 그 자리·그 순서에서만 불린다 —
@@ -23,14 +24,19 @@
 //   { kind: 'preview', row, startIndex, count } | { kind: 'clearPreview' }
 //   { kind: 'place', moveId, startRow, startIndex, totalCount } | { kind: 'remove', groupId } | { kind: 'commit' }
 //   { kind: 'openPicker', row, startIndex, clientX, clientY, count }
+//   { kind: 'marquee', rect } | { kind: 'clearMarquee' } | { kind: 'selectRect', rect }   ← RM-14 네모 고르기(마우스만 — 터치는 RM-11 때)
+//
+// ⚠ 빈 칸 끌기의 주인(Q86): 동작을 골랐거나(activeMove) 빠른 배치면 그리기, 아니면 네모 고르기다. 평소 빈 칸 끌기는 전에 아무 일도
+//   하지 않았으므로 빼앗는 동작이 없다. 끄는 동안 행을 다시 그리지 않는다 — 점선 네모(overlays) 하나만 움직인다.
 
-import { resolveDragCount, isDoubleTap, exceedsThreshold, QUICK_DRAG_THRESHOLD_PX } from './gestureMath.js';
+import { resolveDragCount, isDoubleTap, exceedsThreshold, rectCellRange, QUICK_DRAG_THRESHOLD_PX, MARQUEE_THRESHOLD_PX } from './gestureMath.js';
 
 /**
  * @typedef {object} GestureEnv  지금 세션 값과 측정 함수. 리스너가 이벤트마다 새로 만든다.
  * @property {boolean} quickPlaceMode
  * @property {{moveId:string}|null} activeMove  팔레트에서 고른 동작
  * @property {number} defaultCount
+ * @property {boolean} [marquee]  빈 칸 끌기로 네모 고르기를 할 보드인가(고르기를 허락하는 보드 — 메인. RM-14)
  * @property {{rows:number, cols:number}} board
  * @property {(track:any, clientX:number) => number} [colAt]  그 트랙 안의 칸
  * @property {(anchor:{track:any,row:number}, x:number, y:number) => {endRow:number, endCol:number}} [endAt]
@@ -89,9 +95,9 @@ export function placementTapRoute({ pointerType, isRoutine, hasActionPopup }) {
   return 'toggle';
 }
 
-/** @returns {{draw:null, quickDraw:null, quickTouch:null, tap:{time:number, groupId:string|null}}} */
+/** @returns {{draw:null, quickDraw:null, quickTouch:null, tap:{time:number, groupId:string|null}, marquee:null}} */
 export function initialGestureState() {
-  return { draw: null, quickDraw: null, quickTouch: null, tap: { time: 0, groupId: null } };
+  return { draw: null, quickDraw: null, quickTouch: null, tap: { time: 0, groupId: null }, marquee: null };
 }
 
 const same = (state) => ({ state, effects: [] });
@@ -129,6 +135,7 @@ export function touchDrawArmed({ activeMove, quickPlaceMode }) {
  *        track 은 e.target 이 든 트랙(없으면 null), onPlacement 는 블록·손잡이 위인가
  * @param {GestureEnv} env
  */
+// @complexity time=O(1) space=O(1) cc=11
 export function mouseDown(state, ev, env) {
   if (env.quickPlaceMode && !env.activeMove && !state.draw) {
     if (ev.onPlacement || !ev.track) return same(state);
@@ -139,7 +146,17 @@ export function mouseDown(state, ev, env) {
       effects: [{ kind: 'preventDefault' }, preview(ev.row, startIndex, env.defaultCount)],
     };
   }
-  if (!env.activeMove || !ev.track || ev.onPlacement) return same(state);
+  if (!ev.track || ev.onPlacement) return same(state);
+  if (!env.activeMove) {
+    // 동작도 빠른 배치도 아닌 빈 칸 누름 — 네모 고르기 후보(RM-14). 임계를 넘기 전까지는 네모가 없고(rect:null),
+    // 떼면 아무 할 일이 없다 — 그 click 은 보드의 「빈 곳 누름 = 선택 풀기」(input/controls) 길로 간다.
+    if (env.quickPlaceMode || !env.marquee) return same(state);
+    const startIndex = env.colAt(ev.track, ev.x);
+    return {
+      state: { ...state, marquee: { row: ev.row, startIndex, track: ev.track, x: ev.x, y: ev.y, rect: null } },
+      effects: [{ kind: 'preventDefault' }],
+    };
+  }
   const startIndex = env.colAt(ev.track, ev.x);
   return {
     state: { ...state, draw: { row: ev.row, startIndex, track: ev.track } },
@@ -153,6 +170,7 @@ export function mouseDown(state, ev, env) {
  * @param {{x:number, y:number}} ev
  * @param {GestureEnv} env
  */
+// @complexity time=O(1) space=O(1) cc=9
 export function mouseMove(state, ev, env) {
   const q = state.quickDraw;
   if (q) {
@@ -162,6 +180,14 @@ export function mouseMove(state, ev, env) {
       state: { ...state, quickDraw: { ...q, count, clientX: ev.x, clientY: ev.y } },
       effects: [preview(q.row, q.startIndex, count)],
     };
+  }
+  const m = state.marquee;
+  if (m) {
+    if (!m.rect && !exceedsThreshold(ev.x - m.x, ev.y - m.y, MARQUEE_THRESHOLD_PX)) return same(state);
+    const { endRow, endCol } = env.endAt(m, ev.x, ev.y);
+    const rect = rectCellRange({ row: m.row, col: m.startIndex }, { row: endRow, col: endCol }) || m.rect;
+    if (!rect) return same(state);
+    return { state: { ...state, marquee: { ...m, rect } }, effects: [{ kind: 'marquee', rect }] };
   }
   const d = state.draw;
   if (!d || !env.activeMove) return same(state);
@@ -178,6 +204,7 @@ export function mouseMove(state, ev, env) {
  * @param {{x:number, y:number}} ev
  * @param {GestureEnv} env
  */
+// @complexity time=O(1) space=O(1) cc=8
 export function mouseUp(state, ev, env) {
   const q = state.quickDraw;
   if (q && env.quickPlaceMode) {
@@ -187,6 +214,12 @@ export function mouseUp(state, ev, env) {
     };
   }
   if (q) return { state: { ...state, quickDraw: null }, effects: [{ kind: 'clearPreview' }] };
+  const m = state.marquee;
+  if (m) {
+    // 네모가 생겼으면(임계를 넘었으면) 그 안의 그룹을 고르고 네모를 지운다. 안 생겼으면 그냥 누름 — 아무 할 일 없이 끝난다.
+    const effects = m.rect ? [{ kind: 'selectRect', rect: m.rect }, { kind: 'clearMarquee' }] : [];
+    return { state: { ...state, marquee: null }, effects };
+  }
   const d = state.draw;
   if (!d || !env.activeMove) return same(state);
   const { endRow, endCol } = env.endAt(d, ev.x, ev.y);
@@ -209,10 +242,13 @@ export function mouseUp(state, ev, env) {
  * 실제로 오지 않는다 — 와도 프리뷰만 지우고 아무것도 놓지 않는다.
  * @param {object} state
  */
-// @complexity time=O(1) space=O(1) cc=2
+// @complexity time=O(1) space=O(1) cc=4
 export function mouseCancel(state) {
-  if (!state.draw && !state.quickDraw) return same(state);
-  return { state: { ...state, draw: null, quickDraw: null }, effects: [{ kind: 'clearPreview' }] };
+  if (!state.draw && !state.quickDraw && !state.marquee) return same(state);
+  const effects = [];
+  if (state.draw || state.quickDraw) effects.push({ kind: 'clearPreview' });
+  if (state.marquee) effects.push({ kind: 'clearMarquee' });   // RM-14 — 네모를 그리던 중에 포인터를 빼앗기면 네모만 지우고 고르지 않는다
+  return { state: { ...state, draw: null, quickDraw: null, marquee: null }, effects };
 }
 
 /**

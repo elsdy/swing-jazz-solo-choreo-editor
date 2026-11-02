@@ -58,6 +58,7 @@ import { createPaletteView } from '../ui/paletteView.js';
 import { createCategoryView } from '../ui/categoryView.js';
 import { createQuickPicker, ROUTINE_OPTIONS } from '../ui/quickPicker.js';
 import { createToolbarView } from '../ui/toolbarView.js';
+import { createSelectionBar } from '../ui/selectionBar.js';
 import { createSavedListsView } from '../ui/savedListsView.js';
 import { createLinksBarView } from '../ui/linksBarView.js';
 import { createRoutineListView } from '../ui/routineListView.js';
@@ -409,7 +410,17 @@ const overlays = {
     const capped = Math.min(count, Grid.totalCellsFrom(row, startIndex, board));   // 3906
     ov(boardId).showPreview(Grid.buildSegments(row, startIndex, capped, board), count);
   },
+  // 묶음 끌기(RM-14) — 블록마다의 놓일 자리를 한꺼번에 그리고, 첫 조각에 「N개 함께」를 적는다
+  updateBundlePreview: (boardId, items, label) => {
+    const board = store.board(boardId);
+    const segments = items.flatMap(it =>
+      Grid.buildSegments(it.row, it.startIndex, Math.min(it.count, Grid.totalCellsFrom(it.row, it.startIndex, board)), board));
+    ov(boardId).showPreview(segments, items.length, label);
+  },
   clearTrackHighlights: (boardId) => ov(boardId).clearTrackHighlights(),
+  // 네모 고르기(RM-14) — 끄는 동안 점선 네모만 그리고 행은 다시 그리지 않는다
+  showMarquee: (boardId, rect) => ov(boardId).showMarquee(rect),
+  clearMarquee: (boardId) => ov(boardId).clearMarquee(),
   markDraggingGroup: (boardId, groupId) => ov(boardId).markDraggingGroup(groupId),
   unmarkDraggingGroups: (boardId) => ov(boardId).unmarkDraggingGroups(),
   showFloatingTooltip: (placementEl) => ov(BOARD_MAIN).showFloatingTooltip(placementEl),
@@ -462,7 +473,16 @@ function boardCommandsFor(boardId) {
     }),
     copyGroup: (args) => BoardCmd.copyGroupTo(store, { boardId, ...args }, ids),
     removeGroup: (args) => withUndoToast(BoardCmd.removeGroup(store, { boardId, ...args }), '블록을 지웠습니다.', boardId),
+    // 고르기 셋(RM-14) — 그냥 클릭 · Ctrl/Cmd+클릭 · Shift+클릭. 네모와 묶음 끌기는 아래.
+    selectOnly: (args) => BoardCmd.selectOnly(store, { boardId, ...args }),
     toggleSelection: (args) => BoardCmd.toggleSelection(store, { boardId, ...args }),
+    selectRange: (args) => BoardCmd.selectRange(store, { boardId, ...args }),
+    selectInRect: (args) => BoardCmd.selectInRect(store, { boardId, ...args }),
+    // 고른 묶음을 같은 거리로 — 화살표(nudge)와 같은 규칙. 커밋은 컨트롤러가 옮겼을 때만 한 번.
+    moveSelection: (args) => BoardCmd.moveSelectionBy(store, { boardId, ...args }, {
+      ids: browserEnv,
+      unmarkDragging: () => overlays.unmarkDraggingGroups(boardId)
+    }),
     commitHistory: () => commitHistory(boardId)
   };
 }
@@ -919,7 +939,7 @@ const CONTROL_IDS = [
   'fileNameInput', 'moveListFileNameInput', 'categoryFileNameInput',
   'boardColsInput', 'boardColsDec', 'boardColsInc',
   'defaultCountInput', 'defaultCountDec', 'defaultCountInc',
-  'quickPlaceBtn', 'addRoutineBtn', 'createRoutineFromSelectionBtn'
+  'quickPlaceBtn', 'addRoutineBtn'
 ];
 const els = Object.fromEntries(CONTROL_IDS.map(id => [id, byId(id)]));
 els.mainBoardEl = boardEl;   // 빈 영역 클릭 선택 해제(1527-1529)
@@ -988,6 +1008,13 @@ function nudge(board, dir) {
 
 /** 명령 하나의 지금 글쇠. 툴팁 · 일람이 읽는다. */
 const keysNow = (id) => hotkeyMap[id];
+// 선택 액션 바(RM-14) — 단추 글자 · 툴팁은 등록부에서, 누름은 bindCommandButtons 의 data-command 길로 간다.
+// ⚠ 연습 바는 이보다 뒤에 만들어진다 — canRun 은 누를 때마다 views.practice 를 다시 읽는다.
+views.selectionBar = createSelectionBar({
+  store,
+  keysOf: keysNow,
+  canRun: (id) => (id === 'practiceSelection' ? Boolean(views.practice?.canPracticeSelection?.()) : true),
+});
 
 /**
  * 재생 헤드가 서 있는 초(RM-16 자르기). 세로선이 그려지는 조건(박자가 있고 영상이나 박자 시계가 돈다)과 같을 때만
@@ -1074,6 +1101,14 @@ const COMMAND_RUNNERS = Object.freeze({
     const count = BoardCmd.copySelection(store, { boardId }).length;
     if (!count) return false;
     render(withUndoToast(BoardCmd.removeSelection(store, { boardId }), count > 1 ? `블록 ${count}개를 지웠습니다.` : '블록을 지웠습니다.', boardId));
+    return true;
+  },
+  // ── 선택 액션 바(RM-14) — 바에만 단추가 있고 글쇠는 없다. 팔레트로도 부른다.
+  // 고른 블록 반복은 영상 패널의 `고른 블록 반복` 과 같은 길(ui/practiceBar)이다. 박자 · 재생기가 없으면 거짓.
+  practiceSelection: () => Boolean(views.practice?.practiceSelection?.()),
+  routineFromSelection: () => {
+    if (!store.selection.size) return false;
+    render(RoutineCmd.createFromSelection(routineDeps));
     return true;
   },
   copySelection: ({ board }) => {
@@ -1207,8 +1242,7 @@ bindControls({
     setBoardRows: (args) => BoardCmd.setBoardRows(store, { boardId: BOARD_MAIN, ...args }),
     setDefaultCount: (value) => BoardCmd.setDefaultCount(store, { value }),
     clearSelection: () => BoardCmd.clearSelection(store),
-    createRoutine: () => RoutineCmd.createRoutine(routineDeps),
-    createRoutineFromSelection: () => RoutineCmd.createFromSelection(routineDeps)
+    createRoutine: () => RoutineCmd.createRoutine(routineDeps)
   }
 });
 

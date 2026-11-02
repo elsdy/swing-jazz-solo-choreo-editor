@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {
   DOUBLE_TAP_MS, QUICK_DRAG_THRESHOLD_PX, LONGPRESS_MOVE_THRESHOLD_PX,
   resolveDragCount, resolveResizeCount, isDoubleTap, exceedsThreshold,
-  resolveHitCell, dragPreviewCount, resizeHitKind, resizeBlocked,
+  resolveHitCell, dragPreviewCount, resizeHitKind, rectCellRange, MARQUEE_THRESHOLD_PX, resizeBlocked,
 } from '../../src/domain/gestureMath.js';
 
 const BOARD = { rows: 8, cols: 8 };   // 마지막 행 인덱스 8
@@ -119,6 +119,14 @@ test('이동 임계: 어느 한 축이라도 임계를 **넘어야** 한다(같�
   assert.equal(exceedsThreshold(12, -12, 12), false);
   assert.equal(exceedsThreshold(-13, 0, 12), true);
   assert.equal(exceedsThreshold(0, 9, 8), true);
+});
+
+test('네모 범위: 두 꼭지점을 어느 쪽으로 끌어도 행 · 칸을 작은 것부터로 정규화하고, 못 잰 칸이 있으면 null (RM-14 마퀴)', () => {
+  assert.deepEqual(rectCellRange({ row: 3, col: 1 }, { row: 2, col: 5 }), { rowFrom: 2, rowTo: 3, colFrom: 1, colTo: 5 });
+  assert.deepEqual(rectCellRange({ row: 2, col: 4 }, { row: 2, col: 4 }), { rowFrom: 2, rowTo: 2, colFrom: 4, colTo: 4 });
+  assert.equal(rectCellRange({ row: 2, col: null }, { row: 2, col: 4 }), null);
+  assert.equal(rectCellRange(null, { row: 2, col: 4 }), null);
+  assert.equal(MARQUEE_THRESHOLD_PX, 4);
 });
 
 // ── 늘이기 가드 (RM-11 동작 ④) ───────────────────────────────────────────────

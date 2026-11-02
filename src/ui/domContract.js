@@ -53,6 +53,7 @@ export const CLS = Object.freeze({
   previewBlock: 'preview-block',              // 3914 · 3810
   resizePreviewBlock: 'resize-preview-block', // 3810 — preview-block 과 **함께** 붙는다
   snapIndicator: 'snap-indicator',            // 3909
+  marqueeRect: 'marquee-rect',                // RM-14 — 빈 칸 끌기의 점선 네모(행마다 한 조각, data-marquee="1")
   floatingTooltip: 'floating-tooltip',        // 2777 — ⚠ CSS 규칙이 없다(전부 인라인 스타일)
   resizeCountBadge: 'resize-count-badge',     // 2783
   ghostDrag: 'ghost-drag',                    // 3842 · 3938 — 터치 드래그 고스트
@@ -192,6 +193,7 @@ export const SEL = Object.freeze({
 
   // ── 오버레이 정리용 속성 셀렉터. ⚠ 값 '1' 까지 포함한 문자열이다 ──
   previewNodes: '[data-preview="1"]',              // 3924
+  marqueeNodes: '[data-marquee="1"]',              // RM-14
   resizePreviewNodes: '[data-resize-preview="1"]', // 3825
 
   // ── 문서 전역 ──
@@ -293,6 +295,7 @@ export const DATA = Object.freeze({
 
   // 비영속 오버레이 표식. 값은 언제나 문자열 '1'(FLAG_ON).
   preview: 'preview',
+  marquee: 'marquee',               // RM-14 — data-marquee
   previewAttr: 'data-preview',
   resizePreview: 'resizePreview',
   resizePreviewAttr: 'data-resize-preview',

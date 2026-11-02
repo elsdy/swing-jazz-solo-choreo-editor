@@ -9,6 +9,7 @@
 
 import * as boardOps from '../domain/boardOps.js';
 import { allGroupIds, cellAfter, clipOf, pastePlan, planNudge } from '../domain/keyboardEdit.js';
+import { groupsInRect, presentAnchor, presentOnly, selectionAfterClick } from '../domain/selection.js';
 import { clamp, clampToGrid, totalCellsFrom } from '../domain/grid.js';
 import { affectedRowsByGroup, getGroup, groupCount, nameGroup, shiftAllPlacements } from '../domain/placements.js';
 import { boundaryCount, isTempoUsable } from '../domain/tempo.js';
@@ -232,7 +233,8 @@ export function removeGroup(store, args) {
   if (!store.policy(boardId).allowsSelection) return dirty;             // ctx !== mainCtx (3570)
   const next = new Set(store.get().selection);
   for (const removed of result.selectionRemoved) next.delete(removed);  // 3571
-  store.update({ selection: next });
+  // 앵커도 함께 — 지운 블록을 가리키는 앵커가 남으면 다음 Shift+클릭이 유령에서 센다(RM-14)
+  store.update({ selection: next, selectionAnchor: presentAnchor(boardOf(store.get(), boardId), store.get().selectionAnchor) });
   return { ...dirty, selection: true, toolbar: true };                  // 3572
 }
 
@@ -336,7 +338,7 @@ export function clearPlacements(store) {
   // ⚠ `rows` 는 중복을 남긴 채 넘긴다 — clearBoard(원본 4482)와 같은 모양이라 렌더 경로가 같다.
   const rows = board.placements.map(p => p.row);
   store.setBoard(BOARD_MAIN, { placements: [] });
-  store.update({ selection: new Set() });                    // RM-03 — 알리기만 하고 비우지 않아 (2) 가 남았다
+  store.update({ selection: new Set(), selectionAnchor: null });   // RM-03 — 알리기만 하고 비우지 않아 (2) 가 남았다 · RM-14 앵커도
   return { boards: { [BOARD_MAIN]: { rows } }, selection: true, toolbar: true };
 }
 
@@ -370,7 +372,7 @@ export function clearBoard(store, deps = {}) {
   const board = boardOf(store.get(), BOARD_MAIN);
   const rows = board.placements.map(p => p.row);            // 4482 ⚠ Set 없음
   store.setBoard(BOARD_MAIN, { placements: [] });           // 4483
-  store.update({ selection: new Set() });                   // RM-03 — 원본에 없다
+  store.update({ selection: new Set(), selectionAnchor: null });   // RM-03 — 원본에 없다 · RM-14 앵커도
   const saveLinks = deps.storage?.saveLinks ?? deps.saveLinks;
   const linksDirty = clearLinks({ store, storage: { saveLinks } });  // 4484-4489
   return mergeDirty(
@@ -401,30 +403,77 @@ export function clearRoutineBoard(store) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 배치 클릭 선택 토글. 보드 click 핸들러(2453-2465)의 도메인 부분.
+ * 클릭 한 번의 뜻을 store 에 적는다(RM-14). 판정은 domain/selection.selectionAfterClick 이 한다.
  * ⚠ 루틴 배치는 여기 오지 않는다(2447-2452 가 팝업으로 가로챈다) — 그 판정은 input 의 몫이다.
  * ⚠ 선택 표시는 행 재렌더가 아니라 클래스 토글이다 → Dirty 는 boards 가 아니라 selection 이다
  *   (다시 그리면 드래그·툴팁·포커스 동작이 바뀐다).
- * @param {{ boardId:'main'|'routine', groupId:string }} args
- * @returns {object} Dirty
  */
-export function toggleSelection(store, args) {
-  const { boardId, groupId } = args;
+// @complexity time=O(p) space=O(g) cc=2
+function clickSelection(store, boardId, groupId, mode) {
   if (!store.policy(boardId).allowsSelection) return NONE;   // 2446 `if (ctx !== mainCtx) return;`
-  const next = new Set(store.get().selection);
-  if (next.has(groupId)) next.delete(groupId); else next.add(groupId);  // 2457-2461
-  store.update({ selection: next });
+  const state = store.get();
+  const next = selectionAfterClick(boardOf(state, boardId), { selection: state.selection, anchor: state.selectionAnchor }, groupId, mode);
+  store.update({ selection: next.selection, selectionAnchor: next.anchor });
   return { selection: true, toolbar: true };                 // 2463-2465
 }
 
 /**
- * 선택을 모두 해제한다. clearSelection(4534-4539).
+ * 그냥 클릭 — **그것만** 고른다(RM-14 · Q84 편집기 관습). 2026-11-02 전에는 클릭이 더하기/빼기였다.
+ * @param {{ boardId:'main'|'routine', groupId:string }} args
+ * @returns {object} Dirty
+ */
+// @complexity time=O(p) space=O(g) cc=1
+export function selectOnly(store, args) {
+  return clickSelection(store, args.boardId, args.groupId, 'only');
+}
+
+/**
+ * Ctrl/Cmd+클릭 — 더하기/빼기. 보드 click 핸들러(2453-2465)의 도메인 부분이었던 것이고, 블록 팝업의 `☐ 선택하기` 도 이것이다.
+ * @param {{ boardId:'main'|'routine', groupId:string }} args
+ * @returns {object} Dirty
+ */
+// @complexity time=O(p) space=O(g) cc=1
+export function toggleSelection(store, args) {
+  return clickSelection(store, args.boardId, args.groupId, 'toggle');
+}
+
+/**
+ * Shift+클릭 — 앵커부터 누른 블록까지를 지금 고른 것에 더한다. 앵커가 없으면 그것 하나.
+ * @param {{ boardId:'main'|'routine', groupId:string }} args
+ * @returns {object} Dirty
+ */
+// @complexity time=O(p) space=O(g) cc=1
+export function selectRange(store, args) {
+  return clickSelection(store, args.boardId, args.groupId, 'range');
+}
+
+/**
+ * 네모(빈 칸 끌기)에 닿은 그룹을 고른다 — 앞서 고른 것은 풀린다. 앵커는 그중 시간이 가장 이른 것.
+ * 아무것도 닿지 않으면 빈 곳 누름과 같다(선택과 앵커를 푼다). 이미 비어 있었으면 NONE.
+ * @param {{ boardId:'main'|'routine', rect:import('../domain/selection.js').CellRect }} args
+ * @returns {object} Dirty
+ */
+// @complexity time=O(p) space=O(g) cc=4
+export function selectInRect(store, args) {
+  const { boardId, rect } = args;
+  if (!store.policy(boardId).allowsSelection) return NONE;
+  const state = store.get();
+  const ids = groupsInRect(boardOf(state, boardId), rect);
+  if (!ids.length && !state.selection.size && state.selectionAnchor === null) return NONE;
+  store.update({ selection: new Set(ids), selectionAnchor: ids[0] || null });
+  return { selection: true, toolbar: true };
+}
+
+/**
+ * 선택을 모두 해제한다. clearSelection(4534-4539). 앵커도 함께 푼다(RM-14).
  * ⚠ 비어 있으면 아무 일도 하지 않는다 — 원본의 조기 반환(4535)이라 Dirty 도 NONE 이다.
  * @returns {object} Dirty
  */
+// @complexity time=O(1) space=O(1) cc=2
 export function clearSelection(store) {
-  if (!store.get().selection.size) return NONE;              // 4535
-  store.update({ selection: new Set() });                    // 4537
+  const state = store.get();
+  if (!state.selection.size && state.selectionAnchor === null) return NONE;   // 4535
+  store.update({ selection: new Set(), selectionAnchor: null });               // 4537
   return { selection: true, toolbar: true };                 // 4538-4539
 }
 
@@ -525,23 +574,30 @@ export function shiftAllCounts(store, args, deps = {}) {
 // ⚠ 히스토리 커밋은 이 파일의 공통 규약대로 호출부(app/main)가 한다. 글쇠 한 번이 되돌리기 한 단계다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 이 보드에서 지금 고른 그룹 id — 보드 위에 실제로 있는 것만. */
-function selectedOn(store, boardId) {
+/**
+ * 이 보드에서 지금 고른 그룹 id — 보드 위에 실제로 있는 것만(domain/selection.presentOnly). 선택 액션 바의 「N개 고름」도 이것을 센다.
+ * @param {object} store
+ * @param {'main'|'routine'} boardId
+ * @returns {string[]}
+ */
+// @complexity time=O(p+k) space=O(g) cc=2
+export function selectedOn(store, boardId) {
   if (!store.policy(boardId).allowsSelection) return [];
   const state = store.get();
-  const present = new Set(boardOf(state, boardId).placements.map(p => p.groupId));
-  return [...state.selection].filter(id => present.has(id));
+  return presentOnly(boardOf(state, boardId), state.selection);
 }
 
 /**
- * 고른 블록을 delta 카운트만큼 옮긴다(←/→ ±1 · ↑/↓ ±행 · Shift+←/→ ±8).
- * ⚠ 하나라도 표 밖이나 잘릴 자리로 가면 **아무것도 옮기지 않는다**(keyboardEdit.planNudge).
+ * 고른 묶음을 delta 카운트만큼 **같은 거리로** 옮긴다 — 화살표(nudgeSelection)와 손잡이 끌기(RM-14 묶음 이동)가 같은 함수다.
+ * ⚠ 하나라도 표 밖이나 잘릴 자리로 가면 **아무것도 옮기지 않는다**(keyboardEdit.planNudge) — 서로의 간격이 말없이 바뀌지 않게.
+ * ⚠ 옮겼는지는 Dirty 에 `boards` 가 있는지로 안다 — 호출부는 그때만 히스토리를 한 번 커밋한다(끌어 놓기 한 번 = 되돌리기 한 단계).
  * @param {object} store
  * @param {{ boardId?:'main'|'routine', delta:number }} args
- * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @param {{ ids:(()=>string)|{uid:()=>string}, unmarkDragging?:()=>void }} deps
  * @returns {object} Dirty — 고른 것이 없으면 NONE, 막혔으면 notify 만
  */
-export function nudgeSelection(store, args, deps = {}) {
+// @complexity time=O(k·p) space=O(k) cc=5
+export function moveSelectionBy(store, args, deps = {}) {
   const { boardId = BOARD_MAIN, delta } = args;
   const picked = selectedOn(store, boardId);
   if (!picked.length || !delta) return NONE;
@@ -552,6 +608,18 @@ export function nudgeSelection(store, args, deps = {}) {
     dirty = mergeDirty(dirty, moveGroupTo(store, { boardId, groupId: step.groupId, targetRow: step.row, targetStartIndex: step.startIndex }, deps));
   }
   return dirty;
+}
+
+/**
+ * 고른 블록을 delta 카운트만큼 옮긴다(←/→ ±1 · ↑/↓ ±행 · Shift+←/→ ±8). moveSelectionBy 와 같다 — 글쇠 쪽 이름.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', delta:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(k·p) space=O(k) cc=1
+export function nudgeSelection(store, args, deps = {}) {
+  return moveSelectionBy(store, args, deps);
 }
 
 /**
@@ -615,7 +683,7 @@ export function pasteClip(store, args, deps = {}) {
     dirty = mergeDirty(dirty, applied);
   }
   if (pasted.length && store.policy(boardId).allowsSelection) {
-    store.update({ selection: new Set(pasted) });
+    store.update({ selection: new Set(pasted), selectionAnchor: pasted[0] });
     dirty = mergeDirty(dirty, { selection: true, toolbar: true });
   }
   // 묶음의 뒤쪽이 표 밖으로 나가 빠졌으면 말한다 — 말없이 빠지면 둘을 붙였는데 하나만 보인다.
@@ -635,7 +703,7 @@ export function selectAll(store, args = {}) {
   if (!store.policy(boardId).allowsSelection) return NONE;
   const ids = allGroupIds(boardOf(store.get(), boardId));
   if (!ids.length) return NONE;
-  store.update({ selection: new Set(ids) });
+  store.update({ selection: new Set(ids), selectionAnchor: store.get().selectionAnchor ?? ids[0] });
   return { selection: true, toolbar: true };
 }
 

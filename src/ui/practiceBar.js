@@ -201,5 +201,25 @@ export function createPracticeBar(deps) {
     fromRow.onchange = () => { if (Number(toRow.value) < Number(fromRow.value)) toRow.value = fromRow.value; };
   }
 
-  return { render: renderAll, renderPlay };
+  /**
+   * 고른 블록 반복을 할 수 있나 — `고른 블록 반복` 단추의 켜짐과 같은 판정(박자 · 재생기 · 고른 구간). 선택 액션 바가 읽는다(RM-14).
+   * @returns {boolean}
+   */
+  // @complexity time=O(p) space=O(1) cc=3
+  function canPracticeSelection() {
+    return isTempoUsable(tempo()) && hasPlayer() && !!selectionRange();
+  }
+
+  /**
+   * 고른 블록이 덮는 구간을 반복한다 — `고른 블록 반복` 단추와 같은 길. 할 수 없으면 거짓.
+   * @returns {boolean}
+   */
+  // @complexity time=O(p) space=O(1) cc=2
+  function practiceSelection() {
+    if (!canPracticeSelection()) return false;
+    onPractice(selectionRange());
+    return true;
+  }
+
+  return { render: renderAll, renderPlay, canPracticeSelection, practiceSelection };
 }
