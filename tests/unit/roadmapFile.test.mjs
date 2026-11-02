@@ -92,7 +92,7 @@ test('로드맵 파일은 factoriel/1(옛 이름 roadmap-board/1)이고, 보드�
   assert.equal(jsonText, JSON.stringify(doc, null, 2) + '\n');
 });
 
-test('[RM-40 요구 3] 추적 표와 로드맵 파일의 항목이 같다 — 번호·칸·규모·선행', () => {
+test('[RM-40 요구 4] 추적 표와 로드맵 파일의 항목이 같다 — 번호·칸·규모·선행', () => {
   assert.ok(rows.length >= 30, `추적 표에서 읽은 줄이 ${rows.length}개뿐이다 — 표의 꼴이 바뀌었나`);
   assert.deepEqual(mismatches({ rows, inBody: new Map(rows.map(r => [r.id, null])), items, hasPlan }), []);
 });
@@ -110,7 +110,7 @@ test('문서의 세 칸에 있는 항목이 로드맵 파일에도 있다', () =
   assert.deepEqual(mismatches({ rows, inBody, items, hasPlan }), []);
 });
 
-test('[RM-40 요구 0] 판에서만 더한 항목은 계획서가 있으면 문서에 없어도 된다', () => {
+test('[RM-40 요구 1] 판에서만 더한 항목은 계획서가 있으면 문서에 없어도 된다', () => {
   const row = (id, lane = 'next', size = 'S', after = []) => ({ id, lane, size, after });
   const item = (id, extra = {}) => [id, { id, lane: 'next', size: 'S', after: [], ...extra }];
   const plan = it => described(it, () => false); // 계획서 파일은 없다고 친다 — plan 필드와 what 만 본다
@@ -155,7 +155,7 @@ test('[RM-40 요구 0] 판에서만 더한 항목은 계획서가 있으면 문�
   assert.match(mismatches({ rows: docRows, inBody: new Map([['RM-01', 'S']]), items: added, hasPlan: plan }).join('\n'), /RM-02 는 추적 표에만 있고 세 칸에 없다/);
 });
 
-test('[RM-40 요구 1] 미룬 질문에 판이 답했으면 거둘 것으로 알리되 붉히지 않는다', () => {
+test('[RM-40 요구 2] 미룬 질문에 판이 답했으면 거둘 것으로 알리되 붉히지 않는다', () => {
   const questions = new Map([
     ['Q1', { id: 'Q1', answer: null }],
     ['Q2', { id: 'Q2', answer: 'RM-11 첫 커밋을 졸업일로 한다' }],
@@ -171,7 +171,7 @@ test('[RM-40 요구 1] 미룬 질문에 판이 답했으면 거둘 것으로 알
   assert.deepEqual(deferredMismatches({ ids: ['Q1'], questions }), { red: [], stale: [] });
 });
 
-test('[RM-40 요구 2] 정하기를 미룬 것의 번호가 로드맵 파일의 질문과 맞고, 판이 답한 것은 거둘 것으로 알린다', t => {
+test('[RM-40 요구 3] 정하기를 미룬 것의 번호가 로드맵 파일의 질문과 맞고, 판이 답한 것은 거둘 것으로 알린다', t => {
   const questions = new Map(doc.questions.items.map(q => [q.id, q]));
   const deferred = mdText.slice(mdText.indexOf('## 정하기를 미룬 것'), mdText.indexOf('### 적응형 작업 차례'));
   const ids = [...deferred.matchAll(/^\| \*\*.+?\*\*\(.*?(Q\d+)\) \|/gm)].map(m => m[1]);
