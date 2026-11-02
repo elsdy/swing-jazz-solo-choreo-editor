@@ -82,6 +82,7 @@ import { commandFace, syncCommandTitles } from '../ui/commandButtons.js';
 import { createCommandPalette } from '../ui/commandPalette.js';
 import { createDraftStore, debounceSave, DRAFT_NAME } from '../adapters/draftStore.js';
 import { createThumbBar } from '../ui/thumbBar.js';
+import { thumbBarState } from './thumbState.js';
 import { flowTotal, nextAfter, noteTransition, topTransitions } from '../domain/flowStats.js';
 import * as TodoCmd from '../usecases/stepTodoCommands.js';
 import { loadFlowStats, saveFlowStats } from '../adapters/localStore.js';
@@ -2391,19 +2392,15 @@ views.project = createProjectPanel({
 // ─────────────────────────────────────────────────────────────────────────────
 
 views.thumb = createThumbBar({
-  getState: () => ({
-    panelOpen: VideoCmd.panelState(store).open,
-    capturing: CaptureCmd.captureStartSec(store) !== null,
+  // store 에서 읽는 값은 app/thumbState 가 짓는다(RM-36) — 여기서는 뷰 · 문서에서만 아는 것을 넘긴다.
+  getState: () => thumbBarState(store, {
     // 넓은 화면에서는 이 줄이 화면 맨 아래가 아니라 **영상 띠 바로 아래**에 붙어 있다.
     // ⚠ app/render 가 영상 패널을 엄지 바보다 먼저 그리므로 이 값은 늘 이번 프레임의 것이다.
     docked: views.video?.detachMode?.() === 'band',
     taps: views.video?.tapCount?.() || 0,
     tapBpm: views.video?.tapBpm?.() ?? null,
-    canCapture: CaptureCmd.canCapture(store),
-    voice: views.video?.voiceState?.() || { available: false, wanted: false, listening: false },
-    sheetOpen: document.body.dataset.sheet === 'on',
-    // 엄지 줄의 `+ 빠른 배치` 는 메인 표의 것이다(RM-36) — 캔버스 바와 같은 켜짐을 읽는다.
-    quickPlaceOn: !!store.get().session.quickPlaceMode[BOARD_MAIN]
+    voice: views.video?.voiceState?.(),
+    sheetOpen: document.body.dataset.sheet === 'on'
   }),
   actions: {
     // 같은 명령의 입구다(RM-09) — 이 버튼은 패널이 닫혀 있을 때만 보이므로 여닫기가 곧 열기다.
