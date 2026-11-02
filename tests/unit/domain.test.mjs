@@ -100,7 +100,7 @@ import * as Todos from '../../src/domain/stepTodos.js';
 import * as Track from '../../src/domain/flowTrack.js';
 import {
   COPY_POLICY, MOVE_POLICY, PLACE_POLICY, RESIZE_POLICY,
-  copyGroup, moveGroup, place, removeGroup, resizeGroup
+  copyGroup, moveGroup, place, removeGroup, resizeGroup, trimGroupStart
 } from '../../src/domain/boardOps.js';
 
 const COLS_CASES = [1, 8, 128];
@@ -1042,6 +1042,37 @@ test('boardOps: 리사이즈로 한 칸만 겹쳐도 상대 그룹의 다른 행
   assert.equal(result.placements.length, 3, '세그먼트 개수가 3이 아니다 — 무언가 지워졌거나 늘어났다');
   // 아무것도 지우지 않았으니 row3 은 다시 그릴 이유가 없다. 옛 동작은 T 를 지우느라 [2,3] 을 그렸다.
   assert.deepEqual(result.renderRows, [2], 'renderRows 에 손대지 않은 행이 섞였다');
+});
+
+/**
+ * 왼쪽 가장자리 트리밍(RM-12, 2026-11-03). newCount 는 **끝 칸에서 거꾸로 센** 새 길이다.
+ * 끝 칸 고정 · 겹치면 쌓기(늘이기와 같은 RESIZE_POLICY — D-2) · 보드 앞 끝에서 자르기 · 여러 행 그룹의 시작 행 바뀜을 못박는다.
+ */
+test('boardOps: 시작점 트리밍은 끝 칸을 고정하고 시작·길이를 함께 바꾸며, 겹치면 아래층으로 쌓는다', () => {
+  const S = () => seg('S', 1, 4, 2, 0);                                   // r1 [4..5]
+  // (1) 앞으로 당기면 시작이 당겨지고 끝(5)은 그대로 · 뒤로 밀면 짧아진다
+  assert.deepEqual(shapeOf(trimGroupStart({ ...CONFLICT_MAIN, placements: [S()] }, { groupId: 'S', newCount: 4 }, conflictIds()).placements),
+    ['S r1 s2 len4 lane0']);
+  assert.deepEqual(shapeOf(trimGroupStart({ ...CONFLICT_MAIN, placements: [S()] }, { groupId: 'S', newCount: 1 }, conflictIds()).placements),
+    ['S r1 s5 len1 lane0']);
+  // (2) 당긴 자리에 B 가 있으면 B 를 지우지 않고 S 가 아래층으로 내려간다
+  const stacked = trimGroupStart({ ...CONFLICT_MAIN, placements: [seg('B', 1, 0, 3, 0), S()] }, { groupId: 'S', newCount: 5 }, conflictIds());
+  assert.deepEqual(shapeOf(stacked.placements), ['B r1 s0 len3 lane0', 'S r1 s1 len5 lane1']);
+  // (3) 보드 앞 끝에서 자른다 — 메인은 인트로 행(0)의 첫 칸, 루틴 보드는 1행의 첫 칸
+  const head = (board) => trimGroupStart({ ...board, placements: [seg('S', 1, 1, 2, 0)] }, { groupId: 'S', newCount: 99 }, conflictIds()).placements;
+  assert.deepEqual(shapeOf(head(CONFLICT_MAIN)), ['S r0 s0 len8 lane0', 'S r1 s0 len3 lane0']);
+  assert.deepEqual(shapeOf(head(CONFLICT_ROUTINE)), ['S r1 s0 len3 lane0']);
+  // (4) 여러 행 그룹 — r2 [6..7] + r3 [0..2] 를 끝에서 2칸으로 줄이면 시작 행이 3 으로 바뀌고 r2 조각은 사라진다
+  const multi = trimGroupStart({ ...CONFLICT_MAIN, placements: [seg('M', 2, 6, 2, 0), seg('M', 3, 0, 3, 0)] }, { groupId: 'M', newCount: 2 }, conflictIds());
+  assert.deepEqual(shapeOf(multi.placements), ['M r3 s1 len2 lane0']);
+  assert.deepEqual([...multi.renderRows].sort(), [2, 3], '사라진 조각의 행도 다시 그린다');
+  // (5) 없는 그룹 · 1 보다 작은 길이는 아무것도 바꾸지 않는다
+  for (const newCount of [0, -1, NaN]) {
+    const r = trimGroupStart({ ...CONFLICT_MAIN, placements: [S()] }, { groupId: 'S', newCount }, conflictIds());
+    assert.deepEqual(shapeOf(r.placements), ['S r1 s4 len2 lane0']);
+  }
+  assert.deepEqual(shapeOf(trimGroupStart({ ...CONFLICT_MAIN, placements: [S()] }, { groupId: 'X', newCount: 3 }, conflictIds()).placements),
+    ['S r1 s4 len2 lane0']);
 });
 
 /**

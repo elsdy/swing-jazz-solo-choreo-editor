@@ -10,6 +10,7 @@
 //   quickTouch  빠른 배치 모드의 손가락 끌기          { x, y, track, row, startIndex, count, isDrag, clientX?, clientY? }
 //   tap         더블탭 판정의 지난 탭                 { time, groupId }
 //   marquee     빈 칸에서 시작한 네모 고르기(RM-14)   { row, startIndex, track, x, y, rect|null }  — rect 가 생기면 끌기가 됐다
+//   body        블록 몸통을 누른 마우스(RM-12)        { groupId, x, y, copy, bundle, dragging }    — 임계를 넘으면 dragging
 //
 // ⚠ track 은 DOM 요소지만 여기서는 **열어 보지 않는** 꼬리표다. 칸을 재야 할 때는 env 의 측정 함수에 되넘긴다.
 //   측정(getBoundingClientRect·elementFromPoint)은 원본이 부르던 그 자리·그 순서에서만 불린다 —
@@ -25,11 +26,22 @@
 //   { kind: 'place', moveId, startRow, startIndex, totalCount } | { kind: 'remove', groupId } | { kind: 'commit' }
 //   { kind: 'openPicker', row, startIndex, clientX, clientY, count }
 //   { kind: 'marquee', rect } | { kind: 'clearMarquee' } | { kind: 'selectRect', rect }   ← RM-14 네모 고르기(마우스만 — 터치는 RM-11 때)
+//   { kind: 'startTrim', edge, groupId, clientX }                                            ← RM-12 가장자리 트리밍 시작
+//   { kind: 'beginMove', groupId, copy, bundle } | { kind: 'movePreview', row, startIndex } | { kind: 'endMove' }
+//   { kind: 'move' | 'copy' | 'moveBundle', groupId, row, startIndex } | { kind: 'swallowClick' }   ← RM-12 몸통 끌기
+//   { kind: 'openGroupPicker', groupId, clientX, clientY }                                   ← RM-12 두 번 누르기 = 동작 고르기 창
+//
+// ⚠ 블록을 누른 자리의 주인(RM-12): 양쪽 가장자리(gestureMath.resolveGrabZone)는 트리밍, 몸통은 끌면 옮기기 · 떼면 클릭이다.
+//   몸통 클릭(고르기 · 팝업)은 여전히 보드의 click 리스너가 한다 — 여기서는 「끌기가 됐으면 그 click 을 삼켜라」만 낸다.
+//   손가락의 몸통 옮기기는 길게 누르기로 시작한다(계획서 결정) — 그 시계는 입력 계층의 longPress 가 잰다.
 //
 // ⚠ 빈 칸 끌기의 주인(Q86): 동작을 골랐거나(activeMove) 빠른 배치면 그리기, 아니면 네모 고르기다. 평소 빈 칸 끌기는 전에 아무 일도
 //   하지 않았으므로 빼앗는 동작이 없다. 끄는 동안 행을 다시 그리지 않는다 — 점선 네모(overlays) 하나만 움직인다.
 
-import { resolveDragCount, isDoubleTap, exceedsThreshold, rectCellRange, QUICK_DRAG_THRESHOLD_PX, MARQUEE_THRESHOLD_PX } from './gestureMath.js';
+import {
+  resolveDragCount, isDoubleTap, exceedsThreshold, rectCellRange,
+  QUICK_DRAG_THRESHOLD_PX, MARQUEE_THRESHOLD_PX, BODY_DRAG_THRESHOLD_PX,
+} from './gestureMath.js';
 
 /**
  * @typedef {object} GestureEnv  지금 세션 값과 측정 함수. 리스너가 이벤트마다 새로 만든다.
@@ -95,9 +107,9 @@ export function placementTapRoute({ pointerType, isRoutine, hasActionPopup }) {
   return 'toggle';
 }
 
-/** @returns {{draw:null, quickDraw:null, quickTouch:null, tap:{time:number, groupId:string|null}, marquee:null}} */
+/** @returns {{draw:null, quickDraw:null, quickTouch:null, tap:{time:number, groupId:string|null}, marquee:null, body:null}} */
 export function initialGestureState() {
-  return { draw: null, quickDraw: null, quickTouch: null, tap: { time: 0, groupId: null }, marquee: null };
+  return { draw: null, quickDraw: null, quickTouch: null, tap: { time: 0, groupId: null }, marquee: null, body: null };
 }
 
 const same = (state) => ({ state, effects: [] });
@@ -390,14 +402,18 @@ export function quickTouchCancel(state) {
 }
 
 /**
- * 블록 위 손가락 pointerdown 의 더블탭 지우기(원본 2532-2548). 손잡이·`✎`·팝업 가드는 리스너가 먼저 본다.
+ * 블록 위 손가락 pointerdown 의 두 번 탭(원본 2532-2548). 손잡이·`✎`·팝업 가드는 리스너가 먼저 본다.
  *
- * 루틴 가드(routineGuarded — 메인 보드의 루틴 블록)가 **맨 앞**이다: 그 탭은 기본 동작을 막지 않고 지우지 않으며
+ * 두 번 탭하면 **지우지 않고 동작 고르기 창을 연다**(RM-12, 2026-11-03 — 의도한 동작 변경). 원본은 확인 없이 지웠다 —
+ * 편집기를 써 본 손에 「몸통 두 번 누르기」는 열기 · 이름 정하기라 사고로 이어졌다. 지우기는 Delete · 팝업 · 루틴 팝업으로만.
+ * 마우스의 더블클릭(dblclick)도 같은 할 일이다 — docs/deviations.md 「고쳐서 내보낸 것」.
+ *
+ * 루틴 가드(routineGuarded — 메인 보드의 루틴 블록)가 **맨 앞**이다: 그 탭은 기본 동작을 막지 않고 창을 열지 않으며
  * 탭 기억을 비운다. 원본은 가드가 preventDefault **뒤에** 와서 둘째 탭의 팝업이 막히고, 기억이 남아 셋째 탭도
  * 더블탭으로 잡혔다 — RM-11(2026-11-02)이 고쳤다(docs/deviations.md 「고쳐서 내보낸 것」).
  *
  * @param {object} state
- * @param {{now:number, groupId:string, routineGuarded:boolean}} ev
+ * @param {{now:number, groupId:string, routineGuarded:boolean, x?:number, y?:number}} ev
  */
 // @complexity time=O(1) space=O(1) cc=3
 export function placementTap(state, ev) {
@@ -408,8 +424,94 @@ export function placementTap(state, ev) {
   }
   return {
     state: { ...state, tap: { time: 0, groupId: null } },
-    effects: [{ kind: 'preventDefault' }, { kind: 'remove', groupId: ev.groupId }, { kind: 'commit' }],
+    effects: [{ kind: 'preventDefault' }, { kind: 'openGroupPicker', groupId: ev.groupId, clientX: ev.x, clientY: ev.y }],
   };
+}
+
+// ── 블록을 누른 자리 — 가장자리 트리밍 · 몸통 끌기 (RM-12) ─────────────────────────────────────
+
+/**
+ * 블록 위 pointerdown — 누른 자리(zone)로 가른다(RM-12).
+ *   가장자리('left' · 'right')  → 트리밍 시작. 메인 보드의 루틴 블록(routineGuarded)은 길이가 루틴의 것이라 양쪽 모두
+ *                                 트리밍하지 않고 몸통처럼 다룬다 — 끌면 옮기고 누르면 루틴 팝업이다.
+ *   몸통                         → 마우스면 끌기 후보(임계를 넘기 전까지는 클릭). 손가락은 아무것도 하지 않는다 —
+ *                                 짚고 굴리면 화면 넘기기, 떼면 click(팝업), 길게 누르면 옮기기(입력 계층의 longPress).
+ * ⚠ Alt(복사)는 **누른 순간**에 한 번 읽는다 — 원본 dragstart(2480)의 copyMode 와 같다. 끌다가 눌러도 복사가 아니다.
+ * ⚠ bundle 은 호출부가 정한다(고른 블록이고 고른 것이 둘 이상이면 그 묶음). 복사면 묶음을 쓰지 않는다 — 지금처럼 그 블록 하나다.
+ * @param {object} state
+ * @param {{x:number, y:number, groupId:string, zone:'left'|'body'|'right', routineGuarded:boolean, altKey:boolean,
+ *          pointerType:string, bundle?:string[]|null}} ev
+ */
+// @complexity time=O(1) space=O(1) cc=5
+export function placementDown(state, ev) {
+  if (ev.zone !== 'body' && !ev.routineGuarded) {
+    return {
+      state: { ...state, body: null },
+      effects: [{ kind: 'preventDefault' }, { kind: 'startTrim', edge: ev.zone, groupId: ev.groupId, clientX: ev.x }],
+    };
+  }
+  if (pointerKind(ev.pointerType) === 'touch') return { state: { ...state, body: null }, effects: [] };
+  const copy = !!ev.altKey;
+  const body = { groupId: ev.groupId, x: ev.x, y: ev.y, copy, bundle: copy ? null : (ev.bundle || null), dragging: false };
+  return { state: { ...state, body }, effects: [{ kind: 'preventDefault' }] };
+}
+
+/**
+ * 몸통을 누른 마우스의 pointermove(RM-12). 임계(BODY_DRAG_THRESHOLD_PX)를 넘기 전에는 아무 일도 없다 — 떼면 클릭이다.
+ * 넘는 순간 옮기기가 시작되고(beginMove), 그 뒤로는 포인터 밑 칸에 놓일 자리를 그린다. 보드 밖이면 프리뷰를 지운다.
+ * 한 번 끌기가 되면 되돌아오지 않는다.
+ * @param {object} state
+ * @param {{x:number, y:number}} ev
+ * @param {GestureEnv} env
+ */
+// @complexity time=O(1) space=O(1) cc=5
+export function bodyMove(state, ev, env) {
+  const b = state.body;
+  if (!b) return same(state);
+  if (!b.dragging && !exceedsThreshold(ev.x - b.x, ev.y - b.y, BODY_DRAG_THRESHOLD_PX)) return same(state);
+  const effects = b.dragging ? [] : [{ kind: 'beginMove', groupId: b.groupId, copy: b.copy, bundle: b.bundle }];
+  const hit = env.hitAt(ev.x, ev.y);
+  effects.push(hit.inBoard ? { kind: 'movePreview', row: hit.row, startIndex: hit.col } : { kind: 'clearPreview' });
+  return { state: { ...state, body: { ...b, dragging: true } }, effects };
+}
+
+/**
+ * 몸통을 누른 마우스의 pointerup(RM-12 — document 에서 듣는다, 보드 밖에서 떼도 온다).
+ * 끌기가 아니었으면 아무 할 일 없이 끝난다 — 뒤따르는 click 이 고르기(그냥 · Ctrl · Shift)나 루틴 팝업을 한다.
+ * 끌기였으면 끝내고(endMove), 보드 안에서 뗐을 때만 옮기거나 복사하고 커밋한다. 묶음은 호출부가 거리를 재어 옮기고,
+ * 옮겼을 때만 커밋한다(RM-14 와 같다). 마지막으로 뒤따르는 합성 click 을 한 번 삼킨다 — 놓은 블록의 선택이 뒤집히거나
+ * 루틴 팝업이 뜨지 않게.
+ * @param {object} state
+ * @param {{x:number, y:number}} ev
+ * @param {GestureEnv} env
+ */
+// @complexity time=O(1) space=O(1) cc=6
+export function bodyUp(state, ev, env) {
+  const b = state.body;
+  if (!b) return same(state);
+  const next = { ...state, body: null };
+  if (!b.dragging) return { state: next, effects: [] };
+  const effects = [{ kind: 'endMove' }];
+  const hit = env.hitAt(ev.x, ev.y);
+  if (hit.inBoard) {
+    const at = { groupId: b.groupId, row: hit.row, startIndex: hit.col };
+    if (b.copy) effects.push({ kind: 'copy', ...at }, { kind: 'commit' });
+    else if (b.bundle) effects.push({ kind: 'moveBundle', ...at, bundle: b.bundle });
+    else effects.push({ kind: 'move', ...at }, { kind: 'commit' });
+  }
+  effects.push({ kind: 'swallowClick' });
+  return { state: next, effects };
+}
+
+/**
+ * 몸통 끌기 중의 pointercancel(RM-12) — 놓지 않고 끝낸다. 끌기 전이었으면 아무 일도 없다.
+ * @param {object} state
+ */
+// @complexity time=O(1) space=O(1) cc=3
+export function bodyCancel(state) {
+  const b = state.body;
+  if (!b) return same(state);
+  return { state: { ...state, body: null }, effects: b.dragging ? [{ kind: 'endMove' }] : [] };
 }
 
 /**

@@ -32,6 +32,9 @@ export const LABELS = Object.freeze({
   'block.select': '☐ 선택하기',
   'block.deselect': '☑ 선택 풀기',
   'block.remove': '× 지우기',
+  // 블록 양쪽 가장자리 손잡이의 툴팁(ui/placementView, RM-12). 왼쪽은 「위치 이동」이었다(~2026-11-03) — 옮기기는 이제 몸통 끌기다.
+  'block.trimStart.title': '시작점 조절',
+  'block.resize.title': '길이 조절',
 
   // ── 루틴 블록 팝업 (ui/routineActionPopup) ────────────────────────────────
   'routineBlock.edit': '✏ 편집',

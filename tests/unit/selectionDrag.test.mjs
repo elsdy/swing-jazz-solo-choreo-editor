@@ -1,9 +1,10 @@
-// tests/unit/selectionDrag.test.mjs — 고른 블록 하나의 손잡이를 끌면 묶음 전체가 함께 가는가 (RM-14, 2026-11-02)
+// tests/unit/selectionDrag.test.mjs — 고른 블록 하나의 몸통을 끌면 묶음 전체가 함께 가는가 (RM-14, 2026-11-02 · RM-12, 2026-11-03)
 //
-// 실제 input/boardController 에 가짜 보드 요소(리스너만 모은다) · 가짜 overlays · 가짜 hitTest 를 주고, store · boardCommands ·
-// historyCommands · dragSession 은 진짜를 쓴다. 손잡이 dragstart → 트랙 drop 을 직접 쏘아 바깥에서 보이는 값만 본다 —
-// 블록이 어디로 갔나, 히스토리가 몇 칸 늘었나, 되돌리기 한 번에 어디로 돌아오나.
-// 가짜 hitTest 는 drop 의 clientX 를 그대로 칸 번호로 읽는다.
+// 실제 input/boardController 에 가짜 보드 요소(리스너만 모은다) · 가짜 document · 가짜 overlays · 가짜 hitTest 를 주고,
+// store · boardCommands · historyCommands · dragSession 은 진짜를 쓴다. 블록 몸통 pointerdown → (보드) pointermove →
+// (document) pointerup 을 직접 쏘아 바깥에서 보이는 값만 본다 — 블록이 어디로 갔나, 히스토리가 몇 칸 늘었나,
+// 되돌리기 한 번에 어디로 돌아오나. RM-12 전에는 왼쪽 이동 손잡이의 네이티브 dragstart → drop 이었다.
+// 가짜 hitTest 는 포인터의 clientX 를 칸 번호로, clientY 를 행 번호로 읽는다(음수면 보드 밖).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,6 +30,8 @@ function setup() {
   History.commit(hist, BOARD_MAIN);                                  // 처음 자리가 첫 단계
   const listeners = {};
   const el = { addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); } };
+  const docListeners = {};
+  const doc = { addEventListener: (type, fn) => { (docListeners[type] ||= []).push(fn); } };
   const marked = [];
   const previews = [];
   const overlays = new Proxy({
@@ -43,28 +46,32 @@ function setup() {
   };
   createBoardController({
     el, boardId: BOARD_MAIN, store, commands, render: () => {}, overlays,
-    hitTest: { cellIndexAt: (_track, x) => x, hitTest: () => ({ inBoard: false, track: null, row: null, col: null }) },
+    hitTest: {
+      cellIndexAt: (_track, x) => x,
+      hitTest: (x, y) => (y >= 0 ? { inBoard: true, track: {}, row: y, col: x } : { inBoard: false, track: null, row: null, col: null }),
+    },
     dragSession: createDragSession(), pointerSession: { isActive: () => false }, touchDrag: {}, quickPicker: {},
-    doc: { addEventListener() {} },
+    doc,
   });
-  const fire = (type, ev) => { for (const fn of listeners[type] || []) fn(ev); };
-  /** groupId 블록의 손잡이를 잡아 (row, col) 칸에 놓는다. */
+  const fire = (on, type, ev) => { for (const fn of on[type] || []) fn(ev); };
+  /** groupId 블록의 몸통 가운데(폭 200px 의 100px 자리)를 마우스로 눌러 (row, col) 칸까지 끌어 놓는다. */
   const dragDrop = (groupId, row, col, { altKey = false } = {}) => {
-    const placementEl = { dataset: { [DATA.groupId]: groupId } };
-    const handle = { closest: (sel) => (sel === SEL.placement ? placementEl : null) };
-    fire('dragstart', { altKey, target: { closest: (sel) => (sel === SEL.moveHandle ? handle : null) },
-      dataTransfer: { setData() {}, effectAllowed: '' } });
+    const placementEl = { dataset: { [DATA.groupId]: groupId }, classList: { contains: () => false },
+      getBoundingClientRect: () => ({ left: -300, width: 200 }) };
+    const onBlock = { closest: (sel) => (sel === SEL.placement || sel === SEL.placementOrHandles ? placementEl : null) };
+    const base = { pointerType: 'mouse', button: 0, preventDefault() {}, stopPropagation() {} };
+    fire(listeners, 'pointerdown', { ...base, altKey, target: onBlock, clientX: -200, clientY: -50 });
     const track = { dataset: { [DATA.row]: String(row) }, classList: { add() {}, remove() {} } };
-    const target = { closest: (sel) => (sel === SEL.track ? track : null) };
-    fire('dragover', { target, clientX: col, preventDefault() {} });
-    fire('drop', { target, clientX: col, preventDefault() {} });
+    const onTrack = { closest: (sel) => (sel === SEL.track ? track : null) };
+    fire(listeners, 'pointermove', { ...base, target: onTrack, clientX: col, clientY: row });
+    fire(docListeners, 'pointerup', { ...base, target: onTrack, clientX: col, clientY: row });
   };
   const start = (id) => groupSpan(store.board(BOARD_MAIN), id).start;
   const cells = () => store.board(BOARD_MAIN).placements.map(p => `${p.groupId}@${p.row}:${p.startIndex}+${p.length}`).sort();
   return { store, hist, dragDrop, start, cells, marked, previews };
 }
 
-test('고른 블록 하나의 손잡이를 끌어 놓으면 묶음 전체가 간격을 지켜 옮겨지고, 하나라도 표 밖이면 아무것도 옮기지 않으며, 되돌리기 한 번에 모두 제자리로 온다', () => {
+test('고른 블록 하나의 몸통을 끌어 놓으면 묶음 전체가 간격을 지켜 옮겨지고, 하나라도 표 밖이면 아무것도 옮기지 않으며, 되돌리기 한 번에 모두 제자리로 온다', () => {
   // ① 함께 간다 — a 를 2행 1칸으로 끌면 거리 9. c 도 9 만큼 가서 2행 끝 → 3행 앞으로 이어진다.
   {
     const t = setup();

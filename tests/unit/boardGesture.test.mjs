@@ -295,15 +295,19 @@ test('손가락 빠른 배치: 취소는 프리뷰를 지우고 상태를 비운
   assert.equal(r.state.quickTouch, null);
 });
 
-// ── 더블탭 지우기 ───────────────────────────────────────────────────────────
+// ── 더블탭 — 동작 고르기 창 (RM-12, 2026-11-03 전에는 지우기였다) ─────────────────────────
 
-const tap = (now, groupId = 'g1', routineGuarded = false) => ({ now, groupId, routineGuarded });
+const tap = (now, groupId = 'g1', routineGuarded = false) => ({ now, groupId, routineGuarded, x: 33, y: 44 });
 
-test('더블탭: 300ms 안에 같은 블록을 두 번 누르면 지우고 커밋한 뒤 탭 기억을 비운다', () => {
+test('더블탭: 300ms 안에 같은 블록을 두 번 누르면 동작 고르기 창을 열고 지우지 않는다', () => {
   const first = G.placementTap(G.initialGestureState(), tap(1000));
   assert.deepEqual(first.effects, []);
   const second = G.placementTap(first.state, tap(1299));
-  assert.deepEqual(second.effects, [{ kind: 'preventDefault' }, { kind: 'remove', groupId: 'g1' }, { kind: 'commit' }]);
+  // 옛 기대: [preventDefault, remove g1, commit] — 확인 없이 지웠다(RM-12 의 의도한 동작 변경)
+  assert.deepEqual(second.effects, [
+    { kind: 'preventDefault' }, { kind: 'openGroupPicker', groupId: 'g1', clientX: 33, clientY: 44 },
+  ]);
+  assert.ok(!kinds(second).includes('remove') && !kinds(second).includes('commit'), '지우지도 커밋하지도 않는다');
   assert.deepEqual(second.state.tap, { time: 0, groupId: null });
 });
 
@@ -317,7 +321,7 @@ test('더블탭: 정확히 300ms 이거나 다른 블록이면 더블탭이 아�
   assert.deepEqual(other.state.tap, { time: 1100, groupId: 'g2' });
 });
 
-test('더블탭: 루틴 블록의 탭은 기본 동작을 막지 않고 지우지 않으며 탭 기억을 비운다 — 세 번째 탭도 더블탭이 아니다 (RM-11)', () => {
+test('더블탭: 루틴 블록의 탭은 기본 동작을 막지 않고 창을 열지 않으며 탭 기억을 비운다 — 세 번째 탭도 더블탭이 아니다 (RM-11 · RM-12)', () => {
   const s1 = G.placementTap(G.initialGestureState(), tap(1000, 'r1', true));
   assert.deepEqual(s1.effects, []);
   const second = G.placementTap(s1.state, tap(1100, 'r1', true));
@@ -327,7 +331,102 @@ test('더블탭: 루틴 블록의 탭은 기본 동작을 막지 않고 지우�
   assert.deepEqual(third.effects, []);
   // 루틴 블록을 누른 뒤 동작 블록을 두 번 누르면 그것은 평소대로 더블탭이다
   const n1 = G.placementTap(third.state, tap(1300, 'g1', false)).state;
-  assert.deepEqual(kinds(G.placementTap(n1, tap(1400, 'g1', false))), ['preventDefault', 'remove', 'commit']);
+  assert.deepEqual(kinds(G.placementTap(n1, tap(1400, 'g1', false))), ['preventDefault', 'openGroupPicker']);
+});
+
+// ── 블록을 잡는 자리 — 가장자리 트리밍 · 몸통 끌기 (RM-12) ────────────────────────────────
+
+const down = (zone, extra = {}) => ({ ...at(1, 2), groupId: 'g1', zone, routineGuarded: false, altKey: false, pointerType: 'mouse', bundle: null, ...extra });
+
+test('가장자리 끌기: 왼쪽은 시작점, 오른쪽은 길이 트리밍을 그 블록 · 누른 x 로 시작한다 — 마우스든 손가락이든', () => {
+  for (const pointerType of ['mouse', 'touch']) {
+    for (const edge of ['left', 'right']) {
+      const r = G.placementDown(G.initialGestureState(), down(edge, { pointerType }));
+      assert.deepEqual(r.effects, [{ kind: 'preventDefault' }, { kind: 'startTrim', edge, groupId: 'g1', clientX: at(1, 2).x }]);
+      assert.equal(r.state.body, null, '트리밍은 몸통 끌기 후보를 남기지 않는다');
+    }
+  }
+});
+
+test('가장자리 끌기: 메인 보드의 루틴 블록은 왼쪽·오른쪽 모두 트리밍을 시작하지 않는다', () => {
+  for (const edge of ['left', 'right']) {
+    for (const pointerType of ['mouse', 'touch']) {
+      const r = G.placementDown(G.initialGestureState(), down(edge, { routineGuarded: true, pointerType }));
+      assert.ok(!kinds(r).includes('startTrim'), `${pointerType} ${edge}`);
+    }
+    // 대신 몸통처럼 다룬다 — 마우스로 끌면 옮긴다(루틴 블록은 지금도 옮겨진다)
+    const m = G.placementDown(G.initialGestureState(), down(edge, { routineGuarded: true }));
+    assert.equal(m.state.body?.groupId, 'g1');
+  }
+});
+
+test('몸통 끌기: 임계 전에 떼면 고르기, 넘기면 옮기기 프리뷰, 떼면 옮기고 커밋한다, Alt면 복사', () => {
+  const E = env();
+  const p0 = at(1, 2);
+  // ① 임계(4px) 전에 떼면 할 일이 없다 — 뒤따르는 click 이 지금처럼 고른다(삼키지 않는다)
+  {
+    const r = run([
+      [G.placementDown, down('body')],
+      [G.bodyMove, { x: p0.x + 3, y: p0.y }],
+      [G.bodyUp, { x: p0.x + 3, y: p0.y }],
+    ], E);
+    assert.deepEqual(r.effects, []);
+    assert.equal(r.state.body, null);
+  }
+  // ② 넘기면 옮기기가 한 번 시작되고 포인터 밑 칸에 프리뷰, 보드 밖이면 프리뷰를 지운다. 떼면 끝내고 옮기고 커밋하고 click 을 삼킨다
+  {
+    let s = G.placementDown(G.initialGestureState(), down('body')).state;
+    const m1 = G.bodyMove(s, at(3, 5), E); s = m1.state;
+    assert.deepEqual(m1.effects, [
+      { kind: 'beginMove', groupId: 'g1', copy: false, bundle: null }, { kind: 'movePreview', row: 3, startIndex: 5 },
+    ]);
+    const m2 = G.bodyMove(s, { x: 999, y: 20 }, E); s = m2.state;
+    assert.deepEqual(m2.effects, [{ kind: 'clearPreview' }], '한 번 시작된 옮기기는 다시 시작하지 않는다');
+    const m3 = G.bodyMove(s, at(4, 6), E); s = m3.state;
+    assert.deepEqual(m3.effects, [{ kind: 'movePreview', row: 4, startIndex: 6 }]);
+    const up = G.bodyUp(s, at(4, 6), E);
+    assert.deepEqual(up.effects, [
+      { kind: 'endMove' }, { kind: 'move', groupId: 'g1', row: 4, startIndex: 6 }, { kind: 'commit' }, { kind: 'swallowClick' },
+    ]);
+    assert.equal(up.state.body, null);
+  }
+  // ③ Alt 를 누른 채 누르면 복사다 — Alt 는 누른 순간에만 읽고, 복사는 묶음이 아니라 그 블록 하나다
+  {
+    const r = run([
+      [G.placementDown, down('body', { altKey: true, bundle: ['g1', 'g2'] })],
+      [G.bodyMove, at(2, 0)],
+      [G.bodyUp, at(2, 0)],
+    ], E);
+    assert.deepEqual(kinds(r), ['endMove', 'copy', 'commit', 'swallowClick']);
+    assert.deepEqual(r.effects[1], { kind: 'copy', groupId: 'g1', row: 2, startIndex: 0 });
+  }
+  // ④ 고른 묶음이면 묶음째 옮긴다(커밋은 옮겼을 때만 — 호출부가 정한다)
+  {
+    const r = run([
+      [G.placementDown, down('body', { bundle: ['g1', 'g2'] })],
+      [G.bodyMove, at(2, 0)],
+      [G.bodyUp, at(2, 0)],
+    ], E);
+    assert.deepEqual(r.effects, [
+      { kind: 'endMove' }, { kind: 'moveBundle', groupId: 'g1', row: 2, startIndex: 0, bundle: ['g1', 'g2'] }, { kind: 'swallowClick' },
+    ]);
+  }
+  // ⑤ 보드 밖에서 떼면 놓지 않고 끝낸다 · 끌다가 취소되면 끝내기만 한다
+  {
+    const out = run([[G.placementDown, down('body')], [G.bodyMove, at(3, 5)], [G.bodyUp, { x: 999, y: 20 }]], E);
+    assert.deepEqual(kinds(out), ['endMove', 'swallowClick']);
+    const cancel = run([[G.placementDown, down('body')], [G.bodyMove, at(3, 5)], [G.bodyCancel, null]], E);
+    assert.deepEqual(kinds(cancel), ['endMove']);
+    const idle = run([[G.placementDown, down('body')], [G.bodyCancel, null]], E);
+    assert.deepEqual(kinds(idle), []);
+  }
+});
+
+test('몸통 끌기: 손가락의 몸통 누름은 아무것도 시작하지 않는다 — 굴리면 화면 넘기기, 길게 눌러야 옮기기', () => {
+  const r = G.placementDown(G.initialGestureState(), down('body', { pointerType: 'touch' }));
+  assert.deepEqual(r.effects, [], '기본 동작(스크롤)을 막지 않는다');
+  assert.equal(r.state.body, null);
+  assert.deepEqual(G.bodyMove(r.state, at(5, 5), env()).effects, []);
 });
 
 // ── 포인터 종류로 전이 고르기 (RM-11) ────────────────────────────────────────
