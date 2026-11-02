@@ -289,3 +289,21 @@ test('전이 함수는 들어온 상태를 고치지 않는다(새 상태를 돌
   G.mouseMove(r.state, at(3, 3), QUICK);
   assert.equal(JSON.stringify(r.state), before);
 });
+
+// ── 행 라벨 메뉴 (RM-16, 2026-11-02) ─────────────────────────────────────────
+
+test('행 라벨 우클릭·길게 누르기: 몸통 행이면 그 행 번호로 마디 메뉴를 열고, 인트로 행·라벨 밖이면 아무 일도 없다', () => {
+  const s = G.initialGestureState();
+  const e = env();
+  const r = G.rowLabelPress(s, { row: 3, x: 12, y: 130 }, e);
+  assert.deepEqual(r.effects, [
+    { kind: 'preventDefault' },
+    { kind: 'openRowMenu', row: 3, clientX: 12, clientY: 130, first: false, last: false },
+  ]);
+  assert.equal(r.state, s, '상태는 바꾸지 않는다');
+  assert.equal(G.rowLabelPress(s, { row: 1, x: 0, y: 0 }, e).effects[1].first, true, '맨 위 행');
+  assert.equal(G.rowLabelPress(s, { row: 8, x: 0, y: 0 }, e).effects[1].last, true, '맨 아래 행');
+  for (const row of [0, 9, null, undefined, NaN, 2.5]) {
+    assert.deepEqual(G.rowLabelPress(s, { row, x: 0, y: 0 }, e).effects, [], `row=${row} — 브라우저 메뉴를 막지도 않는다`);
+  }
+});

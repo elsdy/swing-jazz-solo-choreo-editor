@@ -1558,6 +1558,12 @@
     }
     .routine-action-popup button:hover { background: rgba(99,102,241,0.25); }
     .routine-action-popup button.danger:hover { background: rgba(239,68,68,0.25); color: #f87171; }
+    .routine-action-popup button:disabled { opacity: 0.4; cursor: default; }
+    .routine-action-popup button:disabled:hover { background: transparent; }
+    /* 블록 팝업의 「몇 번째 카운트에서」(RM-16) — 2..N 단추를 가로로 늘어놓는다. */
+    .routine-action-popup .rap-counts { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
+    .routine-action-popup .rap-counts button { min-width: 32px; text-align: center; padding: 5px 6px; border: 1px solid rgba(99,102,241,0.35); }
+    .row-label { cursor: context-menu; }
     /* 루틴 색 견본판(RM-34) — 틀과 테마는 위 루틴 팝업 것을 그대로 쓰고, 여덟 색을 4×2 격자로 놓는다.
        색 자체는 domain/routines.js 의 ROUTINE_COLORS(데이터 색이라 토큰 밖 — RM-17)에서 온다. */
     .routine-color-popup .rcp-swatches { display: grid; grid-template-columns: repeat(4, 28px); gap: 6px; padding: 4px; }

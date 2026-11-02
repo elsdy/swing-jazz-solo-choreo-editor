@@ -29,9 +29,16 @@ import { placePlacementActionPopup } from '../domain/popupPlacement.js';
  * @property {{
  *   toggleSelection: (groupId: string) => any,
  *   removeGroup: (groupId: string) => any,
- *   openPicker: (groupId: string, clientX: number, clientY: number) => void
+ *   openPicker: (groupId: string, clientX: number, clientY: number) => void,
+ *   splitAtPlayhead?: (groupId: string) => any,
+ *   splitAtCount?: (groupId: string, countInGroup: number) => any,
+ *   mergePartner?: (groupId: string) => string|null,
+ *   mergeWithNeighbor?: (groupId: string) => any
  * }} commands
  *   ⚠ removeGroup 은 **삭제와 히스토리 커밋 둘 다**여야 한다(형제 팝업과 같은 규약).
+ *   ⚠ 분할 · 병합(2026-11-02 RM-16)도 커밋까지 끝낸 Dirty 를 돌려준다. splitAtPlayhead 는 재생 헤드가 이 블록
+ *     안에 없거나 박자가 없으면 **null** — 그러면 「몇 번째 카운트에서」 고르기로 떨어진다. mergePartner 가 null 이면
+ *     「옆과 합치기」 줄을 감춘다.
  * @property {(groupId: string) => boolean} isSelected 지금 고른 블록인가
  * @property {(dirty: any) => void} render presenter
  */
@@ -57,6 +64,7 @@ export function createPlacementActionPopup(deps) {
    * @param {number} clientY
    * @param {number} [count] 그룹 전체 카운트. 제목에만 쓴다
    */
+  // @complexity time=O(n log n) space=O(c) cc=11
   function open(placement, clientX, clientY, count) {
     close();
     const groupId = placement.groupId;
@@ -83,15 +91,50 @@ export function createPlacementActionPopup(deps) {
       return btn;
     };
 
+    /**
+     * 「몇 번째 카운트에서」 — 재생 헤드로 자를 수 없을 때 팝업 안에서 자리를 고른다(RM-16).
+     * 줄들을 비우고 2..count 단추를 늘어놓는다. 고르면 닫고 자른다.
+     */
+    // @complexity time=O(c) space=O(c) cc=2
+    const openCountChooser = () => {
+      [...popup.querySelectorAll('button')].forEach(b => b.remove());
+      title.textContent = '몇 번째 카운트에서';
+      const grid = document.createElement('div');
+      grid.className = CLS.rapCounts;
+      for (let n = 2; n <= count; n++) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = String(n);
+        btn.addEventListener('click', () => { close(); render(commands.splitAtCount(groupId, n)); });
+        grid.appendChild(btn);
+      }
+      popup.appendChild(grid);
+    };
+
     // ⚠ 차례가 뜻을 만든다: 가장 자주 하는 일이 맨 위, 되돌리기 어려운 일이 맨 아래다.
     row('✎ 동작 정하기', () => commands.openPicker(groupId, clientX, clientY));
     row(isSelected(groupId) ? '☑ 선택 풀기' : '☐ 선택하기', () => render(commands.toggleSelection(groupId)));
+    // 분할 · 병합(RM-16). 1카운트 블록은 자를 데가 없고, 루틴 블록은 이 팝업에 오지 않는다.
+    if (commands.splitAtCount && Number.isFinite(count) && count >= 2) {
+      const splitBtn = document.createElement('button');
+      splitBtn.type = 'button';
+      splitBtn.textContent = '✂ 여기서 자르기';
+      splitBtn.addEventListener('click', () => {
+        const dirty = commands.splitAtPlayhead ? commands.splitAtPlayhead(groupId) : null;
+        if (dirty) { close(); render(dirty); return; }
+        openCountChooser();   // 재생 헤드가 이 블록에 없거나 박자가 없다 — 팝업은 그대로 두고 카운트를 고른다
+      });
+      popup.appendChild(splitBtn);
+    }
+    if (commands.mergeWithNeighbor && commands.mergePartner && commands.mergePartner(groupId)) {
+      row('⊕ 옆과 합치기', () => render(commands.mergeWithNeighbor(groupId)));
+    }
     row('× 지우기', () => render(commands.removeGroup(groupId)), CLS.danger);
 
     document.body.appendChild(popup);
 
     const { left, top } = placePlacementActionPopup({
-      clientX, clientY, viewW: window.innerWidth, viewH: window.innerHeight,
+      clientX, clientY, viewW: window.innerWidth, viewH: window.innerHeight, height: popup.offsetHeight,
     });
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
