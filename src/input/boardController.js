@@ -43,6 +43,8 @@ import { groupCount } from '../domain/placements.js';
  * @param {Object} deps.quickPicker          ui/quickPicker 인스턴스(이 보드의 것)
  * @param {Object} [deps.routineActionPopup] ui/routineActionPopup (메인 보드만 쓴다)
  * @param {Object} [deps.placementActionPopup] ui/placementActionPopup (2026-09-21, 터치 폭에서만 뜬다)
+ * @param {Object} [deps.rowActionPopup]     ui/rowActionPopup (2026-11-02 RM-16, 행 라벨 우클릭 · 길게 누르기 — 메인 보드만)
+ * @param {Function} [deps.longPress]        adapters/browser.longPress — 행 라벨 길게 누르기에 쓴다(없으면 우클릭만)
  * @param {() => boolean} [deps.isTouchLayout] 손가락으로 쓰는 폭인가(기본 false).
  *   ⚠ 여기서 폭을 재지 않는다 — 브레이크포인트의 주인은 ui/layout 하나이고 app/main 이 이어 준다.
  * @param {Object} [deps.policy]             기본값 store.policy(boardId)
@@ -72,6 +74,8 @@ export function createBoardController(deps) {
     touchDrag,
     quickPicker,
     placementActionPopup = null,
+    rowActionPopup = null,
+    longPress = null,
     isTouchLayout = () => false,
     routineActionPopup = null,
     policy = store.policy(boardId),
@@ -151,6 +155,7 @@ export function createBoardController(deps) {
         case 'remove': apply(commands.removeGroup({ groupId: fx.groupId })); break;
         case 'commit': commit(); break;
         case 'openPicker': quickPicker.open(fx.row, fx.startIndex, fx.clientX, fx.clientY, fx.count); break;
+        case 'openRowMenu': rowActionPopup?.open({ row: fx.row, first: fx.first, last: fx.last }, fx.clientX, fx.clientY); break;
         default: throw new Error(`boardController: 모르는 할 일 ${fx.kind}`);
       }
     }
@@ -276,6 +281,25 @@ export function createBoardController(deps) {
     if (!placement) return;
     placementActionPopup.open(placement, e.clientX, e.clientY, groupCount(board().placements, groupId));
   });
+
+  // ── ④-c 행 라벨 우클릭 · 길게 누르기 — 마디 메뉴 (2026-11-02, RM-16) ─────────
+  // 블록의 우클릭(④-b)보다 **뒤에** 걸린다. 라벨은 블록이 아니라 서로 겹치지 않지만, 두 리스너가 같은 이벤트를
+  // 보므로 각자 자기 과녁(closest)만 본다. 판정(몸통 행인가)은 domain/boardGesture.rowLabelPress 가 한다.
+  // @complexity time=O(d) space=O(1) cc=2
+  const rowLabelEv = (target, x, y) => {
+    const label = target.closest(SEL.rowLabel);
+    return { row: label ? Number(label.dataset[DATA.row]) : null, x, y };
+  };
+  if (rowActionPopup) {
+    el.addEventListener('contextmenu', (e) => step(gesture.rowLabelPress, e, rowLabelEv(e.target, e.clientX, e.clientY)));
+    // 터치는 길게 누르기 — 동작 카드의 메뉴와 같은 0.48초 · 8px 규칙이다. preventDefault 는 없다(passive).
+    if (typeof longPress === 'function') {
+      longPress(el, {
+        delayMs: 480, moveTolerancePx: 8, resetOnStart: true,
+        onLongPress: ({ x, y, event }) => step(gesture.rowLabelPress, event, rowLabelEv(event.target, x, y)),
+      });
+    }
+  }
 
   // ── ⑤ dblclick — 마우스 삭제 (2467-2474) ───────────────────────────────────
   el.addEventListener('dblclick', (e) => {

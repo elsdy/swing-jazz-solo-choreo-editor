@@ -164,6 +164,18 @@ test('지금 저장소: 계기였던 옛 라벨과 없어진 단추는 붉어진
     ['동작 팔레트', '어떻게 채울까', '서버 보관 루트', '프로젝트 저장 / 불러오기', '☰']);
 });
 
+test('RM-16 새 라벨이 기능 설명서와 튜토리얼에 백틱으로 적혀 있고 화면 글자와 맞는다', () => {
+  const labels = ['여기서 자르기', '옆과 합치기', '위에 한 마디 끼우기', '이 마디 지우기', '이 마디 복제', '위로 옮기기', '아래로 옮기기'];
+  const docs = repoDocs();
+  for (const file of ['docs/FEATURES.md', 'docs/TUTORIAL.md']) {
+    const quotes = new Set(docQuotes(docs[file]).map(q => q.quote));
+    for (const label of labels) assert.ok(quotes.has(label), `${file} 에 \`${label}\` 인용이 없다`);
+  }
+  const { texts } = collectScreenTexts(repoScreenFiles());
+  for (const label of labels) assert.ok(texts.some(t => contains(t, normalize(label))), `화면 글자에 「${label}」 이 없다`);
+  assert.deepEqual(checkDocLabels(repoDocs(), repoScreenFiles()).misses.map(formatMiss), []);
+});
+
 // ── RM-26: 도움말 `?` 표와 문서 갈래 ───────────────────────────────────────────
 // 이름은 계획서(docs/roadmap/plans/RM-26.md)의 「요구 ↔ 시험」 표 6 · 7 · 8 과 같다.
 
