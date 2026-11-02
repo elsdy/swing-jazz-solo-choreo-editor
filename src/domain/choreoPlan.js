@@ -110,12 +110,25 @@ export function normalizePlan(plan, ctx) {
 }
 
 /**
+ * 행(마디)의 라벨. row 0 은 intro, 나머지는 `8x3` 꼴이다(RM-21 에서 cellLabel 에서 떼어 냈다 —
+ * 카운트 시트(domain/countSheet)가 한 줄의 머리로 **같은 글자**를 쓴다. 보드의 행 라벨(ui/boardView)도 같은 꼴이다).
+ * @param {number} row
+ * @param {number} cols
+ * @returns {string}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function rowLabel(row, cols) {
+  return row === 0 ? 'intro' : `${cols}x${row}`;
+}
+
+/**
  * 격자 위치를 사람이 읽는 라벨로. 미리보기 표가 쓴다. row 0 은 intro.
  * @param {number} row
  * @param {number} index
  * @param {number} cols
  * @returns {string}
  */
+// @complexity time=O(1) space=O(1) cc=1
 export function cellLabel(row, index, cols) {
-  return `${row === 0 ? 'intro' : `${cols}x${row}`} · ${index + 1}`;
+  return `${rowLabel(row, cols)} · ${index + 1}`;
 }

@@ -11,9 +11,12 @@
 //   되읽지 않는다 — 두 군데가 값을 들고 있으면 둘이 어긋나는 날이 온다.
 
 import { bindOutsideClose } from './popup.js';
+import { saveTargetState } from './statusBar.js';
+import { commandById } from '../domain/commands.js';
+import { fill, str } from '../domain/strings.js';
 
 /** 이름이 비었을 때 제목에 적는 말. 파일 이름이 아니라 **표시용**이다. */
-export const UNTITLED = '제목 없는 안무';
+export const UNTITLED = str('file.untitled');
 
 /**
  * @param {{
@@ -45,34 +48,35 @@ export function createFileMenu(options = {}) {
   function syncSaveNote() {
     if (!saveNote) return;
     if (!getSaveTarget) { saveNote.hidden = true; return; }
-    const { bound = '', kind = 'browser', blocked = false, reason = '' } = getSaveTarget() || {};
+    // 판정은 상태줄과 한 함수(ui/statusBar.saveTargetState)다 — 두 자리가 다른 말을 하지 않게.
+    const { state, bound } = saveTargetState(getSaveTarget());
     saveNote.hidden = false;
     // ⚠ **막힌 것을 가장 먼저 말한다.** 담기가 멈춘 채로 「담기고 있습니다」라고 적으면 그 거짓말이
     //   이 줄을 둔 뜻을 통째로 무너뜨린다(실측으로 그렇게 나왔다).
-    if (blocked) {
+    // 문장은 문자열 표(domain/strings, RM-10)에 있고, 인용하는 단추 글자 `{save}` 는 명령 등록부의 것이다 — 같은 글자를 두 곳에 적지 않는다.
+    const save = commandById('saveProject').button;
+    if (state === 'stop-conflict' || state === 'stop-future') {
       const what = bound || '작업 문서';
       saveNote.dataset.bound = 'stop';
-      saveNote.textContent = reason === 'conflict'
+      saveNote.textContent = state === 'stop-conflict'
         // 덮어쓰지 않기로 한 것이므로 사용자에게 고를 것을 준다 — 새로고침(저쪽) 또는 다른 이름(이쪽).
-        ? `⚠ 담기를 멈췄습니다 — \`${what}\` 이 다른 탭이나 기기에서 바뀌었습니다. 덮어쓰지 않았습니다. `
-          + '저쪽 것을 쓰려면 새로고침하고, 지금 화면의 것을 지키려면 이름을 바꿔 `프로젝트 저장` 하세요.'
-        : `⚠ 담기를 멈췄습니다 — \`${what}\` 가 더 새 판의 앱에서 담긴 것이라 열지 못했습니다. `
-          + '페이지를 새로고침하면 최신 앱으로 열립니다. 그 파일은 건드리지 않았습니다.';
+        ? fill('file.note.conflict', { what, save })
+        : fill('file.note.newer', { what });
       return;
     }
-    if (kind !== 'server') {
+    if (state === 'browser') {
       saveNote.dataset.bound = 'off';
-      saveNote.textContent = '이 브라우저에만 담기고 있습니다 — 보관 폴더에 쌓으려면 로컬 서버로 열고, 파일로 받으려면 아래 `프로젝트 저장`.';
+      saveNote.textContent = fill('file.note.browser', { save });
       return;
     }
-    if (bound) {
+    if (state === 'bound') {
       saveNote.dataset.bound = 'on';
       // 되돌릴 길을 같은 문장에 둔다(RM-25) — 「남습니다」만 적으면 폴더를 뒤지라는 말이 된다.
-      saveNote.textContent = `보관 폴더의 \`${bound}.json\` 에 자동으로 담기고 있습니다. 덮어쓰기 전 판은 왼쪽 \`파일\` 서랍의 \`지난 판\` 에서 되살립니다.`;
+      saveNote.textContent = fill('file.note.bound', { bound });
       return;
     }
     saveNote.dataset.bound = 'off';
-    saveNote.textContent = '아직 임시 칸(`_작업중`)에 담기고 있습니다 — `프로젝트 저장` 을 한 번 누르면 그 이름의 파일로 옮겨 갑니다.';
+    saveNote.textContent = fill('file.note.unbound', { save });
   }
 
   /** 입력칸의 값을 제목에 비춘다. 저장·불러오기·직접 입력이 모두 이 한 함수로 모인다. */

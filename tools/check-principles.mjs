@@ -524,6 +524,25 @@ export const RULES = [
       return out.filter(v => !excused(files[v.file], v.line, 'D-14'));
     },
   },
+  {
+    principle: 'U-15',
+    what: '팝업 자리 함수에 붙인 뒤 잰 높이를 주지 않는다 — 줄이 늘면 가정 높이가 낡아 창 밖으로 넘친다',
+    fix: '팝업을 body 에 붙인 뒤 `height: popup.offsetHeight` 를 함께 준다',
+    // @complexity time=O(n) space=O(n) cc=5
+    scan(files) {
+      const out = [];
+      for (const f of [...jsFiles(files, 'src/ui/'), ...jsFiles(files, 'src/input/')]) {
+        const code = blankJs(files[f]);
+        for (const m of code.matchAll(/placePlacementActionPopup\(\s*\{/g)) {
+          const open = m.index + m[0].length - 1;
+          if (topLevelKeys(code, open).has('height')) continue;
+          const line = lineAt(files[f], m.index);
+          if (!excused(files[f], line, 'U-15')) out.push({ file: f, line, snippet: 'placePlacementActionPopup({ … }) 에 height 가 없다' });
+        }
+      }
+      return out;
+    },
+  },
 ];
 
 /** @returns {Violation[]} */

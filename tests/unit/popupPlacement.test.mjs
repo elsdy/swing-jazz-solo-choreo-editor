@@ -54,9 +54,9 @@ test('블록 동작 팝업: 누른 자리 10px 아래에 띄운다', () => {
   assert.deepEqual(placePlacementActionPopup({ clientX: 100, clientY: 300, ...PHONE }), { left: 100, top: 310 });
 });
 
-test('블록 동작 팝업: 네 변을 모두 8 에서 막는다(가정 크기 160×132)', () => {
+test('블록 동작 팝업: 네 변을 모두 8 에서 막는다(가정 크기 160×152 — 넷째 줄 「⧉ 뒤에 복사」 뒤 RM-11 이 잰 값)', () => {
   assert.deepEqual(placePlacementActionPopup({ clientX: 385, clientY: 840, ...PHONE }),
-    { left: 390 - 160 - 8, top: 844 - 132 - 8 });
+    { left: 390 - 160 - 8, top: 844 - 152 - 8 });
   assert.deepEqual(placePlacementActionPopup({ clientX: 2, clientY: -50, ...PHONE }), { left: 8, top: 8 });
 });
 

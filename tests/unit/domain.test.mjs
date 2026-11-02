@@ -4654,7 +4654,8 @@ test('단축키 표: 바꿀 수 있는 것과 기본 글쇠', () => {
   assert.deepEqual(DEFAULT_HOTKEYS.play, ['Space']);
   // 명령 팔레트 · 단축키 일람(RM-09)도 바꿀 수 있다 — 글쇠를 비우면 그 화면은 버튼 · 팔레트로만 열린다.
   // 키보드 편집(RM-13)에서는 복제(Ctrl+D)와 저장(Ctrl+S)만 바꿀 수 있다 — 둘 다 브라우저가 따로 쓰는 글쇠다.
-  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play', 'duplicate', 'palette', 'shortcuts', 'saveProject']);
+  // 재생 헤드에서 자르기(RM-16, S)도 바꿀 수 있는 홑글쇠다.
+  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play', 'duplicate', 'splitAtPlayhead', 'palette', 'shortcuts', 'saveProject']);
   assert.equal(HOTKEY_ACTIONS.every(a => a.keys.length > 0), true, '글쇠 없는 동작을 두지 않는다');
   assert.equal(keysLabel(['B', 'K']), 'B · K');
   assert.equal(keysLabel([]), '없음');
@@ -4700,6 +4701,10 @@ test('commandForKey: 글쇠 → 명령, 글자를 치는 중에는 whileTyping �
   assert.equal(commandForKey(map, 'Cmd+K').id, 'palette');
   assert.equal(commandForKey(map, '?').id, 'shortcuts');
   assert.equal(commandForKey(map, '?', true), null, '이름에 ? 를 치는 사람이 있다');
+  // 재생 헤드에서 자르기(RM-16)는 홑글쇠 S — 이름칸에 글을 치는 중에는 먹지 않고, Ctrl+S(저장)와는 다른 글쇠다
+  assert.equal(commandForKey(map, 'S').id, 'splitAtPlayhead');
+  assert.equal(commandForKey(map, 'S', true), null, '이름에 s 를 치면 블록이 잘린다');
+  assert.equal(commandForKey(map, 'Ctrl+S', true).id, 'saveProject');
   assert.equal(normalizeKey({ key: '?', shift: true }), '?', 'Shift+/ 는 그대로 ? 다');
   // 사용자가 바꾼 글쇠를 따른다
   const moved = setKeys(map, 'play', ['P']);
