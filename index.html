@@ -620,7 +620,7 @@
     .placement.is-selected {
       outline: 2.5px solid rgba(var(--now-rgb), 0.9);
       outline-offset: -1px;
-      box-shadow: 0 0 10px rgba(var(--now-rgb), 0.4), 0 8px 18px rgba(var(--black-rgb), 0.2);
+      box-shadow: 0 8px 18px rgba(var(--black-rgb), 0.2);
       z-index: 4;
     }
     /* 재생 위치가 지나가는 블록. ⚠ 렌더가 아니라 ui/playhead 의 rAF 루프가 붙였다 뗀다(채널 B).
@@ -634,7 +634,7 @@
     .placement.is-resizing {
       outline: 2px solid rgba(var(--focus-rgb), 0.85);
       outline-offset: -1px;
-      box-shadow: 0 0 12px rgba(var(--focus-rgb), 0.45), 0 8px 18px rgba(var(--black-rgb), 0.2);
+      box-shadow: 0 8px 18px rgba(var(--black-rgb), 0.2);
     }
     /* 루틴 블록의 손잡이 규칙(아래 「루틴 배치 블록」)과 명시도가 같아질 수 있어 하나 더 높인다 — !important 대신. */
     .placement.is-resizing .resize-handle.resize-handle {
@@ -2520,6 +2520,12 @@
           ② `:root[data-theme] …`              표면 규칙. 세 테마가 **같은 한 벌**을 쓴다
           테마를 하나 더하는 일이 ①에 한 블록을 더하는 것으로 끝나야 한다. 규칙을 테마마다 베끼면
           네 번째 테마에서 반드시 한 곳을 빠뜨린다.
+       ⚠⚠ **테마는 분위기다(RM-17, 2026-11-02).** ②는 바탕 · 테두리 · 글자의 **색**만 바꾼다 —
+          모서리 · 여백 · 크기 · 굴대 · 누름 효과처럼 **모양**을 바꾸는 규칙은 두지 않는다. 모양은
+          기본 테마와 한 벌이다(유일한 예외: 작업 차례의 길 — 아래 그 절의 머리말).
+       ⚠⚠ **빛(발광)은 세 자리에만** — 지금 자리(재생 위치 · 지금 단계 · 지금 누를 것) · 듣는 중 ·
+          경고(경고 · 위험 · 할 일 배지). 그 밖에 빛을 얹으면 정말 봐야 할 자리가 묻힌다.
+          떠 있는 창의 깊이는 빛이 아니라 `--shadow` 로 말한다.
        ⚠ 덮는 것은 **표면(바탕·테두리·빛)** 이다. **뜻이 있는 색은 건드리지 않는다** —
          안무 블록의 카테고리 색, 팔레트의 색 점, 위험(빨강)·경고(주황)가 그렇다. 그 색들은
          장식이 아니라 정보라서, 테마가 바꾸면 읽던 뜻이 달라진다. 빛만 얹는다.
@@ -2656,7 +2662,7 @@
       color: var(--t-dim);
     }
     :root[data-theme] .bpm-badge .bpm-badge-num { color: var(--t-ink); }
-    :root[data-theme] .bpm-badge:hover { border-color: rgba(var(--t-glow), 0.6); box-shadow: 0 0 14px rgba(var(--t-glow), 0.22); }
+    :root[data-theme] .bpm-badge:hover { border-color: rgba(var(--t-glow), 0.6); }
     :root[data-theme] .bpm-badge-wrap[data-drift="fast"] .bpm-badge,
     :root[data-theme] .bpm-badge-wrap[data-drift="slow"] .bpm-badge {
       border-color: rgba(var(--t-hot), 0.6);
@@ -2677,10 +2683,7 @@
       border: 1px solid rgba(var(--t-glow), 0.22);
       color: var(--t-ink);
     }
-    :root[data-theme] button:hover {
-      border-color: rgba(var(--t-glow), 0.6);
-      box-shadow: 0 0 14px rgba(var(--t-glow), 0.22);
-    }
+    :root[data-theme] button:hover { border-color: rgba(var(--t-glow), 0.6); }
     :root[data-theme] button.ghost {
       background: rgba(var(--t-glow), 0.05);
       border-color: rgba(var(--t-glow), 0.26);
@@ -2689,14 +2692,13 @@
       background: var(--t-primary);
       border-color: rgba(var(--t-glow), 0.5);
       color: var(--t-primary-ink);
-      box-shadow: 0 0 18px rgba(var(--t-glow), 0.35);
     }
     :root[data-theme] button.ghost.accent {
       background: rgba(var(--t-glow), 0.16);
       border-color: rgba(var(--t-glow), 0.45);
       color: var(--t-ink);
     }
-    /* ⚠ 경고(주황)·위험(빨강)은 **뜻이 있는 색**이라 그대로 둔다. 빛만 얹는다. */
+    /* ⚠ 경고(주황)·위험(빨강)은 **뜻이 있는 색**이라 그대로 둔다. 빛만 얹는다 — 빛의 세 자리 중 「경고」. */
     :root[data-theme] button.warn { box-shadow: 0 0 18px rgba(var(--warn-rgb), 0.35); }
     :root[data-theme] button.danger { box-shadow: 0 0 18px rgba(var(--danger-rgb), 0.3); }
     :root[data-theme] button:disabled { box-shadow: none; }
@@ -2733,10 +2735,7 @@
       border-color: rgba(var(--t-glow), 0.16);
     }
     :root[data-theme] .move-card:hover,
-    :root[data-theme] .routine-card:hover {
-      border-color: rgba(var(--t-glow), 0.45);
-      box-shadow: 0 0 16px rgba(var(--t-glow), 0.14);
-    }
+    :root[data-theme] .routine-card:hover { border-color: rgba(var(--t-glow), 0.45); }
     :root[data-theme] .size-pill { border-color: rgba(var(--t-glow), 0.22); }
     :root[data-theme] .vstep > summary { color: var(--t-dim); }
 
@@ -2763,10 +2762,11 @@
         var(--t-cell);
       background-size: var(--cellW) 100%, auto;
     }
-    /* 고른 블록은 색이 아니라 **빛**으로 말한다. */
+    /* 고른 블록은 색이 아니라 **테두리 고리**로 말한다(빛은 지금 자리의 몫이다). */
     :root[data-theme] .placement.is-selected {
-      box-shadow: 0 0 0 2px rgba(var(--t-glow), 0.9), 0 0 22px rgba(var(--t-glow), 0.45);
+      box-shadow: 0 0 0 2px rgba(var(--t-glow), 0.9), var(--shadow-sm);
     }
+    /* 재생 위치 — 빛의 세 자리 중 「지금 자리」. */
     :root[data-theme] .playhead { box-shadow: 0 0 12px rgba(var(--t-glow), 0.9); }
     :root[data-theme] .board-empty { border-color: rgba(var(--t-glow), 0.3); }
 
@@ -2776,25 +2776,18 @@
     :root[data-theme] .context-menu {
       background: var(--t-pop);
       border-color: rgba(var(--t-glow), 0.4);
-      box-shadow: 0 18px 46px rgba(var(--black-rgb), 0.35), 0 0 40px rgba(var(--t-glow), 0.12);
+      box-shadow: var(--shadow);
     }
     :root[data-theme] .quick-popup-item:hover,
     :root[data-theme] .routine-action-popup button:hover {
       background: rgba(var(--t-glow), 0.18);
     }
 
-    /* 굴대 */
-    :root[data-theme] ::-webkit-scrollbar { width: 10px; height: 10px; }
-    :root[data-theme] ::-webkit-scrollbar-track { background: rgba(var(--t-glow), 0.06); }
-    :root[data-theme] ::-webkit-scrollbar-thumb {
-      background: linear-gradient(180deg, rgba(var(--t-glow), 0.45), rgba(var(--t-glow), 0.2));
-      border-radius: var(--r-pill);
-    }
-    :root[data-theme] ::-webkit-scrollbar-thumb:hover { background: rgba(var(--t-glow), 0.7); }
-
     /* ── 작업 차례 = **길** ──────────────────────────────────────────────────
        사용자가 건네준 `boot-flow.html` 의 길을 이 띠 크기로 옮겼다(2026-09-21).
        버튼은 마디 자리에 **절대 배치**로 앉고, 그 뒤로 SVG 가 길을 그린다.
+       ⚠ 「테마는 모양을 바꾸지 않는다」(RM-17)의 **하나뿐인 예외**다. 사용자가 건네준 그림이라
+         걷을지는 사람이 정한다 — 그때까지 두되, 빛은 지금 마디에만 남긴다(길 자체의 빛은 그림의 몫).
 
        ⚠ 좌표는 ui/videoPanel 이 domain/flowTrack 에서 받아 인라인으로 쓴다. 여기 CSS 는
          **색과 빛만** 정한다 — 자리를 두 곳에서 정하면 창 크기가 바뀔 때 서로 어긋난다.
@@ -2910,9 +2903,9 @@
     :root[data-theme] .flow-step[data-state="done"] .flow-icon {
       color: rgba(var(--t-done), 1);
       border-color: rgba(var(--t-done), 0.75);
-      box-shadow: 0 0 0 4px var(--bg), 0 0 14px rgba(var(--t-done), 0.45);
+      box-shadow: 0 0 0 4px var(--bg);
     }
-    /* 지금 있는 자리 — 타오른다. */
+    /* 지금 있는 자리 — 타오른다. 빛의 세 자리 중 「지금 자리」. */
     :root[data-theme] .flow-step[data-state="now"] { color: rgba(var(--t-hot), 1); }
     :root[data-theme] .flow-step[data-state="now"] .flow-icon {
       color: var(--t-primary-ink);
@@ -2928,11 +2921,11 @@
     :root[data-theme] .flow-step[data-next="1"] .flow-icon {
       border-style: dashed;
       border-color: rgba(var(--t-glow), 0.85);
-      box-shadow: 0 0 0 4px var(--bg), 0 0 12px rgba(var(--t-glow), 0.35);
+      box-shadow: 0 0 0 4px var(--bg);
     }
     :root[data-theme] .flow-step:hover .flow-icon {
       border-color: rgba(var(--t-glow), 0.9);
-      box-shadow: 0 0 0 4px var(--bg), 0 0 18px rgba(var(--t-glow), 0.5);
+      box-shadow: 0 0 0 4px var(--bg);
     }
     /* ⚠ 화살표는 **길이 대신한다.** 지우지 않고 감춘다 — 기본 테마에서는 그것이 유일한 이음새다. */
     :root[data-theme] .flow-arrow { display: none; }
@@ -2963,7 +2956,7 @@
        ⚠ 블록의 **배경**은 그대로다(카테고리의 뜻). 바꾸는 것은 고름의 표시뿐이다. */
     :root[data-theme="candy"] .placement.is-selected {
       outline-color: rgba(var(--t-glow), 0.95);
-      box-shadow: 0 0 0 2px rgba(var(--t-glow), 0.5), 0 0 18px rgba(var(--t-glow), 0.35);
+      box-shadow: 0 0 0 2px rgba(var(--t-glow), 0.5), var(--shadow-sm);
     }
     :root[data-theme="candy"] .track[data-layers]::after { border-color: rgba(var(--t-glow), 0.25); }
     :root[data-theme="candy"] .video-panel {
@@ -2977,65 +2970,6 @@
       color: var(--t-dim);
     }
 
-    /* ── 조작 묶음을 **상자**로 (2026-09-21) ──────────────────────────────────
-       펼친 단계 아래에 버튼이 줄줄이 흩어져 있어 어디까지가 한 묶음인지 읽히지 않았다.
-       묶음(`.video-field`)마다 테두리를 두르고 모서리에 꺾쇠를 찍는다 — 계기판의 조작반처럼.
-
-       ⚠ **띠일 때만**이다. 오른쪽 세로 칸으로 돌아가면 폭이 좁아 상자가 겹겹이 쌓인 것처럼 보인다.
-       ⚠ 꺾쇠는 `::before/::after` 로 **왼쪽 위·오른쪽 아래** 두 곳만 찍는다. 넷을 다 찍으면
-         상자가 아니라 액자가 되어 안의 버튼보다 테두리가 먼저 읽힌다.
-       ⚠ 색은 토큰이다 — 세 테마가 같은 규칙을 쓰고 색만 갈린다. */
-    @media (min-width: 1041px) {
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field {
-        position: relative;
-        padding: 9px 12px;
-        border: 1px solid rgba(var(--t-glow), 0.20);
-        border-radius: var(--r-2);
-        background: linear-gradient(180deg, rgba(var(--t-glow), 0.06), rgba(var(--t-glow), 0.015));
-        box-shadow: inset 0 1px 0 rgba(var(--white-rgb), 0.05);
-      }
-      /* 꺾쇠 — 두 변만 그어 모서리를 집는다. */
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field::before,
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field::after {
-        content: '';
-        position: absolute;
-        width: 9px;
-        height: 9px;
-        pointer-events: none;
-        opacity: 0.85;
-      }
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field::before {
-        left: -1px;
-        top: -1px;
-        border-left: 2px solid rgba(var(--t-glow), 0.85);
-        border-top: 2px solid rgba(var(--t-glow), 0.85);
-        border-top-left-radius: 10px;
-      }
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field::after {
-        right: -1px;
-        bottom: -1px;
-        border-right: 2px solid rgba(var(--t-glow), 0.85);
-        border-bottom: 2px solid rgba(var(--t-glow), 0.85);
-        border-bottom-right-radius: 10px;
-      }
-      /* 상자 안의 버튼은 모서리를 덜 둥글게 — 상자가 둥글고 알맹이가 각져야 층이 읽힌다. */
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button {
-        border-radius: 7px;
-      }
-      /* 할 일 칸도 같은 상자다(점선 구분선 대신). */
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .step-todo {
-        margin-top: 10px;
-        padding: 9px 12px;
-        border: 1px solid rgba(var(--t-glow), 0.20);
-        border-radius: var(--r-2);
-        background: linear-gradient(180deg, rgba(var(--t-glow), 0.05), transparent);
-      }
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .step-todo-row {
-        background: rgba(var(--t-glow), 0.07);
-        border: 1px solid rgba(var(--t-glow), 0.12);
-      }
-    }
-
     /* ── 누를 것이 스스로 부른다 (2026-09-21) ─────────────────────────────────
        "지금 무엇을 누르나"를 색으로만 말하면 읽어야 안다. **숨 쉬는 빛**은 읽지 않아도 눈이 먼저
        간다 — 그 순간의 주 동작 하나만 그렇게 두고 나머지는 가만히 있는다.
@@ -3044,7 +2978,7 @@
        ⚠ 숨은 `box-shadow` 로만 쉰다. 크기·자리를 건드리면 옆 버튼이 밀리고, 손이 겨눈 과녁이
          움직인다(이번 작업 내내 지킨 선).
        ⚠ 부르는 색은 `--t-hot` 이다 — 길에서 "지금 여기"를 태우는 그 색이라, 화면의 두 자리가
-         같은 뜻으로 읽힌다.
+         같은 뜻으로 읽힌다. 빛의 세 자리 중 「지금 자리」(지금 누를 것)다.
        ⚠ 움직임은 `prefers-reduced-motion` 에서 꺼진다. 빛은 남는다. */
     @media (min-width: 1041px) {
       :root[data-theme] body[data-videoband="on"] .thumb-bar button[data-main="1"]:not(:disabled),
@@ -3053,39 +2987,6 @@
         animation: btnInvite 2.6s ease-in-out infinite;
       }
 
-      /* 눌린 순간 — 가라앉고, 안쪽에서 빛이 한 번 번진다.
-         ⚠ `.flow-step` 은 뺀다. 그 버튼은 `::after` 를 할 일 배지로 이미 쓰고 있고, 마디 밖으로
-           나가는 배지라 `overflow: hidden` 이 그것을 잘라 먹는다. */
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step) {
-        position: relative;
-        overflow: hidden;
-        transition: transform .12s ease, background-color .12s ease, border-color .12s ease;
-      }
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step)::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        pointer-events: none;
-        background: radial-gradient(circle at center, rgba(var(--white-rgb), 0.4), rgba(var(--white-rgb), 0.05) 55%, transparent 70%);
-        opacity: 0;
-        transform: scale(0.55);
-        /* 놓을 때는 **천천히** 사라진다 — 번짐이 눈에 남아야 "눌렸다"가 읽힌다. */
-        transition: opacity .38s ease, transform .38s ease;
-      }
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step):active::after {
-        opacity: 1;
-        transform: scale(1);
-        transition-duration: .05s;   /* 누를 때는 즉시 */
-      }
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step):not(:disabled):active {
-        transform: translateY(1px) scale(0.985);
-      }
-      /* 길의 마디도 같은 반응을 준다(여기는 `::after` 를 못 쓰므로 크기만). */
-      :root[data-theme] body[data-videoband="on"] .flow-step:active .flow-icon {
-        transform: scale(0.92);
-        transition-duration: .05s;
-      }
     }
     @keyframes btnInvite {
       0%, 100% { box-shadow: 0 0 0 0 rgba(var(--t-hot), 0), 0 0 14px rgba(var(--t-hot), 0.25); }
@@ -3098,13 +2999,12 @@
         animation: none;
         box-shadow: 0 0 0 3px rgba(var(--t-hot), 0.12), 0 0 18px rgba(var(--t-hot), 0.4);
       }
-      :root[data-theme] body[data-videoband="on"] button:not(.flow-step)::after { transition: none; }
     }
 
     /* 영상 띠와 조작 줄도 같은 어휘로. */
     :root[data-theme] body[data-videoband="on"] .video-frame {
       border-color: rgba(var(--t-glow), 0.5);
-      box-shadow: 0 0 0 1px rgba(var(--t-glow), 0.25), 0 18px 50px rgba(var(--black-rgb), 0.45), 0 0 60px rgba(var(--t-glow), 0.10);
+      box-shadow: 0 0 0 1px rgba(var(--t-glow), 0.25), var(--shadow);
     }
     :root[data-theme] body[data-videoband="on"] .thumb-bar {
       background: var(--t-pop);
@@ -3422,7 +3322,7 @@
     :root[data-theme] .command-palette,
     :root[data-theme] .shortcut-sheet {
       background: var(--t-pop);
-      box-shadow: 0 18px 46px rgba(var(--black-rgb), 0.35), 0 0 40px rgba(var(--t-glow), 0.12);
+      box-shadow: var(--shadow);
     }
     :root[data-theme] .command-palette-item.is-on { background: rgba(var(--t-glow), 0.16); }
 
@@ -3430,7 +3330,7 @@
     :root[data-theme] .notice-modal,
     :root[data-theme] .inline-prompt {
       background: var(--t-pop);
-      box-shadow: 0 18px 46px rgba(var(--black-rgb), 0.35), 0 0 40px rgba(var(--t-glow), 0.12);
+      box-shadow: var(--shadow);
     }
     :root[data-theme] .inline-prompt { border-color: rgba(var(--t-glow), 0.55); }
     :root[data-theme] .toast-status { border-left-color: rgb(var(--t-glow)); }
