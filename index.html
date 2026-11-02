@@ -592,6 +592,61 @@
       color: var(--chorusColor, var(--muted));
       background: rgba(var(--muted-rgb), 0.12);
     }
+
+    /* ── 파트(섹션) 표시(2026-11-03, RM-23) ──
+       ui/boardView.syncParts 가 행에 붙인 data-part* 와 --partColor 만 읽는다. 색은 domain/parts.PART_COLORS(데이터 색 —
+       루틴 색처럼 토큰 밖)이고 여기는 **어디에 칠할지**만 안다. 파트가 있는 마디에는 프레이즈 표시가 붙지 않는다(파트가 이긴다).
+       ⚠ 프레이즈와 같은 까닭으로 테두리 두께를 바꾸지 않는다 — 굵기는 inset box-shadow 로 낸다.
+       ⚠ 접힌 행은 지우지 않고 숨긴다(data-part-hidden) — 행 번호 · 자가치유 가드(rowRefs.size)가 그대로다. */
+    .board-row[data-part] .track { border-color: var(--partColor); }
+    .board-row[data-part] .row-label { box-shadow: inset 5px 0 0 0 var(--partColor); }
+    .board-row[data-part-start] .row-label { box-shadow: inset 5px 0 0 0 var(--partColor), inset 0 3px 0 0 var(--partColor); }
+    .board-row[data-part-start] .track { box-shadow: inset 0 3px 0 0 var(--partColor); }
+    /* 파트가 바뀌는 자리에 숨을 준다(코러스와 같은 결). */
+    .board-row[data-part-start] { margin-top: 10px; }
+    .board-row[data-part-hidden] { display: none; }
+    /* 첫 마디의 파트 이름 꼬리표 — 자식이 아니라 ::after(renderRow 가 label.textContent 를 덮어쓴다). */
+    .row-label[data-part-tag] { flex-direction: column; gap: 3px; }
+    .row-label[data-part-tag]::after {
+      content: attr(data-part-tag);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--fs-1);
+      font-weight: 800;
+      line-height: 1.5;
+      padding: 0 7px;
+      border-radius: var(--r-pill);
+      color: var(--bg);
+      background: var(--partColor);
+    }
+    /* 접힌 파트 — 첫 마디의 트랙이 한 줄 요약(이름 · 마디 수 · 첫 동작)으로 덮인다. 블록은 그 밑에 그대로 있다.
+       덮인 트랙은 누름을 받지 않는다(안 보이는 블록을 끌거나 지우지 않게). */
+    .board-row[data-part-folded] .track { pointer-events: none; }
+    .track[data-part-summary]::before {
+      content: '▸ ' attr(data-part-summary);
+      position: absolute;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      padding: 0 var(--sp-3);
+      font-size: var(--fs-2);
+      font-weight: 700;
+      color: var(--text);
+      background: var(--surface);
+      box-shadow: inset 0 0 0 2px var(--partColor);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* 범위 고르기 중인 마디 이름(ui/partView) — 팝업이 닫히면 지워진다. */
+    .row-label[data-part-pick] {
+      background: rgba(var(--focus-rgb), 0.22);
+      outline: 2px dashed rgba(var(--focus-rgb), 0.7);
+      outline-offset: -2px;
+    }
     .preview-block {
       position: absolute;
       top: 6px;
@@ -1657,6 +1712,21 @@
     .routine-action-popup .rap-counts { display: flex; flex-wrap: wrap; gap: var(--sp-1); max-width: 220px; }
     .routine-action-popup .rap-counts button { min-width: 32px; text-align: center; padding: 5px 6px; border: 1px solid rgba(var(--routine-rgb), 0.35); }
     .row-label { cursor: context-menu; }
+    /* 메인 보드의 마디 이름은 누르면 파트 범위 고르기 · 접고 펴기다(RM-23). 우클릭 메뉴는 그대로. */
+    .main-board-area .row-label { cursor: pointer; }
+    /* 파트 팝업(RM-23) — 틀은 위 루틴 팝업 것을 그대로 쓰고, 이름 · 끝 마디 · 색 칸만 더한다. */
+    .routine-action-popup.part-popup { min-width: 220px; }
+    .part-popup .part-popup-row {
+      display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1);
+      padding: 3px 6px; font-size: var(--fs-2); color: var(--muted);
+    }
+    .part-popup .part-popup-row input { flex: 1; min-width: 0; font-size: var(--fs-2); }
+    .part-popup .part-popup-row input[type="number"] { max-width: 72px; }
+    .routine-action-popup.part-popup .part-swatch {
+      width: 22px; height: 22px; padding: 0; border-radius: var(--r-1);
+      border: 2px solid transparent; box-shadow: var(--shadow-sm);
+    }
+    .routine-action-popup.part-popup .part-swatch.is-on { border-color: var(--text); }
     /* 루틴 색 견본판(RM-34) — 틀과 테마는 위 루틴 팝업 것을 그대로 쓰고, 여덟 색을 4×2 격자로 놓는다.
        색 자체는 domain/routines.js 의 ROUTINE_COLORS(데이터 색이라 토큰 밖 — RM-17)에서 온다. */
     .routine-color-popup .rcp-swatches { display: grid; grid-template-columns: repeat(4, 28px); gap: 6px; padding: var(--sp-1); }

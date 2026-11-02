@@ -72,6 +72,7 @@ import {
   isEmptyMedia, normalizeMedia, normalizeMediaSource, serializeMedia
 } from '../../src/domain/project/media.js';
 import { buildProjectFile } from '../../src/domain/project/serialize.js';
+import { normalizeParts } from '../../src/domain/parts.js';
 import { createYouTubePlayer, YT_CAPABILITIES } from '../../src/adapters/media/youtubePlayer.js';
 import { mediaSourceFromUrl, pickPlayer, pickPlayerKind, toMediaSource } from '../../src/adapters/media/pickPlayer.js';
 import { createFilePlayer, FILE_CAPABILITIES } from '../../src/adapters/media/filePlayer.js';
@@ -554,7 +555,7 @@ test('schema: UNDO_FIELDS 에 links·media·phrasing·stepTodos 가 있고 ROUTI
   assert.deepEqual([...UNDO_FIELDS].sort(), [...DOC_FIELDS].sort());
   // 키 순서 = 스냅샷 JSON 바이트 순서. 앞 6개는 원본 리터럴 순서 그대로이고 신설은 꼬리에 붙는다.
   assert.deepEqual([...UNDO_FIELDS],
-    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing', 'stepTodos']);
+    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing', 'stepTodos', 'parts']);
   assert.deepEqual([...ROUTINE_UNDO_FIELDS], ['rows', 'cols', 'placements']);
 });
 
@@ -2263,6 +2264,29 @@ test('media: 빈 블록은 저장 바이트를 한 글자도 늘리지 않는다
   const guarded = buildProjectFile(source, { passthrough: { media: { tempo: { bpm: 999 } }, 미래필드: 1 } });
   assert.equal('media' in guarded, false);
   assert.equal(guarded.미래필드, 1, '알 수 없는 키는 여전히 왕복해야 한다');
+});
+
+test('parts: 한 번도 안 쓴 문서의 저장 파일에는 parts 키가 없고 바이트가 예전과 같다', () => {
+  // media 시험과 같은 꼴 — parts 를 뺀 source 와 빈 parts 를 더한 source 가 글자 하나 다르지 않아야 한다(RM-23).
+  const source = {
+    rows: 8, cols: 8, categories: {}, moveLibrary: [], placements: [], routines: [],
+    youtubeUrl: '', youtubeTitle: '', clickupUrl: '', customLinks: []
+  };
+  const before = JSON.stringify(buildProjectFile(source, { fileName: 'a', savedAt: 'S' }));
+  const withEmpty = JSON.stringify(buildProjectFile({ ...source, parts: normalizeParts(null) }, { fileName: 'a', savedAt: 'S' }));
+  assert.equal(withEmpty, before, '빈 parts 가 파일에 새어 나갔다 — 저장할 때 늘 `parts: []` 를 내보내면 여기가 붉다');
+  assert.ok(!before.includes('"parts"'));
+
+  // parts 가 없는 옛 파일을 열었다 다시 저장해도 parts 키가 생기지 않는다(등록표의 optional 이 빠지면 여기가 잡는다)
+  const opened = normalizeProject(V1_FILE, { ids: { uid: () => 'x' }, defaultCategories: DEFAULT_CATEGORIES });
+  assert.deepEqual(opened.parts, []);
+  const resaved = buildProjectFile({ ...V1_FILE, ...opened }, { fileName: 'demo', savedAt: 'S' });
+  assert.equal('parts' in resaved, false, '옛 파일을 열었다 저장하자 parts 키가 생겼다');
+
+  // 값이 있으면 맨 뒤에 붙는다(키 순서 = 바이트 순서)
+  const filled = buildProjectFile({ ...source, parts: [{ name: 'A', startRow: 1, endRow: 2, color: '#38bdf8' }] }, { fileName: 'a', savedAt: 'S' });
+  assert.deepEqual(Object.keys(filled).slice(-1), ['parts']);
+  assert.deepEqual(filled.parts, [{ name: 'A', startRow: 1, endRow: 2, color: '#38bdf8' }]);
 });
 
 test('media: normalizeMedia 는 손상된 입력을 기본값으로 접고 isEmptyMedia 가 그것을 알아본다', () => {

@@ -2062,38 +2062,279 @@
             "note": "길의 활은 그대로 살지만, 영상 띠가 그만큼 길어져 779px 창에서 안무표의 몫이 줄어든다(BOARD_MIN_H 와 부딪칠 수 있다)"
           }
         ]
+      },
+      {
+        "id": "Q104",
+        "title": "RM-60 — 새 꼴을 D-5 에 넣을까, 다른 번호로 따로 둘까",
+        "answer": "D-5 에 넣는다 (2026-11-03)",
+        "options": [
+          {
+            "label": "D-5 에 넣는다",
+            "note": "추천 — 「0 이 뜻을 갖는 자리에서 Number 변환이 값을 바꾼다」는 같은 뿌리라 원칙 목록 · 규칙 이름표 시험(`RULES.map` 아홉)이 그대로다. 예외 표식도 `원칙-예외(D-5)` 하나로 같다"
+          },
+          {
+            "label": "새 번호(D-n)로 따로 둔다",
+            "note": "규칙 이름표 시험 · CLAUDE.md · PRINCIPLES.md 머리의 원칙 목록 세 곳을 함께 고친다. 걸린 자리에서 원칙 이름이 더 정확하게 보인다"
+          }
+        ]
+      },
+      {
+        "id": "Q105",
+        "title": "RM-60 — boundaryCount 가 숫자 글(예: '4.5')을 계속 받아 줄까",
+        "answer": "수만 받는다 (2026-11-03)",
+        "options": [
+          {
+            "label": "수만 받는다",
+            "note": "추천 — 호출부 둘이 모두 수를 넘기므로 동작은 바뀌지 않고, null · 빈 글 · 숫자 글을 한꺼번에 막는다. 검사기 규칙의 고치는 법도 이 꼴 한 가지가 된다"
+          },
+          {
+            "label": "숫자 글은 받고 null · 빈 글만 막는다",
+            "note": "`sec != null && sec !== '' && Number.isFinite(Number(sec))` 꼴이 된다. 바깥 입력이 글로 올 길이 생겨도 견디지만, 거름이 길어지고 규칙의 고치는 법이 두 갈래로 갈린다"
+          }
+        ]
+      },
+      {
+        "id": "Q106",
+        "title": "RM-45 — 인쇄 종이를 A4로 못박을까 — 지금은 브라우저 인쇄 설정(Letter 등)을 따른다",
+        "answer": "@page 로 A4 · 여백 10mm 를 못박는다 (2026-11-03)",
+        "options": [
+          {
+            "label": "@page 로 A4 · 여백 10mm 를 못박는다",
+            "note": "추천 — 칸 너비 식이 190mm 라는 정해진 값을 써서 Chrome · Safari가 똑같이 찍는다. 사용자가 Letter를 골라도 A4 꼴로 찍힌다"
+          },
+          {
+            "label": "종이는 브라우저에 맡기고 100vw 로 계산한다",
+            "note": "Letter · A3도 따라가지만, WebKit은 인쇄 미디어를 화면 폭으로 재므로(RM-47에서 본 것) 100vw가 화면 폭이 되어 Safari에서는 그대로 깨질 수 있다"
+          }
+        ]
+      },
+      {
+        "id": "Q107",
+        "title": "RM-45 — 비고 열이 넓으면(--noteW 최대 280px 남짓) 인쇄에서 칸이 좁아진다 — 인쇄 비고 폭을 줄일까",
+        "answer": "인쇄에서는 비고 열을 종이의 25% 안으로 줄인다 (2026-11-03)",
+        "options": [
+          {
+            "label": "인쇄에서는 비고 열을 종이의 25% 안으로 줄인다",
+            "note": "추천 — 카운트 칸이 늘 읽을 만한 너비를 지킨다. 긴 비고는 줄을 바꿔 행이 높아진다"
+          },
+          {
+            "label": "화면에서 잰 비고 폭을 그대로 쓴다",
+            "note": "고칠 것이 적지만, 비고가 길면 8칸이 종이의 절반 남짓으로 눌린다. 비고를 아예 뺄지는 RM-47이 정한다"
+          }
+        ]
+      },
+      {
+        "id": "Q108",
+        "title": "RM-54 — 폰 폭에서 ? 를 어디에 둘까 — 지금은 첫 줄 단추 7곳을 덮는다(index.html:469 의 음수 여백 탓)",
+        "answer": "첫 조작 줄의 오른쪽에 ? 자리를 비운다(모든 폭) (2026-11-03)",
+        "options": [
+          {
+            "label": "첫 조작 줄의 오른쪽에 ? 자리를 비운다(모든 폭)",
+            "note": "추천 — ? 는 어느 폭에서나 오른쪽 위에 있고 본문은 밀리지 않는다. 첫 줄만 오른쪽 약 24px 이 줄어 폰에서 단추가 조금 일찍 다음 줄로 넘어간다. 겹침의 원인(첫 줄이 ? 밑으로 파고듦)을 직접 막으므로 앞으로 단추가 늘어도 겹치지 않는다."
+          },
+          {
+            "label": "좁은 폭(≤720px)에서만 음수 여백을 끈다",
+            "note": "설명에 적힌 길이고 margin-bottom:0 으로 겹침 0 을 이미 잰 적이 있다. 대신 폰에서는 ? 가 한 줄을 따로 차지해 본문이 18px 내려간다. 600~720px 에서도 그렇게 된다. 721px 넘는 폭에서 단추가 늘면 다시 겹칠 수 있다."
+          },
+          {
+            "label": "? 를 도구 탭 줄(도구 머리)로 옮긴다",
+            "note": "본문과 영영 겹치지 않는다. 그러나 탭 줄은 ui/videoPanel 이 그리므로 열린 도구에 따라 ? 를 바꿔 끼우는 코드와 시험이 늘어 크기가 M 이 되고, RM-26 이 정한 「도구 안의 ?」 자리가 바뀐다."
+          }
+        ]
+      },
+      {
+        "id": "Q109",
+        "title": "RM-43 — 대비 시험이 지금 테마 값에서 붉으면 어떻게 할까 — 솜사탕 --muted(#8b7aa1)는 밝은 바탕 위에서 3:1 언저리일 수 있다(추론함, 아직 재지 않았다)",
+        "answer": "기준을 넘게 토큰 값을 조금 짙게 고친다 (2026-11-03)",
+        "options": [
+          {
+            "label": "기준을 넘게 토큰 값을 조금 짙게 고친다",
+            "note": "추천 — 보조 글자가 조금 짙어진다. 색을 바꾸는 일이라 동작을 바꾸는 커밋으로 따로 낸다"
+          },
+          {
+            "label": "보조 글자 기준은 재기만 하고 붉히지 않는다",
+            "note": "화면은 그대로 두고, 본문 --text 만 4.5 로 막는다. 보조 글자가 흐린 채로 남는다"
+          }
+        ]
+      },
+      {
+        "id": "Q110",
+        "title": "RM-43 — 같은 갈래인 RM-56 · RM-59(밝은 테마의 블록 팝업 제목)를 이 항목에 합칠까",
+        "answer": "합치지 않고 대비 시험만 두 항목이 다시 쓴다 (2026-11-03)",
+        "options": [
+          {
+            "label": "합치지 않고 대비 시험만 두 항목이 다시 쓴다",
+            "note": "추천 — 이 항목은 S 로 끝난다. 팝업 제목은 그 두 항목이 각자 고친다"
+          },
+          {
+            "label": "팝업 제목까지 이 항목에서 고친다",
+            "note": "밝은 테마의 글자 문제를 한 PR 로 닫는다. RM-56 · RM-59 와 손댈 자리가 겹쳐 크기가 M 이 된다"
+          }
+        ]
+      },
+      {
+        "id": "Q111",
+        "title": "RM-50 — 고칠 길 — 지금 코드의 「빈 입력 열기」 길이 실제 입력기에서 깨진다고 RM-51 이 쟀다. 그러면 첫 낱자를 어떻게 살릴까",
+        "answer": "맺힌 뒤 자모를 다시 조합한다 (2026-11-03)",
+        "options": [
+          {
+            "label": "맺힌 뒤 자모를 다시 조합한다",
+            "note": "추천 — 바로 치기가 그대로 된다. 쟀던 세 경우(ㅅㅡ윙 · ㅊㅏㄹ스턴 · ㅎㅏㄴ)는 모두 다시 조합하면 바른 이름이 된다(추론함). 다만 조합이 끝난 뒤에 글자가 한 번 바뀌어 보이고, 2벌식 규칙의 순수 함수가 새로 생긴다"
+          },
+          {
+            "label": "한글 글쇠는 입력만 열고 첫 낱자를 버린다",
+            "note": "막고(preventDefault) 빈 입력에 포커스만 준다. 결과가 늘 같지만, 사람이 첫 자를 다시 쳐야 한다 — 「바로 치기」가 반쯤만 된다"
+          },
+          {
+            "label": "한글은 Enter · F2 로만 연다",
+            "note": "한글 낱자로는 열지 않고 「Enter 로 열어 치세요」를 알린다. 가장 단순하지만 RM-15 결정 Q49(한글도 바로 열린다)를 뒤집는다"
+          }
+        ]
+      },
+      {
+        "id": "Q112",
+        "title": "RM-50 — RM-51 과 겹친다 — 같은 자리 · 같은 까닭의 결함이 판에 둘로 올라 있다",
+        "answer": "RM-50 에서 함께 고치고 RM-51 은 이 항목으로 닫는다 (2026-11-03)",
+        "options": [
+          {
+            "label": "RM-50 에서 함께 고치고 RM-51 은 이 항목으로 닫는다",
+            "note": "추천 — 계획 · 브랜치 · PR 이 하나다. RM-51 이 잰 기록(ㅎㅏㄴ)은 이 항목의 시험 사례와 버그 기록으로 옮긴다"
+          },
+          {
+            "label": "둘을 따로 둔다",
+            "note": "같은 함수를 두 PR 이 고쳐 충돌이 난다. RM-51 의 고칠 길 결정도 같은 물음이라 두 번 묻게 된다"
+          }
+        ]
+      },
+      {
+        "id": "Q113",
+        "title": "RM-47 — 인쇄에 비고 열을 넣을까, 뺄까 — 항목 설명은 RM-21 요구 1 을 「격자 · 동작 이름만」으로 읽었는데, RM-21 계획서 요구 ①과 기능 설명서는 「격자와 동작 이름, 비고」로 적고 있어 어느 쪽으로 맞출지 정해야 한다",
+        "answer": "늘 넣는다 — 화면 토글과 상관없이 비고 열이 찍힌다 (2026-11-03)",
+        "options": [
+          {
+            "label": "늘 넣는다 — 화면 토글과 상관없이 비고 열이 찍힌다",
+            "note": "추천 — RM-21 계획서 · 기능 설명서와 맞아서 문서는 한 줄만 더하면 된다. 비고 숨김 규칙을 @media screen 으로 묶기만 하면 된다. 비고가 빈 안무표에서는 빈 열이 종이 폭을 조금 먹는다"
+          },
+          {
+            "label": "늘 뺀다 — 인쇄에는 격자와 동작 이름만",
+            "note": "@media print 에 비고 숨김과 --noteCol: 0 을 따로 두고, 기능 설명서 · 튜토리얼과 RM-21 계획서의 「비고」를 고쳐야 한다. 비고에 적은 연습 메모가 종이에 남지 않는다"
+          },
+          {
+            "label": "화면 토글을 따른다 — 비고를 켜 두었으면 찍고, 꺼 두었으면 뺀다",
+            "note": "넓은 화면에는 토글 단추가 없어 늘 켜진 것으로 쳐야 하고, 인쇄용 규칙에 data-notes 갈래를 하나 더 둬야 한다. 같은 안무표라도 인쇄한 기기에 따라 결과가 갈릴 수 있다"
+          }
+        ]
+      },
+      {
+        "id": "Q114",
+        "title": "RM-56 — RM-59 와 겹치는 몫 — RM-59 ①(팝업 제목)이 이 항목과 같은 일이다",
+        "answer": "RM-56 은 제목 · 구분선만, RM-59 는 × 지우기 빨강만으로 좁힌다 (2026-11-03)",
+        "options": [
+          {
+            "label": "RM-56 은 제목 · 구분선만, RM-59 는 × 지우기 빨강만으로 좁힌다",
+            "note": "추천 — 두 항목이 다른 규칙(.rap-title 과 button.danger)을 고쳐 따로 병합할 수 있다. RM-59 의 이름 · 설명에서 ①을 빼야 한다"
+          },
+          {
+            "label": "RM-56 에 RM-59 ②(× 지우기 늘 var(--danger))까지 넣고 RM-59 를 닫는다",
+            "note": "한 PR 로 끝나지만 이 항목의 범위가 넓어진다 — FEATURES 의 「빨간 × 지우기」 서술과 대조할 일이 늘어난다"
+          },
+          {
+            "label": "RM-56 을 RM-59 의 중복으로 닫는다",
+            "note": "이 계획은 쓰지 않고 RM-59 가 두 가지를 모두 한다"
+          }
+        ]
+      },
+      {
+        "id": "Q115",
+        "title": "RM-48 — 손가락 네모 고르기를 무엇으로 시작하나 — 지금 빈 칸 손가락 끌기는 화면 스크롤(무장하지 않은 보드)이거나 그리기(동작 · 빠른 배치)다",
+        "answer": "빈 칸을 길게 눌러 시작(몸통 옮기기와 같은 시계) (2026-11-03)",
+        "options": [
+          {
+            "label": "빈 칸을 길게 눌러 시작(몸통 옮기기와 같은 시계)",
+            "note": "추천 — 스크롤 · 그리기를 빼앗지 않는다. 손가락 몸통 옮기기 · 행 라벨 메뉴와 같은 「길게 누르기 = 다른 몸짓」 관습이 된다. 대신 사람이 길게 누르는 줄 알아야 한다 — 튜토리얼에 적는다"
+          },
+          {
+            "label": "도구 모음에 「선택 모드」 켜기를 두고, 켠 때만 빈 칸 끌기가 네모",
+            "note": "누르자마자 끌 수 있다. 다만 단추 · 글자(strings 표) · 모드 표시가 늘고, 켠 동안은 트랙 스크롤이 막힌다(touch-action 무장 하나 더)"
+          },
+          {
+            "label": "둘 다 — 길게 누르기를 기본으로, 선택 모드는 나중 항목으로",
+            "note": "이번에는 길게 누르기만 만들고 모드는 판에 따로 올린다"
+          }
+        ]
+      },
+      {
+        "id": "Q116",
+        "title": "RM-48 — 고른 블록이 둘 이상일 때 그중 하나를 손가락으로 길게 눌러 끌면 무엇이 옮겨지나",
+        "answer": "고른 묶음 전체(마우스 몸통 끌기와 같다) (2026-11-03)",
+        "options": [
+          {
+            "label": "고른 묶음 전체(마우스 몸통 끌기와 같다)",
+            "note": "추천 — 마우스와 같은 규칙이 된다. 하나만 옮기려면 먼저 선택을 풀어야 한다"
+          },
+          {
+            "label": "누른 블록 하나만, 묶음은 팝업의 따로 단추로",
+            "note": "지금 손가락 동작이 바뀌지 않는다. 다만 마우스와 규칙이 갈리고 단추가 하나 는다"
+          }
+        ]
+      },
+      {
+        "id": "Q117",
+        "title": "RM-57 — 놓을 시작이 놓은 행의 0번 칸보다 앞으로 가면 어디에 둘까 — 항목 설명은 「0 아래로는 자르기」라 했지만, 여러 행에 걸친 블록의 둘째 조각을 잡으면 오프셋이 8을 넘어 늘 0번 칸으로 잘린다",
+        "answer": "가. 선형으로 빼서 앞 행으로 넘어가게 두고, 보드 첫 칸에서만 자른다 (2026-11-03)",
+        "options": [
+          {
+            "label": "가. 선형으로 빼서 앞 행으로 넘어가게 두고, 보드 첫 칸에서만 자른다",
+            "note": "추천 — 어느 칸을 잡든 곧게 옮기면 시작이 그대로 지켜진다. 다만 행 0번 칸 가까이 놓으면 블록이 앞 행 끝에서 시작한다"
+          },
+          {
+            "label": "나. 놓은 행 안에서만 빼고 0번 칸으로 자른다(설명대로)",
+            "note": "블록이 늘 손가락이 있는 행에서 시작한다. 하지만 여러 행 블록의 둘째 조각을 잡거나 행 앞쪽에 놓으면 잡은 자리가 지켜지지 않는다"
+          }
+        ]
+      },
+      {
+        "id": "Q118",
+        "title": "RM-42 — 측정을 어디까지 줄일까 — 한 번 읽기만으로 둘까, 행마다 폭을 기억해 그린 행만 다시 잴까",
+        "answer": "가. 한 번 읽기 + 폭이 같으면 안 쓰기만 (2026-11-03)",
+        "options": [
+          {
+            "label": "가. 한 번 읽기 + 폭이 같으면 안 쓰기만",
+            "note": "추천 — 강제 리플로가 두 번에서 한 번이 되고, 폭이 그대로면 쓰기로 레이아웃이 흐트러지지도 않는다. 읽기는 여전히 칸 65개 전부를 본다. 캐시를 비울 때(창 크기 · 테마 · 비고 켜고 끄기 · 골격 다시 세우기)를 따질 일이 없다."
+          },
+          {
+            "label": "나. 가에 더해 행마다 내용 폭을 기억",
+            "note": "그린 행만 다시 재므로 좁힌 렌더에서 더 아낀다. 대신 테마 · 글꼴 · 미디어 쿼리 · 인쇄로 여백이 바뀔 때 캐시를 비울 자리를 모두 지켜야 하고, 하나라도 빠뜨리면 폭이 낡은 값으로 남는다. 지금은 전 행 렌더가 규칙(D-20)이라 아낄 몫도 작다."
+          }
+        ]
       }
     ]
   },
   "order": [
+    "RM-61",
     "RM-60",
     "RM-58",
     "RM-53",
-    "RM-49",
-    "RM-40",
-    "RM-38",
-    "RM-36",
-    "RM-10",
-    "RM-11",
-    "RM-12",
-    "RM-14",
-    "RM-15",
-    "RM-16",
-    "RM-17",
     "RM-18",
-    "RM-19",
-    "RM-20",
-    "RM-21",
     "RM-23",
     "RM-24",
-    "RM-25",
-    "RM-26",
-    "RM-27",
     "RM-28",
     "RM-29",
     "RM-30",
-    "RM-33",
-    "RM-35"
+    "RM-42",
+    "RM-43",
+    "RM-44",
+    "RM-45",
+    "RM-46",
+    "RM-47",
+    "RM-48",
+    "RM-50",
+    "RM-51",
+    "RM-52",
+    "RM-54",
+    "RM-55",
+    "RM-56",
+    "RM-57"
   ],
   "flow": {
     "note": "「다음」 칸의 토대부터 — 결정이 선 작은 것으로 몸을 풀고, 뒤의 여럿이 밟을 채널을 먼저 놓는다.",
@@ -2515,15 +2756,32 @@
           "size": "M",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q115",
+            "Q116"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "RM-14 는 빈 칸 끌기 네모 고르기(마퀴)와 고른 블록 묶음 끌기를 마우스 규칙에만 얹었다(domain/boardGesture.js 의 marquee 전이 — 주석 「마우스만 — 터치는 RM-11 때」). 그사이 RM-11 이 먼저 병합돼 입력이 포인터 이벤트 한 벌이 됐고, transitionsFor 의 손가락 표(touchDraw · quickTouch)에는 아직 marquee · 묶음 끌기가 없다. 그래서 폰에서는 여러 블록을 한 번에 고르거나 함께 옮길 수 없고 팝업의 ☐ 선택하기로 하나씩 골라야 한다. 이 항목은 손가락 표에 네모 고르기와 묶음 끌기를 더한다 — 빈 칸 끌기가 화면 스크롤 · 손가락 그리기(동작을 고른 때)와 겹치므로 무엇으로 시작할지(길게 눌러 시작 · 선택 모드 켠 때만 등)를 계획에서 정하고, RM-13 planNudge 의 「하나라도 못 가면 다 멈춤」 규칙과 overlays 의 점선 네모를 그대로 쓴다. 폰 폭(390px)에서 브라우저로 확인한다.",
+          "what": "손가락 전이 표(transitionsFor 의 touch 갈래)에 RM-14 의 네모 고르기를 더한다. 빈 칸을 길게 눌러 시작하고, 고른 블록을 길게 눌러 끌면 묶음 전체가 RM-13 planNudge 규칙(하나라도 못 가면 다 멈춤)으로 함께 옮겨진다. 그러면 폰에서도 여러 블록을 한 번에 고르고 옮길 수 있다. 몸통 끌기의 잡은 칸 문제(RM-57)와 같은 함수(bundleDelta · 길게 누르기 갈래)를 만지니 병합 때 겹침을 본다.",
           "kind": "feature",
           "seat": "code",
           "note": "RM-14 병합 후 마무리에서 올림(2026-11-03) — RM-14 계획서 103행 「터치 마퀴는 RM-11 때 켠다」의 남은 몫",
-          "addedAt": "2026-11-02T17:17:01Z"
+          "addedAt": "2026-11-02T17:17:01Z",
+          "files": [
+            "src/domain/boardGesture.js#transitionsFor",
+            "src/domain/boardGesture.js#touchMarqueeStart",
+            "src/domain/boardGesture.js#touchMarqueeMove",
+            "src/domain/boardGesture.js#touchMarqueeEnd",
+            "src/domain/boardGesture.js#touchMarqueeCancel",
+            "src/input/boardController.js#createBoardController",
+            "tests/unit/boardGesture.test.mjs",
+            "docs/FEATURES.md",
+            "docs/TUTORIAL.md",
+            "docs/HISTORY.md"
+          ],
+          "slug": "touch-marquee-select-and-bundle-drag",
+          "plan": "docs/roadmap/plans/RM-48.md"
         }
       ]
     },
@@ -4040,11 +4298,13 @@
           "size": "M",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q118"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "RM-35 재기(64마디 × 3층 × 300개, Chrome · 1440폭)에서 boardView.renderRows 끝의 adjustNoteColumnWidth(cssVars.setNoteWidth)가 그린 행 수와 무관하게 중앙값 4.8ms 든다 — 비고 칸 65개를 0 으로 썼다가 다시 재는 강제 리플로 두 번. 전 행 렌더 12~15ms 의 약 1/3, 좁힌 렌더 5.5ms 의 거의 전부다. 좁힌 렌더로 가도 이 몫은 남으므로, 다시 빨라야 할 때(RM-12 · RM-14 의 움직이는 동안 그리기) 먼저 볼 자리다. deviations 「렌더 범위와 떠 있는 것들」에 측정 절차를 바꾸지 않은 까닭이 있다.",
+          "what": "renderRows 가 끝날 때마다 setNoteWidth 는 비고 칸 폭(--noteW)을 0px 로 썼다가 칸 65개의 scrollWidth 를 다시 재서 다시 쓴다. 그래서 강제 리플로가 두 번 나고, 그린 행 수와 상관없이 매번 중앙값 4.8ms 가 든다(RM-35 의 큰 견본 재기). 이 일에서는 0px 쓰기를 없애고, 칸 안쪽의 내용 폭을 한 번만 읽어 잰다. 잰 폭이 지금과 같으면 다시 쓰지 않는다. 그러면 좁힌 렌더 5.5ms 의 거의 전부를 차지하는 이 몫이 줄어 RM-12 · RM-14 의 움직이는 동안 그리기에 여유가 생긴다. RM-35 가 측정해 올린 병목이고, 비고 열 인쇄 문제인 RM-47 과는 같은 비고 칸을 만지지만 고치는 대상은 다르다.",
           "kind": "feature",
           "seat": "code",
           "addedAt": "2026-11-02T13:30:24Z",
@@ -4056,7 +4316,21 @@
             "side": "feature",
             "why": "이 저장소의 ui/boardView · ui/cssVars 의 렌더 비용"
           },
-          "slug": "note-column-width-remeasure-per-render"
+          "slug": "note-column-width-single-read-measure",
+          "files": [
+            "src/ui/cssVars.js#setNoteWidth",
+            "src/ui/boardView.js#renderRow",
+            "src/ui/domContract.js#CLS",
+            "src/ui/layout.js#applyNoteWidth",
+            "index.html",
+            "tests/unit/noteWidth.test.mjs",
+            "docs/deviations.md",
+            "docs/HISTORY.md",
+            "docs/ARCHITECTURE.md",
+            "docs/roadmap/plans/RM-35.md",
+            "docs/roadmap/plans/RM-42.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-42.md"
         }
       ]
     },
@@ -4068,14 +4342,17 @@
         {
           "id": "RM-43",
           "name": "밝은 테마(솜사탕)에서 서랍 제목 글자가 안 보임",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q109",
+            "Q110"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "솜사탕 테마에서 왼쪽 서랍의 summary(「파일 — 최근 프로젝트 · 동작 · 카테고리」 · 「루틴 목록」 · 「카테고리 관리」 · 「목록에 없는 동작 만들기」)와 영상 칸 파일 이름 알약이 거의 보이지 않는다 — index.html:331 의 '.drawer > summary { color: #dbe4ef }' 처럼 어두운 테마용 밝은 글자색을 박아 두어, 밝은 바탕(테마 변수 무시)에서 rgb(219,228,239) on 밝은 분홍. 같은 박힌 색이 1806 · 1942 · 1957 · 1975 · 2456 · 3772 줄에도 있다. RM-25 마무리의 브라우저 확인(2026-11-03, 1440px · 390px)에서 봤다 — RM-25 의 지난 판 줄은 테마 변수를 써서 읽힌다",
+          "what": "보고에 적힌 박힌 밝은 글자색(#dbe4ef)은 RM-17 디자인 토큰 작업에서 이미 걷혔다. 지금 서랍 제목(index.html 362줄)과 영상 파일 이름 알약(1903줄)은 var(--text) 를 쓰고, 솜사탕 테마는 --text 를 짙은 #452f52 로 바꾼다. 그래서 이 항목은 새로 고칠 것이 거의 없다. 할 일은 브라우저에서 고쳐졌는지 확인하고, 밝은 테마에서 글자 대비가 다시 무너지지 않게 토큰 대비를 재는 시험을 두는 것이다. RM-56 · RM-59(밝은 테마의 블록 팝업 제목)와 같은 갈래이니, 대비 시험은 그 두 항목도 함께 쓸 수 있는 꼴로 만든다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T16:31:18Z",
@@ -4090,19 +4367,33 @@
             "side": "feature",
             "why": "RM-25 마무리 브라우저 확인 중 밝은 테마 화면에서 발견 — RM-25 범위 밖이라 고치지 않고 판에 올린다"
           },
-          "slug": "candy-theme-drawer-summary-contrast"
+          "slug": "candy-theme-drawer-title-contrast-guard",
+          "files": [
+            "tests/unit/themeContrast.test.mjs",
+            "docs/BUG_REPORTS.md",
+            "docs/roadmap/ROADMAP.json"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-43.md"
         },
         {
           "id": "RM-44",
           "name": "인쇄에 처음 안내 말풍선이 찍힌다",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
           "questions": [],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "RM-21 마무리 확인(2026-11-03): 처음 안내(.coachmark — ① 채우기 줄 · ② 동작 목록)가 열린 채 🖨 인쇄 · PDF 를 누르면 말풍선과 어두운 막이 안무표 위에 찍힌다(Chrome 은 position:fixed 라 모든 쪽에). @media print 숨김 목록에 .coachmark 가 없다. 고침: 숨김 목록에 더한다.",
+          "what": "처음 안내 말풍선(.coachmark)이 열린 채 🖨 인쇄 · PDF 를 누르면 말풍선이 안무표 위에 찍힌다. Chrome 은 position:fixed 라 모든 쪽에 찍힌다. 까닭은 index.html 의 인쇄 블록 숨김 목록에 .coachmark 가 없고, 말풍선 스타일은 ui/coachmarks.js 가 따로 넣는 것이라 RM-21 때 빠진 것이다. 숨김 목록에 더하고, 대상에 붙는 숨 쉬는 강조([data-coach=\"1\"] 애니메이션 · 그림자)도 종이에서 걷는다. RM-45 · RM-46 · RM-47 과 같은 인쇄 블록을 고치지만 서로 부르는 것은 없다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T16:31:26Z",
@@ -4113,22 +4404,40 @@
             "side": "feature",
             "why": "RM-21 인쇄 CSS(앱 코드)의 결함 — 실제 Chrome 156 printToPDF · WebKit 인쇄 작업으로 재현"
           },
-          "slug": "print-hides-coachmark",
+          "slug": "hide-coachmark-in-print",
           "deepens": [
             "RM-21"
-          ]
+          ],
+          "files": [
+            "index.html",
+            "tests/unit/countSheet.test.mjs#printRevivesHidden",
+            "docs/HISTORY.md",
+            "docs/roadmap/ROADMAP.json"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-44.md"
         },
         {
           "id": "RM-45",
           "name": "인쇄 격자 너비가 화면 칸 너비를 따른다",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q106",
+            "Q107"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "RM-21 요구 1(A4 너비에 맞춘다)이 깨진다. 칸 너비가 JS 가 화면에 맞춰 html 인라인에 쓴 --cellW(px)라 인쇄에서도 그대로다 — 폰 폭 390(37~44px)이나 영상 패널로 판이 좁으면 격자가 A4 의 45~60%만 쓰고, 2560 화면(168px)이면 7·8카운트(Safari 는 비고도)가 종이 밖으로 잘린다. Chrome · WebKit 둘 다 재현. 고침 후보: @media print 에서 :root 의 --cellW 를 !important 로 종이 너비 기준(calc((100vw - 행 라벨 - 틈)/칸 수) 등)으로 덮거나 beforeprint/afterprint 에서 다시 잰다.",
+          "what": "인쇄할 때 칸 너비가 화면에서 잰 --cellW(px)를 그대로 따라가서, 좁은 화면에서는 격자가 A4의 45~60%만 쓰고 2560 화면에서는 7·8카운트가 종이 밖으로 잘린다. 인쇄에서는 칸 너비를 화면 폭과 상관없이 종이 너비(@page A4 여백을 뺀 폭)에서 행 라벨 · 비고 · 틈을 빼고 칸 수로 나눈 값으로 다시 정해, RM-21 요구 1(A4 너비에 맞춘다)을 되살린다. RM-46(Safari 행 잘림)·RM-47(비고 열 불일치)과 같은 @media print 블록을 고치지만, 서로의 코드를 부르지는 않는다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T16:31:34Z",
@@ -4139,19 +4448,37 @@
             "side": "feature",
             "why": "RM-21 인쇄 CSS(앱 코드)의 결함 — 실제 Chrome 156 printToPDF · WebKit 인쇄 작업으로 재현"
           },
-          "slug": "print-grid-fits-a4-width"
+          "slug": "print-grid-fits-a4-width",
+          "files": [
+            "index.html",
+            "src/ui/boardView.js#createBoardView",
+            "tests/unit/countSheet.test.mjs#printRevivesHidden",
+            "docs/FEATURES.md",
+            "docs/HISTORY.md",
+            "docs/BUG_REPORTS.md",
+            "docs/PRINCIPLES.md"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-45.md"
         },
         {
           "id": "RM-46",
           "name": "Safari 인쇄에서 행 중간에 쪽이 넘어간다",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
           "questions": [],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "RM-21 요구 1(행 중간에서 쪽이 넘어가지 않는다)이 WebKit 에서 깨진다 — 40마디 표에서 1쪽 끝에 8x13 행의 윗부분이 걸리고 2쪽이 그 행의 나머지로 시작한다(넓은 판 · 폰 폭 둘 다). Chrome 은 지킨다. .board 가 display:grid 라 WebKit 이 격자 안의 break-inside: avoid 를 따르지 않는 것으로 보인다(추론). 고침 후보: 인쇄에서 .board 를 display:block 으로 바꿔 행을 블록으로 흐르게 한다.",
+          "what": "인쇄할 때 .board 를 격자(display:grid)가 아닌 블록으로 흘려서, WebKit 도 행(.board-row) 중간에서 쪽을 넘기지 않게 한다. RM-21 요구 1의 「행 중간에서 쪽이 넘어가지 않는다」가 Chrome 에서만 지켜지고 Safari 에서는 깨지기 때문이며, 같은 @media print 블록을 고치는 RM-44 · RM-45 · RM-47 과 손댈 자리가 겹친다(함수 호출 관계는 없다).",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T16:31:45Z",
@@ -4162,22 +4489,39 @@
             "side": "feature",
             "why": "RM-21 인쇄 CSS(앱 코드)의 결함 — 실제 Chrome 156 printToPDF · WebKit 인쇄 작업으로 재현"
           },
-          "slug": "safari-print-row-break",
+          "slug": "safari-print-row-break-block-flow",
           "deepens": [
             "RM-21"
-          ]
+          ],
+          "files": [
+            "index.html",
+            "tests/unit/countSheet.test.mjs#printRevivesHidden",
+            "docs/BUG_REPORTS.md",
+            "docs/HISTORY.md"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-46.md"
         },
         {
           "id": "RM-47",
           "name": "비고 열이 Chrome 인쇄엔 빠지고 Safari 인쇄엔 찍힌다",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q113"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "같은 안무표가 브라우저마다 다르게 인쇄된다. Chrome 은 인쇄 쪽 너비(약 717px)가 좁은 화면용 미디어 규칙(body[data-notes=off] 의 비고 숨김)에 걸려 비고가 빠지고, WebKit 은 화면 너비로 미디어를 재서 비고 열이 찍힌다. 요구 1 은 「격자 · 동작 이름만」이므로 @media print 에서 비고를 명시적으로 숨길지(또는 늘 넣을지) 정해 한쪽으로 맞춘다.",
+          "what": "Chrome 은 인쇄 쪽 너비(약 717px)를 좁은 화면으로 읽는다. 그래서 index.html 의 좁은 화면 규칙(body[data-notes=off] 의 비고 숨김)에 걸려 인쇄에서 비고 열이 빠지고, Safari 는 같은 안무표에서 비고 열을 찍는다. 비고 숨김 규칙을 화면 전용(@media screen)으로 묶어 인쇄에서는 두 브라우저 모두 비고 열을 늘 찍게 맞춘다. RM-21 계획서 요구 ①(「격자 · 동작 이름, 비고만 남은 채」)과 기능 설명서 512줄(「격자와 비고만 흰 종이에」)이 이미 비고를 넣는다고 적고 있어서다. 같은 @media print 근처를 고치는 RM-44 · RM-45 · RM-46 과는 줄이 겹치기만 하고 서로 부르는 것은 없다. 비고 폭(--noteW)을 렌더마다 재는",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T16:31:57Z",
@@ -4191,7 +4535,23 @@
           "slug": "print-note-column-consistent",
           "deepens": [
             "RM-21"
-          ]
+          ],
+          "files": [
+            "index.html",
+            "tests/unit/countSheet.test.mjs#printNotesScreenOnly",
+            "docs/FEATURES.md",
+            "docs/HISTORY.md",
+            "docs/BUG_REPORTS.md"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-47.md"
         },
         {
           "id": "RM-49",
@@ -4250,7 +4610,7 @@
           "wrapup": [
             {
               "text": "본 트리의 판 변경(from-factoriel 트랙 · 계획서)을 items-push 로 다시 올린다 — 2026-11-03 02:48 에 RM-49 가 고친 앵커 시험 붉음으로 막혔던 것",
-              "state": "approved"
+              "state": "done"
             }
           ],
           "mergedAt": "2026-11-03"
@@ -4261,11 +4621,14 @@
           "size": "M",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q111",
+            "Q112"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "RM-15 마무리에서 실제 macOS 한글 2벌식 입력기로 확인: 블록을 고른 채(포커스는 body) 「스윙」(ㅅㅡㅇㅜㅣㅇ)을 바로 치면 이름 입력에 'ㅅㅡ윙' 이 들어간다(3번 중 3번, 「찰스턴」은 'ㅊㅏㄹ스턴'). 까닭: body 에서는 입력기가 조합하지 않아 첫 keydown 이 key='ㅅ' · keyCode 84 · isComposing=false 로 오고, bindHotkeys 의 글자 갈래가 그 낱자를 완성된 글자(initial)로 입력칸에 넣는다 — 그다음 모음은 이미 맺힌 ㅅ 과 합쳐지지 못하고 새 조합을 시작한다. Enter · F2 로 먼저 열고 치면 '스윙' 이 맞게 들어간다(Tab · Shift+Tab · Esc 도 조합 중에 맞게 동작 — 229 글쇠를 거른 뒤 keyCode 9 의 Tab 을 받는다). 고칠 길(추론): 글자 갈래에서 한글 낱자(ㄱ-ㅎ · ㅏ-ㅣ)면 initial 로 넣지 말고 빈 입력을 열어 포커스만 옮기거나, 첫 낱자를 넣은 뒤 다음 조합을 그 낱자와 합치는 길 — 어느 쪽이든 실제 입력기로 다시 확인해야 한다(만든 글쇠 이벤트 시험은 이 길을 못 잡는다).",
+          "what": "블록을 고른 채 한글을 바로 치면 첫 낱자가 조합 밖에서 맺혀 이름이 「ㅅㅡ윙」 · 「ㅎㅏㄴ」처럼 깨진다. 지금 코드에는 이미 「빈 입력을 열고 기본 동작을 막지 않는」 길(main.js 의 isImeKey)이 있지만, 실제 입력기에서는 그 길도 깨진다고 RM-51 이 쟀다. 그래서 이름 입력이 한글 낱자로 열렸을 때만, 입력이 맺힌 뒤 앞쪽의 흩어진 자모를 2벌식 규칙으로 다시 조합한다. RM-51 과 같은 결함이다(같은 자리 · 같은 까닭) — 이 항목에서 함께 고치고 RM-51 은 이 항목으로 닫는다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T17:33:13Z",
@@ -4276,10 +4639,31 @@
             "side": "feature",
             "why": "앱 동작 오류"
           },
-          "slug": "korean-ime-first-jamo-breaks-type-to-name",
+          "slug": "rejoin-hangul-jamo-in-type-to-name",
           "deepens": [
             "RM-15"
-          ]
+          ],
+          "files": [
+            "src/domain/hangul.js",
+            "src/ui/inlinePrompt.js#askName",
+            "src/app/main.js#openNaming",
+            "src/app/main.js#isImeKey",
+            "tests/unit/hangulJoin.test.mjs",
+            "tests/unit/inlinePrompt.test.mjs",
+            "docs/BUG_REPORTS.md",
+            "docs/PRINCIPLES.md",
+            "docs/HISTORY.md",
+            "docs/roadmap/ROADMAP.json"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-50.md"
         },
         {
           "id": "RM-51",
@@ -4310,14 +4694,14 @@
         {
           "id": "RM-52",
           "name": "server.py 연결 대기열 5 — 모듈 몰림에 연결이 끊겨 앱이 반쯤 뜸",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
           "questions": [],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "ThreadingHTTPServer 의 request_queue_size 가 기본값 5 라, 캐시 없는 첫 열기(새 프로필 · 폰 첫 방문 · 캐시 끔)에서 ES 모듈 수십 개가 몰리면 연결이 ERR_CONNECTION_RESET 으로 끊기고 앱이 판 없이 반쯤 뜬다. 잰 것: 시험용 크롬 캐시 끔 다시 불러오기 — 127.0.0.1 · 100.86.195.60 둘 다 여러 번 깨짐(한 번에 모듈 17~60여 개 실패). 파이썬으로 모듈 100개 동시 GET — 기본 서버 3/3 번 모두 약 절반(52·62·54 개) 끊김, 같은 서버에 request_queue_size=128 만 바꾸면 3/3 번 끊김 0(kern.ipc.somaxconn=128). 원인 재현 확인함 — 고칠 자리는 server.py 의 ThreadingHTTPServer 생성(1979 줄 근처)에서 대기열을 늘리는 것.",
+          "what": "server.py 는 ThreadingHTTPServer 를 기본 대기열 5 로 연다. 그래서 캐시 없이 처음 열 때 ES 모듈 요청 수십 개가 한꺼번에 오면 연결의 절반쯤이 끊기고 앱이 반쯤만 뜬다. 대기열을 128 로 늘린 서버 갈래를 하나 두어 그 몰림을 받아 내고, 같은 몰림을 실제 서버에 걸어 끊김이 0 인지 재는 회귀 시험을 둔다. 판의 다른 항목과 겹치지 않는다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T17:37:59Z",
@@ -4328,7 +4712,17 @@
             "side": "feature",
             "why": "RM-15 마무리의 브라우저 확인 중 새 프로필 크롬이 앱을 반쯤 띄워 재어 찾음"
           },
-          "slug": "server-listen-backlog-resets-module-burst"
+          "slug": "server-listen-backlog-for-module-burst",
+          "files": [
+            "server.py#main",
+            "server.py#ChoreoServer",
+            "tests/server.test.mjs",
+            "docs/BUG_REPORTS.md",
+            "docs/PRINCIPLES.md",
+            "docs/HISTORY.md",
+            "CLAUDE.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-52.md"
         },
         {
           "id": "RM-53",
@@ -4380,14 +4774,16 @@
         {
           "id": "RM-54",
           "name": "폰 폭에서 펼친 도구의 ? 가 조작 단추를 덮음",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q108"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "영상 패널 도구 탭(자르기 · 마커 · 분석)을 펼치면 .vtool-help 의 ? 단추가 본문 첫 줄 조작 위에 겹친다. 360~430px 에서 60 경우(폭 × 테마 × 도구) 중 7 경우 — 390 basic 「Out 으로」, 360 「이 마디에 맵핑」 · 「분석 지우기」, 430 「마커 지우기」, candy 360/375. 600~1040 은 0. 원인: RM-20 병합(d63584e)이 더한 index.html:436 `.vtool-help{margin-bottom:-18px}` — 좁아서 첫 줄 조작이 오른쪽 끝까지 차면 ? 와 겹친다. margin-bottom:0 으로 덮으면 겹침 0 으로 확인함(RM-20 마무리 2, 2026-11-03). 고칠 때 ? 를 summary 줄로 올리거나 좁은 폭에서만 음수 여백을 끄는 길.",
+          "what": "영상 패널 도구 탭(자르기 · 마커 · 분석)을 펼치면, 360~430px 폭의 60 경우 가운데 7 경우에서 맨 위 오른쪽의 ? 단추가 첫 줄 조작 단추(「Out 으로」 · 「이 마디에 맵핑」 · 「마커 지우기」 · 「분석 지우기」)를 덮는다. 까닭은 RM-20 이 index.html:469 에 넣은 `.vtool-help{margin-bottom:-18px}` 다. ? 는 오른쪽 위에 그대로 두고, 첫 줄이 ? 아래로 파고들지 못하게 막아 폭 · 테마 · 도구 어느 조합에서도 겹치지 않게 한다. 설명이 말한 「? 를 summary 줄로 올리는 길」은 쓸 수 없다 — 도구의 summary 는 index.html:1995 가 숨긴다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T22:06:41Z",
@@ -4398,19 +4794,26 @@
             "side": "feature",
             "why": "앱 동작 오류"
           },
-          "slug": "video-tool-help-overlaps-controls-on-phone"
+          "slug": "vtool-help-button-overlaps-first-row-on-phone",
+          "files": [
+            "index.html",
+            "tests/unit/videoPanelMarkup.test.mjs",
+            "docs/HISTORY.md",
+            "docs/BUG_REPORTS.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-54.md"
         },
         {
           "id": "RM-55",
           "name": "기본 테마 띠의 차례 줄 단추가 패널 밖으로 밀림",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
           "questions": [],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "넓은 판(1440)의 띠 모드 · 기본 테마(basic)에서 차례 줄(#videoFlowSteps)의 ①②③ 단추가 drawFlowTrack 이 단 인라인 left/top(48/206 · 527/180 · 1005/206)으로 밀려 오른 끝이 515/1132/1742 — 패널 오른 끝 1429 밖으로 나가고, nav 높이가 435~533px 로 그릴 때마다 커진다. 원인: `.flow-steps{position:relative;height:104px;overflow:hidden}` · `.flow-track{position:absolute;inset:0}` 가 `:root[data-theme]` 에만 있어 data-theme 가 없는 basic 에서는 SVG 가 흐름 속에 놓이고 단추의 절대 자리가 기준을 잃는다. .flow-track 을 숨기고 left/top 을 무시하면 단추 467/605/737 · nav 43 으로 돌아옴을 확인. RM-20 이전 빌드(54e214e^1)에서도 같다(단추 6개, 넘침 1817>1073) — RM-20 이 만든 것 아님. candy 는 정상. (RM-20 마무리 2 에서 발견, 2026-11-03)",
+          "what": "기본 테마(basic)에서는 `<html>` 에 data-theme 이 붙지 않는다. 그런데도 drawFlowTrack 이 길 SVG 를 넣고 단추에 인라인 left/top 을 달아서, 기준(position:relative · overflow:hidden)을 잃은 ①②③ 단추가 패널 오른 끝 밖으로 밀리고 nav 높이가 그릴 때마다 커진다. 이 일은 기본 테마에서는 길을 그리지 않고 단추 자리를 화살표 줄로 되돌린다. 테마를 켜고 끌 때도 다시 그려 맞춘다. RM-58(테마 쪽 길 단추가 띠 아래로 떨어짐)과 drawFlowTrack · index.html 의 차례 줄 CSS 가 겹친다. 그래도 RM-58 이 만들 코드를 부르지는 않으므로 선행으로 두지 않는다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T22:07:00Z",
@@ -4421,19 +4824,38 @@
             "side": "feature",
             "why": "앱 동작 오류"
           },
-          "slug": "flow-steps-overflow-panel-basic-theme"
+          "slug": "basic-theme-flow-steps-overflow-fix",
+          "files": [
+            "src/ui/videoPanel.js#drawFlowTrack",
+            "src/app/main.js#applyTheme",
+            "index.html",
+            "tests/unit/videoPanelMarkup.test.mjs",
+            "docs/BUG_REPORTS.md",
+            "docs/HISTORY.md"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-55.md"
         },
         {
           "id": "RM-56",
           "name": "밝은 테마에서 블록 팝업 제목이 안 보임",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q114"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "candy(밝은) 테마에서 블록을 탭해 여는 팝업(.routine-action-popup)의 제목 줄(.rap-title, 예 'Shim Sham 4c')이 color rgba(255,255,255,0.55) 로 고정돼 흰→분홍 그라디언트 바탕 위에서 보이지 않는다 — 빈 띠만 남는다. 어두운 basic 테마에서는 보인다. 잰 값(헤드리스 크롬 390px, origin/main 09318bd): color rgba(255,255,255,0.55) · background linear-gradient(rgb(255,255,255), rgb(253,241,248)). 자리: index.html 1642 '.routine-action-popup .rap-title' — 테마 토큰(글자색)으로 바꾸면 된다. RM-12 마무리(폰 탭 팝업 확인) 중 발견.",
+          "what": "블록 팝업 제목(.rap-title)과 그 밑줄은 흰색(white-rgb)으로 박혀 있어서 솜사탕 테마의 흰→분홍 바탕(--t-pop) 위에서는 보이지 않는다. 이 색을 테마 글자 토큰으로 바꾸고, 토큰의 대비를 재는 시험으로 다시 일어나지 않게 막는다. RM-59 ①과 같은 일이고(RM-59 는 여기에 ② 손가락에서 빨갛지 않은 × 지우기를 더한 것), RM-43(서랍 제목의 박힌 밝은 색)과 같은 부류다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T22:12:40Z",
@@ -4444,7 +4866,15 @@
             "side": "feature",
             "why": "claude 가 골랐다(근거 없음)"
           },
-          "slug": "light-theme-popup-title-invisible"
+          "slug": "candy-theme-block-popup-title-token-color",
+          "files": [
+            "index.html",
+            "tests/unit/popupThemeContrast.test.mjs",
+            "docs/BUG_REPORTS.md",
+            "docs/HISTORY.md",
+            "CLAUDE.md"
+          ],
+          "plan": "docs/roadmap/plans/RM-56.md"
         },
         {
           "id": "RM-57",
@@ -4452,11 +4882,13 @@
           "size": "M",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q117"
+          ],
           "defaults": [],
           "stage": null,
           "pr": null,
-          "what": "RM-12 마무리 확인(2026-11-03)에서 잼: 블록 몸통의 k번째 칸을 잡고 끌어 놓으면 시작 칸이 놓은 칸 − k 가 아니라 놓은 칸(손가락·마우스 아래 칸)이 된다. 8카운트 블록 3·5번째 칸을 잡고 바로 위 빈 행으로 곧게 옮기면 시작 0→2·0→4 로 밀려 다음 마디로 넘쳐 둘로 갈린다. 손가락(0.4초 길게 누르기)·마우스 모두 8판 중 8판 재현, 0번 칸을 잡으면 지켜진다. 원인: src/input/touchDrag.js finish 와 src/domain/boardGesture.js 몸통 뗌(bodyUp)·미리보기가 targetStartIndex 에 hit.col 을 그대로 쓰고 잡은 칸 오프셋을 빼지 않는다 — 옛 왼쪽 이동 손잡이는 늘 0번 칸을 잡아 드러나지 않았다. RM-12 커밋 본문의 「잡은 자리 지킴」과 어긋난다. 고침: 누를 때 잡은 칸(누른 x − 블록 왼쪽)/칸폭을 세션에 담고 놓는 칸·미리보기에서 뺀다(0 아래로는 자르기). 회귀 시험: 몸통 3번째 칸을 잡고 위 행으로 옮기면 시작 칸이 그대로인지.",
+          "what": "블록 몸통의 k번째 칸을 잡고 끌어 놓으면, 놓은 칸이 아니라 놓은 칸에서 k를 뺀 자리가 블록의 시작이 되게 고친다. 마우스(boardGesture 의 bodyMove · bodyUp)와 손가락 길게 누르기(touchDrag 의 moveGhost · finish)가 모두 hit.col 을 그대로 써서, 마디 중간을 잡고 곧게 옮겨도 블록이 밀리고 다음 마디로 넘쳐 둘로 갈린다. 손가락 묶음 끌기를 만드는 RM-48 과 touchDrag 를 함께 고치니, 먼저 병합되는 쪽이 오프셋을 그대로 물려줘야 한다.",
           "kind": "bug",
           "seat": "code",
           "addedAt": "2026-11-02T22:18:38Z",
@@ -4467,7 +4899,31 @@
             "side": "feature",
             "why": "claude 가 골랐다(근거 없음)"
           },
-          "slug": "body-drag-keeps-grab-offset"
+          "slug": "body-drag-keeps-grab-offset",
+          "files": [
+            "src/domain/boardGesture.js#placementDown",
+            "src/domain/boardGesture.js#bodyMove",
+            "src/domain/boardGesture.js#bodyUp",
+            "src/input/touchDrag.js#start",
+            "src/input/touchDrag.js#moveGhost",
+            "src/input/touchDrag.js#finish",
+            "src/input/boardController.js#createBoardController",
+            "src/domain/gestureMath.js#grabbedStart",
+            "tests/unit/boardGesture.test.mjs",
+            "tests/unit/gestureMath.test.mjs",
+            "tests/unit/touchDrag.test.mjs",
+            "docs/HISTORY.md",
+            "docs/BUG_REPORTS.md"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-57.md"
         },
         {
           "id": "RM-58",
@@ -4543,14 +4999,17 @@
         {
           "id": "RM-60",
           "name": "null 초가 카운트 0 으로 읽히는 자리와 그 꼴의 기계 검사",
-          "size": "M",
+          "size": "S",
           "after": [],
           "soft": [],
-          "questions": [],
+          "questions": [
+            "Q104",
+            "Q105"
+          ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
-          "what": "src/domain/tempo.js 의 boundaryCount 는 Number.isFinite(Number(sec)) 로 초를 거르는데 Number(null) 은 0 이라 null 이 「0초」로 통과한다(추론함 — 지금 호출부 둘이 null 을 넘기는지는 재지 않았다). 이 꼴을 check-principles 의 D-5 규칙으로 잡으려면 이 자리를 고치거나 예외 이유를 달아야 한다.",
+          "what": "`boundaryCount` 는 `Number.isFinite(Number(sec))` 로 초를 거르는데 `Number(null)`·`Number('')` 가 0 이라, 못 읽는 초가 「0초 → 카운트 0」으로 통과한다. 그래서 `splitAtPlayhead` 에 `sec: null` 이 오면 카운트 0 에서 잘린다(추론함). 이 자리를 수만 받게 고치고, 같은 꼴을 `tools/check-principles.mjs` 의 D-5 규칙이 잡게 넓힌다 — 이 꼴을 처음 짚은 것은 RM-24 다.",
           "kind": "bug",
           "seat": "codify",
           "addedAt": "2026-11-02T22:28:18Z",
@@ -4563,6 +5022,51 @@
             "why": "RM-24 에서 같은 꼴(Number.isFinite(Number(x)) 가 null 을 0 으로 통과시킴)을 시험이 잡아 고쳤다. 원칙 D-5 에 더했고, 기계 검사로 만들려면 남은 한 자리(tempo.boundaryCount)부터 판정해야 한다"
           },
           "slug": "number-null-is-finite-check",
+          "priority": "top4",
+          "files": [
+            "src/domain/tempo.js#boundaryCount",
+            "tools/check-principles.mjs#RULES",
+            "tests/unit/domain.test.mjs",
+            "tests/unit/checkPrinciples.test.mjs",
+            "docs/PRINCIPLES.md",
+            "docs/BUG_REPORTS.md",
+            "CLAUDE.md"
+          ],
+          "effects": [
+            {
+              "metric": "afterProblem",
+              "way": "down",
+              "size": "",
+              "days": 14
+            }
+          ],
+          "plan": "docs/roadmap/plans/RM-60.md",
+          "branch": "rm-60-number-null-is-finite-check",
+          "startedAt": "2026-11-03"
+        },
+        {
+          "id": "RM-61",
+          "name": "테마 흐름 길 띠가 영상 본문 스크롤 칸에 잘린다",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "stage": null,
+          "pr": null,
+          "what": "1440 폭 · 뷰포트 723 · neon · 영상 띠에서 .video-body(max-height 26vh=188px, 446~634)가 흐름 길 띠(.flow-steps 560~664, 104px)의 아래 30px 를 잘라, 첫 화면에서 마디 이름(646~660)이 안무표 제목 밑으로 가린다 — 스크롤해야 보인다. 재생 줄 · 구간 줄이 길 띠보다 위에 서 있어 띠가 스크롤 칸 바닥에 걸린다. RM-58 재현 중 측정(RM-58 은 띠 안의 좌표만 고친다).",
+          "kind": "bug",
+          "seat": "code",
+          "addedAt": "2026-11-02T22:39:19Z",
+          "found": {
+            "by": "claude",
+            "kind": "bug",
+            "in": "RM-58",
+            "at": "2026-11-02T22:39:19Z",
+            "side": "feature",
+            "why": "RM-58 브라우저 재현에서 getBoundingClientRect 로 잼"
+          },
+          "slug": "themed-flow-band-clipped-by-video-body-scroll",
           "priority": "top4"
         }
       ]
@@ -4956,6 +5460,18 @@
       ],
       "reportedAt": "2026-11-02",
       "fixedBy": "RM-60"
+    },
+    {
+      "id": "BUG-29",
+      "title": "테마 흐름 길 띠가 영상 본문 스크롤 칸에 잘린다",
+      "symptom": "1440 폭 · 뷰포트 723 · neon · 영상 띠에서 .video-body(max-height 26vh=188px, 446~634)가 흐름 길 띠(.flow-steps 560~664, 104px)의 아래 30px 를 잘라, 첫 화면에서 마디 이름(646~660)이 안무표 제목 밑으로 가린다 — 스크롤해야 보인다. 재생 줄 · 구간 줄이 길 띠보다 위에 서 있어 띠가 스크롤 칸 바닥에 걸린다. RM-58 재현 중 측정(RM-58 은 띠 안의 좌표만 고친다).",
+      "elements": [
+        {
+          "name": "테마 흐름 길 띠가 영상 본문 스크롤 칸에 잘린다"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-61"
     }
   ]
 }
