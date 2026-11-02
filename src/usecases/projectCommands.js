@@ -310,6 +310,7 @@ function applyProjectData(deps, data) {
   //   원본은 비우지 않아, 열기 전에 고른 블록을 가리키는 선택이 남고 `루틴으로 편성 (2)` 가 떠 있었다.
   //   부분 채우기(mergeProjectData)는 기존 블록이 남으므로 선택을 건드리지 않는다.
   writeDoc(store, fields, { selection: new Set(), selectionAnchor: null });   // RM-14 — 앵커도 비운다
+  store.patch('session', { partFolds: new Set() });   // RM-23 — 접힘은 화면의 일이다. 다른 안무표를 열면 모두 펴진다
   store.patch('favorites', { routineIds: normalized.favoriteRoutineIds }); // 4372·4376
   storage.saveRoutineFavorites([...normalized.favoriteRoutineIds]);  // 4373·4377 (두 갈래 모두)
 

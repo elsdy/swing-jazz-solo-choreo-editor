@@ -721,3 +721,90 @@ export function moveRow(board, args, ids) {
   }
   return finishRows(out, [lo, lo + 1, ...touched], false, { cutIds });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 마디 여럿 — 파트를 통째로 옮기고 한 번 더 놓기 (2026-11-03, RM-23)
+//
+// 마디 하나짜리 연산(duplicateRow · moveRow)을 되풀이하면 파트 안에서 이어지던 블록이 마디 경계마다 끊긴다.
+// 그래서 마디 구간을 **한 번에** 옮긴다 — 블록을 마디 경계에서 조각내 새 자리로 보낸 뒤, 새 자리에서 다시 이어지는
+// 조각은 한 블록으로 붙인다. 구간 안에서만 이어지던 블록은 그대로 한 블록이고, 구간 경계에 걸친 블록만 끊긴다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 마디 [from..to] 를 바로 뒤에 한 벌 더 놓는다 — 그만큼 빈 마디를 끼우고(뒤의 블록은 밀린다) 구간 안의 블록을
+ * **새 그룹 번호**로 복사한다. 구간 밖으로 이어지는 블록은 구간 몫만 복사된다(duplicateRow 와 같은 규칙).
+ *
+ * @param {object} board
+ * @param {{ from:number, to:number }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @returns {{placements:object[], renderRows:'all'|null, changedRows:number[], rows:number, copiedIds:string[]}}
+ */
+// @complexity time=O(n log n) space=O(n) cc=5
+export function duplicateRowRange(board, args, ids) {
+  const { from, to } = args;
+  if (!isBodyRow(board, from) || !isBodyRow(board, to) || to < from) return { ...noRender(board), rows: board.rows, copiedIds: [] };
+  const cols = board.cols;
+  const n = to - from + 1;
+  const nextBoard = { ...board, rows: board.rows + n };
+  const r0 = linearOf(from, 0, cols);
+  const r1 = linearOf(to, cols - 1, cols);
+  const shifted = shiftFrom(board, board.placements, r1 + 1, n * cols, ids, nextBoard);
+  const copies = [];
+  const copiedIds = [];
+  for (const s of spansOf(shifted.placements, cols)) {
+    if (s.to < r0 || s.from > r1) continue;
+    const a = Math.max(s.from, r0);
+    const b = Math.min(s.to, r1);
+    const copyId = uidOf(ids)();
+    copies.push(...rebuildSpan(nextBoard, copyId, metaOf(s.head), a + n * cols, b - a + 1, s.subRow, ids));
+    copiedIds.push(copyId);
+  }
+  const touched = [...shifted.touched];
+  for (let r = to + 1; r <= to + n; r++) touched.push(r);
+  return finishRows([...shifted.placements, ...copies], touched, true, { rows: nextBoard.rows, copiedIds });
+}
+
+/**
+ * 마디의 차례를 바꾼다 — `rowMap`(옛 마디 → 새 마디, 몸통 마디 전부)대로 블록을 옮긴다. 마디 수는 그대로다.
+ * 블록은 마디 경계에서 조각내 옮기고, 새 자리에서 이어지는 조각은 다시 한 블록으로 붙인다 — 첫 덩이가 그룹 번호를
+ * 지키고, 떨어져 나간 덩이는 새 번호를 받는다(끼우기의 「끊긴다」와 같은 규칙).
+ *
+ * @param {object} board
+ * @param {{ rowMap: Map<number,number> }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @returns {{placements:object[], renderRows:'all'|null, changedRows:number[], cutIds:string[]}}
+ */
+// @complexity time=O(n·k + n log n) space=O(n) cc=9
+export function permuteRows(board, args, ids) {
+  const { rowMap } = args;
+  if (!(rowMap instanceof Map) || ![...rowMap].some(([a, b]) => a !== b)) return { ...noRender(board), cutIds: [] };
+  const cols = board.cols;
+  const rowOfLinear = (c) => Math.floor(c / cols) + 1;
+  const out = [];
+  const touched = [];
+  const cutIds = [];
+  for (const s of spansOf(board.placements, cols)) {
+    // 마디 경계마다 조각 — [a..b] 옛 선형 → 새 선형 시작
+    const runs = [];
+    for (let a = s.from; a <= s.to;) {
+      const row = rowOfLinear(a);
+      const b = Math.min(s.to, linearOf(row, cols - 1, cols));
+      const newRow = row >= 1 ? (rowMap.get(row) ?? row) : row;
+      const start = a + (newRow - row) * cols;
+      const last = runs[runs.length - 1];
+      if (last && last.end + 1 === start) { last.end = start + (b - a); last.total += b - a + 1; }
+      else runs.push({ start, end: start + (b - a), total: b - a + 1 });
+      a = b + 1;
+    }
+    const moved = runs.length !== 1 || runs[0].start !== s.from;
+    if (!moved) { out.push(...s.segs); continue; }
+    if (runs.length > 1) cutIds.push(s.groupId);
+    runs.forEach((run, i) => {
+      const built = rebuildSpan(board, i === 0 ? s.groupId : uidOf(ids)(), metaOf(s.head), run.start, run.total, s.subRow, ids);
+      out.push(...built);
+      touched.push(...rowsOf(built));
+    });
+  }
+  for (const [a, b] of rowMap) if (a !== b) touched.push(b);
+  return finishRows(out, touched, true, { cutIds });
+}

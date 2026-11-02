@@ -18,6 +18,7 @@ import { normalizeMedia } from './media.js';
 // 손으로 적으면 그 상수가 두 벌이 된다.
 import { normalizePhrasing } from '../phrasing.js';
 import { normalizeStepTodos } from '../stepTodos.js';
+import { normalizeParts } from '../parts.js';
 import { byField } from './fields.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,7 +129,9 @@ const UNDO_OPS = byField({
   links:       { pick: toLinkBundle, restore: toLinkBundle },
   media:       { pick: normalizeMedia, restore: normalizeMedia },
   phrasing:    { pick: normalizePhrasing, restore: normalizePhrasing },
-  stepTodos:   { pick: same, restore: normalizeStepTodos }
+  stepTodos:   { pick: same, restore: normalizeStepTodos },
+  // 파트(RM-23)도 언제나 싣는다 — 없는 옛 스냅샷은 빈 목록으로 떨어져야 파트를 그은 것을 Undo 로 되돌린다.
+  parts:       { pick: normalizeParts, restore: normalizeParts }
 }, 'domain/project/snapshot.js');
 
 /**

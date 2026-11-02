@@ -17,6 +17,7 @@ import { linearOf } from '../domain/grid.js';
 import { BOARD_MAIN, BOARD_ROUTINE, NONE, boardOf, mergeDirty, notice } from './store.js';
 import { clearLinks } from './linkCommands.js';
 import { clearMedia, mediaState } from './videoCommands.js';
+import { clipParts, shiftPartsForDelete, shiftPartsForDuplicate, shiftPartsForInsert } from '../domain/parts.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 공통 규약
@@ -309,10 +310,12 @@ export function setBoardRows(store, args) {
     { overflowRows: store.policy(boardId).overflowRows }                 // 2956 / 4871
   );
   store.setBoard(boardId, { ...nextBoard, placements });
-  return {
+  const dirty = {
     ...BOARD_SIZE_DIRTY[boardId],
     boards: { [boardId]: { skeleton: true, rows: 'all' } }               // renderBoard(true) 2960 / 4876
   };
+  // 마디를 줄이면 그 밖의 파트도 잘린다(RM-23) — 같은 스냅샷 안이라 되돌리기 한 번에 함께 돌아온다
+  return withParts(store, boardId, dirty, parts => clipParts(parts, nextRows));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -835,6 +838,23 @@ export function mergeWithNeighbor(store, args, deps = {}) {
   return dropFromSelection(store, boardId, dirty, result.selectionRemoved);
 }
 
+/**
+ * 메인 보드의 마디가 바뀐 뒤 파트 범위를 따라가게 한다(RM-23) — **같은 커맨드 · 같은 스냅샷 안**이다.
+ * 둘을 따로 커밋하면 되돌리기 한 번 뒤에 파트만 엉뚱한 곳에 남는다. 파트가 없으면 Dirty 를 그대로 돌려준다
+ * (파트를 안 쓴 사람의 Dirty 는 글자 하나 달라지지 않는다 — 골든이 이 Dirty 를 재생한다).
+ * ⚠ 받는 목록은 정규화하지 않은 그대로다 — 비교도 그대로 한다.
+ */
+// @complexity time=O(n) space=O(n) cc=4
+function withParts(store, boardId, dirty, shift) {
+  if (boardId !== BOARD_MAIN) return dirty;
+  const parts = store.get().parts;
+  if (!Array.isArray(parts) || !parts.length) return dirty;
+  const next = shift(parts);
+  if (JSON.stringify(next) === JSON.stringify(parts)) return dirty;
+  store.update({ parts: next });
+  return { ...dirty, parts: true };
+}
+
 /** 행 수가 바뀐 전이의 결과를 보드에 적는다 — 골격부터 다시 세운다(setBoardRows 와 같은 Dirty). */
 // @complexity time=O(1) space=O(1) cc=2
 function applyRowsResult(store, boardId, result) {
@@ -867,7 +887,7 @@ export function insertRowAt(store, args, deps = {}) {
   const result = boardOps.insertRow(boardOf(store.get(), boardId), { row }, deps.ids);
   const dirty = applyRowsResult(store, boardId, result);
   if (!dirty) return NONE;
-  return staleMarkerNotice(store, boardId, row, dirty);
+  return staleMarkerNotice(store, boardId, row, withParts(store, boardId, dirty, parts => shiftPartsForInsert(parts, row)));
 }
 
 /**
@@ -886,7 +906,8 @@ export function deleteRowAt(store, args, deps = {}) {
   const result = boardOps.deleteRow(board, { row }, deps.ids);
   const dirty = applyRowsResult(store, boardId, result);
   if (!dirty) return NONE;
-  return staleMarkerNotice(store, boardId, row, dropFromSelection(store, boardId, dirty, result.selectionRemoved));
+  const shifted = withParts(store, boardId, dirty, parts => shiftPartsForDelete(parts, row));
+  return staleMarkerNotice(store, boardId, row, dropFromSelection(store, boardId, shifted, result.selectionRemoved));
 }
 
 /**
@@ -902,7 +923,7 @@ export function duplicateRowAt(store, args, deps = {}) {
   const result = boardOps.duplicateRow(boardOf(store.get(), boardId), { row }, deps.ids);
   const dirty = applyRowsResult(store, boardId, result);
   if (!dirty) return NONE;
-  return staleMarkerNotice(store, boardId, row + 1, dirty);
+  return staleMarkerNotice(store, boardId, row + 1, withParts(store, boardId, dirty, parts => shiftPartsForDuplicate(parts, row)));
 }
 
 /**
