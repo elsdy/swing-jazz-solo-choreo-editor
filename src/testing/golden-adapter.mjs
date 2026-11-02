@@ -27,7 +27,8 @@ import {
   BOARD_IDS, BOARD_MAIN, BOARD_ROUTINE, createStore, expandRows
 } from '../usecases/store.js';
 import {
-  copyGroupTo, moveGroupTo, placeMoveAt, placeRoutineAt, removeGroup, resizeGroupTo, setBoardRows
+  copyGroupTo, deleteRowAt, duplicateRowAt, insertRowAt, mergeWithNeighbor, moveGroupTo, moveRowBy, placeMoveAt, placeRoutineAt,
+  removeGroup, resizeGroupTo, setBoardRows, splitGroupAt
 } from '../usecases/boardCommands.js';
 import { loadProjectFromRecent, mergeProjectFromRecent } from '../usecases/projectCommands.js';
 import { setRoutineSize, syncFromEditor } from '../usecases/routineCommands.js';
@@ -319,6 +320,35 @@ export function createAdapter() {
       store.setBoard(boardId, { placements: res.placements });
       record(null);
       return res.affectedRows;
+    },
+
+    // ── 분할 · 병합 · 마디 편집 (RM-16) ──────────────────────────────────────
+    // ⚠ 유스케이스를 거친다 — 행 수 · 선택 정리까지 포함한 길이 앱이 실제로 타는 길이다. 골든은 배치와 렌더만 본다.
+
+    /** 뒤 조각이 시작할 그룹 안 카운트 번호 = frontCount + 1. 골든은 도메인의 frontCount 로 적는다. */
+    splitGroup({ board, groupId, frontCount }) {
+      record(splitGroupAt(store, { boardId: idOf(board), groupId, countInGroup: frontCount + 1 }, { ids: env }));
+    },
+
+    /** withGroupId 는 기록용이다 — 짝은 mergePartner 가 찾고, 골든이 적은 짝과 다르면 결과가 달라져 드러난다. */
+    mergeGroups({ board, groupId }) {
+      record(mergeWithNeighbor(store, { boardId: idOf(board), groupId }, { ids: env }));
+    },
+
+    insertRow({ board, row }) {
+      record(insertRowAt(store, { boardId: idOf(board), row }, { ids: env }));
+    },
+
+    deleteRow({ board, row }) {
+      record(deleteRowAt(store, { boardId: idOf(board), row }, { ids: env }));
+    },
+
+    duplicateRow({ board, row }) {
+      record(duplicateRowAt(store, { boardId: idOf(board), row }, { ids: env }));
+    },
+
+    moveRow({ board, row, delta }) {
+      record(moveRowBy(store, { boardId: idOf(board), row, delta }, { ids: env }));
     },
 
     // ── 프로젝트 ────────────────────────────────────────────────────────────

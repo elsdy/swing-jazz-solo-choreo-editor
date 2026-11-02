@@ -63,6 +63,7 @@ import { createRoutineListView } from '../ui/routineListView.js';
 import { createRoutineEditorView } from '../ui/routineEditorView.js';
 import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createPlacementActionPopup } from '../ui/placementActionPopup.js';
+import { createRowActionPopup } from '../ui/rowActionPopup.js';
 import { createDocsHub } from '../ui/docsHub.js';
 import { createSettingsView } from '../ui/settingsView.js';
 import { createPhrasingView } from '../ui/phrasingView.js';
@@ -684,7 +685,33 @@ const placementActionPopup = createPlacementActionPopup({
     removeGroup: (groupId) => withUndoToast(
       BoardCmd.removeGroup(store, { boardId: BOARD_MAIN, groupId }), '블록을 지웠습니다.'
     ),
-    openPicker: (groupId, x, y) => quickPickers[BOARD_MAIN].openForGroup(groupId, x, y)
+    openPicker: (groupId, x, y) => quickPickers[BOARD_MAIN].openForGroup(groupId, x, y),
+    // 분할 · 병합(RM-16). 재생 헤드가 이 블록 안에 없거나 박자가 없으면 null — 팝업이 카운트 고르기로 떨어진다.
+    splitAtPlayhead: (groupId) => {
+      const sec = playheadSec();
+      if (sec === null) return null;
+      const dirty = BoardCmd.splitGroupAt(store, { boardId: BOARD_MAIN, groupId, sec }, { ids: browserEnv });
+      return dirty.boards ? commitIfChanged(dirty, BOARD_MAIN) : null;
+    },
+    splitAtCount: (groupId, countInGroup) =>
+      commitIfChanged(BoardCmd.splitGroupAt(store, { boardId: BOARD_MAIN, groupId, countInGroup }, { ids: browserEnv }), BOARD_MAIN),
+    mergePartner: (groupId) => BoardCmd.mergePartnerOf(store, { boardId: BOARD_MAIN, groupId }),
+    mergeWithNeighbor: (groupId) =>
+      commitIfChanged(BoardCmd.mergeWithNeighbor(store, { boardId: BOARD_MAIN, groupId }, { ids: browserEnv }), BOARD_MAIN)
+  }
+});
+
+// 행 라벨의 마디 메뉴(2026-11-02, RM-16). 우클릭 · 길게 누르기로 뜬다 — 메인 보드만(루틴 보드의 행은 편집기 크기가 정한다).
+// ⚠ 다섯 줄 모두 커밋까지 끝낸다. 지우기는 블록 지우기와 같이 「되돌리기」 토스트를 붙인다.
+const rowActionPopup = createRowActionPopup({
+  render,
+  labelOf: (row) => `${store.board(BOARD_MAIN).cols}x${row}`,
+  commands: {
+    insertAbove: (row) => commitIfChanged(BoardCmd.insertRowAt(store, { boardId: BOARD_MAIN, row }, { ids: browserEnv }), BOARD_MAIN),
+    deleteRow: (row) => withUndoToast(BoardCmd.deleteRowAt(store, { boardId: BOARD_MAIN, row }, { ids: browserEnv }), '마디를 지웠습니다.'),
+    duplicateRow: (row) => commitIfChanged(BoardCmd.duplicateRowAt(store, { boardId: BOARD_MAIN, row }, { ids: browserEnv }), BOARD_MAIN),
+    moveUp: (row) => commitIfChanged(BoardCmd.moveRowBy(store, { boardId: BOARD_MAIN, row, delta: -1 }, { ids: browserEnv }), BOARD_MAIN),
+    moveDown: (row) => commitIfChanged(BoardCmd.moveRowBy(store, { boardId: BOARD_MAIN, row, delta: 1 }, { ids: browserEnv }), BOARD_MAIN)
   }
 });
 
@@ -730,7 +757,7 @@ function makeBoardController(boardId, extra = {}) {
 
 // 원본 1525 bindBoardDelegatedEvents(mainCtx)
 // ⚠ 손가락 폭 판정은 ui/layout 의 isStacked 하나를 쓴다 — 브레이크포인트를 input 계층에 또 적지 않는다.
-makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup, isTouchLayout: () => isStacked() });
+makeBoardController(BOARD_MAIN, { routineActionPopup, placementActionPopup, rowActionPopup, longPress, isTouchLayout: () => isStacked() });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 12. bindControls (원본 1524) — ⚠ bindHotkeys 는 이 안에서 불린다
@@ -816,6 +843,19 @@ function nudge(board, dir) {
 
 /** 명령 하나의 지금 글쇠. 툴팁 · 일람이 읽는다. */
 const keysNow = (id) => hotkeyMap[id];
+
+/**
+ * 재생 헤드가 서 있는 초(RM-16 자르기). 세로선이 그려지는 조건(박자가 있고 영상이나 박자 시계가 돈다)과 같을 때만
+ * 값이고, 아니면 null — 그때는 블록 팝업의 「몇 번째 카운트에서」가 길이다.
+ * ⚠ 재생기 · 시계는 이 표보다 뒤에 만들어지므로 누르는 시점에 읽는다(영상 쪽 줄과 같은 까닭).
+ */
+// @complexity time=O(1) space=O(1) cc=5
+function playheadSec() {
+  if (!VideoCmd.isTempoReady(store)) return null;
+  if (!(hasMediaSource() || playerKind === 'clock')) return null;
+  const sec = currentVideoSec();
+  return Number.isFinite(sec) ? sec : null;
+}
 
 /**
  * 프로젝트 저장 — `프로젝트 저장` 버튼과 명령 팔레트가 같은 이 함수를 부른다(RM-09).
@@ -908,6 +948,14 @@ const COMMAND_RUNNERS = Object.freeze({
     if (!clip.length) return false;
     const at = BoardCmd.pasteAnchor(store, { boardId });
     render(commitIfChanged(BoardCmd.pasteClip(store, { boardId, clip, at }, { ids: browserEnv }), boardId));
+    return true;
+  },
+  // 재생 헤드에서 자르기(RM-16) — 메인 안무표만(세로선은 메인에만 선다). 박자가 없으면 알림만 뜬다.
+  // @complexity time=O(t·n log n) space=O(n) cc=2
+  splitAtPlayhead: () => {
+    const sec = playheadSec();
+    if (sec === null) { render({ notify: notice('status', '재생 헤드가 없습니다 — 박자를 맞추고 영상(또는 박자 시계)을 켜거나, 블록 팝업에서 몇 번째 카운트인지 고르세요.') }); return true; }
+    render(commitIfChanged(BoardCmd.splitAtPlayhead(store, { boardId: BOARD_MAIN, sec }, { ids: browserEnv }), BOARD_MAIN));
     return true;
   },
   selectAll: ({ board }) => {

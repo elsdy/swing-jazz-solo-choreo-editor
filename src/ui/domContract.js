@@ -95,6 +95,7 @@ export const CLS = Object.freeze({
   isEditing: 'is-editing',                    // 4702 — 편집 중인 루틴 카드
   routineActionPopup: 'routine-action-popup', // 1728
   rapTitle: 'rap-title',                      // 1732
+  rapCounts: 'rap-counts',                    // 2026-11-02 RM-16 — 「몇 번째 카운트에서」 단추 격자
   routineEditorPanel: 'routine-editor-panel',
   reToolbar: 're-toolbar',
   reCloseBtn: 're-close-btn',
@@ -167,6 +168,7 @@ export const CLS = Object.freeze({
 /** @type {Readonly<Record<string, string|((groupId: string) => string)>>} */
 export const SEL = Object.freeze({
   // ── 보드 히트테스트 ──
+  rowLabel: '.row-label',          // 2026-11-02 RM-16 — 행 라벨 우클릭 · 길게 누르기의 과녁
   track: '.track',                 // closest 12곳(2395·2404·2412·2609·2619·2631·2647·2668·2688·2729·2744·3789 …)
   placement: '.placement',         // 1529 · 2439 · 2468 · 2533 · 2586 · 2591 · 3382
   moveHandle: '.move-handle',      // 2477 · 2490 · 2523
