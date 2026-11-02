@@ -203,3 +203,44 @@ export function resolveSpokenName(spoken, moveNames) {
   if (matched && matched.sure) return { name: matched.name, matched, needsLlm: false };
   return { name: heard, matched, needsLlm: Boolean(heard) };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 이름 추리기 — 사람이 글자를 치는 동안 동작 목록에서 추려 보이는 규칙 (2026-11-02, RM-15)
+//
+// 동작 고르기 창(ui/quickPicker)의 renderList 안에만 있던 「포함 검색 + 즐겨찾기 먼저」를 꺼냈다.
+// 블록 위 인라인 이름 입력(ui/inlinePrompt.askName)이 같은 규칙으로 추천 목록을 보이므로 두 화면이 함께 쓰고,
+// 순수 함수라 단위 시험이 지킨다. ⚠ 위의 matchSpoken(말로 들은 것)과는 다른 일이다 — 이쪽은 글자 그대로 품는지만 본다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 질의를 **포함하는** 동작만, 목록 차례 그대로. 대소문자는 가리지 않는다. 빈 질의면 전부.
+ * 동작 고르기 창이 글자를 쳤을 때 보이는 것과 같은 규칙이다.
+ * @template {{name:string}} M
+ * @param {M[]} library
+ * @param {string} query
+ * @returns {M[]}
+ */
+// @complexity time=O(n·k) space=O(n) cc=4
+export function matchMoves(library, query) {
+  const ql = String(query == null ? '' : query).trim().toLowerCase();
+  const list = Array.isArray(library) ? library : [];
+  if (!ql) return [...list];
+  return list.filter(m => m && typeof m.name === 'string' && m.name.toLowerCase().includes(ql));
+}
+
+/**
+ * 추천 목록 — 질의를 포함하는 동작을 **즐겨찾기 먼저**, 그 안에서는 목록 차례로.
+ * 빈 질의면 동작 고르기 창의 첫 화면과 같은 차례(즐겨찾기 → 나머지)다.
+ * @template {{name:string}} M
+ * @param {M[]} library
+ * @param {string} query
+ * @param {Set<string>|string[]|null|undefined} favNames 즐겨찾기한 동작 이름들
+ * @returns {M[]}
+ */
+// @complexity time=O(n·k) space=O(n) cc=4
+export function suggestMoves(library, query, favNames) {
+  const favs = favNames instanceof Set ? favNames : new Set(Array.isArray(favNames) ? favNames : []);
+  const matched = matchMoves(library, query);
+  if (!favs.size) return matched;
+  return [...matched.filter(m => favs.has(m.name)), ...matched.filter(m => !favs.has(m.name))];
+}
