@@ -4,7 +4,7 @@
 
 ## 2026-11-03 — 로드맵 시험이 보드가 더한 출처 트랙(plan 없음)을 받는다
 
-병합 전 — `rm-49-roadmap-test-accepts-planless-source-track`
+PR #64 (`rm-49-roadmap-test-accepts-planless-source-track`)
 
 - **사용자 화면은 그대로다.** 로드맵 보드가 판에 「🏭 factoriel 에서 올라온 버그」 트랙(`from-factoriel`)을 문서 앵커 없이 설명만 달아 더하자, 로드맵 시험 하나가 어긋남을 알리지도 못하고 `TypeError` 로 던져 보드의 판 변경 올리기(`items-push`)가 푸시 훅에 막혔다. 이제 문서 앵커가 있는 트랙만 그 앵커를 재고, 앵커가 없으면 설명이 있을 때 통과한다 — 앵커도 설명도 없는 빈 트랙만 「plan 도 설명도 없다」로 붉다.
 - 항목에 두었던 「계획서 또는 설명」 문턱(RM-40)을 트랙에도 같이 둔 것이다. 이 일을 [버그 기록](BUG_REPORTS.md#판이-더한-출처-트랙에-plan-이-없어-로드맵-시험이-typeerror-로-던져-판-변경-올리기가-막힘)과 [개발 원칙 D-19](PRINCIPLES.md#d-19) 근거에 적었다(로드맵 RM-49, 단위 시험 622 → 623).
