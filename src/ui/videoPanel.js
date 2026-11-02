@@ -11,7 +11,8 @@
 //   자기 엘리먼트의 transform 만 직접 쓰는 휘발성 채널이다(docs/PORTS.md 채널 B).
 //   여기서 그리면 초당 60회 전체 재렌더가 된다.
 //
-// ⚠ 경계 ③ — **URL 입력창을 만들지 않는다.** 링크바의 `YouTube URL 입력...` 칸이 그대로 소스다.
+// ⚠ 경계 ③ — **URL 입력창을 만들지 않는다.** `① 영상 고르기` 맨 위의 `YouTube URL 입력...` 칸이 그대로 소스다
+//   (RM-20 · 2026-11-02 에 안무표 위 링크 줄에서 **같은 엘리먼트를** 옮겼다 — 소유는 여전히 ui/linksBarView 다).
 //   상태를 두 곳에 두지 않는다(docs/PORTS.md '삽입 지점').
 //
 // ⚠ 경계 ④ — **어댑터를 모른다.** 재생기는 MediaPlayer 계약으로만 들어오고(getPlayerState /
@@ -79,16 +80,16 @@ const EXPORT_TEXT = Object.freeze({
  * @type {Readonly<Record<string, string>>}
  */
 const ERROR_TEXT = Object.freeze({
-  'not-found': '영상을 찾을 수 없습니다. 링크바의 주소를 확인하세요.',
-  'not-embeddable': '이 영상은 외부 재생이 막혀 있습니다. 링크바의 ↗ 버튼으로 유튜브에서 여세요.',
+  'not-found': '영상을 찾을 수 없습니다. `① 영상 고르기` 의 주소를 확인하세요.',
+  'not-embeddable': '이 영상은 외부 재생이 막혀 있습니다. 주소 칸 옆 ↗ 버튼으로 유튜브에서 여세요.',
   'network': '유튜브 재생 스크립트를 불러오지 못했습니다. 광고 차단기·사내망·오프라인 상태를 확인하세요.',
   'unsupported': '지원하지 않는 영상 주소입니다.',
   'unknown': '영상을 재생할 수 없습니다.'
 });
 
-/** 소스가 없을 때의 안내. 링크바와 파일 버튼을 가리킨다 — 유튜브 주소 입력창은 여기 만들지 않기 때문이다. */
+/** 소스가 없을 때의 안내. `① 영상 고르기` 의 주소 칸과 파일 버튼을 가리킨다 — 입구는 그 한 자리다(RM-20). */
 const CLOCK_TEXT = '영상 없이 박자만으로 돕니다 — 아래 `▶ 재생` 으로 재생 헤드와 카운트 소리를 안무표 위에서 돌립니다. 영상을 고르면 그 영상으로 바뀝니다.';
-const NO_SOURCE_TEXT = '위 링크바의 `YouTube URL 입력...` 칸에 주소를 넣거나 `📁 영상 파일 열기` 로 내 컴퓨터의 영상을 고르면 여기에 뜹니다.';
+const NO_SOURCE_TEXT = '`① 영상 고르기` 의 `YouTube URL 입력...` 칸에 주소를 넣거나 `📁 영상 파일 열기` 로 내 컴퓨터의 영상을 고르면 여기에 뜹니다.';
 
 /**
  * 파일 소스는 저장됐는데 이 세션에서 아직 안 골랐을 때의 안내.
@@ -359,6 +360,7 @@ export function createVideoPanel(deps) {
   const exportHelp = byId('videoExportHelp');
   const markerSelBtn = byId('videoMarkerSelBtn');
   const markerRowBtn = byId('videoMarkerRowBtn');
+  const markerRow = byId('videoMarkerRow');          // 마커 탭의 `마디` 칸(RM-20) — ② 의 앵커 칸과 다른 값이다
   const markerClearBtn = byId('videoMarkerClearBtn');
   const markerHelp = byId('videoMarkerHelp');
   const markerList = byId('videoMarkerList');
@@ -459,10 +461,14 @@ export function createVideoPanel(deps) {
     return from === null ? null : { from, to, names };
   }
 
-  /** `여기가 [행]` 칸이 가리키는 마디 전체의 선형 카운트 구간 [from, to). */
-  function anchorRowRange() {
+  /**
+   * 마커 탭의 `마디` 칸이 가리키는 마디 전체의 선형 카운트 구간 [from, to).
+   * ⚠ ② 의 `여기가` 칸을 읽지 않는다(RM-20) — 그 칸은 「세로선이 어긋날 때」 안으로 접혀 마커를 쓸 때 안 보이고,
+   *   「첫 박이 어느 마디인가」와 「이 구간이 어느 마디인가」는 다른 물음이라 칸이 둘이어도 같은 상태를 두 번 두는 것이 아니다.
+   */
+  function markerRowRange() {
     const board = mainBoard();
-    const row = Number(anchorRow && anchorRow.value);
+    const row = Number(markerRow && markerRow.value);
     const safeRow = Number.isFinite(row) ? row : 1;
     const from = linearOf(safeRow, 0, board.cols);
     return { from, to: from + board.cols, row: safeRow };
@@ -478,22 +484,33 @@ export function createVideoPanel(deps) {
     if (next !== row) anchorRow.value = String(next);
   }
 
-  /** 행 선택지를 보드와 맞춘다. 라벨은 보드의 행 라벨과 **같은 문자열**이다(intro / `8x3`). */
-  function syncRowOptions() {
-    if (!anchorRow) return;
-    const board = mainBoard();
-    const sig = `${board.cols}x${board.rows}`;
-    if (sig === rowOptionsSig) return;
-    const keep = anchorRow.value;
-    anchorRow.innerHTML = '';
+  /**
+   * 행 선택지 한 칸을 보드와 맞춘다. 라벨은 보드의 행 라벨과 **같은 문자열**이다(intro / `8x3`).
+   * @param {HTMLSelectElement} sel
+   * @param {{cols:number, rows:number}} board
+   */
+  // @complexity time=O(r) space=O(r) cc=4
+  function fillRowOptions(sel, board) {
+    const keep = sel.value;
+    sel.innerHTML = '';
     for (const row of rowIndices(board)) {
       const opt = document.createElement('option');
       opt.value = String(row);
       opt.textContent = row === 0 ? 'intro' : `${board.cols}x${row}`;
-      anchorRow.appendChild(opt);
+      sel.appendChild(opt);
     }
     // 보드가 줄어 사라진 행을 고르고 있었으면 첫 마디로 되돌린다.
-    anchorRow.value = [...anchorRow.options].some(o => o.value === keep) ? keep : '1';
+    sel.value = [...sel.options].some(o => o.value === keep) ? keep : '1';
+  }
+
+  /** 행 선택지(② 의 `여기가` · 마커 탭의 `마디`)를 보드와 맞춘다. 보드 크기가 그대로면 아무것도 안 한다. */
+  // @complexity time=O(r) space=O(r) cc=5
+  function syncRowOptions() {
+    if (!anchorRow && !markerRow) return;
+    const board = mainBoard();
+    const sig = `${board.cols}x${board.rows}`;
+    if (sig === rowOptionsSig) return;
+    for (const sel of [anchorRow, markerRow]) if (sel) fillRowOptions(sel, board);
     rowOptionsSig = sig;
     if (anchorCount) anchorCount.max = String(board.cols);
   }
@@ -546,7 +563,7 @@ export function createVideoPanel(deps) {
     }
     // 주소는 있는데 널 재생기다 = 유튜브 주소로 알아보지 못했다. 오류가 아니라 안내다.
     if (!isFile && getPlayerKind() === 'null') {
-      statusEl.textContent = '유튜브 주소로 알아보지 못했습니다. 링크바의 주소를 확인하세요.';
+      statusEl.textContent = '유튜브 주소로 알아보지 못했습니다. `① 영상 고르기` 의 주소를 확인하세요.';
       statusEl.classList.remove(CLS.isError);
       return;
     }
@@ -929,14 +946,21 @@ export function createVideoPanel(deps) {
   }
 
   /**
-   * 기록에 쓰는 단계 이름. 마크업 순서가 곧 이름이라 라벨을 고쳐도 기록이 끊기지 않는다.
+   * 기록 · 할 일에 쓰는 단계 열쇠 — 마크업의 `data-step`(step1~6). 라벨을 고쳐도, 자리를 옮겨도 기록이 끊기지 않는다.
+   * ⚠ RM-20 전에는 마크업 **위치 차례**(`step${i+1}`)였다. 도구를 다른 그릇으로 옮기면서 글자로 박았다 —
+   *   이미 저장된 할 일(stepTodos 의 step4~6)과 `⚙ 설정 → 작업 차례` 기록이 갈 곳을 잃지 않게. 없는 마크업만 차례로 돌아간다.
+   * @param {HTMLElement} el `<details class="vstep">`
    * @param {number} i 0-based
    */
-  const stepId = (i) => `step${i + 1}`;
+  const stepId = (el, i) => (el && el.dataset && el.dataset.step) || `step${i + 1}`;
 
-  /** 눕힌 띠의 단계들(①~⑥). `.vsub`(고급)은 자식이 아니라 손자라 걸리지 않는다. */
+  /** 차례(①②③) — 패널 몸통 직속 `<details class="vstep">`. 도구(`.video-tools` 안)와 `.vsub` 는 손자라 걸리지 않는다. */
   const STEP_SEL = '.video-body > .vstep';
   const stepEls = () => [...document.querySelectorAll(STEP_SEL)];
+  /** 도구 탭(RM-20) — 구간 자르기 · 마커 · 자세 분석. 번호도 ✓ 도 없고, 한 번에 하나만 열린다. */
+  const TOOL_SEL = '.video-body > .video-tools > .vtool';
+  const toolEls = () => [...document.querySelectorAll(TOOL_SEL)];
+  const toolTabs = byId('videoToolTabs');
 
   /**
    * 띠에 들어설 때 열어 둘 단계 — **아직 안 끝난 첫 단계**다. 영상이 없으면 ①, 박자가 없으면 ②,
@@ -951,10 +975,13 @@ export function createVideoPanel(deps) {
     return 2;
   }
 
-  /** 그 하나만 연다. 띠에서는 여러 단계가 동시에 펼쳐지면 안무표가 화면 밖으로 밀려난다. */
+  /** 그 하나만 연다. 띠에서는 여러 단계가 동시에 펼쳐지면 안무표가 화면 밖으로 밀려난다 — 도구 탭도 함께 닫는다. */
+  // @complexity time=O(n) space=O(n) cc=3
   function openOnlyStep(idx) {
     stepEls().forEach((el, i) => { el.open = i === idx; });
+    toolEls().forEach((el) => { el.open = false; });
     renderFlowSteps();
+    renderToolTabs();
   }
 
   /**
@@ -976,7 +1003,8 @@ export function createVideoPanel(deps) {
 
   /**
    * 그 단계가 이미 끝났는가. ①은 영상이, ②는 박자가, ③은 놓인 블록이 있으면 끝이다.
-   * ④~⑥은 있으면 좋은 것이지 차례가 아니라 **끝났다고 말하지 않는다**(거짓 완료 표시가 된다).
+   * 도구(구간 자르기 · 마커 · 자세 분석)는 있으면 좋은 것이지 차례가 아니라 **끝났다고 말하지 않는다**(거짓 완료 표시가 된다) —
+   *   RM-20 부터는 차례 줄에 아예 서지 않는다(도구 탭은 renderToolTabs 가 따로 그린다).
    * @param {number} idx
    * @returns {boolean}
    */
@@ -1016,21 +1044,66 @@ export function createVideoPanel(deps) {
       btn.dataset.state = el.open ? 'now' : (done ? 'done' : 'todo');
       // ⚠ 표식일 뿐이다. 버튼의 **자리도 순서도 크기도 바뀌지 않는다** — 손에 익은 과녁이
       //   통계 때문에 옮겨 다니면 그것은 적응이 아니라 과녁이 흔들리는 것이다.
-      if (!el.open && suggested === stepId(i)) btn.dataset.next = '1';
+      if (!el.open && suggested === stepId(el, i)) btn.dataset.next = '1';
       else delete btn.dataset.next;
       // 남은 할 일 수. **0 이면 표식을 지운다** — 0 이라고 적힌 배지는 아무 말도 하지 않으면서
       // 자리만 차지한다(CSS 는 이 값이 있을 때만 배지를 그린다).
-      const open = openCount(store.get().stepTodos, stepId(i));
+      const open = openCount(store.get().stepTodos, stepId(el, i));
       if (open > 0) btn.dataset.todo = String(open);
       else delete btn.dataset.todo;
       btn.setAttribute('aria-expanded', String(Boolean(el.open)));
       // ⚠ onclick 대입이다(addEventListener 가 아니다) — 다시 그릴 때마다 붙이면 한 번 누른 것이
       //   두 번 돌아간다. 여는 일 자체는 `toggle` 리스너가 나머지를 닫아 준다.
       // ⚠ **사람이 누른 것만** 센다. openOnlyStep 이 프로그램으로 여는 것은 차례가 아니다.
-      btn.onclick = () => { el.open = true; flow.note(stepId(i)); };
+      btn.onclick = () => { el.open = true; flow.note(stepId(el, i)); };
     });
     drawFlowTrack(els.length);
     renderStepTodos();
+  }
+
+  /**
+   * 도구 탭 줄을 그린다(RM-20 · 2026-11-02). 차례 줄과 같은 규약이다 —
+   *  · 이름 · 아이콘 · 순서의 주인은 마크업의 `<details class="vtool">`(data-icon · summary)이고 여기서 목록을 적지 않는다.
+   *  · 버튼을 갈아 끼우지 않는다 — 누르는 순간 사라지면 그 클릭이 허공에 떨어진다. 같은 자리면 라벨 · 상태만 고친다.
+   *  · 번호도 ✓ 도 없다. 열린 탭은 `data-state="now"` 뿐이다 — 도구는 끝나는 일이 아니다.
+   *  · 남은 할 일 수는 차례 줄과 같은 `data-todo` 배지다(열쇠 step4~6 그대로).
+   * ⚠ 모든 폭에서 보인다(차례 줄은 띠에서만). 세로 패널에서는 도구의 `<summary>` 를 CSS 가 숨기므로 이 줄이 유일한 손잡이다.
+   */
+  // @complexity time=O(n) space=O(n) cc=9
+  function renderToolTabs() {
+    if (!toolTabs) return;
+    const els = toolEls();
+    while (toolTabs.children.length > els.length) toolTabs.lastElementChild.remove();
+    while (toolTabs.children.length < els.length) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'vtool-tab';
+      const ic = document.createElement('span');
+      ic.className = 'vtool-icon';
+      ic.setAttribute('aria-hidden', 'true');
+      const nm = document.createElement('span');
+      nm.className = 'vtool-name';
+      btn.append(ic, nm);
+      toolTabs.appendChild(btn);
+    }
+    els.forEach((el, i) => {
+      const btn = toolTabs.children[i];
+      btn.querySelector('.vtool-icon').textContent = el.dataset.icon || '·';
+      btn.querySelector('.vtool-name').textContent = stepLabel(el);
+      btn.dataset.state = el.open ? 'now' : 'idle';
+      btn.setAttribute('aria-expanded', String(Boolean(el.open)));
+      const open = openCount(store.get().stepTodos, stepId(el, i));
+      if (open > 0) btn.dataset.todo = String(open);
+      else delete btn.dataset.todo;
+      // ⚠ onclick 대입이다 — 다시 그릴 때마다 붙이면 한 번 누른 것이 두 번 돌아간다.
+      // 같은 탭을 다시 누르면 닫힌다(도구는 필요할 때만 펼친다). 나머지를 닫는 일은 `toggle` 리스너가 한다.
+      // ⚠ **사람이 누른 것만** 기록한다 — 프로그램이 닫는 것은 차례가 아니다.
+      btn.onclick = () => {
+        const opening = !el.open;
+        el.open = opening;
+        if (opening) flow.note(stepId(el, i));
+      };
+    });
   }
 
   /**
@@ -1041,11 +1114,12 @@ export function createVideoPanel(deps) {
    *   `.vstep-body` 에 한 번 붙이고 그 뒤로는 내용만 고친다.
    * ⚠ **열린 단계만** 그린다. 닫힌 `<details>` 안은 어차피 안 보이고, 여섯 벌을 매번 그리면
    *   받아 적는 동안 블록 하나마다 도는 렌더가 그만큼 무거워진다.
+   * ⚠ 차례 셋과 도구 셋을 **함께** 돈다(RM-20). 도구 탭에서도 할 일은 열쇠 step4~6 그대로 쌓이고 그대로 보인다.
    * ⚠ 입력 중에는 커밋하지 않는다. 확정(Enter·`+ 추가`)에서만 히스토리에 넣는다 — 글자마다
    *   커밋하면 되돌리기 한 번이 한 글자를 지운다.
    */
   function renderStepTodos() {
-    stepEls().forEach((el, i) => {
+    [...stepEls(), ...toolEls()].forEach((el, i) => {
       if (!el.open) return;
       const body = el.querySelector('.vstep-body');
       if (!body) return;
@@ -1063,7 +1137,7 @@ export function createVideoPanel(deps) {
           const text = input.value.trim();
           if (!text) return;
           input.value = '';
-          applyCommitting({ ...commands.addStepTodo({ stepId: stepId(i), text }), committed: true });
+          applyCommitting({ ...commands.addStepTodo({ stepId: stepId(el, i), text }), committed: true });
           renderStepTodos();
         };
         addBtn.onclick = submit;
@@ -1071,7 +1145,7 @@ export function createVideoPanel(deps) {
         //   옮기기만 해도 할 일이 하나 생긴다.
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
       }
-      const list = (store.get().stepTodos || {})[stepId(i)] || [];
+      const list = (store.get().stepTodos || {})[stepId(el, i)] || [];
       const head = box.querySelector('.step-todo-head');
       const open = list.filter(t => !t.done).length;
       head.textContent = list.length
@@ -1088,7 +1162,7 @@ export function createVideoPanel(deps) {
         check.textContent = todo.done ? '☑' : '☐';
         check.title = todo.done ? '아직 안 한 것으로' : '했다고 표시';
         check.onclick = () => {
-          applyCommitting({ ...commands.toggleStepTodo({ stepId: stepId(i), id: todo.id }), committed: true });
+          applyCommitting({ ...commands.toggleStepTodo({ stepId: stepId(el, i), id: todo.id }), committed: true });
           renderStepTodos();
         };
         const text = document.createElement('span');
@@ -1100,7 +1174,7 @@ export function createVideoPanel(deps) {
         del.textContent = '✕';
         del.title = '이 할 일을 지웁니다';
         del.onclick = () => {
-          applyCommitting({ ...commands.removeStepTodo({ stepId: stepId(i), id: todo.id }), committed: true });
+          applyCommitting({ ...commands.removeStepTodo({ stepId: stepId(el, i), id: todo.id }), committed: true });
           renderStepTodos();
         };
         row.append(check, text, del);
@@ -1406,8 +1480,8 @@ export function createVideoPanel(deps) {
       } else if (sel) {
         markerHelp.textContent = `선택: ${formatRange(sel.from, sel.to, board.cols)} (${sel.names.slice(0, 4).join(' · ')}${sel.names.length > 4 ? ' …' : ''}) ← In~Out 을 여기에 맵핑합니다.`;
       } else {
-        const r = anchorRowRange();
-        markerHelp.textContent = `블록을 선택하지 않았습니다 — \`이 마디에 맵핑\` 은 위 칸의 ${formatRange(r.from, r.to, board.cols)} 전체에 맵핑합니다.`;
+        const r = markerRowRange();
+        markerHelp.textContent = `블록을 선택하지 않았습니다 — \`이 마디에 맵핑\` 은 왼쪽 \`마디\` 칸의 ${formatRange(r.from, r.to, board.cols)} 전체에 맵핑합니다.`;
       }
     }
     if (markerList) {
@@ -1509,6 +1583,7 @@ export function createVideoPanel(deps) {
     }
 
     renderFlowSteps();
+    renderToolTabs();
     renderStatus();
     renderClips();
     renderTempo();
@@ -1770,7 +1845,7 @@ export function createVideoPanel(deps) {
   }
   if (markerRowBtn) {
     markerRowBtn.onclick = () => {
-      const r = anchorRowRange();
+      const r = markerRowRange();
       addMarker(r, r.row === 0 ? 'intro' : `${mainBoard().cols}x${r.row} 마디`);
     };
   }
@@ -1782,16 +1857,30 @@ export function createVideoPanel(deps) {
     };
   }
 
-  // 띠에서는 단계가 **하나만** 열린다. 여섯이 다 펼쳐지면 띠 하나가 1300px 이 되어 안무표가
-  // 화면 밖으로 밀려난다(2026-09-21 에 실제로 그랬다).
+  // 하나만 연다 —
+  //  · 도구 탭은 **어느 폭에서든** 하나만(탭이다). 다른 도구를 열면 열려 있던 도구가 닫힌다.
+  //  · 띠에서는 차례와 도구를 **합쳐서** 하나만. 여섯이 다 펼쳐지면 띠 하나가 1300px 이 되어 안무표가
+  //    화면 밖으로 밀려난다(2026-09-21 에 실제로 그랬다). 도구 탭이 이 규칙과 따로 놀면 폰에서 표가 밀린다(RM-20).
+  //  · 세로 패널에서 차례 ①②③은 여럿 펼쳐도 된다(지금까지와 같다).
   // ⚠ `toggle` 은 **버블하지 않는다** — document 에서 들으려면 캡처 단계여야 한다.
-  // ⚠ 아래에서 다른 단계를 닫으면 그 닫힘도 toggle 을 부른다. `el.open` 이 참일 때만 도므로 멈춘다.
+  // ⚠ 아래에서 다른 것을 닫으면 그 닫힘도 toggle 을 부른다. 닫힘은 다른 것을 건드리지 않으므로 멈춘다.
+  // ⚠ 프로그램이 연 것(openOnlyStep · BPM 배지의 ② 열기)도 여기를 지난다 — 탭 줄 · 차례 줄은 늘 실제 열림과 같다.
+  // @complexity time=O(n) space=O(n) cc=9
   document.addEventListener('toggle', (e) => {
-    if (detachMode !== 'band') return;
     const el = e.target;
-    if (!el || typeof el.matches !== 'function' || !el.matches(STEP_SEL) || !el.open) return;
-    for (const other of stepEls()) if (other !== el) other.open = false;
-    renderFlowSteps();
+    if (!el || typeof el.matches !== 'function') return;
+    const isStep = el.matches(STEP_SEL);
+    const isTool = !isStep && el.matches(TOOL_SEL);
+    if (!isStep && !isTool) return;
+    if (el.open) {
+      if (isTool) for (const other of toolEls()) if (other !== el) other.open = false;
+      if (detachMode === 'band') {
+        for (const other of stepEls()) if (other !== el) other.open = false;
+        if (isStep) for (const other of toolEls()) other.open = false;
+      }
+    }
+    renderToolTabs();
+    renderFlowSteps();   // 띠가 아니면 안에서 바로 돌아온다
   }, true);
 
   // ── 띄우기 조작 ───────────────────────────────────────────────────────────

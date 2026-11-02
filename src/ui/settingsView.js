@@ -1039,10 +1039,13 @@ export function createSettingsView(deps) {
   const flowListEl = overlay.querySelector('[data-role="flow-list"]');
   const flowNoteEl = overlay.querySelector('[data-role="flow-note"]');
 
-  /** 기록의 id 를 사람 말로. 모르는 id 는 그대로 보인다(단계가 늘어도 화면이 깨지지 않는다). */
+  /**
+   * 기록의 id 를 사람 말로. 모르는 id 는 그대로 보인다(단계가 늘어도 화면이 깨지지 않는다).
+   * ⚠ step4~6 은 RM-20 부터 번호 없는 **도구**다 — 열쇠는 그대로라 2026-10-05 의 판정 기록이 끊기지 않는다.
+   */
   const FLOW_LABELS = Object.freeze({
     step1: '① 영상 고르기', step2: '② 박자 맞추기', step3: '③ 받아 적기',
-    step4: '④ 구간 잘라내기', step5: '⑤ 마커', step6: '⑥ 자세 분석',
+    step4: '구간 잡고 잘라내기(도구)', step5: '마커(도구)', step6: '자세 분석(도구)',
     play: '재생·일시정지', tap: '탭', tapok: 'BPM 정하기',
     capture: '받아 적기·끊기', skip: '건너뛰기', stop: '그만'
   });
