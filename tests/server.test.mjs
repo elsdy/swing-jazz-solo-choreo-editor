@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, realpathSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -651,6 +651,75 @@ test('server.py: 덮어쓰기 전 판이 .history 에 남고, 삭제는 휴지�
     assert.equal((await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: '{"from":"trash","file":"없는것.json"}' })).status, 404);
     assert.equal((await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: '{"from":"trash","file":"../../탈출.json"}' })).status, 404);
     assert.equal((await fetch(`${s.base}/api/projects/.history?name=`)).status, 400);
+  } finally { s.stop(); }
+});
+
+test('server.py: 이력 목록이 손 저장 판과 자동 담기 판을 가른다', { skip: !hasPython && 'python3 없음' }, async () => {
+  // RM-25(2026-11-02). 그전에는 두 종류가 한 솎기 칸을 나눠 써서, 자동 담기가 1.2초마다 돌면 어제 손으로 저장한 판이
+  // 12장 칸에 밀려 사라질 수 있었다. 이제 이력 파일 이름에 종류를 싣고(`.auto`) 종류별로 센다.
+  const s = await startServer();
+  try {
+    const dir = path.join(s.root, 'projects');
+    const hist = path.join(dir, '.history');
+    const put = (name, body, auto = false) => fetch(`${s.base}/api/projects?name=${encodeURIComponent(name)}${auto ? '&auto=1' : ''}`, { method: 'PUT', body: JSON.stringify(body) });
+    const listing = async () => (await (await fetch(`${s.base}/api/projects/.history?name=공연`)).json()).items;
+    const byKind = (items, kind) => items.filter((it) => it.kind === kind);
+    // 자동 담기는 10분에 한 장이라, 이력 파일의 「남긴 시각」을 20분 전으로 돌려 다음 자동 담기가 남기게 한다.
+    const ageHistory = () => {
+      const t = Date.now() / 1000 - 1200;
+      for (const n of readdirSync(hist)) utimesSync(path.join(hist, n), t, t);
+    };
+
+    // ① 손 저장 셋 → 손 저장 판 둘. 표식이 없는 이름이고 kind 가 manual 이다.
+    await put('공연', { version: 1, n: 1 });
+    await put('공연', { version: 1, n: 2 });
+    await put('공연', { version: 1, n: 3 });
+    let items = await listing();
+    assert.deepEqual(items.map((it) => it.kind), ['manual', 'manual']);
+    assert.ok(items.every((it) => /^공연\.\d{8}-\d{6}(-\d+)?\.json$/.test(it.file)), JSON.stringify(items));
+
+    // ② 자동 담기 → `.auto` 표식이 붙은 auto 판. stamp 는 전처럼 시각 꼴이고 name 은 '공연' 이다.
+    ageHistory();
+    const a = await (await put('공연', { version: 1, n: 4 }, true)).json();
+    assert.ok(a.history && a.history.endsWith('.auto.json'), `자동 담기 판의 이름: ${a.history}`);
+    items = await listing();
+    assert.equal(items[0].kind, 'auto');
+    assert.equal(items[0].name, '공연');
+    assert.match(items[0].stamp, /^\d{8}-\d{6}(-\d+)?$/);
+    assert.equal(byKind(items, 'manual').length, 2);
+
+    // ③ 자동 담기 판이 13장이 되어도 손 저장 판 둘은 그대로다 — 솎기는 자동 담기 칸(12장)만 센다.
+    for (let i = 0; i < 12; i += 1) {
+      ageHistory();
+      const r = await (await put('공연', { version: 1, n: 10 + i }, true)).json();
+      assert.ok(r.history, `${i}번째 자동 담기가 남기지 않았다`);
+    }
+    items = await listing();
+    assert.equal(byKind(items, 'auto').length, 12, '자동 담기 판은 12장까지다');
+    assert.equal(byKind(items, 'manual').length, 2, '자동 담기의 솎기가 손 저장 판을 깎았다');
+
+    // ④ 반대로 손 저장이 21장을 넘어도 자동 담기 판 12장은 그대로다.
+    for (let i = 0; i < 21; i += 1) await put('공연', { version: 1, n: 100 + i });
+    items = await listing();
+    assert.equal(byKind(items, 'manual').length, 20, '손 저장 판은 20장까지다');
+    assert.equal(byKind(items, 'auto').length, 12, '손 저장의 솎기가 자동 담기 판을 깎았다');
+
+    // ⑤ 자동 담기 판도 되살릴 수 있다(이름을 `.auto` 앞에서 바르게 가른다). 덮이는 지금 판은 손 저장 판으로 남는다 —
+    //    되살리기는 사람이 누른 일이고, 되돌아가는 길이 그 한 장이다.
+    const autoOne = byKind(items, 'auto')[0];
+    const before = await listing();
+    const rs = await (await fetch(`${s.base}/api/projects/restore`, { method: 'POST', body: JSON.stringify({ from: 'history', file: autoOne.file }) })).json();
+    assert.equal(rs.ok, true);
+    assert.equal(rs.name, '공연.json');
+    assert.ok(/^\d+$/.test(String(rs.mtimeNs)), '되살린 판의 표식을 돌려줘야 자동 담기가 이어진다');
+    assert.equal(typeof rs.mtimeNs, 'string');
+    const after = await listing();
+    assert.equal(after.length, before.length, '손 저장 칸이 꽉 차 있어 한 장 들어오면 한 장 나간다');
+    assert.equal(after[0].kind, 'manual', '덮인 지금 판은 손 저장 판으로 남는다');
+    assert.ok(existsSync(path.join(hist, autoOne.file)), '이력 원본은 그대로 남는다');
+    // 되살린 내용이 그 자동 담기 판의 내용이다.
+    const now = await (await fetch(`${s.base}/api/projects/공연`)).json();
+    assert.deepEqual(now, JSON.parse(readFileSync(path.join(hist, autoOne.file), 'utf8')));
   } finally { s.stop(); }
 });
 

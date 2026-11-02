@@ -15,20 +15,21 @@ export const QUICK_DRAG_THRESHOLD_PX = 12;
 export const LONGPRESS_MOVE_THRESHOLD_PX = 8;
 
 /**
- * 그리기/빠른배치 드래그의 카운트를 정한다.
+ * 그리기/빠른배치 드래그의 카운트를 정한다. 행을 넘겨 세고, 시작 자리에서 보드 끝까지의 칸에서 자른다.
  *
- * ⚠⚠ 원본 5벌은 같은 코드가 아니다. 하한(lowerBound)과 행 넘김 허용(crossRow)을 **인자로 받아**
- *    호출부가 정한다. 임의로 통일하면 1칸만 끌었을 때 놓이는 길이가 바뀐다.
+ * ⚠ 하한(lowerBound)은 호출부가 정한다 — 프리뷰는 1, 놓을 때는 DEFAULT_COUNT. 임의로 통일하면 1칸만 끌었을 때
+ *   놓이는 길이가 바뀐다.
  *
- *   원본                                     lowerBound      crossRow  비고
- *   ─────────────────────────────────────────────────────────────────────────────
- *   2636 mousemove 빠른배치 프리뷰            1               true
- *   2653 mousemove 그리기 프리뷰              1               true
- *   2673 문서레벨 mouseup 그리기 **커밋**     DEFAULT_COUNT   true      ← 하한이 다르다
- *   2709 터치 touchend 그리기 **커밋**        DEFAULT_COUNT   **false** ← calcCrossRowCount 를 아예 안 쓴다.
- *                                                                       한 행 안에서 endCol-startIndex+1 로만 센다.
- *                                                                       totalCellsFrom 클램프도 없다(원문 그대로).
- *   2750 터치 touchmove 빠른배치 프리뷰        1               true
+ *   원본                                     lowerBound
+ *   ──────────────────────────────────────────────────────
+ *   2636 mousemove 빠른배치 프리뷰            1
+ *   2653 mousemove 그리기 프리뷰              1
+ *   2673 문서레벨 mouseup 그리기 **커밋**     DEFAULT_COUNT   ← 하한이 다르다
+ *   2709 터치 touchend 그리기 **커밋**        DEFAULT_COUNT
+ *   2750 터치 touchmove 빠른배치 프리뷰        1
+ *
+ * 원본 2698-2715(터치 그리기)는 calcCrossRowCount 를 쓰지 않고 한 행 안에서 endCol-startIndex+1 로만 셌다
+ * (crossRow:false 갈래). RM-11(2026-11-02)이 그 갈래를 걷어 손가락도 마우스와 같은 셈을 한다.
  *
  * @see index.html:2636
  * @see index.html:2653
@@ -42,14 +43,10 @@ export const LONGPRESS_MOVE_THRESHOLD_PX = 8;
  * @param {number} args.endCol
  * @param {{rows:number, cols:number}} args.board
  * @param {number} args.lowerBound          1 또는 DEFAULT_COUNT — 위 표 참조
- * @param {boolean} [args.crossRow=true]    false 면 2709 경로(단일 행, 클램프 없음)
  * @returns {number}
  */
-export function resolveDragCount({ startRow, startIndex, endRow, endCol, board, lowerBound, crossRow = true }) {
-  if (!crossRow) {
-    // 2709: 행 넘김 없음 + totalCellsFrom 클램프 없음. placeMove 내부의 Math.min 이 뒤늦게 잘라 준다.
-    return Math.max(lowerBound, endCol - startIndex + 1);
-  }
+// @complexity time=O(1) space=O(1) cc=1
+export function resolveDragCount({ startRow, startIndex, endRow, endCol, board, lowerBound }) {
   return Math.max(lowerBound, Math.min(
     calcCrossRowCount(startRow, startIndex, endRow, endCol, board),
     totalCellsFrom(startRow, startIndex, board)
@@ -165,4 +162,16 @@ export function resizeHitKind(inBoard, hasOriginTrack) {
   if (inBoard) return 'cross';
   if (hasOriginTrack) return 'sameRow';
   return 'step';
+}
+
+/**
+ * 늘이기 손잡이를 눌렀을 때 늘이기를 막는가. 메인 보드(루틴 블록을 받는 보드)의 루틴 블록은 길이가 루틴의 것이라
+ * 손으로 늘이지 않는다(원본 2503 `ctx === mainCtx`). ⚠ 포인터 종류를 묻지 않는다 — 원본은 이 가드가 mousedown 에만
+ * 있고 touchstart(2513)에는 없어 손가락으로는 늘어났다. RM-11(2026-11-02)이 손가락도 막았다(계획서의 결정 「손가락도 막는다」).
+ * @param {{isRoutine:boolean, allowsRoutineBlocks:boolean}} a
+ * @returns {boolean}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function resizeBlocked({ isRoutine, allowsRoutineBlocks }) {
+  return !!isRoutine && !!allowsRoutineBlocks;
 }

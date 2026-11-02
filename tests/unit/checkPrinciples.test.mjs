@@ -55,7 +55,7 @@ test('위반이 있으면 종료 코드 1과 파일:줄 — 원칙 꼴로 찍는
   assert.match(good.stdout, /원칙 검사 통과 — 어긴 자리 0/);
 
   // 원칙마다 규칙이 표 한 줄 — { 원칙, 무엇, 고치는 법, scan }
-  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14']);
+  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14', 'U-15']);
   for (const r of RULES) {
     assert.equal(typeof r.scan, 'function');
     assert.ok(r.what && r.fix, `${r.principle}: 무엇 · 고치는 법이 비었다`);
@@ -248,4 +248,16 @@ test('U-10 폰 확대 차단(user-scalable=no · maximum-scale=1 · focusout 때
     'src/ui/layout.js': "// 옛날에는 user-scalable=no 를 박았다\non(doc, 'click', () => { win.scrollTo(0, 0); });\non(doc, 'focusout', () => { save(); });\n"
   });
   assert.equal(good.status, 0, good.stdout + good.stderr);
+});
+
+test('U-15 · 팝업 자리 함수에 잰 높이를 주지 않으면 잡는다', () => {
+  // 2026-11-02(RM-16) — 마디 메뉴 · 블록 팝업이 다섯 줄이 됐는데 가정 높이(132)로 자리를 잡아 창 아래로 40px 넘쳤다
+  const bad = "const { left, top } = placePlacementActionPopup({\n  clientX, clientY, viewW: innerWidth, viewH: innerHeight,\n});\n";
+  const v = run('U-15', { 'src/ui/p.js': bad });
+  assert.equal(v.length, 1);
+  assert.equal(v[0].line, 1);
+  const good = bad.replace('viewH: innerHeight,', 'viewH: innerHeight, height: popup.offsetHeight,');
+  assert.equal(run('U-15', { 'src/ui/p.js': good }).length, 0);
+  // 정의(domain)와 시험은 넘긴다 — ui · input 의 호출만 본다
+  assert.equal(run('U-15', { 'src/domain/popupPlacement.js': 'export function placePlacementActionPopup({ clientX }) {}\n' }).length, 0);
 });

@@ -331,7 +331,7 @@ bpm = (60 * beatsPerCount * (b.count - a.count)) / (b.sec - a.sec)
 |---|---|---|
 | `KvStore` | 키-값 창구 | 값은 이미 파싱된 JS 값이다. `JSON.stringify/parse` 는 어댑터 몫 |
 | `SnapshotStore` | 현재 보드와 최근 프로젝트 10개 | `listRecents()` 가 **doc 을 포함하지 않는다** |
-| `FileGateway` | 파일 내려받기·읽기 | 내려받기 → 저장 순서를 보존한다 |
+| `FileGateway` | 파일 내려받기·읽기 · 글 내려받기 · 클립보드 · 인쇄 | 내려받기 → 저장 순서를 보존한다. `copyText` 는 못 담으면 던지지 않고 `false` 다(RM-21) |
 | `VersionRepository` | 안무 버전 히스토리 | `listVersions()` 가 doc 을 포함하지 않는다. `rebuildVersionMeta()` 로 복구된다 |
 | `PracticeLogRepository` | 연습 기록 | 항목이 ~300B 라 통째로 돌려준다 |
 

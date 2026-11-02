@@ -11,9 +11,11 @@ import * as boardOps from '../domain/boardOps.js';
 import { allGroupIds, cellAfter, clipOf, pastePlan, planNudge } from '../domain/keyboardEdit.js';
 import { clamp, clampToGrid, totalCellsFrom } from '../domain/grid.js';
 import { affectedRowsByGroup, getGroup, groupCount, nameGroup, shiftAllPlacements } from '../domain/placements.js';
+import { boundaryCount, isTempoUsable } from '../domain/tempo.js';
+import { linearOf } from '../domain/grid.js';
 import { BOARD_MAIN, BOARD_ROUTINE, NONE, boardOf, mergeDirty, notice } from './store.js';
 import { clearLinks } from './linkCommands.js';
-import { clearMedia } from './videoCommands.js';
+import { clearMedia, mediaState } from './videoCommands.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 공통 규약
@@ -163,6 +165,23 @@ export function copyGroupTo(store, args, deps = {}) {
     deps.ids
   );
   return applyBoardResult(store, boardId, result) || NONE;
+}
+
+/**
+ * 그룹 하나를 **바로 뒤 칸에** 복사한다 — 블록 동작 팝업의 「⧉ 뒤에 복사」(RM-11). 손가락에는 Alt+끌기가 없어
+ * 같은 커맨드(copyGroupTo — RM-02 가 층 정리까지 맡긴 복사)를 놓을 자리만 정해 부른다. 자리는 붙여넣기와 같은
+ * 규칙(domain/keyboardEdit.cellAfter — 그 블록이 끝난 다음 칸)이다. 고른 것과 담아 둔 것은 건드리지 않는다.
+ * @param {object} store
+ * @param {{ boardId:'main'|'routine', groupId:string }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty — 표 끝이라 못 놓으면 상태줄 알림만
+ */
+// @complexity time=O(p) space=O(p) cc=2
+export function copyGroupAfter(store, args, deps = {}) {
+  const { boardId, groupId } = args;
+  const at = cellAfter(boardOf(store.get(), boardId), [groupId]);
+  if (!at) return { notify: notice('status', '표 끝이라 복사하지 않았습니다.') };
+  return copyGroupTo(store, { boardId, groupId, targetRow: at.row, targetStartIndex: at.startIndex }, deps);
 }
 
 /**
@@ -618,4 +637,218 @@ export function selectAll(store, args = {}) {
   if (!ids.length) return NONE;
   store.update({ selection: new Set(ids) });
   return { selection: true, toolbar: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 분할 · 병합 · 마디 편집 (2026-11-02, RM-16)
+//
+// 전이는 전부 domain/boardOps 에 있다(splitGroup · mergeGroups · insertRow · deleteRow · duplicateRow · moveRow).
+// 여기서 하는 일은 셋 — 재생 헤드 초를 카운트로 바꾸기(템포는 store 의 활성 클립 것), 행 수를 보드에 적기,
+// 사라진 그룹을 고른 목록에서 걷어 내기(D-16). 히스토리 커밋은 이 파일의 공통 규약대로 호출부가 한 번 한다 —
+// 한 번 누름이 되돌리기 한 단계다.
+// ⚠ 마커 · 보정점은 건드리지 않는다(계획서 결정). 끼우거나 지운 마디 뒤를 가리키던 마커 수만 한 줄로 알린다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 사라진 그룹을 고른 목록에서 걷어 내고 Dirty 에 selection · toolbar 를 싣는다(removeGroup 과 같은 자리). */
+// @complexity time=O(s+r) space=O(s) cc=4
+function dropFromSelection(store, boardId, dirty, removed) {
+  if (!removed?.length || !store.policy(boardId).allowsSelection) return dirty;
+  const next = new Set(store.get().selection);
+  for (const id of removed) next.delete(id);
+  store.update({ selection: next });
+  return { ...dirty, selection: true, toolbar: true };
+}
+
+/**
+ * 재생 헤드(초)가 가리키는 **카운트 경계**(선형). 템포가 없으면 null.
+ * 받아 적기와 같이 가장 가까운 경계로 붙인다 — 반 칸까지는 반응 지연으로 본다.
+ */
+// @complexity time=O(p) space=O(1) cc=3
+function playheadBoundary(store, sec) {
+  const tempo = mediaState(store).tempo;
+  if (!isTempoUsable(tempo)) return null;
+  const b = boundaryCount(sec, tempo, 1);
+  return b ? b.snapped : null;
+}
+
+/** 그룹의 선형 시작 카운트와 길이. 없으면 null. */
+// @complexity time=O(n) space=O(k) cc=2
+function spanOfGroup(board, groupId) {
+  const group = getGroup(board.placements, groupId);
+  if (!group.length) return null;
+  const from = linearOf(group[0].row, group[0].startIndex, board.cols);
+  return { from, total: groupCount(board.placements, groupId) };
+}
+
+/**
+ * 블록 하나를 둘로 나눈다. 자르는 자리는 둘 중 하나로 받는다 —
+ *   · `countInGroup`: 뒤 조각이 시작할 그룹 안 카운트 번호(1부터). 2..길이 만 뜻이 있다(팝업의 「몇 번째 카운트에서」)
+ *   · `sec`: 재생 헤드의 초. 템포로 카운트 경계를 셈해 그 경계가 블록 안에 있을 때만 자른다
+ * 자리가 블록 안이 아니면 NONE — 호출부(팝업)가 카운트 고르기로 떨어진다. 템포가 없는데 초로 불렀으면 알림만.
+ *
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', groupId:string, countInGroup?:number, sec?:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=5
+export function splitGroupAt(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, groupId, countInGroup, sec } = args;
+  const board = boardOf(store.get(), boardId);
+  const span = spanOfGroup(board, groupId);
+  if (!span) return NONE;
+  let frontCount;
+  if (Number.isFinite(countInGroup)) frontCount = Math.trunc(countInGroup) - 1;
+  else if (Number.isFinite(sec)) {
+    const boundary = playheadBoundary(store, sec);
+    if (boundary === null) return { notify: notice('status', '박자가 없어 재생 헤드로는 자를 수 없습니다. 블록 팝업에서 몇 번째 카운트인지 고르세요.') };
+    frontCount = boundary - span.from;
+  } else return NONE;
+  const result = boardOps.splitGroup(board, { groupId, frontCount }, deps.ids);
+  return applyBoardResult(store, boardId, result) || NONE;
+}
+
+/**
+ * 재생 헤드(초)에 걸친 블록을 모두 그 자리에서 나눈다 — `S` 글쇠. 층이 여럿이면 층마다 하나씩이다.
+ * 헤드가 블록의 첫 카운트에 있거나 빈 칸이면 아무것도 자르지 않고 알린다.
+ *
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', sec:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(t·n log n) space=O(n) cc=7
+export function splitAtPlayhead(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, sec } = args;
+  const boundary = playheadBoundary(store, sec);
+  if (boundary === null) return { notify: notice('status', '박자가 없어 재생 헤드로는 자를 수 없습니다. 블록 팝업에서 몇 번째 카운트인지 고르세요.') };
+  const board = boardOf(store.get(), boardId);
+  const targets = [...new Set(board.placements.map(p => p.groupId))].filter(groupId => {
+    const span = spanOfGroup(board, groupId);
+    return span && boundary > span.from && boundary <= span.from + span.total - 1;
+  });
+  let dirty = NONE;
+  for (const groupId of targets) {
+    const result = boardOps.splitGroup(boardOf(store.get(), boardId), { groupId, frontCount: boundary - spanOfGroup(boardOf(store.get(), boardId), groupId).from }, deps.ids);
+    dirty = mergeDirty(dirty, applyBoardResult(store, boardId, result) || NONE);
+  }
+  if (dirty === NONE || !dirty.boards) return { notify: notice('status', '재생 헤드에 걸친 블록이 없습니다.') };
+  return dirty;
+}
+
+/**
+ * 이 블록과 합칠 이웃의 그룹 번호 — 바로 뒤, 없으면 바로 앞. 없으면 null(팝업이 줄을 감춘다).
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', groupId:string }} args
+ * @returns {string|null}
+ */
+// @complexity time=O(n log n) space=O(n) cc=1
+export function mergePartnerOf(store, args) {
+  const { boardId = BOARD_MAIN, groupId } = args;
+  const board = boardOf(store.get(), boardId);
+  return boardOps.mergePartner(board.placements, board.cols, groupId);
+}
+
+/**
+ * 블록을 옆에 붙은 같은 이름 · 같은 층의 블록과 합친다. 사라진 그룹은 고른 목록에서 빠진다.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', groupId:string }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty — 짝이 없으면 알림만
+ */
+// @complexity time=O(n log n) space=O(n) cc=3
+export function mergeWithNeighbor(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, groupId } = args;
+  const withGroupId = mergePartnerOf(store, { boardId, groupId });
+  if (!withGroupId) return { notify: notice('status', '옆에 붙은 같은 이름 · 같은 층의 블록이 없습니다.') };
+  const result = boardOps.mergeGroups(boardOf(store.get(), boardId), { groupId, withGroupId }, deps.ids);
+  const dirty = applyBoardResult(store, boardId, result);
+  if (!dirty) return NONE;
+  return dropFromSelection(store, boardId, dirty, result.selectionRemoved);
+}
+
+/** 행 수가 바뀐 전이의 결과를 보드에 적는다 — 골격부터 다시 세운다(setBoardRows 와 같은 Dirty). */
+// @complexity time=O(1) space=O(1) cc=2
+function applyRowsResult(store, boardId, result) {
+  if (result.renderRows === null) return null;
+  store.setBoard(boardId, { rows: result.rows, placements: result.placements });
+  return { ...BOARD_SIZE_DIRTY[boardId], boards: { [boardId]: { skeleton: true, rows: 'all' } } };
+}
+
+/** 끼우거나 지운 마디 뒤를 가리키는 마커가 있으면 한 줄로 알린다(마커는 옮기지 않는다 — 계획서 결정). */
+// @complexity time=O(m) space=O(m) cc=4
+function staleMarkerNotice(store, boardId, boundaryRow, dirty) {
+  if (boardId !== BOARD_MAIN) return dirty;
+  const cols = boardOf(store.get(), boardId).cols;
+  const boundary = linearOf(boundaryRow, 0, cols);
+  const stale = (mediaState(store).markers || []).filter(m => m.toCount > boundary).length;
+  if (!stale) return dirty;
+  return mergeDirty(dirty, { notify: notice('status', `영상 마커 ${stale}개는 옛 자리를 가리킵니다 — 마커는 옮기지 않습니다.`) });
+}
+
+/**
+ * `row` 위에 빈 마디 하나를 끼운다. 그 행부터의 블록이 한 마디 밀리고 마지막 행 번호가 하나 는다.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', row:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=2
+export function insertRowAt(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, row } = args;
+  const result = boardOps.insertRow(boardOf(store.get(), boardId), { row }, deps.ids);
+  const dirty = applyRowsResult(store, boardId, result);
+  if (!dirty) return NONE;
+  return staleMarkerNotice(store, boardId, row, dirty);
+}
+
+/**
+ * `row` 마디를 지운다. 그 마디에만 있던 블록은 사라지고(고른 목록에서도 빠진다), 이어지는 블록은 그만큼 짧아진다.
+ * 인트로 행과 마지막 남은 몸통 행은 지우지 않는다(알림).
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', row:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=4
+export function deleteRowAt(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, row } = args;
+  const board = boardOf(store.get(), boardId);
+  if (board.rows <= 1 && row === 1) return { notify: notice('status', '마지막 남은 마디는 지우지 않습니다.') };
+  const result = boardOps.deleteRow(board, { row }, deps.ids);
+  const dirty = applyRowsResult(store, boardId, result);
+  if (!dirty) return NONE;
+  return staleMarkerNotice(store, boardId, row, dropFromSelection(store, boardId, dirty, result.selectionRemoved));
+}
+
+/**
+ * `row` 마디를 바로 아래에 복제한다 — 새 마디가 끼고 그 마디의 블록이 새 그룹 번호로 복사된다.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', row:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=2
+export function duplicateRowAt(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, row } = args;
+  const result = boardOps.duplicateRow(boardOf(store.get(), boardId), { row }, deps.ids);
+  const dirty = applyRowsResult(store, boardId, result);
+  if (!dirty) return NONE;
+  return staleMarkerNotice(store, boardId, row + 1, dirty);
+}
+
+/**
+ * `row` 마디를 위(-1) · 아래(+1)의 이웃 마디와 맞바꾼다. 맨 위 · 맨 아래에서는 알림만.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', row:number, delta:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=3
+export function moveRowBy(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, row, delta } = args;
+  const result = boardOps.moveRow(boardOf(store.get(), boardId), { row, delta }, deps.ids);
+  const dirty = applyBoardResult(store, boardId, result);
+  if (!dirty) return { notify: notice('status', delta < 0 ? '맨 위 마디라 더 올리지 않았습니다.' : '맨 아래 마디라 더 내리지 않았습니다.') };
+  return dirty;
 }

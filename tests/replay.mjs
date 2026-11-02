@@ -33,6 +33,12 @@ export const REPLAY_VERSION = 1;
 //   boardSize({rows})                                 메인 보드 행 수 변경(초과 배치 삭제)
 //   reBoardSize({rows, cols})                         루틴 보드 크기 변경(행 초과는 숨김만)
 //   syncRoutine({routineId, rows, cols, placements})  루틴 편집 반영 → 메인 보드 재분할
+//   splitGroup({board, groupId, frontCount})          그룹을 앞 frontCount 카운트에서 둘로(RM-16)
+//   mergeGroups({board, groupId, withGroupId})        붙은 같은 이름 · 같은 층 두 그룹을 하나로(RM-16)
+//   insertRow({board, row})                           row 위에 빈 마디 끼우기 — rows+1(RM-16)
+//   deleteRow({board, row})                           row 마디 지우기 — rows-1(RM-16)
+//   duplicateRow({board, row})                        row 마디를 바로 아래에 복제(RM-16)
+//   moveRow({board, row, delta})                      row 마디를 이웃과 맞바꾸기(RM-16)
 //   probe({fn, board, args})                          순수 함수 호출 → 반환값이 values 에 기록됨
 //   placements(board)                                 현재 배치 배열
 //   log()                                             { render: [...], alerts: [...] }
@@ -54,6 +60,12 @@ const OP_TO_METHOD = {
   boardSize: 'boardSize',
   reBoardSize: 'reBoardSize',
   syncRoutine: 'syncRoutine',
+  splitGroup: 'splitGroup',
+  mergeGroups: 'mergeGroups',
+  insertRow: 'insertRow',
+  deleteRow: 'deleteRow',
+  duplicateRow: 'duplicateRow',
+  moveRow: 'moveRow',
   probe: 'probe'
 };
 
@@ -95,6 +107,7 @@ export function replayScenario(scenario, adapter) {
     const before = groupIdsOf(adapter.placements(board));
     const args = { ...op, board };
     if (op.group !== undefined) args.groupId = resolve(op.group);
+    if (op.withGroup !== undefined) args.withGroupId = resolve(op.withGroup);
     if (op.ignoreGroup !== undefined) args.ignoreGroupId = resolve(op.ignoreGroup);
     if (op.resize && op.resize.group !== undefined) {
       args.resize = { ...op.resize, groupId: resolve(op.resize.group) };
