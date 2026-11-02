@@ -117,7 +117,7 @@ export function createCategoryView(deps) {
       const colorInput = document.createElement('input');
       colorInput.type = 'color';
       colorInput.value = categoryColor(categories, name);
-      colorInput.style.cssText = 'width:22px; height:22px; padding:0; border:1px solid rgba(148,163,184,0.2); border-radius:6px; cursor:pointer; background:none; flex:0 0 auto;';
+      colorInput.style.cssText = 'width:22px; height:22px; padding:0; border:1px solid rgba(var(--muted-rgb), 0.2); border-radius:var(--r-1); cursor:pointer; background:none; flex:0 0 auto;';
       colorInput.title = '색상 변경';
       colorInput.addEventListener('input', () => {
         // 2983-2987: 범례 · 팔레트 · 두 보드만 다시 그린다. 관리 행은 **일부러** 빼놓는다.

@@ -74,7 +74,7 @@ export const ROUTINE_OPTIONS = Object.freeze({
 function makeAddBtn() {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.style.cssText = 'padding:4px 12px;width:auto;flex-shrink:0;font-size:18px;font-weight:bold;border-radius:8px;display:none;background:rgba(34,197,94,0.16);border:1px solid rgba(34,197,94,0.45);color:var(--accent);cursor:pointer;line-height:1;';
+  btn.style.cssText = 'padding:var(--sp-1) var(--sp-3);width:auto;flex-shrink:0;font-size:18px;font-weight:bold;border-radius:8px;display:none;background:rgba(var(--accent-rgb), 0.16);border:1px solid rgba(var(--accent-rgb), 0.45);color:var(--accent);cursor:pointer;line-height:1;';
   btn.textContent = '+';
   return btn;
 }
@@ -175,7 +175,7 @@ export function createQuickPicker(deps, options = {}) {
     item.style.cursor = 'default';
 
     const clickZone = document.createElement('div');
-    clickZone.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;min-width:0;';
+    clickZone.style.cssText = 'display:flex;align-items:center;gap:var(--sp-2);flex:1;cursor:pointer;min-width:0;';
     clickZone.addEventListener('click', onClick);
 
     const dot = document.createElement('span');
@@ -209,7 +209,7 @@ export function createQuickPicker(deps, options = {}) {
     item.style.cursor = 'default';
 
     const clickZone = document.createElement('div');
-    clickZone.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;';
+    clickZone.style.cssText = 'display:flex;align-items:center;gap:var(--sp-2);flex:1;cursor:pointer;';
     clickZone.addEventListener('click', onClick);
 
     const dot = document.createElement('span');
@@ -322,7 +322,7 @@ export function createQuickPicker(deps, options = {}) {
         addBtn.style.display = '';
         if (opts.addBtnKbActive) addBtn.classList.add(CLS.kbActive);    // 1923
         const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+        hint.style.cssText = 'font-size:var(--fs-1);color:var(--muted);padding:6px 10px;';
         // ⚠ 라벨 원문. 메인은 뒤에 안내가 붙고(1926) 루틴은 마침표에서 끝난다(4952).
         hint.textContent = opts.enterHint
           ? `"${q}" 와 일치하는 동작이 없습니다. Enter를 눌러 새 동작으로 추가`
@@ -416,7 +416,7 @@ export function createQuickPicker(deps, options = {}) {
     popup.appendChild(header);
 
     const badge = document.createElement('div');
-    badge.style.cssText = 'font-size:11px;color:var(--muted);padding:2px 4px 4px;';
+    badge.style.cssText = 'font-size:var(--fs-1);color:var(--muted);padding:2px 4px 4px;';
     badge.textContent = `동작: "${moveName}"`;
     popup.appendChild(badge);
 
@@ -434,11 +434,11 @@ export function createQuickPicker(deps, options = {}) {
 
     // 새 카테고리 색상 폼 (초기 숨김)
     const newCatForm = document.createElement('div');
-    newCatForm.style.cssText = 'display:none;align-items:center;gap:6px;padding:4px 0;';
+    newCatForm.style.cssText = 'display:none;align-items:center;gap:6px;padding:var(--sp-1) 0;';
     const catColorInput = document.createElement('input');
     catColorInput.type = 'color';
-    catColorInput.value = '#22c55e';
-    catColorInput.style.cssText = 'width:28px;height:28px;padding:0;border:1px solid rgba(148,163,184,0.2);border-radius:6px;cursor:pointer;background:none;flex:0 0 auto;';
+    catColorInput.value = '#22c55e'; // 원칙-예외(U-15): 새 카테고리의 기본 색 — 색 고르개의 데이터 값이다(var() 를 못 넣는다)
+    catColorInput.style.cssText = 'width:28px;height:28px;padding:0;border:1px solid rgba(var(--muted-rgb), 0.2);border-radius:var(--r-1);cursor:pointer;background:none;flex:0 0 auto;';
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
     confirmBtn.className = 'primary special';
@@ -518,7 +518,7 @@ export function createQuickPicker(deps, options = {}) {
         addBtn.style.display = '';
         newCatForm.style.display = 'flex';
         const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 10px;';
+        hint.style.cssText = 'font-size:var(--fs-1);color:var(--muted);padding:6px 10px;';
         hint.textContent = `"${q}" 와 일치하는 카테고리가 없습니다.`;
         resultList.appendChild(hint);
       } else {

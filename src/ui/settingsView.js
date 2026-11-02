@@ -22,30 +22,34 @@ const CSS = `
 .settings-themes { display: grid; gap: 6px; }
 .settings-theme {
   display: flex; align-items: center; gap: 10px; text-align: left; width: 100%;
-  padding: 8px 10px; border-radius: 10px; cursor: pointer;
-  background: rgba(148,163,184,0.06); border: 1px solid rgba(148,163,184,0.22); color: inherit;
+  padding: 8px 10px; border-radius: var(--r-2); cursor: pointer;
+  background: rgba(var(--muted-rgb), 0.06); border: 1px solid rgba(var(--muted-rgb), 0.22); color: inherit;
 }
-.settings-theme:hover { border-color: rgba(34,197,94,0.5); }
-.settings-theme.is-on { border-color: rgba(34,197,94,0.75); background: rgba(34,197,94,0.12); }
+.settings-theme:hover { border-color: rgba(var(--accent-rgb), 0.5); }
+.settings-theme.is-on { border-color: rgba(var(--accent-rgb), 0.75); background: rgba(var(--accent-rgb), 0.12); }
 .settings-theme b { display: block; font-size: 12.5px; }
-.settings-theme small { display: block; font-size: 11px; color: #94a3b8; margin-top: 1px; }
+.settings-theme small { display: block; font-size: var(--fs-1); color: var(--x-94a3b8); margin-top: 1px; }
 .settings-theme-swatch {
   flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px;
-  border: 1px solid rgba(148,163,184,0.3);
+  border: 1px solid rgba(var(--muted-rgb), 0.3);
 }
+/* 원칙-예외(U-15): 테마 견본은 그 테마의 색 자체라 지금 테마의 토큰을 따르면 안 된다 */
 .settings-theme-swatch[data-id="basic"] { background: linear-gradient(140deg, #0b1220 0%, #111827 60%, #22c55e 160%); }
+/* 원칙-예외(U-15): 테마 견본은 그 테마의 색 자체라 지금 테마의 토큰을 따르면 안 된다 */
 .settings-theme-swatch[data-id="neon"] {
   background: radial-gradient(circle at 30% 25%, rgba(56,189,248,0.85), transparent 55%),
               radial-gradient(circle at 75% 80%, rgba(251,191,36,0.9), transparent 55%),
               linear-gradient(160deg, #050b18, #0b1e38);
   border-color: rgba(56,189,248,0.5);
 }
+/* 원칙-예외(U-15): 테마 견본은 그 테마의 색 자체라 지금 테마의 토큰을 따르면 안 된다 */
 .settings-theme-swatch[data-id="rose"] {
   background: radial-gradient(circle at 30% 25%, rgba(244,114,182,0.9), transparent 55%),
               radial-gradient(circle at 78% 82%, rgba(192,132,252,0.9), transparent 55%),
               linear-gradient(160deg, #140a1c, #2a1236);
   border-color: rgba(244,114,182,0.5);
 }
+/* 원칙-예외(U-15): 테마 견본은 그 테마의 색 자체라 지금 테마의 토큰을 따르면 안 된다 */
 .settings-theme-swatch[data-id="candy"] {
   background: radial-gradient(circle at 28% 24%, rgba(244,114,182,0.95), transparent 58%),
               radial-gradient(circle at 78% 80%, rgba(45,212,191,0.9), transparent 58%),
@@ -55,57 +59,57 @@ const CSS = `
 
 /* 단축키 목록(2026-09-20). 한 줄이 동작 하나다 — 이름·하는 일·지금 글쇠·바꾸기. */
 .settings-keys { display: grid; gap: 6px; margin-top: 6px; }
-.settings-key-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-  padding: 7px 9px; border-radius: 10px;
-  background: rgba(255,255,255,0.03); border: 1px solid rgba(148,163,184,0.14); }
+.settings-key-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
+  padding: 7px 9px; border-radius: var(--r-2);
+  background: rgba(var(--white-rgb), 0.03); border: 1px solid rgba(var(--muted-rgb), 0.14); }
 .settings-key-row[hidden] { display: none; }
 .settings-key-main { flex: 1 1 14em; min-width: 0; }
-.settings-key-main b { display: block; font-size: 12px; }
-.settings-key-main small { display: block; margin-top: 1px; font-size: 10.5px; color: var(--muted, #94a3b8); line-height: 1.35; }
-.settings-key-caps { display: flex; gap: 4px; flex-wrap: wrap; }
-.settings-key-cap { font-size: 11px; font-weight: 800; padding: 2px 9px; border-radius: 6px;
-  background: rgba(15,23,42,0.85); border: 1px solid rgba(148,163,184,0.35); color: #e6edf6; white-space: nowrap; }
-.settings-key-row.is-listening .settings-key-cap { border-color: rgba(74,222,128,0.6); color: #bbf7d0; }
+.settings-key-main b { display: block; font-size: var(--fs-2); }
+.settings-key-main small { display: block; margin-top: 1px; font-size: 10.5px; color: var(--muted, var(--x-94a3b8)); line-height: 1.35; }
+.settings-key-caps { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
+.settings-key-cap { font-size: var(--fs-1); font-weight: 800; padding: 2px 9px; border-radius: var(--r-1);
+  background: rgba(var(--x-0f172a-rgb), 0.85); border: 1px solid rgba(var(--muted-rgb), 0.35); color: var(--x-e6edf6); white-space: nowrap; }
+.settings-key-row.is-listening .settings-key-cap { border-color: rgba(var(--x-4ade80-rgb), 0.6); color: var(--x-bbf7d0); }
 .settings-key-fixed .settings-key-cap { opacity: 0.55; }
 
 .settings-overlay { position: fixed; inset: 0; z-index: 6000; display: none;
-  background: rgba(6,10,20,0.72); backdrop-filter: blur(3px); }
+  background: rgba(var(--x-060a14-rgb), 0.72); backdrop-filter: blur(3px); }
 .settings-overlay[data-open="1"] { display: block; }
 .settings-shell { position: absolute; left: 50%; top: 8vh; transform: translateX(-50%);
   width: min(780px, 96vw); max-height: 84vh;
   display: flex; flex-direction: column; overflow: hidden;
-  background: #0f1729; border: 1px solid rgba(148,163,184,0.22); border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
+  background: var(--x-0f1729); border: 1px solid rgba(var(--muted-rgb), 0.22); border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(var(--black-rgb), 0.45); }
 .settings-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  border-bottom: 1px solid rgba(148,163,184,0.16); flex: 0 0 auto; }
-.settings-head h2 { margin: 0; font-size: 14px; font-weight: 800; color: #e5e7eb; white-space: nowrap; }
+  border-bottom: 1px solid rgba(var(--muted-rgb), 0.16); flex: 0 0 auto; }
+.settings-head h2 { margin: 0; font-size: 14px; font-weight: 800; color: var(--x-e5e7eb); white-space: nowrap; }
 .settings-search { flex: 1; min-width: 0; }
 /* 갈래 옆단 + 본문. ⚠ 스크롤은 shell 이 아니라 **본문이** 한다 — 옆단이 같이 흘러가면
    긴 설정에서 갈래를 누르러 위로 되돌아가야 한다. */
 .settings-main { display: grid; grid-template-columns: 176px 1fr; min-height: 0; flex: 1 1 auto; }
-.settings-side { border-right: 1px solid rgba(148,163,184,0.16); padding: 10px 8px;
-  overflow-y: auto; display: grid; gap: 4px; align-content: start; }
+.settings-side { border-right: 1px solid rgba(var(--muted-rgb), 0.16); padding: 10px 8px;
+  overflow-y: auto; display: grid; gap: var(--sp-1); align-content: start; }
 .settings-nav-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
   min-height: 38px; padding: 6px 9px; cursor: pointer; border: 1px solid transparent; border-radius: 8px;
-  background: transparent; color: #cbd5e1; font-size: 12px; font-weight: 700; }
-.settings-nav-item:hover { background: rgba(148,163,184,0.10); transform: none; }
-.settings-nav-item[aria-current="true"] { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.30); color: #eafff1; }
-.settings-nav-item .settings-nav-count { margin-left: auto; font-size: 10px; font-weight: 800; color: #7c8aa3; }
-.settings-nav-item[aria-current="true"] .settings-nav-count { color: #a7d8bb; }
+  background: transparent; color: var(--x-cbd5e1); font-size: var(--fs-2); font-weight: 700; }
+.settings-nav-item:hover { background: rgba(var(--muted-rgb), 0.10); transform: none; }
+.settings-nav-item[aria-current="true"] { background: rgba(var(--accent-rgb), 0.14); border-color: rgba(var(--accent-rgb), 0.30); color: var(--x-eafff1); }
+.settings-nav-item .settings-nav-count { margin-left: auto; font-size: 10px; font-weight: 800; color: var(--x-7c8aa3); }
+.settings-nav-item[aria-current="true"] .settings-nav-count { color: var(--x-a7d8bb); }
 .settings-nav-item:disabled { opacity: 0.4; cursor: default; }
-.settings-nav-hint { font-size: 10px; color: #64748b; padding: 2px 9px 8px; line-height: 1.4; }
-.settings-body { padding: 14px; display: grid; gap: 16px; align-content: start; overflow-y: auto; min-height: 0; }
+.settings-nav-hint { font-size: 10px; color: var(--x-64748b); padding: 2px 9px 8px; line-height: 1.4; }
+.settings-body { padding: 14px; display: grid; gap: var(--sp-4); align-content: start; overflow-y: auto; min-height: 0; }
 /* 검색어에 걸린 줄. ⚠ 배경이 아니라 왼쪽 테두리다 — 배경은 갈래 선택이 이미 쓰고 있다. */
-.settings-row.is-hit { border-left: 2px solid #86efac; padding-left: 7px; margin-left: -9px; }
-.settings-empty { font-size: 12px; color: #94a3b8; line-height: 1.6; }
+.settings-row.is-hit { border-left: 2px solid var(--x-86efac); padding-left: 7px; margin-left: -9px; }
+.settings-empty { font-size: var(--fs-2); color: var(--x-94a3b8); line-height: 1.6; }
 @media (max-width: 640px) {
   /* 폰: 옆단을 위로 눕힌다. 손가락 과녁이 되도록 줄 높이는 그대로 둔다. */
   .settings-main { grid-template-columns: 1fr; }
-  .settings-side { border-right: 0; border-bottom: 1px solid rgba(148,163,184,0.16);
+  .settings-side { border-right: 0; border-bottom: 1px solid rgba(var(--muted-rgb), 0.16);
     grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; align-content: center; }
   .settings-nav-hint { display: none; }
 }
-.settings-section h3 { margin: 0 0 6px; font-size: 12.5px; color: #dbe4ef; }
+.settings-section h3 { margin: 0 0 6px; font-size: 12.5px; color: var(--x-dbe4ef); }
 .settings-section .helper { margin: 6px 0 0; }
 .settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 /* ⚠ 반드시 있어야 한다. 위의 display:flex 가 브라우저 기본 [hidden]{display:none} 을 이겨서,
@@ -114,23 +118,23 @@ const CSS = `
    같은 함정을 이 저장소가 다섯 번 막았다(.video-panel · .video-field · .docs-toc-children …).
    ⚠ 이 CSS 는 템플릿 문자열 안이다 — 주석에 백틱을 쓰면 문자열이 거기서 끊겨 모듈 전체가 죽는다. */
 .settings-row[hidden] { display: none; }
-.settings-label { font-size: 11px; color: #8892a4; white-space: nowrap; }
-.settings-chip { font-size: 11px; color: #a7f3d0; background: rgba(34,197,94,0.14);
-  border: 1px solid rgba(34,197,94,0.25); border-radius: 999px; padding: 2px 8px;
+.settings-label { font-size: var(--fs-1); color: var(--x-8892a4); white-space: nowrap; }
+.settings-chip { font-size: var(--fs-1); color: var(--x-a7f3d0); background: rgba(var(--accent-rgb), 0.14);
+  border: 1px solid rgba(var(--accent-rgb), 0.25); border-radius: var(--r-pill); padding: 2px 8px;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-chip.is-off { color: #94a3b8; background: rgba(148,163,184,0.10); border-color: rgba(148,163,184,0.22); }
+.settings-chip.is-off { color: var(--x-94a3b8); background: rgba(var(--muted-rgb), 0.10); border-color: rgba(var(--muted-rgb), 0.22); }
 .settings-text { width: 10em; }
-.settings-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #cbd5e1;
-  background: rgba(148,163,184,0.10); border-radius: 6px; padding: 4px 8px; margin-top: 6px; word-break: break-all; }
+.settings-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-1); color: var(--x-cbd5e1);
+  background: rgba(var(--muted-rgb), 0.10); border-radius: var(--r-1); padding: var(--sp-1) var(--sp-2); margin-top: 6px; word-break: break-all; }
 /* 저장장치 고르기(2026-09-13). 폰에서 누르는 것이라 줄마다 최소 44px 을 준다(손가락 과녁). */
-.settings-volumes { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.settings-volumes { display: flex; flex-direction: column; gap: var(--sp-1); margin: 6px 0; }
 .settings-volume { display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
   min-height: 44px; width: 100%; text-align: left; padding: 6px 10px; cursor: pointer;
-  color: #e2e8f0; background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.18);
-  border-radius: 8px; font-size: 12px; }
-.settings-volume:hover:not(:disabled) { background: rgba(148,163,184,0.16); }
-.settings-volume.is-current { border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.10); }
-.settings-volume span { font-size: 10px; color: #94a3b8; word-break: break-all; }
+  color: var(--x-e2e8f0); background: rgba(var(--muted-rgb), 0.08); border: 1px solid rgba(var(--muted-rgb), 0.18);
+  border-radius: 8px; font-size: var(--fs-2); }
+.settings-volume:hover:not(:disabled) { background: rgba(var(--muted-rgb), 0.16); }
+.settings-volume.is-current { border-color: rgba(var(--accent-rgb), 0.45); background: rgba(var(--accent-rgb), 0.10); }
+.settings-volume span { font-size: 10px; color: var(--x-94a3b8); word-break: break-all; }
 .settings-volume:disabled { opacity: 0.45; cursor: not-allowed; }
 `;
 

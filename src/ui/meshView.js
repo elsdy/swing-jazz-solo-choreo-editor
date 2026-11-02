@@ -16,6 +16,7 @@
 import { projectVertices } from '../domain/bodyMesh.js';
 
 /** 기본 색. 참고 그림처럼 어두운 몸에 밝은 그물이다. */
+// 원칙-예외(U-15): 자세 메시 색은 캔버스에 그리는 데이터 색이다 — 캔버스는 var() 를 못 읽고 테마를 따르지 않는다
 export const MESH_COLORS = Object.freeze({
   stroke: 'rgba(226,232,240,0.92)',
   fill: 'rgba(15,23,42,0.55)',

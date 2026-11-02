@@ -97,7 +97,7 @@ export function createPlacementEl(placement, visualSubRow, deps) {
     : '';
   el.innerHTML = `<div class="${CLS.tooltip}">${placement.pending ? '이름 없는 블록' : escapeHtml(placement.name)} ${cnt}c</div>`
     + `<div class="${CLS.moveHandle}" draggable="true" title="위치 이동"></div>`
-    + `<div class="${CLS.label}">${shown} <span style="opacity:.72; font-size:11px;">${cnt}c</span></div>`
+    + `<div class="${CLS.label}">${shown} <span style="opacity:.72; font-size:var(--fs-1);">${cnt}c</span></div>`
     + `<div class="${CLS.resizeHandle}" title="길이 조절"></div>`
     + nameBtn;
   return el;
