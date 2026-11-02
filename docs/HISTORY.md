@@ -4,7 +4,7 @@
 
 ## 2026-11-03 — 이름 없이 저장한 파일의 날짜가 아침에도 오늘이다
 
-병합 전 — `rm-62-local-date-default-file-name`
+PR #75 (`rm-62-local-date-default-file-name`)
 
 - **아침 9시 전에 저장해도 날짜가 어제로 붙지 않는다.** 이름 칸을 비우고 저장하면 붙는 `project_YYYY-MM-DD` · `moves_YYYY-MM-DD` · `categories_YYYY-MM-DD` 의 날짜가 전에는 UTC 날짜라 한국 00:00~08:59 에는 어제였다. 이제 이 기계의 날짜다.
 - **인쇄용 안무표의 「만든 날」도 같다.** 읽기 전용 HTML · 인쇄에 찍히는 날짜도 이 기계의 날짜로 바꿨다.
