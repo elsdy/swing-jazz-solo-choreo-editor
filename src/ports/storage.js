@@ -49,7 +49,12 @@ export const STORAGE_KEYS = Object.freeze({
    * 2026-09-21 신설. 고른 화면 테마 id(domain/themes).
    * ⚠ 이 브라우저의 취향이라 안무표 파일에 들어가지 않는다(단축키와 같은 규약).
    */
-  theme: 'choreo_theme'
+  theme: 'choreo_theme',
+  /**
+   * 2026-11-02 신설(RM-27). 「이 환경에서 안 되는 것」 알림 — 끔/켬과 마지막으로 알린 환경 지문(`{enabled, seen}`).
+   * ⚠ 환경이 바뀐 때만 다시 알리려고 지문을 남긴다. 이 브라우저의 것이라 안무표 파일에 들어가지 않는다.
+   */
+  supportNotice: 'choreo_support_notice'
 });
 
 /**

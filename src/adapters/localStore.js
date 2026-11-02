@@ -295,3 +295,24 @@ export function loadTheme() {
 export function saveTheme(id) {
   localKv.set(STORAGE_KEYS.theme, String(id || ''));
 }
+
+/**
+ * 「안 되는 것」 알림 설정(RM-27). 손상된 값은 기본값(켬 · 아직 알린 적 없음)으로 떨어진다.
+ * @returns {{enabled:boolean, seen:string}}
+ */
+// @complexity time=O(1) space=O(1) cc=4
+export function loadSupportNotice() {
+  const raw = localKv.get(STORAGE_KEYS.supportNotice, null);
+  const src = raw && typeof raw === 'object' ? raw : {};
+  return {
+    enabled: src.enabled !== false,
+    seen: typeof src.seen === 'string' ? src.seen : ''
+  };
+}
+
+/** @param {{enabled?:boolean, seen?:string}} next */
+// @complexity time=O(1) space=O(1) cc=1
+export function saveSupportNotice(next) {
+  const cur = loadSupportNotice();
+  localKv.set(STORAGE_KEYS.supportNotice, { ...cur, ...(next || {}) });
+}

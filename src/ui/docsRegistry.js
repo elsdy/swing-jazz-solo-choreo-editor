@@ -38,6 +38,13 @@ export const DOCS = [
     desc: '이 도구가 무엇이고 어떻게 실행하는지',
   },
   {
+    id: 'support',
+    group: 'start',
+    title: '지원 범위',
+    path: 'docs/SUPPORT.md',
+    desc: 'OS × 브라우저 × 서버 — 어디서 무엇이 되고 안 되는지',
+  },
+  {
     id: 'features',
     group: 'usage',
     title: '기능 설명서',

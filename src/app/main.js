@@ -86,6 +86,10 @@ import { flowTotal, nextAfter, noteTransition, topTransitions } from '../domain/
 import * as TodoCmd from '../usecases/stepTodoCommands.js';
 import { loadFlowStats, saveFlowStats } from '../adapters/localStore.js';
 import { loadTheme, saveTheme } from '../adapters/localStore.js';
+// 이 환경(2026-11-02, RM-27). 탐지는 어댑터, 표와 판정은 도메인, 알림 여부는 이 브라우저의 설정이다.
+import { loadSupportNotice, saveSupportNotice } from '../adapters/localStore.js';
+import { detectCapabilities } from '../adapters/capabilities.js';
+import { fingerprintOf, shouldNotify, unsupportedFeatures, unsupportedMessage } from '../domain/supportMatrix.js';
 import { themeAttr, normalizeTheme } from '../domain/themes.js';
 import { createProjectPanel } from '../ui/projectPanel.js';
 import { clipsByProgress, clipsSummary, formatTakenAt } from '../domain/project/media.js';
@@ -2229,8 +2233,21 @@ const llmServer = createLlmServer();
 // (ports/pose.js 계약과 domain/pose·rom·poseTracks 만 있다) — 설정에서 위치를 정해 두면 그것이 붙을 자리다.
 const modelServer = createModelServer();
 
+/**
+ * 지금 이 환경의 능력(RM-27). 서버 응답은 probe 가 받아 둔 것을 다시 쓰고(두 번 두드리지 않는다), GPU 는 추정기가
+ * 섰을 때만 안다 — 켤 때 모델을 띄우지 않으므로 그 전에는 「모름」이다.
+ */
+// @complexity time=O(1) space=O(1) cc=2
+const currentCapabilities = () => detectCapabilities({
+  serverConfig: clipServerConfig,
+  poseDelegate: poseEstimator ? poseEstimator.getState().delegate : ''
+});
+
 views.settings = createSettingsView({
   container: document.querySelector('.top-actions'),
+  getCapabilities: currentCapabilities,
+  getSupportNotify: () => loadSupportNotice().enabled,
+  setSupportNotify: (on) => saveSupportNotice({ enabled: !!on }),
   getClipSetting: loadClipSetting,
   saveClipSetting,
   clips: clipLibrary,
@@ -2467,6 +2484,17 @@ views.thumb = createThumbBar({
     () => ProjectCmd.draftSnapshot(projectDeps, { fileName: projectNameForClips() })
   );
   syncSaveTargetNote();                 // 「어디에 담기는가」는 서버 판정이 끝난 지금이 참이다
+
+  // 이 환경에서 안 되는 것을 **한 번** 알린다(RM-27). 서버 판정이 끝난 뒤라야 「서버 없음」이 참이다.
+  // 환경 지문이 지난번과 같으면 조용하고, 설정의 「안 되는 것 알림」을 끄면 뜨지 않는다.
+  const caps = currentCapabilities();
+  const missing = unsupportedFeatures(caps);
+  const fingerprint = fingerprintOf(caps);
+  const pref = loadSupportNotice();
+  if (shouldNotify({ enabled: pref.enabled, fingerprint, lastFingerprint: pref.seen, anyUnsupported: missing.length > 0 })) {
+    views.notify(notice('toast', unsupportedMessage(missing)));
+    saveSupportNotice({ seen: fingerprint });
+  }
 })();
 
 // 창을 닫거나 탭을 숨길 때는 기다리지 않고 담는다 — 묶는 시간(1.2초) 안에 닫으면 그만큼이 샌다.
