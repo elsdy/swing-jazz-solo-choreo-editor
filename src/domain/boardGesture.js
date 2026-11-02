@@ -218,31 +218,36 @@ export function touchDrawStart(state, ev, env) {
 }
 
 /**
- * 터치 그리기 이동(원본 2698-2703). ⚠ 시작 트랙 **한 행 안에서만** 센다 — 행을 넘지 않는다.
+ * 터치 그리기 이동(원본 2698-2703). 마우스 그리기(mouseMove)와 같은 셈이다 — 손가락 밑의 행·칸을 재어
+ * 행을 넘겨 세고 보드 끝에서 자른다. 프리뷰 하한은 1.
+ * RM-11(2026-11-02)이 옛 「시작 트랙 한 행 안에서만」(crossRow:false)을 고쳤다 — docs/deviations.md 「고쳐서 내보낸 것」.
  * @param {object} state
  * @param {{x:number, y:number}} ev
  * @param {GestureEnv} env
  */
+// @complexity time=O(1) space=O(1) cc=3
 export function touchDrawMove(state, ev, env) {
   const d = state.draw;
   if (!d || !env.activeMove) return same(state);
-  const endIndex = env.colAt(d.track, ev.x);
-  return { state, effects: [preview(d.row, d.startIndex, drawPreviewCount(d.startIndex, endIndex))] };
+  const { endRow, endCol } = env.endAt(d, ev.x, ev.y);
+  const count = resolveDragCount({ startRow: d.row, startIndex: d.startIndex, endRow, endCol, board: env.board, lowerBound: 1 });
+  return { state, effects: [preview(d.row, d.startIndex, count)] };
 }
 
 /**
- * 터치 그리기 끝(원본 2705-2715). ⚠ 행 넘김도 끝에서 자르기도 없다(crossRow:false).
+ * 터치 그리기 끝(원본 2705-2715). 마우스 그리기 끝(mouseUp)과 같은 셈 — 행을 넘겨 세고 보드 끝에서 자르며,
+ * 놓을 때의 하한은 기본 카운트다(RM-11 이 옛 crossRow:false 를 걷었다).
  * @param {object} state
- * @param {{x:number, y:number}} ev  changedTouches[0] 의 좌표
+ * @param {{x:number, y:number}} ev  그 포인터의 pointerup 좌표
  * @param {GestureEnv} env
  */
+// @complexity time=O(1) space=O(1) cc=3
 export function touchDrawEnd(state, ev, env) {
   const d = state.draw;
   if (!d || !env.activeMove) return same(state);
-  const endIndex = env.colAt(d.track, ev.x);
+  const { endRow, endCol } = env.endAt(d, ev.x, ev.y);
   const count = resolveDragCount({
-    startRow: d.row, startIndex: d.startIndex, endRow: d.row, endCol: endIndex,
-    board: env.board, lowerBound: env.defaultCount, crossRow: false,
+    startRow: d.row, startIndex: d.startIndex, endRow, endCol, board: env.board, lowerBound: env.defaultCount,
   });
   return {
     state: { ...state, draw: null },

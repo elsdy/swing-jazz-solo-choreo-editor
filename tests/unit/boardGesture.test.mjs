@@ -158,21 +158,32 @@ test('터치 그리기: 손가락 밑 칸에서 시작해 한 칸 프리뷰, 기
   assert.equal(previewOf(r).count, 1);
 });
 
-test('터치 그리기: 다른 행으로 끌어도 행을 넘지 않는다 — 시작 행 안에서 끝 칸까지만 센다', () => {
+test('터치 그리기: 다른 행으로 끌면 마우스처럼 행을 넘겨 센다 (RM-11 — 옛 「시작 행 안에서만」을 고쳤다)', () => {
   const r = run([
     [G.touchDrawStart, { ...at(2, 3), onPlacement: false }],
-    [G.touchDrawMove, at(5, 1)],   // 마우스라면 3행을 넘어 2+8+8+2 칸
+    [G.touchDrawMove, at(5, 1)],   // 2행 3..7(5) + 3·4행(16) + 5행 0..1(2)
   ], DRAW);
-  assert.equal(previewOf(r).count, 1);   // 끝 칸 1 < 시작 칸 3 → 하한 1
-  const r2 = G.touchDrawMove(r.state, at(5, 7), DRAW);
-  assert.equal(previewOf(r2).count, 5);  // 3..7
+  assert.equal(previewOf(r).count, 23);
+  const m = run([
+    [G.mouseDown, mouse(2, 3)],
+    [G.mouseMove, at(5, 1)],
+  ], DRAW);
+  assert.equal(previewOf(m).count, previewOf(r).count);   // 손가락과 마우스가 같은 답
+  const back = G.touchDrawMove(r.state, at(1, 7), DRAW);
+  assert.equal(previewOf(back).count, 1);  // 시작보다 앞이면 프리뷰 하한 1
 });
 
-test('터치 그리기: 떼면 시작 행 안에서 센 만큼(하한 기본 카운트) 놓고 커밋한다', () => {
+test('터치 그리기: 떼면 행을 넘겨 센 만큼(하한 기본 카운트) 놓고, 보드 끝에서 자른다', () => {
   const s = G.touchDrawStart(G.initialGestureState(), { ...at(2, 3), onPlacement: false }, DRAW).state;
   assert.equal(G.touchDrawEnd(s, at(2, 7), DRAW).effects[0].totalCount, 5);
+  assert.equal(G.touchDrawEnd(s, at(3, 1), DRAW).effects[0].totalCount, 7);
   assert.equal(G.touchDrawEnd(s, at(2, 3), DRAW).effects[0].totalCount, 4);
   assert.deepEqual(kinds(G.touchDrawEnd(s, at(2, 7), DRAW)), ['place', 'commit', 'clearPreview']);
+  // 마지막 행 너머를 가리키면 시작 자리에서 보드 끝까지(7행 4..7 + 8행 = 12칸)에서 자른다
+  const far = env({ activeMove: { moveId: 'm1' }, endAt: () => ({ endRow: 12, endCol: 7 }) });
+  const s7 = G.touchDrawStart(G.initialGestureState(), { ...at(7, 4), onPlacement: false }, far).state;
+  assert.equal(G.touchDrawEnd(s7, at(8, 7), far).effects[0].totalCount, 12);
+  assert.equal(previewOf(G.touchDrawMove(s7, at(8, 7), far)).count, 12);
 });
 
 test('터치 그리기: 보드 밖이나 블록 위에서 시작하면 아무 일도 없다', () => {

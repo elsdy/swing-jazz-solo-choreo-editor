@@ -30,11 +30,10 @@ test('끌기 카운트: 마지막 행 너머를 가리키면 시작 자리에서
   assert.equal(resolveDragCount({ startRow: 7, startIndex: 4, endRow: 12, endCol: 7, board: BOARD, lowerBound: 1 }), 12);
 });
 
-test('끌기 카운트: 터치 그리기(crossRow:false)는 끝 행을 보지 않고 자르지도 않는다', () => {
-  const base = { startRow: 8, startIndex: 6, board: BOARD, lowerBound: 1, crossRow: false };
-  assert.equal(resolveDragCount({ ...base, endRow: 3, endCol: 7 }), 2);
-  // 보드에 남은 칸은 2인데 그대로 5 를 돌려준다 — 놓는 커맨드가 뒤늦게 자른다(지금 동작).
-  assert.equal(resolveDragCount({ ...base, endRow: 8, endCol: 10 }), 5);
+test('끌기 카운트: 한 행 안에서만 세던 옛 터치 길은 없다 — 같은 입력이 행을 보고 보드 끝에서 잘린다 (RM-11)', () => {
+  const base = { startRow: 8, startIndex: 6, board: BOARD, lowerBound: 1 };
+  assert.equal(resolveDragCount({ ...base, endRow: 3, endCol: 7 }), 1);   // 옛 crossRow:false 는 2
+  assert.equal(resolveDragCount({ ...base, endRow: 8, endCol: 10 }), 2);  // 옛 길은 5 를 그대로 냈다
 });
 
 // ── 늘이기 카운트 ───────────────────────────────────────────────────────────
