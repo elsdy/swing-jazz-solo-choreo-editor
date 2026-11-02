@@ -6,7 +6,8 @@
 //
 // 담는 자리는 둘이고 **서버가 있으면 서버가 이긴다.**
 //   서버   `/api/projects` 의 한 칸. 폰과 PC 가 같은 서버를 보면 이어서 편집한다.
-//   브라우저 localStorage 한 칸. 정적 호스팅으로 열었을 때의 자리다.
+//   브라우저 한 칸. 정적 호스팅으로 열었을 때의 자리다 — 2026-11-02(RM-33)부터 **주입받는 칸**(`browserSlot`,
+//          app/main 은 adapters/idbSnapshots 의 IndexedDB 칸을 준다)이고, 안 주면 지금까지의 localStorage 한 칸이다.
 //
 // ── 어느 칸에 담나 — 「묶인 파일」 (2026-09-22) ─────────────────────────────────
 //
@@ -72,15 +73,20 @@ export const BOUND_KEY = 'choreo_draft_bound';
  * @param {{
  *   getServer?: () => ({ save(name, payload, opts): Promise<any>, read(name): Promise<any>, readWithMeta?(name): Promise<any>, remove(name): Promise<any> } | null),
  *   storage?: Storage,
+ *   browserSlot?: { save(payload: unknown): Promise<boolean>|boolean, load(): Promise<any|null>|any, clear(): Promise<boolean>|boolean },
  *   onConflict?: (info: {name: string}) => void
  * }} [options]
  *   getServer: **게터다.** 서버가 있는지는 probe 가 끝나야 정해지는데 이 함수는 그 전에 불린다 —
  *   값으로 받으면 서버가 있어도 영영 브라우저에 담는다.
+ *   browserSlot: 브라우저 칸(RM-33). 안 주면 `storage` 의 `choreo_draft` 한 키다. 셋 다 **던지지 않아야** 한다 —
+ *   그래도 여기서 한 번 더 받는다(실패는 false · null).
+ *   storage: 묶인 이름(`choreo_draft_bound`)을 담는 자리 — 이것은 작은 설정이라 IndexedDB 로 옮기지 않는다(부팅 때 동기로 읽힌다).
  *   onConflict: 다른 곳에서 그 파일이 바뀌어 담기를 멈췄다. 화면이 그 사실을 말해야 한다.
  * @returns {DraftStore}
  */
+// @complexity time=O(1) space=O(1) cc=6
 export function createDraftStore(options = {}) {
-  const { getServer = () => null, storage = safeLocalStorage(), onConflict = () => {} } = options;
+  const { getServer = () => null, storage = safeLocalStorage(), browserSlot = null, onConflict = () => {} } = options;
 
   /** 내가 아는 그 파일의 판. 읽기·쓰기의 응답으로만 새로워진다. */
   let seenNs = '';
@@ -97,8 +103,8 @@ export function createDraftStore(options = {}) {
     }
   };
 
-  /** 브라우저 한 칸. 서버가 없을 때의 자리이고, 서버가 있어도 **읽기의 폴백**이다. */
-  const browser = {
+  /** localStorage 한 키 — `browserSlot` 을 안 줬을 때의 브라우저 칸(2026-11-02 전까지의 유일한 자리). */
+  const localSlot = {
     save(payload) {
       if (!storage) return false;
       try {
@@ -128,6 +134,28 @@ export function createDraftStore(options = {}) {
       } catch {
         return false;
       }
+    }
+  };
+
+  /**
+   * 브라우저 한 칸. 서버가 없을 때의 자리이고, 서버가 있어도 **읽기의 폴백**이다.
+   * 주입받은 칸이 던지거나 거부해도 여기서 받는다 — 담기가 편집을 멈추면 안 된다는 규약은 칸이 무엇이든 같다.
+   */
+  const slot = browserSlot || localSlot;
+  const browser = {
+    async save(payload) {
+      try { return Boolean(await slot.save(payload)); } catch { return false; }
+    },
+    async load() {
+      try {
+        const data = await slot.load();
+        return data && typeof data === 'object' ? data : null;
+      } catch {
+        return null;
+      }
+    },
+    async clear() {
+      try { return Boolean(await slot.clear()); } catch { return false; }
     }
   };
 
@@ -234,7 +262,7 @@ export function createDraftStore(options = {}) {
       seenNs = '';
       stopped = false;
       this.unbind();
-      let ok = browser.clear();
+      let ok = await browser.clear();
       if (srv) {
         try {
           ok = Boolean(await srv.remove(DRAFT_NAME)) || ok;

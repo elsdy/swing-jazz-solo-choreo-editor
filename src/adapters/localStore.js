@@ -7,11 +7,13 @@
 // 최근목록 삽입/dedupe/절단 7벌(4042·4053·4063·4398·4417·4443·4471)과 제거 3벌(4278·4304·4332)을 옮겼다.
 //
 // ⚠ 오늘 동작을 그대로 보존한다:
-//   · set 은 try/catch 로 감싸지 않는다. 쿼터 초과(choreo_saved_files 는 payload 10개를 통째로 품는다)는
-//     오늘처럼 호출부로 그대로 던져진다 — 임포트 경로(4399·4418·4444·4472)에서는 그 예외가
-//     같은 try 안이라 alert 로, 저장 경로(4043·4054·4064)에서는 미처리 예외로 나타난다.
+//   · set 은 try/catch 로 감싸지 않는다. 쿼터 초과는 오늘처럼 호출부로 그대로 던져진다 — 임포트 경로(4399·4418·4444·4472)에서는
+//     그 예외가 같은 try 안이라 alert 로, 저장 경로(4043·4054·4064)에서는 미처리 예외로 나타난다.
 //   · get 의 파싱 실패는 빈 값으로 조용히 덮는다(오늘의 catch 6벌 + loadLinks 의 catch).
-//   · 그래서 이번 PR 에서는 아무도 StorageError 를 던지지 않는다. 정의만 있는 상태가 정답이다.
+//   · 여기서는 아무도 StorageError 를 던지지 않는다. 남은 키들은 전부 작은 설정(동작/카테고리 최근 목록은 상한 3)이라 쿼터에 닿지 않는다.
+// ⚠ **프로젝트 최근 목록(choreo_saved_files)과 작업 문서(choreo_draft)는 2026-11-02(RM-33)부터 여기 없다** —
+//   adapters/idbSnapshots 가 IndexedDB 세 칸에 담고, 첫 부팅 때 옛 두 키를 옮긴 뒤 확인하고 비운다. IndexedDB 가 없는
+//   브라우저에서는 그 어댑터가 같은 두 키 위에서 돈다. `createRecentList(STORAGE_KEYS.savedFiles, …)` 를 다시 만들지 마라.
 
 import { STORAGE_KEYS } from '../ports/storage.js';
 
@@ -223,7 +225,9 @@ export function saveLinksRaw(serialized) {
 
 /**
  * 원본 loadLocalMeta(4194-4225)를 store 의 구획 이름으로 옮긴 것.
- * 읽는 순서(파일→동작→카테고리→즐겨찾기 동작→카테고리→루틴)까지 원본과 같다.
+ * 읽는 순서(동작→카테고리→즐겨찾기 동작→카테고리→루틴)는 원본과 같다 — **프로젝트 최근 목록만 여기서 읽지 않는다**
+ * (2026-11-02, RM-33). 그것은 adapters/idbSnapshots 가 IndexedDB 에서 비동기로 읽어 app/main 이 부팅 뒤에 채운다.
+ * 안무표 10개의 내용을 첫 화면을 그리려고 파싱하던 일이 이것으로 끝난다. `projects` 는 빈 배열로 돌려준다.
  * 반환 모양이 store 의 `recents` / `favorites` 구획과 1:1 이라 app/main 은
  * `store.patch('recents', meta.recents)` · `store.patch('favorites', meta.favorites)` 로 받는다.
  * @see index.html:4194
@@ -232,13 +236,13 @@ export function saveLinksRaw(serialized) {
  *   favorites: { moveNames: Set<string>, categories: Set<string>, routineIds: Set<string> }
  * }}
  */
+// @complexity time=O(n) space=O(n) cc=1
 export function loadLocalMeta() {
-  const projects = createRecentList(STORAGE_KEYS.savedFiles, 10);
   const moves = createRecentList(STORAGE_KEYS.savedMoves, 3);
   const categories = createRecentList(STORAGE_KEYS.savedCategories, 3);
   return {
     recents: {
-      projects: projects.load(),
+      projects: [],
       moves: moves.load(),
       categories: categories.load()
     },

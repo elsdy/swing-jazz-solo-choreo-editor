@@ -81,6 +81,7 @@ import { createFileMenu } from '../ui/fileMenu.js';
 import { commandFace, syncCommandTitles } from '../ui/commandButtons.js';
 import { createCommandPalette } from '../ui/commandPalette.js';
 import { createDraftStore, debounceSave, DRAFT_NAME } from '../adapters/draftStore.js';
+import { createIdbSnapshots, draftSlotOf } from '../adapters/idbSnapshots.js';
 import { createThumbBar } from '../ui/thumbBar.js';
 import { flowTotal, nextAfter, noteTransition, topTransitions } from '../domain/flowStats.js';
 import * as TodoCmd from '../usecases/stepTodoCommands.js';
@@ -135,10 +136,19 @@ ensureOverlaySingletons();
 
 const store = createStore({ ids: browserEnv });
 
-// loadLocalMeta(1523) — 최근목록 3종 + 즐겨찾기 3종. 읽는 순서까지 원본과 같다.
+// loadLocalMeta(1523) — 최근목록 2종(동작 · 카테고리) + 즐겨찾기 3종. 읽는 순서는 원본과 같다.
+// ⚠ 프로젝트 최근 목록은 여기 없다(RM-33, 2026-11-02) — 아래 `snapshots` 가 IndexedDB 에서 비동기로 읽어
+//   `browserRecentsReady` 가 채운다. 안무표 10개의 내용을 첫 화면을 그리려고 파싱하던 일이 그것으로 끝났다.
 const meta = loadLocalMeta();
 store.patch('recents', meta.recents);
 store.patch('favorites', meta.favorites);
+
+/**
+ * 서버 없이 연 앱이 안무표를 브라우저 안에 담는 자리(RM-33) — 최근 프로젝트의 목록 · 내용과 작업 문서, IndexedDB 세 칸.
+ * IndexedDB 가 없거나 못 열면 안에서 옛 localStorage 두 키로 떨어진다(호출부는 모른다).
+ * ⚠ 서버가 있어도 이 칸은 산다 — 보관 폴더가 목록의 주인이지만, 서버가 생기기 전에 브라우저에만 저장해 둔 것을 합쳐 보인다.
+ */
+const snapshots = createIdbSnapshots();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. 어댑터 + storage 파사드
@@ -150,8 +160,8 @@ store.patch('favorites', meta.favorites);
 //   원본 saveFavorites(4227-4230)가 choreo_fav_moves 와 choreo_fav_cats 두 키를 함께 쓴다.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ⚠ 프로젝트 목록은 여기 없다 — `snapshots`(IndexedDB) 가 담는다(RM-33). 동작 · 카테고리 목록은 상한 3이라 작아 localStorage 그대로.
 const recentLists = {
-  projects: createRecentList(STORAGE_KEYS.savedFiles, ProjectCmd.RECENT_LIMITS.projects),
   moves: createRecentList(STORAGE_KEYS.savedMoves, ProjectCmd.RECENT_LIMITS.moves),
   categories: createRecentList(STORAGE_KEYS.savedCategories, ProjectCmd.RECENT_LIMITS.categories)
 };
@@ -160,8 +170,21 @@ const favoritesRepo = createFavoritesRepo();
 /** 원본 saveFavorites(4227-4230). 두 키를 함께 쓴다. */
 const saveFavorites = (fav) => favoritesRepo.save(fav);
 
+/**
+ * 프로젝트 최근 목록 한 벌을 IndexedDB 에 맞춘다(RM-33). 유스케이스는 동기처럼 부르고 Promise 를 돌려받는다 —
+ * projectCommands.persist 가 Promise 를 그대로 흘려보내므로 거부는 **여기서** 받는다. 불러오기의 try 로 들어가게
+ * 두면 안무표는 이미 열렸는데 「올바른 프로젝트 파일이 아닙니다」가 뜬다(옛 localStorage 경로의 실제 증상).
+ * ⚠ 구조 커밋에서는 받아서 기록만 한다 — 사용자에게 알리는 것은 동작 변경이라 따로 커밋한다.
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function persistProjectRecents(list) {
+  return snapshots.saveRecents(list).catch((err) => { onRecentsStoreFailed(err); });
+}
+/** 목록 담기가 거부됐을 때 — 구조 커밋에서는 콘솔에만 남긴다. */
+let onRecentsStoreFailed = (err) => { console.warn('[storage] 최근 프로젝트 목록을 브라우저에 담지 못했다', err); };
+
 const storage = {
-  saveRecents: (kind, list) => recentLists[kind].save(list),
+  saveRecents: (kind, list) => (kind === 'projects' ? persistProjectRecents(list) : recentLists[kind].save(list)),
   saveRoutineFavorites: (ids) => favoritesRepo.saveRoutines({ routineIds: ids }), // 4639-4641
   saveLinks: (serialized) => saveLinksRaw(serialized),                            // 5100-5106
   saveFavorites
@@ -510,15 +533,44 @@ views.toolbar = createToolbarView({ store, canUndo, canRedo });
  *   브라우저에만 저장해 둔 것이 있으면 덮어쓰기가 그것을 화면에서 지운다 — 파일은 살아 있는데
  *   사라진 것처럼 보이는 것이 이 기능에서 가장 나쁜 실패다. 같은 이름은 **폴더 쪽이 이긴다.**
  */
+/**
+ * 브라우저 칸(IndexedDB)의 최근 프로젝트 목록을 채운다(RM-33) — 부팅 때 한 번.
+ *   ① 옛 localStorage 두 키(choreo_saved_files · choreo_draft)를 옮긴다. 다시 읽어 맞을 때만 옛 키를 비운다.
+ *   ② 목록(이름 · 시각)만 읽어 `data: null` 로 세운다 — 내용은 열 때 이름으로 읽어 온다(openFromFolder).
+ * ⚠ 비동기라 첫 순간 목록이 비어 보이다가 채워진다. refreshProjectFolder(보관 폴더 목록)와 24절(작업 문서 되살리기)은
+ *   **이것이 끝난 뒤** 돈다 — 먼저 돌면 합칠 때 브라우저 쪽이 빠지거나, 옮기기 전의 빈 칸을 읽는다.
+ * ⚠ 부팅 중에 사용자가 이미 저장한 것이 있으면 그것을 앞에 둔다 — 담아 둔 목록이 방금 한 일을 덮으면 안 된다.
+ */
+// @complexity time=O(n) space=O(n) cc=5
+const browserRecentsReady = (async () => {
+  try {
+    const moved = await snapshots.migrateFromLocalStorage();
+    if (moved.moved && !moved.cleared) console.warn('[storage] 옛 localStorage 의 목록을 옮겼지만 확인이 어긋나 옛 키를 남겼다', moved.reason);
+    const list = await snapshots.listRecents();
+    if (!list.length) return;
+    const have = store.get().recents.projects || [];
+    const taken = new Set(have.map(p => p.fileName));
+    const fromBrowser = list
+      .filter(e => !taken.has(e.fileName))
+      .map(e => ({ fileName: e.fileName, savedAt: e.savedAt, data: null, from: 'browser' }));
+    store.patch('recents', { projects: [...have, ...fromBrowser] });
+    render({ savedLists: ['projects'] });
+  } catch (err) {
+    console.warn('[storage] 브라우저에 담긴 최근 프로젝트 목록을 읽지 못했다', err);
+  }
+})();
+
 function refreshProjectFolder() {
   views.trash?.render();                          // 휴지통도 폴더가 주인이다 — 같은 때 다시 읽는다
-  return projectServer.list().then((items) => {
+  // ⚠ 브라우저 칸의 목록이 먼저 서야 합칠 수 있다(RM-33) — 그 전에 합치면 브라우저 쪽이 빠진다.
+  return browserRecentsReady.then(() => projectServer.list()).then((items) => {
     const fromFolder = items
       .filter(it => it.name.replace(/\.json$/i, '') !== DRAFT_NAME)
       .map(it => ({
         fileName: it.name.replace(/\.json$/i, ''),
         savedAt: new Date(it.mtime * 1000).toISOString(),
-        data: null
+        data: null,
+        from: 'folder'
       }));
     const taken = new Set(fromFolder.map(p => p.fileName));
     const fromBrowser = (store.get().recents.projects || [])
@@ -531,20 +583,29 @@ function refreshProjectFolder() {
 }
 
 /**
- * 최근 목록의 한 줄을 연다. 브라우저에 내용이 있으면 그대로, 폴더에서 온 것이면 읽어 와서.
- * @param {any} data 항목이 들고 있는 내용(폴더에서 온 것이면 null)
- * @param {{fileName?:string}} item 항목 전체
+ * 최근 목록의 한 줄을 연다. 이 세션에 저장 · 불러와 내용을 들고 있으면 그대로, 아니면 이름으로 읽어 와서 —
+ * 보관 폴더에서 온 줄은 서버에서, 브라우저 칸에서 온 줄(RM-33)은 IndexedDB 에서(없으면 서버도 한 번 본다).
+ * @param {any} data 항목이 들고 있는 내용(부팅 때 읽어 온 줄은 null)
+ * @param {{fileName?:string, from?:'folder'|'browser'}} item 항목 전체
  * @param {(deps:any, payload:any) => any} run 실제 커맨드
  * @returns {any} 동기로 열었으면 Dirty, 읽어 와야 하면 undefined(렌더는 여기서 한다)
  */
+// @complexity time=O(1) space=O(1) cc=7
 function openFromFolder(data, item, run) {
   // ⚠ 링크 줄 펴기를 **여기 안에서** 한다. 바깥에서 감싸면 폴더 경로는 읽기가 끝나기 전에
   //   재어 버려서, 링크가 든 파일인데도 접힌 채 열린다(둘 중 한 경로만 도는 것이 더 나쁘다).
   if (data) return openLinksIfAny(run(projectDeps, data));
   const name = item && item.fileName;
   if (!name) return undefined;
-  projectServer.read(name).then((payload) => {
-    if (!payload) { render({ notify: notice('toast', `보관 폴더에서 '${name}' 을 읽지 못했습니다.`) }); return; }
+  const fromFolder = item.from === 'folder';
+  const readBack = fromFolder
+    ? projectServer.read(name)
+    : snapshots.getRecent(name).then((payload) => payload || projectServer.read(name));
+  readBack.then((payload) => {
+    if (!payload) {
+      render({ notify: notice('toast', fromFolder ? `보관 폴더에서 '${name}' 을 읽지 못했습니다.` : `이 브라우저에 담긴 '${name}' 을 읽지 못했습니다.`) });
+      return;
+    }
     render(run(projectDeps, payload));
     openLinksIfAny(undefined);
     // 폴더에서 **연** 것은 그 파일이 곧 지금 보는 문서다 — 자동 담기를 거기로 돌린다(2026-09-22).
@@ -821,6 +882,7 @@ const keysNow = (id) => hotkeyMap[id];
  */
 function saveProjectNow(options) {
   const dirty = ProjectCmd.saveProject(projectDeps, options);
+  // 방금 저장한 항목은 목록 맨 앞이고 **메모리에는** 내용을 들고 있다(pushRecent). 담기는 자리(IndexedDB)만 목록과 내용을 가른다(RM-33).
   const fileName = (store.get().recents.projects[0] || {}).fileName;
   const payload = (store.get().recents.projects[0] || {}).data;
   if (fileName && payload) {
@@ -1275,6 +1337,8 @@ let clipServerConfig = null;
 //   값으로 주면 서버가 있어도 영영 브라우저에 담는다(실측으로 그랬다).
 const draftStore = createDraftStore({
   getServer: () => (clipServerConfig ? projectServer : null),
+  // 브라우저 칸은 IndexedDB 의 작업 문서 칸이다(RM-33). 없으면 어댑터가 안에서 옛 localStorage 키로 떨어진다.
+  browserSlot: draftSlotOf(snapshots),
   // 다른 곳에서 그 파일이 바뀌었다 — 담기가 멈췄다는 것을 **화면이 말해야 한다.**
   // ⚠ 멈춘 줄 모르고 한 시간을 더 작업하는 것이 이 기능에서 가장 나쁜 실패다.
   onConflict: () => { draftBlocked = true; draftStopReason = 'conflict'; syncSaveTargetNote(); }
@@ -2442,6 +2506,7 @@ views.thumb = createThumbBar({
 //   중에 「어디에 담기는가」를 읽기 때문이다. 여기서는 되살리고 담기를 켜는 것만 한다.
 (async () => {
   await clipServerReady;              // 서버인지 아닌지 정해진 뒤에 읽는다
+  await browserRecentsReady;          // 옛 localStorage 의 초안이 IndexedDB 로 옮겨진 뒤에 읽는다(RM-33) — 먼저 읽으면 빈 칸이다
   const saved = await draftStore.load();
   // ⚠ **비어 있을 때만** 되살린다. 부팅 중에 사용자가 이미 파일을 열었거나 동작을 놓았으면
   //   그쪽이 이긴다 — 담아 둔 것이 방금 한 일을 덮으면 그게 데이터 손실이다.
