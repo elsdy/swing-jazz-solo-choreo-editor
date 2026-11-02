@@ -421,6 +421,25 @@
     .board-empty b { color: #e6edf6; }
     .board-empty span { font-size: 10.5px; opacity: 0.85; }
     .board-empty[hidden] { display: none; }
+    /* RM-26: 안내 한 걸음 밑에 `예제 열기` 하나. 글자는 짧게 — 네 갈래 나열은 채우기 줄이 이미 말한다. */
+    .board-empty .board-empty-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+    .board-empty .board-empty-actions button { font-size: 11.5px; }
+    /* 설명서의 그 절로 가는 작은 `?`(RM-26). 누름은 ui/docsHub 가 문서 전체에서 위임받는다. */
+    .help-q {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; padding: 0; margin-left: 6px; border-radius: 50%;
+      border: 1px solid rgba(148,163,184,0.45); background: transparent; color: var(--muted);
+      font-size: 11px; font-weight: 800; line-height: 1; cursor: pointer; vertical-align: middle; flex: 0 0 auto;
+    }
+    .help-q:hover { border-color: rgba(34,197,94,0.7); color: #eafff1; transform: none; }
+    /* 도구 탭(RM-20)은 summary 를 숨기고 탭이 그 자리를 맡으므로, 그 도구의 `?` 는 펼친 도구의 맨 위 오른쪽에 둔다. */
+    .vtool-help { display: flex; justify-content: flex-end; margin-bottom: -18px; position: relative; z-index: 1; }
+    /* 아직 쓸 수 없는 입구는 흐리게 두고, 줄 끝에 까닭을 한 줄 적는다(RM-26). 끄지는 않는다 — 눌러도 같은 까닭을 말한다. */
+    .mode-bar button[data-blocked="1"] { opacity: 0.45; }
+    .mode-bar .mode-note { flex-basis: 100%; font-size: 10.5px; color: var(--muted); line-height: 1.4; }
+    .mode-bar .mode-note[hidden] { display: none; }
+    .quick-popup-header { gap: 6px; }
+    .quick-popup-header > :first-child { flex: 1; }
     .board-header, .board-row {
       display: grid;
       gap: 12px;
@@ -2289,6 +2308,11 @@
         padding: 5px 8px;
         gap: 8px;
       }
+      /* 버튼은 줄지 않는다 — 줄면 `✨ 말로 채우기` 가 글자 하나씩 세로로 선다(RM-26 브라우저 시험에서 본 것). */
+      .mode-bar > * { flex-shrink: 0; }
+      /* 막힌 입구의 까닭(RM-26)은 폰에 툴팁이 없어 글로 보여야 한다 — 그 한 줄이 있을 때만 줄을 바꿔 아래에 둔다. */
+      .mode-bar:has(> .mode-note:not([hidden])) { flex-wrap: wrap; }
+      .mode-bar .mode-note { white-space: normal; }
       .mode-bar-label { display: none; }
       #videoPanelBtn {
         order: -1;
@@ -3049,19 +3073,16 @@
        "지금 무엇을 누르나"를 색으로만 말하면 읽어야 안다. **숨 쉬는 빛**은 읽지 않아도 눈이 먼저
        간다 — 그 순간의 주 동작 하나만 그렇게 두고 나머지는 가만히 있는다.
 
-       ⚠ **꺼진 버튼은 숨 쉬지 않는다**(`:not(:disabled)`). 못 누르는 것이 부르면 그건 거짓말이다.
+       2026-11-02(RM-26)부터 숨 쉬는 것은 **처음 한 번 안내(코치마크)가 가리키는 대상** 하나뿐이다
+       (`[data-coach="1"]` — ui/coachmarks 가 붙이고 뗀다). 그전에는 띠의 주 버튼 · 펼친 단계의 주 버튼이
+       늘 숨 쉬어, 안내가 끝난 뒤에도 화면 두세 자리가 계속 불렀다. @keyframes btnInvite 는 그 하나를 위해 남긴다.
+
        ⚠ 숨은 `box-shadow` 로만 쉰다. 크기·자리를 건드리면 옆 버튼이 밀리고, 손이 겨눈 과녁이
          움직인다(이번 작업 내내 지킨 선).
        ⚠ 부르는 색은 `--t-hot` 이다 — 길에서 "지금 여기"를 태우는 그 색이라, 화면의 두 자리가
          같은 뜻으로 읽힌다.
        ⚠ 움직임은 `prefers-reduced-motion` 에서 꺼진다. 빛은 남는다. */
     @media (min-width: 1041px) {
-      :root[data-theme] body[data-videoband="on"] .thumb-bar button[data-main="1"]:not(:disabled),
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button.primary:not(:disabled),
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button.warn:not(:disabled) {
-        animation: btnInvite 2.6s ease-in-out infinite;
-      }
-
       /* 눌린 순간 — 가라앉고, 안쪽에서 빛이 한 번 번진다.
          ⚠ `.flow-step` 은 뺀다. 그 버튼은 `::after` 를 할 일 배지로 이미 쓰고 있고, 마디 밖으로
            나가는 배지라 `overflow: hidden` 이 그것을 잘라 먹는다. */
@@ -3101,12 +3122,6 @@
       50%      { box-shadow: 0 0 0 5px rgba(var(--t-hot), 0.10), 0 0 26px rgba(var(--t-hot), 0.55); }
     }
     @media (prefers-reduced-motion: reduce) {
-      :root[data-theme] body[data-videoband="on"] .thumb-bar button[data-main="1"]:not(:disabled),
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button.primary:not(:disabled),
-      :root[data-theme] body[data-videoband="on"] .vstep[open] .video-field button.warn:not(:disabled) {
-        animation: none;
-        box-shadow: 0 0 0 3px rgba(var(--t-hot), 0.12), 0 0 18px rgba(var(--t-hot), 0.4);
-      }
       :root[data-theme] body[data-videoband="on"] button:not(.flow-step)::after { transition: none; }
     }
 
@@ -3489,7 +3504,7 @@
                **어느 파일에 담기는지**가 적혀 있어야 한다. 앱바가 아니라 이 패널에 두는 까닭:
                앱바에 상태 글자를 넣으면 길이가 변해 옆의 Undo 가 밀린다(기준 박자 배지와 같은 교훈). -->
           <div class="file-menu-save" id="fileMenuSaveNote"></div>
-          <label class="file-menu-label" for="fileNameInput">안무표 이름</label>
+          <label class="file-menu-label" for="fileNameInput">안무표 이름 <button class="help-q" type="button" data-help="file-menu" aria-label="파일 메뉴 설명 보기" title="설명서의 이 절로">?</button></label>
           <div class="appbar-file">
             <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
             <button id="saveBtn" class="primary" data-command="saveProject">프로젝트 저장</button>
@@ -3497,6 +3512,8 @@
           <div class="file-menu-row">
             <button id="loadFileBtn" class="ghost">전체 불러오기</button>
             <button id="mergeFileBtn" class="ghost accent">부분 불러오기</button>
+            <!-- 내용이 있어도 여는 길(RM-26) — 그때는 `정말요?` 확인을 거친다. 빈 안무표 안내의 것과 같은 일이다. -->
+            <button id="openExampleMenuBtn" class="ghost" type="button" disabled title="Shim Sham 8마디 예제를 엽니다. 지금 안무표를 갈아치우므로 한 번 더 묻습니다">예제 열기</button>
           </div>
           <input id="fileLoader" class="file-input" type="file" accept=".json,application/json" />
           <input id="mergeFileLoader" class="file-input" type="file" accept=".json,application/json" />
@@ -3536,6 +3553,7 @@
     <!-- 채우기 줄 — 안무표를 **무엇으로 채울까**. 위 CSS 의 `.mode-bar` 주석이 이 줄의 규칙이다. -->
     <nav class="mode-bar" id="modeBar" aria-label="안무표를 채우는 길">
       <span class="mode-bar-label">채우기</span>
+      <button class="help-q" type="button" data-help="fill-bar" aria-label="채우기 줄 설명 보기" title="설명서의 이 절로">?</button>
       <!-- app/main.js 가 여기에 `✨ 말로 채우기` 를 붙인다(전에는 앱바였다). -->
       <span class="mode-slot" id="modeComposeSlot"></span>
       <button id="videoPanelBtn" class="ghost" type="button" data-command="videoPanel">▶ 영상으로 채우기</button>
@@ -3544,6 +3562,8 @@
       <span class="mode-sep"></span>
       <!-- app/main.js 가 여기에 `🎵 프레이즈` 를 붙인다(전에는 캔버스 바였다). -->
       <span class="mode-slot" id="phrasingSlot"></span>
+      <!-- 아직 쓸 수 없는 입구의 까닭 한 줄(RM-26). ui/modeBar.setEntryStates 가 채운다 — 막힌 것이 없으면 숨는다. -->
+      <span class="mode-note" id="modeBarNote" hidden></span>
     </nav>
 
     <aside class="panel sidebar">
@@ -3691,10 +3711,15 @@
           </div>
           <!-- 놓인 블록이 하나도 없을 때만 보인다(ui/modeBar.js 가 켜고 끈다).
                ⚠ 방향(`왼쪽`)으로 가리키지 않는다 — 좁은 화면(≤1040)에서는 줄이 옆으로 밀리므로
-               거짓말이 된다. 줄 이름(`채우기`)으로 가리킨다. -->
+               거짓말이 된다. 줄 이름(`채우기`)으로 가리킨다.
+               2026-11-02(RM-26): 네 갈래 나열 대신 **한 걸음**만 말하고 곁에 `예제 열기` 를 둔다. 단추는 부팅의
+               「작업 중 문서 되살리기」가 끝나야 켜진다(app/main) — 그 전에 열면 되살릴 것을 예제가 이긴다. -->
           <div class="board-empty" id="boardEmpty" hidden>
-            <span>아직 놓인 동작이 없습니다 — 화면 위 <b>채우기</b> 줄에서 시작하세요.</span>
-            <span>✨ 말로 채우기 · ▶ 영상으로 채우기 · + 빠른 배치 · ✋ 직접 놓기</span>
+            <span>아직 놓인 동작이 없습니다 — <b>예제를 열어 보거나, 영상을 넣으세요.</b></span>
+            <div class="board-empty-actions">
+              <button id="openExampleBtn" class="ghost accent" type="button" disabled title="Shim Sham 8마디 예제를 엽니다 — 영상 링크와 박자까지">예제 열기</button>
+              <button class="help-q" type="button" data-help="example" aria-label="예제 설명 보기" title="설명서의 이 절로">?</button>
+            </div>
           </div>
           <div class="board-wrap" id="mainBoardWrap"><div class="board" id="board"></div></div>
         </div>
@@ -3785,7 +3810,7 @@
                  ⚠ 여기에 버튼을 손으로 적지 마라. 차례를 하나 더하면 `<details data-step>` 만 더하면 된다. -->
             <nav class="flow-steps" id="videoFlowSteps" aria-label="작업 차례"></nav>
             <details class="vstep" open data-icon="▶" data-step="step1">
-              <summary>① 영상 고르기</summary>
+              <summary>① 영상 고르기<button class="help-q" type="button" data-help="video-pick" aria-label="영상 고르기 설명 보기" title="설명서의 이 절로">?</button></summary>
               <div class="vstep-body">
             <!-- 유튜브 주소 칸 — 영상을 넣는 첫 입구라 ① 맨 위다(RM-20). 안무표 위 링크 줄에서 **같은 엘리먼트를** 옮겼다 —
                  저장 · 제목 조회 · 영상 소스 확정은 ui/linksBarView 가 id 로 묶어 그대로 한다. 칸을 둘 두지 마라(상태를 두 곳에 두지 않는다). -->
@@ -3809,7 +3834,7 @@
               </div>
             </details>
             <details class="vstep" id="videoTempoStep" open data-icon="♪" data-step="step2">
-              <summary>② 박자 맞추기</summary>
+              <summary>② 박자 맞추기<button class="help-q" type="button" data-help="video-tempo" aria-label="박자 맞추기 설명 보기" title="설명서의 이 절로">?</button></summary>
               <div class="vstep-body">
             <div class="video-tempo">
               <div class="video-bpm" id="videoBpmText"></div>
@@ -3868,7 +3893,7 @@
 
             <!-- 받아 적기(2026-09-12). 영상을 보면서 표에 바로 놓는 길 — docs/EDITING_FLOWS.md 1단계. -->
             <details class="vstep" open data-icon="✎" data-step="step3">
-              <summary>③ 받아 적기 — 보면서 표에 놓기</summary>
+              <summary>③ 받아 적기 — 보면서 표에 놓기<button class="help-q" type="button" data-help="video-capture" aria-label="받아 적기 설명 보기" title="설명서의 이 절로">?</button></summary>
               <div class="vstep-body">
             <div class="video-cut" style="border-top:none; padding-top:0;">
               <!-- 받아 적기는 **두 걸음**이다(2026-09-22). ② 박자 맞추기는 영상의 **일부**로 싱크를
@@ -3924,6 +3949,7 @@
             <!-- 구간 자르기와 마커(2026-09-10). In/Out 은 확정 전 값이라 화면 상태이고, 마커와 잘라 낸 클립은 안무의 일부다. -->
             <details class="vstep vtool" data-icon="✂" data-step="step4">
               <summary>구간 잡고 잘라내기</summary>
+              <div class="vtool-help"><button class="help-q" type="button" data-help="video-trim" aria-label="구간 잡고 잘라내기 설명 보기" title="설명서의 이 절로">?</button></div>
               <div class="vstep-body">
             <div class="video-cut">
               <div class="video-field">
@@ -3951,6 +3977,7 @@
 
             <details class="vstep vtool" data-icon="⚑" data-step="step5">
               <summary>마커 — 영상 구간 ↔ 안무표 구간</summary>
+              <div class="vtool-help"><button class="help-q" type="button" data-help="video-markers" aria-label="마커 설명 보기" title="설명서의 이 절로">?</button></div>
               <div class="vstep-body">
             <div class="video-cut" style="border-top:none; padding-top:0;">
               <div class="video-field">
@@ -3969,6 +3996,7 @@
             <!-- 자세 분석(2026-09-12). 영상에서 관절을 찾아 영상 위에 몸을 겹쳐 그린다. -->
             <details class="vstep vtool" data-icon="◎" data-step="step6">
               <summary>자세 분석</summary>
+              <div class="vtool-help"><button class="help-q" type="button" data-help="video-pose" aria-label="자세 분석 설명 보기" title="설명서의 이 절로">?</button></div>
               <div class="vstep-body">
             <div class="video-pose-section" style="border-top:none; padding-top:0;">
               <div class="video-field">

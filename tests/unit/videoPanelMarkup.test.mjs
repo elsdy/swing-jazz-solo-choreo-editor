@@ -39,7 +39,8 @@ function detailsIn(html, range) {
   const slice = html.slice(range.start, range.end);
   const out = [];
   const stack = [];
-  const re = /<details\b([^>]*)>|<\/details>|<summary>([^<]*)<\/summary>/g;
+  // summary 안에는 설명서로 가는 `?` 단추(RM-26)가 들 수 있다 — 태그를 걷어 글자만 본다.
+  const re = /<details\b([^>]*)>|<\/details>|<summary>([\s\S]*?)<\/summary>/g;
   for (let m; (m = re.exec(slice));) {
     if (m[0].startsWith('<details')) {
       const d = { attrs: m[1], depth: stack.length, summary: '', start: range.start + m.index, end: -1 };
@@ -50,7 +51,7 @@ function detailsIn(html, range) {
       d.end = range.start + m.index + m[0].length;
     } else {
       const top = stack[stack.length - 1];
-      if (top && !top.summary) top.summary = m[2].trim();
+      if (top && !top.summary) top.summary = m[2].replace(/<[^>]*>[^<]*<\/[^>]*>|<[^>]*>/g, '').trim();
     }
   }
   assert.equal(stack.length, 0, '<details> 가 닫히지 않았다');
@@ -141,7 +142,10 @@ test('안내 문구가 가리키는 단계 이름이 마크업에 있다', () =>
   const heads = [...steps, ...toolTabs].map(d => d.summary);
   const dir = join(ROOT, 'src', 'ui');
   const misses = [];
-  for (const f of readdirSync(dir).filter(n => n.endsWith('.js'))) {
+  // 제 번호 줄을 따로 가진 화면 — 거기의 ①②③ 은 영상 패널의 단계가 아니다.
+  //   coachmarks.js(RM-26): 처음 켠 사람에게 보이는 말풍선 세 장의 차례(① 채우기 줄 → ② 동작 목록 → ③ 영상).
+  const OWN_SEQUENCES = new Set(['coachmarks.js']);
+  for (const f of readdirSync(dir).filter(n => n.endsWith('.js') && !OWN_SEQUENCES.has(n))) {
     const src = readFileSync(join(dir, f), 'utf8');
     for (const s of scanJs(src).strings) {
       // 문자열 속 「① 이름」 꼴 — 백틱 인용이든 맨글이든. 뒤에 조사 · 문장이 이어질 수 있다.

@@ -995,7 +995,11 @@ export function createVideoPanel(deps) {
    * @returns {string}
    */
   function stepLabel(el) {
-    const raw = (el.querySelector('summary')?.textContent || '').trim();
+    // ⚠ 글자 노드만 읽는다 — <summary> 안에 도움말 `?` 단추(data-help, RM-26)가 함께 있어서 textContent 는 그 글자까지 섞는다.
+    const summary = el.querySelector('summary');
+    const raw = summary
+      ? [...summary.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim()
+      : '';
     const head = raw.split('—')[0].trim() || raw;
     // U+2460~2473 = ① ~ ⑳. 마크업의 `<summary>` 는 번호를 그대로 둔다(패널에서는 차례가 글자다).
     return head.replace(/^[\u2460-\u2473]\s*/, '').trim() || head;
