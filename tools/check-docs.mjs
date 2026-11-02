@@ -13,7 +13,7 @@
 //   ⑥ 화면의 `?` 단추(data-help)가 가리키는 문서 · 앵커가 있는지, 단추 키와 표(src/ui/helpLinks.js)가 짝이 맞는지(RM-26)
 //      — 제목을 고쳐 앵커가 바뀌면 `?` 가 문서 맨 위로 떨어진다. 그것을 여기서 붉게 한다
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderMarkdown, buildToc } from '../src/ui/docsHub.js';
@@ -34,12 +34,19 @@ const NOT_APP_DOCS = [
   // 로드맵 보드(~/Github/roadmap-board)가 만들고 읽는 항목별 계획서 — 앱의 문서 허브가 아니라 보드의 항목 자세히와
   // 떠 있는 위젯(`🧭 로드맵`)에서 읽는다. 35개가 등록부에 한 줄씩 들어오면 문서 목록이 계획서로 덮인다(2026-09-29)
   /^docs\/roadmap\/plans\//,
+  // 설치형 앱의 포장 폴더(2026-11-03, RM-28) — 안내는 앱을 짓는 사람의 것이라 앱 묶음에 실리지 않고, 앱(src/)은 이 폴더를
+  // 모른다(check-arch 가 막는다 — 등록부에 한 줄 적는 것조차). 빌드 중간물(packaging/build/stage)에는 문서 사본이 든다.
+  /^packaging\//,
 ];
 
+// @complexity time=O(n) space=O(n) cc=7
 function walkMarkdown(dir, acc = []) {
   for (const name of readdirSync(dir)) {
     if (name === '.git' || name === 'node_modules') continue;
     const p = join(dir, name);
+    // ⚠ 심볼릭 링크는 따라가지 않는다(2026-11-03, RM-28) — .dmg 를 짓는 자리의 `Applications → /Applications` 를
+    //   따라가 맥의 앱 폴더 전체를 훑다가 순환 링크(ELOOP)에서 죽었다. 저장소의 문서는 링크로 들어오지 않는다.
+    if (lstatSync(p).isSymbolicLink()) continue;
     if (statSync(p).isDirectory()) walkMarkdown(p, acc);
     else if (p.endsWith('.md')) acc.push(relative(ROOT, p).replaceAll('\\', '/'));
   }
