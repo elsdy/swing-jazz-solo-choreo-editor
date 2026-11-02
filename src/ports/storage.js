@@ -8,8 +8,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ⚠ 오늘 index.html 은 저장 실패를 삼킨다: setItem 14곳에 try/catch 가 하나도 없고
 //   loadLocalMeta/loadLinks 의 catch 는 파싱 실패를 빈 배열로 조용히 덮는다.
-//   이 포트는 그 실패를 "표현할 수 있게" 정의만 해 둔다. 어댑터가 실제로 던질지는 3단계에서 정한다 —
-//   지금 던지게 만들면 동작이 바뀐다.
+//   이 포트는 그 실패를 "표현할 수 있게" 정의만 해 뒀었다 — 2026-11-02(RM-33)부터 SnapshotStore 는
+//   adapters/idbSnapshots 가 실제로 채우고, 쓰기 실패를 StorageError 로 **거부한다**(아래 계약).
+//   KvStore(작은 설정 — 테마 · 단축키 · 즐겨찾기 · 동작/카테고리 최근 목록)는 여전히 localStorage 위의 동기
+//   구현(adapters/localStore.localKv)이고 아무도 StorageError 를 던지지 않는다 — 부팅 때 동기로 읽혀야 첫 화면이 깜빡이지 않는다.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -49,7 +51,23 @@ export const STORAGE_KEYS = Object.freeze({
    * 2026-09-21 신설. 고른 화면 테마 id(domain/themes).
    * ⚠ 이 브라우저의 취향이라 안무표 파일에 들어가지 않는다(단축키와 같은 규약).
    */
-  theme: 'choreo_theme'
+  theme: 'choreo_theme',
+  /**
+   * 2026-11-02 신설(RM-19). 「처음 한 번」 안내를 본 단계의 열쇠 목록(`string[]`).
+   * ⚠ 안무표가 아니라 **이 브라우저의 기억**이라 프로젝트 파일에 들어가지 않는다(단축키 · 테마와 같은 규약).
+   *   `⚙ 설정` 의 `처음 한 번 안내 다시 보기` 가 비운다.
+   */
+  onceHints: 'choreo_once_hints',
+  /**
+   * 2026-11-02 신설(RM-26). 처음 한 번 안내(코치마크)를 끝까지 봤거나 건너뛰었다는 표시 하나.
+   * ⚠ 이 브라우저의 것이라 안무표 파일에 들어가지 않는다. ⚙ 설정의 「안내 다시 보기」가 지운다.
+   */
+  coachSeen: 'choreo_coach_seen',
+  /**
+   * 2026-11-02 신설(RM-27). 「이 환경에서 안 되는 것」 알림 — 끔/켬과 마지막으로 알린 환경 지문(`{enabled, seen}`).
+   * ⚠ 환경이 바뀐 때만 다시 알리려고 지문을 남긴다. 이 브라우저의 것이라 안무표 파일에 들어가지 않는다.
+   */
+  supportNotice: 'choreo_support_notice'
 });
 
 /**
@@ -89,16 +107,27 @@ export class StorageError extends Error {
  */
 
 /**
- * 현재 보드와 최근 프로젝트 10개. 오늘은 choreo_saved_files 한 키에 payload 전체가 들어가지만
- * 다음 단계에서 IndexedDB 로 옮긴다(목록 렌더가 400KB 를 파싱하지 않게).
+ * 작업 문서 한 벌과 최근 프로젝트 10개 — **서버 없이 연 앱**이 브라우저 안에 담는 자리.
+ * 2026-11-02(RM-33)부터 adapters/idbSnapshots 가 IndexedDB 세 칸(목록 · 내용 · 작업 문서)으로 채운다.
+ * 그전에는 choreo_saved_files 한 키에 payload 10개가 통째로 들어가 쿼터가 차면 조용히 실패했다.
+ * IndexedDB 가 없거나 못 열면 같은 계약이 옛 두 키(choreo_saved_files · choreo_draft) 위에서 돈다.
+ *
+ * ⚠ 키는 **fileName** 이다(원본의 dedupe 키 그대로). projectId 는 쓰지 않는다 — 안무표 파일에 그런 것이 없다.
+ * ⚠ 실패 계약 — 읽기는 던지지 않는다(빈 배열 · null). 목록 쓰기(putRecent · deleteRecent · saveRecents)는
+ *   StorageError(QUOTA_EXCEEDED · UNAVAILABLE)로 **거부**하고, 호출부(app/main 의 storage 다리)가 받아 알린다.
+ *   saveCurrent 만은 false 로 알린다 — 자동 담기는 편집을 멈추면 안 된다(adapters/draftStore 의 규약).
  * @typedef {Object} SnapshotStore
- * @property {() => Promise<{projectId: string, doc: unknown, savedAt: string}|null>} loadCurrent
- * @property {(projectId: string, doc: unknown) => Promise<void>} saveCurrent 오토세이브. 오늘은 없다(새로고침 = 작업 소실)
- * @property {() => Promise<{projectId: string, fileName: string, savedAt: string}[]>} listRecents
- *   ★ doc 을 포함하지 않는다. 목록 UI 가 payload 를 파싱하지 않게 하는 가장 중요한 시그니처 선택
- * @property {(projectId: string) => Promise<unknown|null>} getRecent 읽을 때 마이그레이션 통과를 보장한다
- * @property {(entry: unknown) => Promise<void>} putRecent 상한 10, projectId ?? fileName 으로 dedupe
- * @property {(projectId: string) => Promise<void>} deleteRecent
+ * @property {() => Promise<{projectId: string, doc: unknown, savedAt: string}|null>} loadCurrent 작업 문서(1.2초마다 담기는 것)
+ * @property {(projectId: string, doc: unknown) => Promise<boolean>} saveCurrent 실패는 false — 던지지 않는다
+ * @property {() => Promise<{fileName: string, savedAt: string}[]>} listRecents
+ *   ★ doc 을 포함하지 않는다. 목록 UI 가 payload 를 파싱하지 않게 하는 가장 중요한 시그니처 선택. 순서는 넣은 차례(새것이 앞)
+ * @property {(fileName: string) => Promise<unknown|null>} getRecent 이름으로 내용 하나. 날것을 준다 —
+ *   마이그레이션은 usecases/projectCommands.readProjectData 가 **한 번** 태운다(이중 변환 없음)
+ * @property {(entry: {fileName: string, savedAt: string, data: unknown}) => Promise<string[]>} putRecent 맨 앞에 넣고 fileName 으로 dedupe, 상한 10. 남은 이름들을 준다
+ * @property {(list: {fileName: string, savedAt: string, data?: unknown}[]) => Promise<string[]>} saveRecents
+ *   목록 한 벌을 그대로 맞춘다(usecases 가 `saveRecents(kind, list)` 로 넘기는 모양). 내용 없는 **새** 이름(보관 폴더에서 온 줄)은 건너뛰고,
+ *   목록에서 빠진 이름은 내용까지 지운다
+ * @property {(fileName: string) => Promise<void>} deleteRecent
  */
 
 /**
@@ -109,6 +138,12 @@ export class StorageError extends Error {
  *   "저장은 됐는데 목록에 없음"이 되는데, 순서를 바꾸면 동작이 바뀐다 — 어댑터가 순서를 보존한다
  * @property {(file: unknown) => Promise<unknown>} readJsonFile
  *   파싱 실패는 StorageError('CORRUPT'). 오늘은 호출부마다 alert('올바른 프로젝트 파일이 아닙니다.')
+ * @property {(text: string, fileName: string, mime?: string) => void} downloadText
+ *   2026-11-02 신설(RM-21). 글자 그대로를 파일로 내려받는다 — 텍스트 시트 · 읽기 전용 HTML. downloadJson 과 같은 꼴(a 클릭 · 즉시 revoke)이다
+ * @property {(text: string) => Promise<boolean>} copyText
+ *   2026-11-02 신설(RM-21). 클립보드에 담는다. 담지 못하면 던지지 않고 false — 유스케이스가 알림으로 바꾼다
+ * @property {() => void} print
+ *   2026-11-02 신설(RM-21). 브라우저 인쇄 창을 연다(index.html 의 @media print 가 편집 도구를 숨긴다)
  */
 
 /**

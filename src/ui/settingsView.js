@@ -15,6 +15,9 @@ import {
   checkKey, eventKey, keysLabel, normalizeHotkeys, ownerOf, setKeys
 } from '../domain/hotkeys.js';
 import { DEFAULT_THEME, THEMES, normalizeTheme } from '../domain/themes.js';
+import { SYMBOLS, environmentLines } from '../domain/supportMatrix.js';
+import { commandById } from '../domain/commands.js';
+import { escapeHtml } from './widgets.js';
 
 const STYLE_ID = 'settings-view-style';
 const CSS = `
@@ -132,6 +135,18 @@ const CSS = `
 .settings-volume.is-current { border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.10); }
 .settings-volume span { font-size: 10px; color: #94a3b8; word-break: break-all; }
 .settings-volume:disabled { opacity: 0.45; cursor: not-allowed; }
+/* 이 환경(RM-27). 한 줄이 기능 하나 — 기호 · 이름 · 까닭. 기호는 domain/supportMatrix 의 ○ · △ · ✕ 와 같다. */
+.settings-env { display: grid; gap: 4px; margin-top: 6px; }
+.settings-env-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 8px; border-radius: 8px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(148,163,184,0.14); font-size: 12px; }
+.settings-env-sym { flex: 0 0 1.4em; text-align: center; font-weight: 800; }
+.settings-env-row[data-status="ok"] .settings-env-sym { color: #86efac; }
+.settings-env-row[data-status="no"] .settings-env-sym { color: #fca5a5; }
+.settings-env-row[data-status="unknown"] .settings-env-sym { color: #fcd34d; }
+.settings-env-row[data-status="no"] { border-color: rgba(252,165,165,0.28); }
+.settings-env-main { flex: 1 1 auto; min-width: 0; }
+.settings-env-main b { display: block; font-size: 12px; }
+.settings-env-main small { display: block; margin-top: 1px; font-size: 10.5px; color: var(--muted, #94a3b8); line-height: 1.35; }
 `;
 
 /** 이 브라우저가 폴더 지정을 못 할 때의 안내. 기능이 없는 것이지 고장이 아니다. */
@@ -165,6 +180,10 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  * @property {() => string} [getProjectName] 경로 미리보기에 쓸 지금 프로젝트 이름
  * @property {(subdir: string, projectName: string) => string[]} [previewDirParts] 미리보기 경로 조각(domain/clips.clipDirParts)
  * @property {() => void} [onChange] 설정이 바뀌었다 — 호출부가 패널 문구 등을 다시 그린다
+ * @property {() => import('../domain/supportMatrix.js').Capabilities} [getCapabilities] 이 환경의 탐지 결과(RM-27). 없으면 「이 환경」 절은 「탐지하지 못했다」로 그린다
+ * @property {() => boolean} [getSupportNotify] 켤 때 「안 되는 것」 토스트를 띄우는가
+ * @property {(on: boolean) => void} [setSupportNotify]
+ * @property {{ replay: () => void }} [coach] 처음 한 번 안내 — 「안내 다시 보기」가 부른다(ui/coachmarks)
  * @property {Window} [win] `location.hostname` 으로 관리 화면을 열 수 있는 기기인지 본다
  * @property {Document} [doc]
  */
@@ -197,9 +216,17 @@ export function createSettingsView(deps) {
     saveHotkeys = () => {},
     // 작업 차례 기록(2026-09-21). 이 화면은 **읽고 지우기만** 한다 — 세는 것도 담는 것도 바깥이다.
     flow = { top: () => [], total: () => 0, clear: () => {} },
+    // 「처음 한 번」 안내(RM-19). 이 화면은 본 기록을 **비우기만** 한다 — 띄우는 것은 ui/onceHint 와 조립부다.
+    hints = { reset: () => {}, count: () => 0 },
     // 테마(2026-09-21). 목록의 주인은 domain/themes 이고, 고르면 바깥이 담고 `<html>` 에 바른다.
     getTheme = () => DEFAULT_THEME,
     setTheme = () => {},
+    // 이 환경(2026-11-02, RM-27). 탐지는 어댑터가 하고 여기는 결과를 표에 맞춰 그리기만 한다.
+    getCapabilities = null,
+    getSupportNotify = () => true,
+    setSupportNotify = () => {},
+    // 처음 한 번 안내(2026-11-02, RM-26). 본 기록을 지우고 첫 장부터 띄우는 것은 ui/coachmarks 의 것을 주입받는다.
+    coach = null,
     doc = document,
     // 관리 화면을 열 수 있는 기기인지 판정하고 새 탭을 여는 데 쓴다. 테스트가 가짜를 준다.
     win = typeof window === 'undefined' ? { location: { hostname: '' }, open() {} } : window
@@ -232,6 +259,16 @@ export function createSettingsView(deps) {
       <div class="settings-main">
         <nav class="settings-side" data-role="nav" aria-label="설정 갈래"></nav>
       <div class="settings-body">
+        <section class="settings-section" data-role="env-section" data-cat="env" data-available="1"
+          data-keywords="이 환경 지원 브라우저 사파리 크롬 파이어폭스 폰 서버 ffmpeg gpu 음성 폴더 안 되는 것 알림 support">
+          <h3>이 환경</h3>
+          <div class="helper">지금 이 브라우저 · 이 서버에서 <b>무엇이 되고 무엇이 안 되는지</b>입니다. 안 되는 것은 고장이 아니라 이 환경에 그 조건이 없는 것이고, 까닭을 함께 적습니다. 서버가 없어 숨은 설정 절(프로젝트 보관 폴더 · 자세 분석 모델 · 말로 채우기)도 여기서 까닭이 읽힙니다. 전체 표는 <code>문서</code> 의 <code>지원 범위</code> 에 있습니다.</div>
+          <div class="settings-env" data-role="env-list"></div>
+          <div class="settings-row">
+            <button class="ghost" data-act="env-notify" type="button" aria-pressed="true">안 되는 것 알림: 켬</button>
+            <span class="settings-label" data-role="env-note">켤 때 안 되는 것이 있으면 토스트로 한 번 알립니다 — 환경(브라우저 · 서버)이 바뀐 때만 다시 뜹니다.</span>
+          </div>
+        </section>
         <section class="settings-section" data-cat="storage" data-available="1"
           data-keywords="영상 클립 video clip 경로 path 폴더 디렉터리 저장 업로드 보관">
           <h3>영상 보관 폴더</h3>
@@ -262,7 +299,7 @@ export function createSettingsView(deps) {
         <section class="settings-section" data-role="projects-section" data-cat="storage"
           data-keywords="프로젝트 안무표 json 저장 최근 목록 폴더 경로 백업 보관">
           <h3>프로젝트 보관 폴더</h3>
-          <div class="helper"><code>프로젝트 저장</code> 을 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
+          <div class="helper"><code>${escapeHtml(commandById('saveProject').button)}</code> 를 누르면 안무표가 이 폴더에도 쌓이고, <b>최근 프로젝트 목록이 이 폴더를 읽습니다</b>. 다운로드 폴더로도 그대로 떨어지므로 남에게 보내거나 백업하는 길은 바뀌지 않습니다. 영상과 같은 루트 아래 <b>다른 폴더</b>라 한 자리만 백업하면 둘 다 들어갑니다.</div>
           <div class="settings-row">
             <span class="settings-label">하위 폴더</span>
             <input class="settings-text" data-role="projects-subdir" type="text" placeholder="projects" disabled />
@@ -358,6 +395,20 @@ export function createSettingsView(deps) {
             <span class="settings-label" data-role="flow-note"></span>
           </div>
         </section>
+        <section class="settings-section" data-role="coach-section" data-cat="flow" data-available="1"
+          data-keywords="안내 코치마크 처음 한 번 다시 보기 말풍선 튜토리얼 시작 도움말 hint 설명">
+          <h3>처음 한 번 안내</h3>
+          <div class="helper">처음 켰을 때 <b>채우기 줄 → 동작 목록 → 영상</b> 차례로 뜨는 말풍선 세 장입니다. 한 번 끝까지 보거나 건너뛰면 다시 뜨지 않습니다 — 기본값은 「처음 한 번만」입니다. 이 브라우저에만 남고 안무표 파일에는 들어가지 않습니다.</div>
+          <div class="settings-row">
+            <button class="ghost" data-act="coach-replay" type="button">안내 다시 보기</button>
+            <span class="settings-label" data-role="coach-note"></span>
+          </div>
+          <div class="helper" data-role="hints-section">영상 패널의 단계 · 연습 줄 · 사이드바 서랍을 처음 열 때 한 번씩 뜨는 설명 말풍선도 있습니다. 이미 본 것은 다시 뜨지 않습니다.</div>
+          <div class="settings-row">
+            <button class="ghost" data-act="hints-reset" type="button">처음 한 번 안내 다시 보기</button>
+            <span class="settings-label" data-role="hints-note"></span>
+          </div>
+        </section>
         <div class="settings-empty" data-role="empty" hidden></div>
       </div>
       </div>
@@ -374,6 +425,7 @@ export function createSettingsView(deps) {
   //   서버 모드에서만 나오는 절이 있다)와 지금 고른 갈래·검색어에 걸리는가. 그래서 `section.hidden`
   //   을 직접 대입하는 자리를 남기지 않고 전부 applyFilter 를 거친다.
   const CATEGORIES = Object.freeze([
+    Object.freeze({ id: 'env', label: '이 환경', hint: '이 브라우저 · 서버에서 무엇이 되나' }),
     Object.freeze({ id: 'storage', label: '보관 자리', hint: '파일이 어디에 쌓이는가' }),
     Object.freeze({ id: 'models', label: '모델', hint: '자세 분석과 말로 채우기가 쓰는 모델' }),
     Object.freeze({ id: 'keys', label: '단축키', hint: '손을 자판에 두고 쓰는 글쇠' }),
@@ -687,6 +739,8 @@ export function createSettingsView(deps) {
     renderKeys();
     renderThemes();
     renderFlow();
+    renderEnv();
+    renderHints();
     await renderModels();
     await renderLlm();
     await renderProjects();
@@ -799,6 +853,12 @@ export function createSettingsView(deps) {
     }
     const kind = act.dataset.act;
     if (kind === 'close') { close(); return; }
+    if (kind === 'coach-replay') {
+      // 설정 창을 먼저 닫는다 — 말풍선이 가리키는 자리가 창 뒤에 있다.
+      close();
+      if (coach && typeof coach.replay === 'function') coach.replay();
+      return;
+    }
     if (kind === 'pick') {
       // ★ await 뒤로 미루지 않는다 — showDirectoryPicker 는 클릭 콜스택 안에서만 열린다.
       clips.pickFolder().then((picked) => {
@@ -1039,10 +1099,13 @@ export function createSettingsView(deps) {
   const flowListEl = overlay.querySelector('[data-role="flow-list"]');
   const flowNoteEl = overlay.querySelector('[data-role="flow-note"]');
 
-  /** 기록의 id 를 사람 말로. 모르는 id 는 그대로 보인다(단계가 늘어도 화면이 깨지지 않는다). */
+  /**
+   * 기록의 id 를 사람 말로. 모르는 id 는 그대로 보인다(단계가 늘어도 화면이 깨지지 않는다).
+   * ⚠ step4~6 은 RM-20 부터 번호 없는 **도구**다 — 열쇠는 그대로라 2026-10-05 의 판정 기록이 끊기지 않는다.
+   */
   const FLOW_LABELS = Object.freeze({
     step1: '① 영상 고르기', step2: '② 박자 맞추기', step3: '③ 받아 적기',
-    step4: '④ 구간 잘라내기', step5: '⑤ 마커', step6: '⑥ 자세 분석',
+    step4: '구간 잡고 잘라내기(도구)', step5: '마커(도구)', step6: '자세 분석(도구)',
     play: '재생·일시정지', tap: '탭', tapok: 'BPM 정하기',
     capture: '받아 적기·끊기', skip: '건너뛰기', stop: '그만'
   });
@@ -1056,6 +1119,58 @@ export function createSettingsView(deps) {
       ? rows.map(t => `${flowLabel(t.from)} → ${flowLabel(t.to)}   ${t.n}번`).join('\n')
       : '아직 기록이 없습니다. 영상 아래 단계 줄과 조작 줄을 쓰면 여기에 쌓입니다.';
     if (flowNoteEl) flowNoteEl.textContent = total ? `모두 ${total}번` : '';
+  }
+
+  // ── 이 환경 (2026-11-02, RM-27) ──────────────────────────────────────────
+  //
+  // 표의 주인은 domain/supportMatrix 하나다. 여기서는 탐지 결과를 그 표에 맞춰 줄로 그린다 —
+  // 「고장인가, 이 환경에서 원래 안 되는가」를 설정을 열어 바로 가르게 하려는 자리라 **늘 보인다**
+  // (서버 전용 절처럼 숨지 않는다. 안 되는 것이 있을수록 더 보여야 한다).
+  const envListEl = overlay.querySelector('[data-role="env-list"]');
+  const envNotifyBtn = overlay.querySelector('[data-act="env-notify"]');
+  const ENV_SYMBOL = Object.freeze({ ok: SYMBOLS.ok, no: SYMBOLS.no, unknown: '?' });
+
+  // @complexity time=O(f·k) space=O(f) cc=8
+  function renderEnv() {
+    if (!envListEl) return;
+    envListEl.textContent = '';
+    const caps = typeof getCapabilities === 'function' ? getCapabilities() : null;
+    if (!caps) {
+      const row = doc.createElement('div');
+      row.className = 'settings-env-row';
+      row.textContent = '이 환경을 아직 탐지하지 못했습니다.';
+      envListEl.appendChild(row);
+    } else {
+      for (const line of environmentLines(caps)) {
+        const row = doc.createElement('div');
+        row.className = 'settings-env-row';
+        row.dataset.status = line.status;
+        row.dataset.id = line.id;
+        const sym = doc.createElement('span');
+        sym.className = 'settings-env-sym';
+        sym.textContent = ENV_SYMBOL[line.status];
+        const main = doc.createElement('div');
+        main.className = 'settings-env-main';
+        const name = doc.createElement('b');
+        name.textContent = line.label;
+        const why = doc.createElement('small');
+        why.textContent = line.status === 'ok' ? '됩니다'
+          : line.status === 'unknown' ? '아직 모릅니다 — 자세 분석을 한 번 돌리면 GPU 로 섰는지 여기에 적힙니다'
+            : line.reasons.join(' / ');
+        main.append(name, why);
+        row.append(sym, main);
+        envListEl.appendChild(row);
+      }
+    }
+    if (envNotifyBtn) {
+      const on = !!getSupportNotify();
+      envNotifyBtn.textContent = on ? '안 되는 것 알림: 켬' : '안 되는 것 알림: 끔';
+      envNotifyBtn.setAttribute('aria-pressed', String(on));
+    }
+  }
+
+  if (envNotifyBtn) {
+    envNotifyBtn.onclick = () => { setSupportNotify(!getSupportNotify()); renderEnv(); };
   }
 
   // ── 테마 (2026-09-21) ────────────────────────────────────────────────────
@@ -1093,6 +1208,24 @@ export function createSettingsView(deps) {
       if (typeof flow.clear === 'function') flow.clear();
       renderFlow();
       if (flowNoteEl) flowNoteEl.textContent = '기록을 지웠습니다.';
+    };
+  }
+
+  // ── 처음 한 번 안내 (RM-19) ──────────────────────────────────────────────
+  const hintsResetBtn = overlay.querySelector('[data-act="hints-reset"]');
+  const hintsNoteEl = overlay.querySelector('[data-role="hints-note"]');
+
+  // @complexity time=O(1) space=O(1) cc=3
+  function renderHints() {
+    if (!hintsNoteEl) return;
+    const n = typeof hints.count === 'function' ? hints.count() : 0;
+    hintsNoteEl.textContent = n > 0 ? `본 안내 ${n}개` : '아직 본 안내가 없습니다.';
+  }
+  if (hintsResetBtn) {
+    hintsResetBtn.onclick = () => {
+      if (typeof hints.reset === 'function') hints.reset();
+      renderHints();
+      if (hintsNoteEl) hintsNoteEl.textContent = '되살렸습니다 — 그 단계를 다시 열면 안내가 뜹니다.';
     };
   }
 

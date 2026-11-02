@@ -37,7 +37,8 @@
     GET  /api/projects/<이름>             응답 헤더 X-Choreo-Mtime-Ns 에 그 파일의 시각이 실린다(위 ifMtimeNs 의 재료)
     GET  /api/projects                    보관된 안무표 목록 [{name, size, mtime}] — 최근 목록의 주인
     GET  /api/projects/<이름>             그 파일을 그대로 내준다
-    GET  /api/projects/.history?name=N    그 안무표의 직전 판 목록 [{file, name, stamp, size, mtime}] (최근이 앞)
+    GET  /api/projects/.history?name=N    그 안무표의 직전 판 목록 [{file, name, stamp, kind, size, mtime}] (최근이 앞).
+                                          kind 는 그 판을 남긴 저장의 종류 — 'manual'(사람이 누른 저장) | 'auto'(자동 담기) — RM-25
     GET  /api/projects/.trash             휴지통 목록 [{file, name, stamp, size, mtime}] (최근이 앞)
     DELETE /api/projects?name=N           그 파일을 **휴지통(.trash/)으로 옮긴다** — 되돌릴 수 있다(2026-09-22)
     POST /api/projects/restore {file, from}   from='trash'|'history' 의 file 을 <이름>.json 으로 되살린다.
@@ -538,6 +539,11 @@ def model_is_needed(entry, pose_model):
 #       `_작업중` 이던 시절의 규칙이고, 지금은 이름 붙은 파일에도 자동 담기가 들어온다.
 #   · 삭제는 .trash/ 로 **이동**. 복구는 그 반대이고, 복구가 기존 파일을 덮을 때는 그것도 .history 에 남긴다.
 #   · 목록(_list_projects)은 점으로 시작하는 것을 건너뛰므로 두 폴더는 목록에 안 보인다.
+#   · **이력 파일 이름에 종류를 싣는다**(RM-25, 2026-11-02). 자동 담기가 남긴 판은 `<이름>.<시각>.auto.json`,
+#     사람이 누른 저장이 남긴 판은 전처럼 `<이름>.<시각>.json` 이다(표식 없는 옛 파일도 손 저장으로 읽는다).
+#     솎기는 **종류별**이다 — 한 칸(12장)을 나눠 쓰면 자동 담기가 어제 손으로 저장한 판을 밀어낸다.
+#     종류는 「그 판을 남긴 저장」의 것이다. 자동 담기가 1.2초마다 화면을 파일에 맞춰 두므로, 손 저장이
+#     남긴 판은 곧 저장을 누르던 순간의 화면이다.
 HISTORY_DIR = '.history'
 TRASH_DIR = '.trash'
 HISTORY_KEEP = 20
@@ -552,26 +558,47 @@ def stamp_of(ts):
     return time.strftime('%Y%m%d-%H%M%S', time.localtime(ts))
 
 
-def split_stamped(file_name):
-    """'<이름>.<시각>.json' → (이름, 시각). 이름에 점이 있어도 되게 오른쪽에서 가른다. 꼴이 아니면 (이름, '')."""
+HISTORY_KIND_AUTO = 'auto'
+HISTORY_KIND_MANUAL = 'manual'
+
+
+# @complexity time=O(L) space=O(L) cc=4
+def split_stamped_kind(file_name):
+    """'<이름>.<시각>[.auto].json' → (이름, 시각, 종류). 이름에 점이 있어도 되게 오른쪽에서 가른다.
+
+    종류 표식 `.auto` 는 시각 **뒤**에 둔다 — 앞에 두면 `공연.auto` 라는 안무표의 손 저장 판과 겹친다.
+    꼴이 아니면 (이름, '', 'manual') — 표식 없는 옛 파일은 손 저장으로 읽는다.
+    """
     base = file_name[:-5] if file_name.endswith('.json') else file_name
+    kind = HISTORY_KIND_MANUAL
+    if base.endswith('.' + HISTORY_KIND_AUTO):
+        kind = HISTORY_KIND_AUTO
+        base = base[:-(len(HISTORY_KIND_AUTO) + 1)]
     if '.' in base:
         name, stamp = base.rsplit('.', 1)
         if re.fullmatch(r'\d{8}-\d{6}(-\d+)?', stamp):
-            return name, stamp
-    return base, ''
+            return name, stamp, kind
+    return base, '', HISTORY_KIND_MANUAL
 
 
+# @complexity time=O(L) space=O(L) cc=1
+def split_stamped(file_name):
+    """'<이름>.<시각>.json' → (이름, 시각). 종류까지 보려면 split_stamped_kind."""
+    name, stamp, _kind = split_stamped_kind(file_name)
+    return name, stamp
+
+
+# @complexity time=O(n log n) space=O(n) cc=5
 def list_stamped(folder):
-    """보관함 폴더의 항목들, 최근이 앞."""
+    """보관함 폴더의 항목들, 최근이 앞. `kind` 는 이력 파일 이름의 종류 표식(휴지통 항목은 언제나 manual)."""
     items = []
     if folder.is_dir():
         for entry in folder.iterdir():
             if not entry.is_file() or entry.suffix != '.json':
                 continue
-            name, stamp = split_stamped(entry.name)
+            name, stamp, kind = split_stamped_kind(entry.name)
             st = entry.stat()
-            items.append({'file': entry.name, 'name': name, 'stamp': stamp,
+            items.append({'file': entry.name, 'name': name, 'stamp': stamp, 'kind': kind,
                           'size': st.st_size, 'mtime': int(st.st_mtime), '_ns': st.st_mtime_ns})
     # ⚠ 정렬은 나노초 mtime 이다. 이력은 copyfile 로 만들어 **남긴 시각**이 mtime 이므로 이 순서가
     #   곧 판의 순서다. 초 단위 stamp 로 정렬하면 같은 초에 두 번 남긴 것의 앞뒤를 못 가린다.
@@ -581,9 +608,14 @@ def list_stamped(folder):
     return items
 
 
-def prune_stamped(folder, name, keep):
-    """같은 이름의 항목을 최근 keep 개만 남긴다. name 이 None 이면 폴더 전체를 센다."""
-    items = [it for it in list_stamped(folder) if name is None or it['name'] == name]
+# @complexity time=O(n log n) space=O(n) cc=6
+def prune_stamped(folder, name, keep, kind=None):
+    """같은 이름의 항목을 최근 keep 개만 남긴다. name 이 None 이면 폴더 전체를, kind 가 None 이면 종류를 가리지 않고 센다.
+
+    ⚠ 이력은 종류별로 부른다(RM-25) — 자동 담기의 솎기가 손 저장 판을 세면 「어제 것」이 사라진다.
+    """
+    items = [it for it in list_stamped(folder)
+             if (name is None or it['name'] == name) and (kind is None or it['kind'] == kind)]
     for it in items[keep:]:
         try:
             (folder / it['file']).unlink()
@@ -591,34 +623,42 @@ def prune_stamped(folder, name, keep):
             pass
 
 
-def unique_stamped(folder, name, stamp):
-    """같은 초에 두 번 남겨도 겹치지 않게 '-2' 를 붙인다."""
-    dest = folder / f'{name}.{stamp}.json'
+# @complexity time=O(k) space=O(1) cc=3
+def unique_stamped(folder, name, stamp, kind=None):
+    """같은 초에 두 번 남겨도 겹치지 않게 '-2' 를 붙인다. kind='auto' 면 시각 뒤에 `.auto` 표식을 단다."""
+    tail = f'.{kind}' if kind == HISTORY_KIND_AUTO else ''
+    dest = folder / f'{name}.{stamp}{tail}.json'
     n = 2
     while dest.exists():
-        dest = folder / f'{name}.{stamp}-{n}.json'
+        dest = folder / f'{name}.{stamp}-{n}{tail}.json'
         n += 1
     return dest
 
 
+# @complexity time=O(n log n) space=O(n) cc=7
 def snapshot_before_overwrite(target, auto=False):
-    """덮어쓰기 직전의 파일을 .history 에 복사해 둔다. 실패해도 저장을 막지 않는다(최선 노력)."""
+    """덮어쓰기 직전의 파일을 .history 에 복사해 둔다. 실패해도 저장을 막지 않는다(최선 노력).
+
+    auto 면 10분에 한 장만(직전 판이 어느 종류든 10분 안이면 건너뛴다) `.auto` 표식으로 남기고 자동 담기 칸(12장)만 솎는다.
+    아니면 매번 남기고 손 저장 칸(20장)만 솎는다 — 두 칸은 서로를 밀어내지 않는다(RM-25).
+    """
     if not target.is_file():
         return None
     folder = target.parent / HISTORY_DIR
     name = target.stem
     is_draft = auto or name.startswith(DRAFT_PREFIX)
+    kind = HISTORY_KIND_AUTO if is_draft else HISTORY_KIND_MANUAL
     try:
         folder.mkdir(parents=True, exist_ok=True)
         if is_draft:
             newest = next((it for it in list_stamped(folder) if it['name'] == name), None)
             if newest and time.time() - newest['mtime'] < DRAFT_HISTORY_GAP_SEC:
                 return None
-        dest = unique_stamped(folder, name, stamp_of(target.stat().st_mtime))
+        dest = unique_stamped(folder, name, stamp_of(target.stat().st_mtime), kind)
         # copy2 가 아니라 copyfile — 이력 파일의 mtime 은 「남긴 시각」이어야 목록이 판의 순서가 된다.
         # 그 판을 마지막으로 고친 시각은 파일 이름의 stamp 가 든다.
         shutil.copyfile(target, dest)
-        prune_stamped(folder, name, DRAFT_HISTORY_KEEP if is_draft else HISTORY_KEEP)
+        prune_stamped(folder, name, DRAFT_HISTORY_KEEP if is_draft else HISTORY_KEEP, kind)
         return dest
     except OSError:
         return None
