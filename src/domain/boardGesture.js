@@ -354,20 +354,22 @@ export function quickTouchCancel(state) {
 }
 
 /**
- * 블록 위 touchstart 의 더블탭 지우기(원본 2532-2548). 손잡이·`✎`·팝업 폭 가드는 리스너가 먼저 본다.
+ * 블록 위 손가락 pointerdown 의 더블탭 지우기(원본 2532-2548). 손잡이·`✎`·팝업 가드는 리스너가 먼저 본다.
  *
- * ⚠ 루틴 가드(routineGuarded)는 preventDefault **뒤에** 온다. 그 조기 반환은 지난 탭을 되돌리지 않아
- *   세 번째 탭도 다시 더블탭으로 잡힌다 — 오늘 동작이다(docs/deviations.md).
+ * 루틴 가드(routineGuarded — 메인 보드의 루틴 블록)가 **맨 앞**이다: 그 탭은 기본 동작을 막지 않고 지우지 않으며
+ * 탭 기억을 비운다. 원본은 가드가 preventDefault **뒤에** 와서 둘째 탭의 팝업이 막히고, 기억이 남아 셋째 탭도
+ * 더블탭으로 잡혔다 — RM-11(2026-11-02)이 고쳤다(docs/deviations.md 「고쳐서 내보낸 것」).
  *
  * @param {object} state
  * @param {{now:number, groupId:string, routineGuarded:boolean}} ev
  */
+// @complexity time=O(1) space=O(1) cc=3
 export function placementTap(state, ev) {
+  if (ev.routineGuarded) return { state: { ...state, tap: { time: 0, groupId: null } }, effects: [] };
   const { time, groupId: lastGroupId } = state.tap;
   if (!isDoubleTap(ev.now, time, ev.groupId, lastGroupId)) {
     return { state: { ...state, tap: { time: ev.now, groupId: ev.groupId } }, effects: [] };
   }
-  if (ev.routineGuarded) return { state, effects: [{ kind: 'preventDefault' }] };
   return {
     state: { ...state, tap: { time: 0, groupId: null } },
     effects: [{ kind: 'preventDefault' }, { kind: 'remove', groupId: ev.groupId }, { kind: 'commit' }],

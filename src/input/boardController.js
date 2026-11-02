@@ -391,7 +391,7 @@ export function createBoardController(deps) {
       if (!placementActionPopup) {
         const placementEl = e.target.closest(SEL.placement);
         if (placementEl) {
-          // ⚠ 루틴 가드는 preventDefault 뒤에 온다(2539) — 그 차례는 gesture.placementTap 이 지킨다.
+          // 루틴 가드는 맨 앞이다 — 루틴 블록의 탭은 막지도 지우지도 않고 탭 기억을 비운다(gesture.placementTap, RM-11).
           step(gesture.placementTap, e, {
             now: Date.now(),
             groupId: placementEl.dataset[DATA.groupId],

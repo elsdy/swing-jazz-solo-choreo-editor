@@ -280,13 +280,17 @@ test('더블탭: 정확히 300ms 이거나 다른 블록이면 더블탭이 아�
   assert.deepEqual(other.state.tap, { time: 1100, groupId: 'g2' });
 });
 
-test('더블탭: 루틴 블록은 기본 동작만 막고 지우지 않는다 — 탭 기억이 남아 세 번째 탭도 더블탭이다(지금 동작)', () => {
-  const s1 = G.placementTap(G.initialGestureState(), tap(1000, 'r1', true)).state;
-  const second = G.placementTap(s1, tap(1100, 'r1', true));
-  assert.deepEqual(second.effects, [{ kind: 'preventDefault' }]);
-  assert.deepEqual(second.state.tap, { time: 1000, groupId: 'r1' });
+test('더블탭: 루틴 블록의 탭은 기본 동작을 막지 않고 지우지 않으며 탭 기억을 비운다 — 세 번째 탭도 더블탭이 아니다 (RM-11)', () => {
+  const s1 = G.placementTap(G.initialGestureState(), tap(1000, 'r1', true));
+  assert.deepEqual(s1.effects, []);
+  const second = G.placementTap(s1.state, tap(1100, 'r1', true));
+  assert.deepEqual(second.effects, []);                        // 옛 동작: [preventDefault] — 그래서 팝업이 안 떴다
+  assert.deepEqual(second.state.tap, { time: 0, groupId: null });
   const third = G.placementTap(second.state, tap(1250, 'r1', true));
-  assert.deepEqual(third.effects, [{ kind: 'preventDefault' }]);
+  assert.deepEqual(third.effects, []);
+  // 루틴 블록을 누른 뒤 동작 블록을 두 번 누르면 그것은 평소대로 더블탭이다
+  const n1 = G.placementTap(third.state, tap(1300, 'g1', false)).state;
+  assert.deepEqual(kinds(G.placementTap(n1, tap(1400, 'g1', false))), ['preventDefault', 'remove', 'commit']);
 });
 
 // ── 포인터 종류로 전이 고르기 (RM-11) ────────────────────────────────────────
