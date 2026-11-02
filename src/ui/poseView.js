@@ -13,6 +13,7 @@
 //   유튜브라 안 되는 것은 할 일이 다르므로 문구가 달라야 한다(구간 자르기와 같은 규약).
 
 import { CLS } from './domContract.js';
+import { applyGuide, poseGuide } from './guideLines.js';
 
 /** 분석이 안 되는 이유 → 안내. 어댑터·서버는 사실만 주고 문구는 여기서 만든다. */
 export const POSE_TEXT = Object.freeze({
@@ -143,24 +144,22 @@ export function createPoseView(deps) {
     if (pickClearBtn) pickClearBtn.disabled = p.anchors.length === 0;
 
     if (help) {
-      help.classList.remove(CLS.isError);
-      if (p.state === 'error') {
-        help.textContent = `분석 실패: ${p.error}`;
-        help.classList.add(CLS.isError);
-      } else if (running) {
-        help.textContent = p.total > 0
-          ? `${p.done}/${p.total} 프레임 — ${POSE_TEXT.busy}`
-          : POSE_TEXT.busy;
+      // 안내 줄은 평소에 비고(RM-19), 실패 · 막힘만 경고로, 도는 중 · 끝난 요약 · 따라 그리기만 소식으로 적힌다.
+      // 준비됐을 때의 설명(POSE_TEXT.ready)은 처음 한 번 안내(ui/onceHint 의 step6)로 갔다.
+      let text = '';
+      if (running) {
+        text = p.total > 0 ? `${p.done}/${p.total} 프레임 — ${POSE_TEXT.busy}` : POSE_TEXT.busy;
       } else if (p.state === 'done') {
         const bits = [`${clock(p.fromSec)}~${clock(p.toSec)} 에서 ${p.frames}장을 봤습니다`];
         bits.push(p.maxSubjects > 1 ? `한 화면에 최대 ${p.maxSubjects}명` : '한 사람');
         if (p.ambiguous > 0) bits.push(`헷갈린 구간 ${p.ambiguous}곳 — 그 대목에서 영상 위의 사람을 눌러 다시 고르세요`);
         if (p.lost > 0) bits.push(`놓친 구간 ${p.lost}곳`);
         if (many) bits.push('영상 위의 사람을 누르면 그 사람으로 바뀝니다');
-        help.textContent = bits.join(' · ') + '.';
-      } else {
-        help.textContent = p.live ? liveText(p) : (why === 'ready' ? POSE_TEXT.ready : (POSE_TEXT[why] || POSE_TEXT.ready));
+        text = bits.join(' · ') + '.';
+      } else if (p.live) {
+        text = liveText(p);
       }
+      applyGuide(help, poseGuide({ state: p.state, error: p.error, live: !!p.live, why, text }), CLS.isError);
     }
   }
 

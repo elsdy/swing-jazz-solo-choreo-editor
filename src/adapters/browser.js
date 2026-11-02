@@ -222,16 +222,20 @@ export function debounce(fn, waitMs) {
 }
 
 /**
- * 터치 롱프레스. 원본에 두 벌이 있고 **규칙이 다르다** — 값은 현행 그대로 옵션으로 뺀다.
+ * 손가락 롱프레스 — 포인터 이벤트로 듣는다(RM-11, 2026-11-02 — 원본은 touchstart/touchmove/touchend 였다).
+ * 원본에 두 벌이 있고 **규칙이 다르다** — 값은 현행 그대로 옵션으로 뺀다.
  *
- *   팔레트 칩 드래그(3932-3944): delayMs 180, 이동 취소 **없음**, touchstart 에서 이전 타이머를
+ *   팔레트 칩 드래그(3932-3944): delayMs 180, 이동 취소 **없음**, 누를 때 이전 타이머를
  *     지우지 않는다(3934 가 pressTimer 를 그냥 덮어쓴다).
- *   동작 메뉴(3229-3244)   : delayMs 480, 8px 넘게 움직이면 취소, touchstart 에서 clearTimer() 먼저.
+ *   동작 메뉴(3229-3244)   : delayMs 480, 8px 넘게 움직이면 취소, 누를 때 clearTimer() 먼저.
  *
- * onLongPress 는 **touchstart 시점의 좌표**를 받는다(두 원본 모두 touchstart 의 Touch 객체를
+ * pointerType 이 'touch' 인 누름만 센다 — 마우스를 오래 누르는 것은 롱프레스가 아니다(원본도 터치 이벤트만 들었다).
+ * onLongPress 는 **누른 시점의 좌표**를 받는다(두 원본 모두 touchstart 의 Touch 객체를
  * 클로저로 잡아 두었다가 콜백 안에서 읽는다).
- * 타이머는 touchend/touchcancel 에서 해제된다. 드롭 처리 같은 후속 로직은 호출부가 자기
- * touchend 리스너를 따로 붙인다(원본과 실행 순서가 같다 — 해제가 먼저다).
+ * 타이머는 pointerup/pointercancel 에서 해제된다. 드롭 처리 같은 후속 로직은 호출부가 자기
+ * pointerup 리스너를 따로 붙인다(원본과 실행 순서가 같다 — 해제가 먼저다).
+ * ⚠ 브라우저가 스크롤을 시작하면 pointercancel 이 와서 타이머가 풀린다 — 롱프레스 뒤에 끄는 동안 스크롤이
+ *   시작되지 않게 하는 것(touchmove preventDefault)은 호출부의 몫이다(input/paletteInput 의 스크롤 가드).
  * @see index.html:3229
  * @see index.html:3932
  * @param {EventTarget} target
@@ -239,10 +243,11 @@ export function debounce(fn, waitMs) {
  *   delayMs: number,
  *   moveTolerancePx?: number|null,
  *   resetOnStart?: boolean,
- *   onLongPress: (hit: { x: number, y: number, touch: Touch, event: TouchEvent }) => void
+ *   onLongPress: (hit: { x: number, y: number, pointerId: number, event: PointerEvent }) => void
  * }} options
  * @returns {{ cancel: () => void, dispose: () => void }}
  */
+// @complexity time=O(1) space=O(1) cc=9
 export function longPress(target, options) {
   const { delayMs, moveTolerancePx = null, resetOnStart = false, onLongPress } = options;
   let timer = null;
@@ -256,39 +261,38 @@ export function longPress(target, options) {
     }
   };
 
-  const onTouchStart = (e) => {
-    const touch = e.touches[0];
-    startX = touch.clientX;
-    startY = touch.clientY;
+  const onPointerDown = (e) => {
+    if (e.pointerType !== 'touch') return;
+    startX = e.clientX;
+    startY = e.clientY;
     if (resetOnStart) clearTimer();
+    const x = e.clientX; const y = e.clientY;
     timer = setTimeout(() => {
-      onLongPress({ x: touch.clientX, y: touch.clientY, touch, event: e });
+      onLongPress({ x, y, pointerId: e.pointerId, event: e });
     }, delayMs);
   };
 
-  const onTouchMove = (e) => {
-    if (!timer) return;
-    const touch = e.touches[0];
-    if (Math.abs(touch.clientX - startX) > moveTolerancePx
-      || Math.abs(touch.clientY - startY) > moveTolerancePx) clearTimer();
+  const onPointerMove = (e) => {
+    if (!timer || e.pointerType !== 'touch') return;
+    if (Math.abs(e.clientX - startX) > moveTolerancePx
+      || Math.abs(e.clientY - startY) > moveTolerancePx) clearTimer();
   };
 
-  target.addEventListener('touchstart', onTouchStart, { passive: true });
-  // ⚠ moveTolerancePx 가 null 이면 touchmove 리스너를 아예 붙이지 않는다 — 팔레트 칩(3947)은
-  //   같은 이벤트에 { passive: false } 로 preventDefault 하는 자기 리스너를 붙이므로,
-  //   여기서 아무 일도 안 하는 리스너를 하나 더 얹지 않는다.
-  if (moveTolerancePx !== null) target.addEventListener('touchmove', onTouchMove, { passive: true });
-  target.addEventListener('touchend', clearTimer);
-  target.addEventListener('touchcancel', clearTimer);
+  target.addEventListener('pointerdown', onPointerDown);
+  // ⚠ moveTolerancePx 가 null 이면 pointermove 리스너를 아예 붙이지 않는다 — 팔레트 칩(3947)은
+  //   같은 누름을 자기 리스너로 따로 듣는다. 여기서 아무 일도 안 하는 리스너를 하나 더 얹지 않는다.
+  if (moveTolerancePx !== null) target.addEventListener('pointermove', onPointerMove);
+  target.addEventListener('pointerup', clearTimer);
+  target.addEventListener('pointercancel', clearTimer);
 
   return {
     cancel: clearTimer,
     dispose() {
       clearTimer();
-      target.removeEventListener('touchstart', onTouchStart);
-      if (moveTolerancePx !== null) target.removeEventListener('touchmove', onTouchMove);
-      target.removeEventListener('touchend', clearTimer);
-      target.removeEventListener('touchcancel', clearTimer);
+      target.removeEventListener('pointerdown', onPointerDown);
+      if (moveTolerancePx !== null) target.removeEventListener('pointermove', onPointerMove);
+      target.removeEventListener('pointerup', clearTimer);
+      target.removeEventListener('pointercancel', clearTimer);
     }
   };
 }

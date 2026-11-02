@@ -38,6 +38,57 @@ import { resolveDragCount, isDoubleTap, exceedsThreshold, QUICK_DRAG_THRESHOLD_P
  * @property {(x:number, y:number) => {inBoard:boolean, track:any, row:number|null, col:number|null}} [hitAt]
  */
 
+/**
+ * 그 누름이 손가락인가 — 포인터 이벤트의 pointerType 으로 가른다(RM-11, 2026-11-02).
+ * 'touch' 만 손가락 규칙이고 'mouse' · 'pen' · 빈 값(모르는 기기)은 마우스 규칙이다 — 펜은 끝이 뾰족해
+ * 과녁이 마우스만큼 정확하고 hover 도 있어 마우스 쪽이 맞다.
+ * ⚠ 창 폭으로 가르지 않는다. 폭은 배치(사이드바 접기 · 팝업 자리)의 일이고 ui/layout 의 몫이다.
+ * @param {string|undefined|null} pointerType
+ * @returns {'touch'|'mouse'}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function pointerKind(pointerType) {
+  return pointerType === 'touch' ? 'touch' : 'mouse';
+}
+
+/**
+ * 포인터 종류에 따라 각 단계(down · move · up · cancel)에서 돌릴 전이 함수를 **원본 리스너 차례대로** 돌려준다.
+ * 리스너 한 벌(pointer*)이 이것을 읽어 옛 전이를 그대로 고른다 — 마우스는 그리기·빠른 배치 한 함수씩, 손가락은
+ * 그리기(⑱~㉑)가 먼저 돌고 빠른 배치(㉒~㉕)가 그 뒤에 돈다(같은 touchstart 에 셋이 걸려 있던 차례).
+ * 모든 전이는 같은 ev 모양 `{x, y, track, row, onPlacement}` 을 받고 필요한 것만 읽는다.
+ * @param {string|undefined|null} pointerType
+ * @returns {{down:Function[], move:Function[], up:Function[], cancel:Function[]}}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function transitionsFor(pointerType) {
+  if (pointerKind(pointerType) === 'touch') {
+    return {
+      down: [touchDrawStart, quickTouchStart],
+      move: [touchDrawMove, quickTouchMove],
+      up: [touchDrawEnd, quickTouchEnd],
+      cancel: [touchDrawCancel, quickTouchCancel],
+    };
+  }
+  return { down: [mouseDown], move: [mouseMove], up: [mouseUp], cancel: [mouseCancel] };
+}
+
+/**
+ * 블록을 한 번 눌렀을 때(click) 무엇을 하나 — 창 폭이 아니라 **그 누름의 pointerType** 으로 가른다(RM-11, 2026-11-02).
+ * 2026-09-21 부터는 「팝업이 뜨는 폭(≤1040)」이었다 — 넓은 태블릿에서 손가락으로 눌러도 선택 토글이 되고, 좁힌 데스크톱 창에서
+ * 마우스로 눌러도 팝업이 떴다. 이제 손가락이면 팝업, 마우스(펜)면 선택 토글이다 — 우클릭 길은 그대로 남는다.
+ *   'routine-popup'  루틴 블록 — 종류와 상관없이 루틴 팝업(원본 2448)
+ *   'action-popup'   손가락 · 블록 동작 팝업이 있는 보드
+ *   'toggle'         그 밖 — 선택 토글(원본 2461)
+ * @param {{pointerType:string|undefined, isRoutine:boolean, hasActionPopup:boolean}} ev
+ * @returns {'routine-popup'|'action-popup'|'toggle'}
+ */
+// @complexity time=O(1) space=O(1) cc=3
+export function placementTapRoute({ pointerType, isRoutine, hasActionPopup }) {
+  if (isRoutine) return 'routine-popup';
+  if (hasActionPopup && pointerKind(pointerType) === 'touch') return 'action-popup';
+  return 'toggle';
+}
+
 /** @returns {{draw:null, quickDraw:null, quickTouch:null, tap:{time:number, groupId:string|null}}} */
 export function initialGestureState() {
   return { draw: null, quickDraw: null, quickTouch: null, tap: { time: 0, groupId: null } };
@@ -54,6 +105,20 @@ const preview = (row, startIndex, count) => ({ kind: 'preview', row, startIndex,
  */
 export function drawPreviewCount(startIndex, endIndex) {
   return Math.max(1, endIndex - startIndex + 1);
+}
+
+/**
+ * 이 보드가 손가락 그리기를 받을 상태인가 — 그렇다면 트랙에서 손가락 끌기가 페이지 스크롤이 아니라 그리기다.
+ * 포인터 이벤트는 브라우저가 스크롤을 시작하면 pointercancel 로 그리기를 빼앗고, touch-action 은 누르는 순간에
+ * 정해지므로 리스너 안에서는 늦다. 그래서 렌더가 이 답을 보드에 미리 적어 두고 CSS 가 트랙의 스크롤을 막는다
+ * (RM-11 동작 ③ — 옛 「손가락으로 그리는 동안 페이지가 함께 스크롤된다」를 고쳤다).
+ * 동작을 고르지 않았고 빠른 배치도 꺼져 있으면 트랙 위에서도 손가락으로 스크롤한다.
+ * @param {{activeMove?:object|null, quickPlaceMode?:boolean}} s
+ * @returns {boolean}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function touchDrawArmed({ activeMove, quickPlaceMode }) {
+  return !!activeMove || !!quickPlaceMode;
 }
 
 /**
@@ -139,6 +204,18 @@ export function mouseUp(state, ev, env) {
 }
 
 /**
+ * 마우스 포인터의 pointercancel — 그리던 것 · 빠른 배치 끌기를 지운다. 원본에는 없던 길이다(mouse 이벤트에는
+ * cancel 이 없다). 브라우저가 포인터를 빼앗을 때(네이티브 드래그 시작 등)만 오며, 빈 트랙에서 시작한 그리기 중에는
+ * 실제로 오지 않는다 — 와도 프리뷰만 지우고 아무것도 놓지 않는다.
+ * @param {object} state
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function mouseCancel(state) {
+  if (!state.draw && !state.quickDraw) return same(state);
+  return { state: { ...state, draw: null, quickDraw: null }, effects: [{ kind: 'clearPreview' }] };
+}
+
+/**
  * 터치 그리기 시작(원본 2685-2696). 포인터 밑을 먼저 재고, 그다음에 블록 위인지 본다(원본 순서).
  * @param {object} state
  * @param {{x:number, y:number, onPlacement:boolean}} ev
@@ -155,31 +232,36 @@ export function touchDrawStart(state, ev, env) {
 }
 
 /**
- * 터치 그리기 이동(원본 2698-2703). ⚠ 시작 트랙 **한 행 안에서만** 센다 — 행을 넘지 않는다.
+ * 터치 그리기 이동(원본 2698-2703). 마우스 그리기(mouseMove)와 같은 셈이다 — 손가락 밑의 행·칸을 재어
+ * 행을 넘겨 세고 보드 끝에서 자른다. 프리뷰 하한은 1.
+ * RM-11(2026-11-02)이 옛 「시작 트랙 한 행 안에서만」(crossRow:false)을 고쳤다 — docs/deviations.md 「고쳐서 내보낸 것」.
  * @param {object} state
  * @param {{x:number, y:number}} ev
  * @param {GestureEnv} env
  */
+// @complexity time=O(1) space=O(1) cc=3
 export function touchDrawMove(state, ev, env) {
   const d = state.draw;
   if (!d || !env.activeMove) return same(state);
-  const endIndex = env.colAt(d.track, ev.x);
-  return { state, effects: [preview(d.row, d.startIndex, drawPreviewCount(d.startIndex, endIndex))] };
+  const { endRow, endCol } = env.endAt(d, ev.x, ev.y);
+  const count = resolveDragCount({ startRow: d.row, startIndex: d.startIndex, endRow, endCol, board: env.board, lowerBound: 1 });
+  return { state, effects: [preview(d.row, d.startIndex, count)] };
 }
 
 /**
- * 터치 그리기 끝(원본 2705-2715). ⚠ 행 넘김도 끝에서 자르기도 없다(crossRow:false).
+ * 터치 그리기 끝(원본 2705-2715). 마우스 그리기 끝(mouseUp)과 같은 셈 — 행을 넘겨 세고 보드 끝에서 자르며,
+ * 놓을 때의 하한은 기본 카운트다(RM-11 이 옛 crossRow:false 를 걷었다).
  * @param {object} state
- * @param {{x:number, y:number}} ev  changedTouches[0] 의 좌표
+ * @param {{x:number, y:number}} ev  그 포인터의 pointerup 좌표
  * @param {GestureEnv} env
  */
+// @complexity time=O(1) space=O(1) cc=3
 export function touchDrawEnd(state, ev, env) {
   const d = state.draw;
   if (!d || !env.activeMove) return same(state);
-  const endIndex = env.colAt(d.track, ev.x);
+  const { endRow, endCol } = env.endAt(d, ev.x, ev.y);
   const count = resolveDragCount({
-    startRow: d.row, startIndex: d.startIndex, endRow: d.row, endCol: endIndex,
-    board: env.board, lowerBound: env.defaultCount, crossRow: false,
+    startRow: d.row, startIndex: d.startIndex, endRow, endCol, board: env.board, lowerBound: env.defaultCount,
   });
   return {
     state: { ...state, draw: null },
@@ -272,22 +354,47 @@ export function quickTouchCancel(state) {
 }
 
 /**
- * 블록 위 touchstart 의 더블탭 지우기(원본 2532-2548). 손잡이·`✎`·팝업 폭 가드는 리스너가 먼저 본다.
+ * 블록 위 손가락 pointerdown 의 더블탭 지우기(원본 2532-2548). 손잡이·`✎`·팝업 가드는 리스너가 먼저 본다.
  *
- * ⚠ 루틴 가드(routineGuarded)는 preventDefault **뒤에** 온다. 그 조기 반환은 지난 탭을 되돌리지 않아
- *   세 번째 탭도 다시 더블탭으로 잡힌다 — 오늘 동작이다(docs/deviations.md).
+ * 루틴 가드(routineGuarded — 메인 보드의 루틴 블록)가 **맨 앞**이다: 그 탭은 기본 동작을 막지 않고 지우지 않으며
+ * 탭 기억을 비운다. 원본은 가드가 preventDefault **뒤에** 와서 둘째 탭의 팝업이 막히고, 기억이 남아 셋째 탭도
+ * 더블탭으로 잡혔다 — RM-11(2026-11-02)이 고쳤다(docs/deviations.md 「고쳐서 내보낸 것」).
  *
  * @param {object} state
  * @param {{now:number, groupId:string, routineGuarded:boolean}} ev
  */
+// @complexity time=O(1) space=O(1) cc=3
 export function placementTap(state, ev) {
+  if (ev.routineGuarded) return { state: { ...state, tap: { time: 0, groupId: null } }, effects: [] };
   const { time, groupId: lastGroupId } = state.tap;
   if (!isDoubleTap(ev.now, time, ev.groupId, lastGroupId)) {
     return { state: { ...state, tap: { time: ev.now, groupId: ev.groupId } }, effects: [] };
   }
-  if (ev.routineGuarded) return { state, effects: [{ kind: 'preventDefault' }] };
   return {
     state: { ...state, tap: { time: 0, groupId: null } },
     effects: [{ kind: 'preventDefault' }, { kind: 'remove', groupId: ev.groupId }, { kind: 'commit' }],
+  };
+}
+
+/**
+ * 행 라벨의 우클릭 · 길게 누르기(2026-11-02, RM-16) — 마디 메뉴를 열지 판정한다.
+ *
+ * 몸통 행(1..rows)의 라벨에서만 연다. 인트로 행(0)은 마디가 아니라 끼우거나 지울 수 없으므로 메뉴가 없고,
+ * 라벨이 아닌 곳(트랙 · 비고)은 블록 팝업과 브라우저 메뉴의 몫이다. 상태는 바꾸지 않는다.
+ *
+ * @param {object} state
+ * @param {{row:number|null, x:number, y:number}} ev  라벨이 아니면 row 가 null
+ * @param {{board:{rows:number}}} env
+ */
+// @complexity time=O(1) space=O(1) cc=4
+export function rowLabelPress(state, ev, env) {
+  const row = ev.row;
+  if (!Number.isInteger(row) || row < 1 || row > env.board.rows) return { state, effects: [] };
+  return {
+    state,
+    effects: [
+      { kind: 'preventDefault' },
+      { kind: 'openRowMenu', row, clientX: ev.x, clientY: ev.y, first: row === 1, last: row === env.board.rows },
+    ],
   };
 }

@@ -74,6 +74,23 @@ test('commandFace — 엄지 바가 쓰는 글자 · 툴팁이 영상 패널의 
   assert.deepEqual(commandFace('없는명령'), { label: '없는명령', title: '' });
 });
 
+test('개명해도 명령 id 는 그대로 — undo · redo · saveProject', () => {
+  // RM-10 이 단추 글자를 용어집대로 바꿨다. id 는 사용자가 바꾼 글쇠가 `{id: 글쇠[]}` 로 저장되는 이름이라 그대로다 —
+  // 바뀌면 옛 설정이 말없이 기본값으로 돌아간다.
+  const expect = { undo: '되돌리기', redo: '다시 하기', saveProject: '파일로 내보내기' };
+  for (const [id, button] of Object.entries(expect)) {
+    const cmd = commandById(id);
+    assert.ok(cmd, `${id} 가 등록부에 없다`);
+    assert.equal(cmd.button, button, `${id} 의 단추 글자`);
+    assert.doesNotMatch(cmd.label + cmd.hint + (cmd.title || ''), /Undo|Redo|프로젝트 저장/, `${id} 의 글자에 옛 말이 남았다`);
+  }
+  assert.deepEqual(commandById('saveProject').keys, ['Ctrl+S', 'Cmd+S'], '글쇠도 그대로');
+  assert.deepEqual(commandById('undo').keys, ['Ctrl+Z', 'Cmd+Z']);
+  // 저장된 설정의 모양 그대로 — 옛 id 로 적힌 글쇠가 여전히 읽힌다
+  const saved = { saveProject: ['Ctrl+Shift+S'] };
+  assert.ok(COMMANDS.some(c => c.id in saved), '저장된 id 가 등록부에 없다');
+});
+
 test('등록부 — 버튼이 있는 명령은 툴팁 몸말이 있고, 줄마다 라벨 · 설명이 빈칸이 아니다', () => {
   for (const c of COMMANDS) {
     assert.ok(c.label && c.hint, `${c.id} 의 라벨 · 설명`);

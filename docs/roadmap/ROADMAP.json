@@ -69,14 +69,24 @@
       {
         "id": "Q3",
         "title": "누구를 먼저 위한 앱인가 — 혼자 배우는 댄서인가 강사인가, 한국어만인가 영어권까지인가",
-        "answer": null,
-        "revisit": "RM-26 을 시작할 때"
+        "answer": "혼자 배우는 댄서 · 한국어 — Q67 과 같은 답",
+        "revisit": "RM-26 을 시작할 때",
+        "basis": {
+          "by": "human",
+          "why": "RM-40 병합 뒤 Q67 의 답을 옮김",
+          "at": "2026-11-03T00:00:45+09:00"
+        }
       },
       {
         "id": "Q4",
         "title": "옛 index.html 의 동작을 그대로 지키는 규칙을 언제 그만두나 — 편집 방식(기둥 B)을 바꾸려면 이 규칙을 놓아야 한다",
-        "answer": null,
-        "revisit": "기둥 B 를 시작할 때"
+        "answer": "RM-11 첫 커밋을 졸업일로 한다 — Q56 과 같은 답",
+        "revisit": "기둥 B 를 시작할 때",
+        "basis": {
+          "by": "human",
+          "why": "RM-40 병합 뒤 Q56 의 답을 옮김",
+          "at": "2026-11-03T00:00:50+09:00"
+        }
       },
       {
         "id": "Q5",
@@ -87,8 +97,13 @@
       {
         "id": "Q6",
         "title": "곡의 파트(인트로 · 벌스 같은 큰 구간)를 지금의 마커와 한 가지로 합칠까, 따로 둘까",
-        "answer": null,
-        "revisit": "RM-23 을 시작할 때"
+        "answer": "따로 둔다 — 안무표의 새 필드(마디 구간), Q89 와 같은 답",
+        "revisit": "RM-23 을 시작할 때",
+        "basis": {
+          "by": "human",
+          "why": "RM-40 병합 뒤 Q89 의 답을 옮김",
+          "at": "2026-11-03T00:00:59+09:00"
+        }
       },
       {
         "id": "Q7",
@@ -2577,8 +2592,8 @@
             "B"
           ],
           "what": "보드 위 누르기·그리기·늘이기·옮기기를 마우스·터치 두 벌 리스너에서 포인터 이벤트 한 벌로 합치고, 마우스 규칙과 손가락 규칙의 갈림을 창 폭(1040px)이 아니라 그 누름의 포인터 종류로 정한다. RM-08 이 판단을 이미 domain/boardGesture 의 전이 함수로 떼어 두었으므로, 이 항목은 리스너를 옮기는 구조 커밋 하나와 불일치를 하나씩 고치는 동작 커밋들로 나누어 낸다. 뒤따르는 RM-12(직접 조작 문법)가 한 벌 입력 위에 선다.",
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 61,
           "files": [
             "src/input/boardController.js#createBoardController",
             "src/domain/boardGesture.js#touchDrawMove",
@@ -2603,7 +2618,8 @@
           "plan": "docs/roadmap/plans/RM-11.md",
           "slug": "unify-mouse-touch-with-pointer-events",
           "branch": "rm-11-unify-mouse-touch-with-pointer-events",
-          "startedAt": "2026-11-02"
+          "startedAt": "2026-11-02",
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-12",
@@ -2841,8 +2857,8 @@
             "B"
           ],
           "what": "안무표의 블록을 재생 헤드나 고른 카운트에서 둘로 자르고, 바로 붙은 같은 이름 블록을 하나로 합치며, 행 라벨 메뉴에서 마디를 통째로 끼우고 지우고 복제하고 옮기는 편집을 한 번 누름·한 번 되돌리기로 더한다. 지금은 블록을 지우고 다시 그리거나 뒤의 블록을 하나씩 끌어야 해 간격이 어긋나며, 선행이던 RM-03(선택 정리)·RM-09(명령 등록부)·RM-13(키보드 편집)은 이미 병합되어 그 자리(명령 표 · runCommand · 선택 정리)를 그대로 쓴다.",
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 58,
           "files": [
             "src/domain/boardOps.js#splitGroup",
             "src/domain/boardOps.js#mergeGroups",
@@ -2875,7 +2891,15 @@
           "plan": "docs/roadmap/plans/RM-16.md",
           "slug": "split-merge-and-bar-insert-delete",
           "branch": "rm-16-split-merge-and-bar-insert-delete",
-          "startedAt": "2026-11-02"
+          "startedAt": "2026-11-02",
+          "wrapup": [
+            {
+              "text": "폰(터치)에서 행 라벨을 길게 눌러 마디 메뉴가 뜨고 다섯 줄이 창 안에 드는지 본다 — 브라우저 시험은 데스크톱 Chrome 우클릭으로만 했다",
+              "state": "approved",
+              "human": true
+            }
+          ],
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-17",
@@ -3054,8 +3078,8 @@
             "C"
           ],
           "what": "영상 패널의 여섯 단계를 둘로 가른다. 차례대로 하는 ①②③만 번호와 ✓를 달고, 구간 자르기 · 마커 · 자세 분석은 번호 없는 「도구」 탭으로 뺀다. 유튜브 주소 칸은 링크 줄에서 `① 영상 고르기` 안으로 옮기고, ②는 「탭 → BPM 확인 → 첫 박」 한 줄로 좁힌다. 처음 온 사람이 영상을 어디에 넣는지, 어디서 멈춰도 되는지 화면에서 읽히게 하려는 것이다. 같은 패널의 안내 줄을 걷는 RM-19와 겹친다. 패널 뼈대를 이 항목이 먼저 세우면 RM-19가 새 자리에 맞춰 한 번에 옮긴다.",
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 55,
           "files": [
             "index.html#videoFlowSteps",
             "index.html#videoTempoStep",
@@ -3081,7 +3105,18 @@
           "plan": "docs/roadmap/plans/RM-20.md",
           "slug": "video-panel-steps-and-tool-tabs-youtube-in-step-one",
           "branch": "rm-20-video-panel-steps-and-tool-tabs-youtube-in-step-one",
-          "startedAt": "2026-11-02"
+          "startedAt": "2026-11-02",
+          "wrapup": [
+            {
+              "text": "폰에서 영상을 실어 띠 모드의 차례 ①②③ · 도구 탭이 하나씩만 열리는지 본다(브라우저 창 줄이기가 안 먹어 claude 가 못 봄)",
+              "state": "approved"
+            },
+            {
+              "text": "좁은 화면(≤1040)에서 도구 탭 줄과 펼친 도구의 ? 자리를 본다",
+              "state": "approved"
+            }
+          ],
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-21",
@@ -3341,8 +3376,8 @@
             "E"
           ],
           "what": "처음 켠 사람이 빈 격자 앞에서 멈추지 않게 세 가지를 둔다. 하나는 저장 포맷 그대로의 예제 안무로, 불러오기와 같은 길(최근 목록에서 여는 길)로 연다. 둘은 처음 한 번만 뜨는 코치마크 3장, 셋은 문서 창의 그 절로 곧장 가는 `?` 단추다. 판의 RM-19(상시 안내 문장 걷기)와는 안내 틀을, RM-20(영상 패널 재배치)·RM-36(빠른 배치 표시)과는 채우기 줄 · 영상 단계의 자리를, RM-10(라벨 표)과는 문구를 겹쳐 쓴다. 다만 앞 항목의 코드를 부르지는 않으므로 모두 점선 선행으로 둔다.",
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 59,
           "files": [
             "examples/shim-sham.json",
             "src/ui/coachmarks.js",
@@ -3374,7 +3409,8 @@
           "plan": "docs/roadmap/plans/RM-26.md",
           "slug": "example-choreo-coachmarks-context-help",
           "branch": "rm-26-example-choreo-coachmarks-context-help",
-          "startedAt": "2026-11-02"
+          "startedAt": "2026-11-02",
+          "mergedAt": "2026-11-02"
         },
         {
           "id": "RM-27",
@@ -3435,8 +3471,8 @@
             "Q99"
           ],
           "defaults": [],
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 49,
           "what": "푸시 훅이 돌리는 roadmapFile 시험이 D-19(문서 ⊆ 판)보다 엄격한 두 자리 — 「판에만 있으면 계획서가 있어야 한다」와 「문서가 미룬 질문은 판에도 답이 없어야 한다」 — 때문에 보드가 found 로 더한 항목(RM-39 · RM-40)과 사람이 답한 Q4 가 items-push 를 막는다. 그 두 규칙을 판이 원본인 꼴로 고치고, Q4 는 결정 기록으로 옮겨 지금 판으로 시험이 초록이 되게 한다. RM-39 와 겹친다(RM-39 는 이 항목의 ② 경우 그 자체다 — 합치기를 권한다).",
           "kind": "bug",
           "seat": "code",
@@ -3450,8 +3486,7 @@
             "why": "그 저장소의 시험 명령이 붉다"
           },
           "slug": "roadmap-test-accepts-board-answers-and-found-items",
-          "priority": "top4",
-          "reported": 4,
+          "reported": 5,
           "files": [
             "tests/unit/roadmapFile.test.mjs#mismatches",
             "tests/unit/roadmapFile.test.mjs#hasPlan",
@@ -3478,7 +3513,8 @@
           "plan": "docs/roadmap/plans/RM-40.md",
           "branch": "rm-40-roadmap-test-accepts-board-answers-and-found-items",
           "startedAt": "2026-11-02",
-          "note": "RM-39 를 합침(2026-11-02 — 명령줄 중복 닫기)\nRM-41 를 합침(2026-11-02 — 명령줄 중복 닫기)"
+          "note": "RM-39 를 합침(2026-11-02 — 명령줄 중복 닫기)\nRM-41 를 합침(2026-11-02 — 명령줄 중복 닫기)",
+          "mergedAt": "2026-11-02"
         }
       ]
     },
@@ -3798,6 +3834,30 @@
           "slug": "board-render-scale-measure-then-rule",
           "branch": "rm-35-board-render-scale-measure-then-rule",
           "startedAt": "2026-11-02"
+        },
+        {
+          "id": "RM-42",
+          "name": "비고 칸 폭 재측정이 렌더마다 약 5ms 고정으로 든다",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "stage": null,
+          "pr": null,
+          "what": "RM-35 재기(64마디 × 3층 × 300개, Chrome · 1440폭)에서 boardView.renderRows 끝의 adjustNoteColumnWidth(cssVars.setNoteWidth)가 그린 행 수와 무관하게 중앙값 4.8ms 든다 — 비고 칸 65개를 0 으로 썼다가 다시 재는 강제 리플로 두 번. 전 행 렌더 12~15ms 의 약 1/3, 좁힌 렌더 5.5ms 의 거의 전부다. 좁힌 렌더로 가도 이 몫은 남으므로, 다시 빨라야 할 때(RM-12 · RM-14 의 움직이는 동안 그리기) 먼저 볼 자리다. deviations 「렌더 범위와 떠 있는 것들」에 측정 절차를 바꾸지 않은 까닭이 있다.",
+          "kind": "feature",
+          "seat": "code",
+          "addedAt": "2026-11-02T13:30:24Z",
+          "found": {
+            "by": "claude",
+            "kind": "bottleneck",
+            "in": "RM-35",
+            "at": "2026-11-02T13:30:24Z",
+            "side": "feature",
+            "why": "이 저장소의 ui/boardView · ui/cssVars 의 렌더 비용"
+          },
+          "slug": "note-column-width-remeasure-per-render"
         }
       ]
     }
@@ -3889,6 +3949,18 @@
       "elements": [
         {
           "name": "items-push 가 계획서 없는 버그 항목(RM-39 · RM-40)과 문서에 아직 미룬 것으로 남은 Q"
+        }
+      ],
+      "reportedAt": "2026-11-02",
+      "fixedBy": "RM-40"
+    },
+    {
+      "id": "BUG-8",
+      "title": "items-push 가 roadmapFile 시험 셋에 막힘 — RM-39·RM-40 계획서 없음, Q4 답",
+      "symptom": "2026-11-02 RM-21 시작 때 factoriel.py items-push -p swing-jazz-choreo 가 푸시 훅에서 붉었다. 실패 셋: 추적 표와 로드맵 파일의 항목이 같다(RM-39·RM-40 은 판 파일에만 있고 계획서 없음), 문서의 세 칸 항목이 로드맵 파일에도 있다(같은 까닭), 정하기를 미룬 것의 번호가 질문과 맞고 아직 답이 없다(Q4 는 문서에서 미룬 것인데 파일에 답이 있음). 판 변경이 main 으로 못 올라간다. RM-21 브랜치의 push 는 판 파일을 안 건드려 막지 않는다.",
+      "elements": [
+        {
+          "name": "items-push 가 roadmapFile 시험 셋에 막힘 — RM-39·RM-40 계획서 없음, Q4 답"
         }
       ],
       "reportedAt": "2026-11-02",
