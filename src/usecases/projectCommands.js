@@ -33,8 +33,11 @@ import { mergeProject } from '../domain/project/merge.js';
  * @property {{ saveRecents: (kind: RecentKind, list: unknown[]) => unknown,
  *              saveRoutineFavorites: (ids: Iterable<string>) => unknown,
  *              saveLinks: (links: object) => unknown }} storage
- *   ⚠ 셋 다 동기다(오늘 localStorage.setItem 그대로). 실패는 던지거나 `{ ok:false }` 로 알린다 —
- *     임포트 경로는 둘 다 오늘의 catch 와 같은 문구의 알림(Dirty.notify)으로 흡수한다.
+ *   ⚠ saveRoutineFavorites · saveLinks 와 동작/카테고리의 saveRecents 는 동기다(오늘 localStorage.setItem 그대로).
+ *     실패는 던지거나 `{ ok:false }` 로 알린다 — 임포트 경로는 둘 다 오늘의 catch 와 같은 문구의 알림(Dirty.notify)으로 흡수한다.
+ *   ⚠ 프로젝트의 saveRecents 는 2026-11-02(RM-33)부터 **Promise 를 돌려준다**(IndexedDB). 그 거부는 여기서 잡히지 않고
+ *     돌려준 쪽(app/main 의 storage 다리)이 받아 따로 알린다 — 불러오기의 try 가 그것을 「올바른 프로젝트 파일이 아닙니다」로
+ *     뭉개지 않게 하기 위해서다(persist 참고).
  * @property {(fileName: string) => void} [setProjectFileName]  원본 4379 `fileNameInput.value = …`
  * @property {(boardId: 'main'|'routine') => import('./store.js').Dirty|void} [commitHistory] 원본 saveHistory()
  */
@@ -43,7 +46,9 @@ import { mergeProject } from '../domain/project/merge.js';
 
 /**
  * 최근목록 상한. 프로젝트 10개, 동작목록·카테고리 각 3개(원본 4042·4053·4063).
- * ⚠ 프로젝트 항목은 payload 전체를 품는다 — choreo_saved_files 가 쿼터에 실제로 닿는 유일한 키다.
+ * ⚠ 프로젝트 항목은 메모리에서는 payload 를 품지만(이 세션에 저장 · 불러온 것), 담기는 자리(adapters/idbSnapshots)는
+ *   목록과 내용을 갈라 둔다. 부팅 때 읽어 온 항목은 `data: null` 이고 열 때 이름으로 읽어 온다(app/main.openFromFolder).
+ *   adapters/idbSnapshots.RECENT_LIMIT 가 같은 값이다 — 한쪽을 고치면 다른 쪽도.
  */
 export const RECENT_LIMITS = Object.freeze({ projects: 10, moves: 3, categories: 3 });
 
@@ -124,12 +129,32 @@ export function restoreDraft(deps, data) {
   return applyProjectData(deps, read.data);
 }
 
-/** 저장소가 `{ ok:false }` 로 실패를 알리면 오늘 throw 가 잡히던 자리와 같게 예외로 바꾼다. */
+/**
+ * 저장소가 `{ ok:false }` 로 실패를 알리면 오늘 throw 가 잡히던 자리와 같게 예외로 바꾼다.
+ * ⚠ **Promise 는 그대로 돌려준다**(RM-33). 비동기 저장(프로젝트 최근 목록 → IndexedDB)의 거부는 이 함수를 지나
+ *   같은 try 로 들어오지 않는다 — 들어오게 하면 안무표는 이미 열렸는데 「올바른 프로젝트 파일이 아닙니다」가 뜨고,
+ *   기다리게 하면 커맨드가 비동기가 되어 렌더 순서가 밀린다. 거부는 돌려준 쪽(storage 다리)이 받아 알린다.
+ */
+// @complexity time=O(1) space=O(1) cc=5
 function persist(result, what) {
+  if (result && typeof result.then === 'function') return result;
   if (result && typeof result === 'object' && result.ok === false) {
     throw new StorageError(result.code || 'UNAVAILABLE', `${what} 저장 실패`, result.cause);
   }
   return result;
+}
+
+/**
+ * 최근 프로젝트 목록을 브라우저에 담지 못했을 때의 알림(RM-33, 2026-11-02).
+ * 「무엇이 안 됐고 무엇은 됐는지」를 함께 말한다 — 파일은 이미 받아졌거나 열렸고, 빠진 것은 목록의 한 줄뿐이다.
+ * ⚠ 불러오기 경로의 「올바른 프로젝트 파일이 아닙니다」와 섞지 않는다 — 그것은 파일이 틀렸을 때의 말이다.
+ * @param {{code?: string}|null|undefined} err StorageError(QUOTA_EXCEEDED · UNAVAILABLE …)
+ * @returns {import('./store.js').Notice}
+ */
+// @complexity time=O(1) space=O(1) cc=2
+export function recentsStoreFailedNotice(err) {
+  const why = err && err.code === 'QUOTA_EXCEEDED' ? '저장 공간이 가득 차' : '저장소를 쓸 수 없어';
+  return notice('toast', `${why} 최근 프로젝트 목록을 이 브라우저에 담지 못했습니다 — 파일은 받아졌고 안무표도 그대로입니다.`);
 }
 
 /**

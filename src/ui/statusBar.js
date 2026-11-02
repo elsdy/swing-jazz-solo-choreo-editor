@@ -20,8 +20,8 @@ import { commandById } from '../domain/commands.js';
 export const STATUS_NOTICE_MS = 5000;
 
 /**
- * @typedef {{ bound?: string, kind?: 'server'|'browser', blocked?: boolean, reason?: string }} SaveTarget
- *   파일 메뉴가 쓰던 담기 판정 그대로 — 묶인 파일 이름 · 담는 자리 · 멈췄는가 · 멈춘 까닭.
+ * @typedef {{ bound?: string, kind?: 'server'|'browser', blocked?: boolean, reason?: string, failed?: boolean }} SaveTarget
+ *   파일 메뉴가 쓰던 담기 판정 그대로 — 묶인 파일 이름 · 담는 자리 · 멈췄는가 · 멈춘 까닭 · 담기가 실패하고 있는가(RM-33).
  * @typedef {{ available?: boolean, wanted?: boolean, listening?: boolean }} VoiceState
  * @typedef {{ id: string, text: string, tone?: 'warn'|'on'|'muted' }} StatusPart
  */
@@ -30,16 +30,18 @@ export const STATUS_NOTICE_MS = 5000;
  * 담기 자리의 판정 — 파일 메뉴 · 상태줄이 **같은 함수**로 가른다.
  *   stop-conflict  다른 탭·기기에서 바뀌어 덮어쓰지 않았다(막힘)
  *   stop-future    더 새 판의 앱이 담은 것이라 열지 못했다(막힘)
+ *   stop-failed    담으려 했지만 이 브라우저가 받지 않았다 — 쿼터 초과 · 저장소 막힘(RM-33)
  *   browser        서버가 없어 이 브라우저에만 담긴다
  *   bound          보관 폴더의 그 파일에 담기는 중
  *   draft          아직 임시 칸(`_작업중`)
  * @param {SaveTarget|null|undefined} target
- * @returns {{ state: 'stop-conflict'|'stop-future'|'browser'|'bound'|'draft', bound: string }}
+ * @returns {{ state: 'stop-conflict'|'stop-future'|'stop-failed'|'browser'|'bound'|'draft', bound: string }}
  */
-// @complexity time=O(1) space=O(1) cc=5
+// @complexity time=O(1) space=O(1) cc=6
 export function saveTargetState(target) {
-  const { bound = '', kind = 'browser', blocked = false, reason = '' } = target || {};
+  const { bound = '', kind = 'browser', blocked = false, reason = '', failed = false } = target || {};
   if (blocked) return { state: reason === 'conflict' ? 'stop-conflict' : 'stop-future', bound };
+  if (failed) return { state: 'stop-failed', bound };
   if (kind !== 'server') return { state: 'browser', bound };
   if (bound) return { state: 'bound', bound };
   return { state: 'draft', bound };
@@ -71,7 +73,7 @@ export function voiceLabel(voice) {
  * @param {{ formatClock?: (sec: number) => string }} [deps]
  * @returns {StatusPart[]}
  */
-// @complexity time=O(1) space=O(1) cc=13
+// @complexity time=O(1) space=O(1) cc=14
 export function statusParts(state, deps = {}) {
   const fmt = deps.formatClock || ((sec) => `${sec}초`);
   const parts = [];
@@ -80,6 +82,8 @@ export function statusParts(state, deps = {}) {
     parts.push({ id: 'save', text: `⚠ 담기 멈춤 — \`${save.bound || '작업 문서'}\` 이 다른 탭이나 기기에서 바뀌었습니다`, tone: 'warn' });
   } else if (save.state === 'stop-future') {
     parts.push({ id: 'save', text: `⚠ 담기 멈춤 — \`${save.bound || '작업 문서'}\` 는 더 새 판의 앱이 담은 것입니다`, tone: 'warn' });
+  } else if (save.state === 'stop-failed') {
+    parts.push({ id: 'save', text: '⚠ 담기 실패 — 이 브라우저에 담지 못하고 있습니다', tone: 'warn' });
   }
 
   const start = state.capture ? state.capture.startSec : null;

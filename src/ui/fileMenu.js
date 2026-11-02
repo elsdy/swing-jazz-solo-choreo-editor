@@ -20,7 +20,7 @@ export const UNTITLED = str('file.untitled');
 
 /**
  * @param {{
- *   getSaveTarget?: () => {bound: string, kind: 'server'|'browser', blocked?: boolean, reason?: string},
+ *   getSaveTarget?: () => {bound: string, kind: 'server'|'browser', blocked?: boolean, reason?: string, failed?: boolean},
  *   elements?: Record<string, HTMLElement|null>
  * }} [options]
  *   getSaveTarget: 지금 무엇에 담기고 있나 — 묶인 파일 이름(없으면 빈 문자열)과 담는 자리.
@@ -62,6 +62,12 @@ export function createFileMenu(options = {}) {
         // 덮어쓰지 않기로 한 것이므로 사용자에게 고를 것을 준다 — 새로고침(저쪽) 또는 다른 이름(이쪽).
         ? fill('file.note.conflict', { what, save })
         : fill('file.note.newer', { what });
+      return;
+    }
+    // 담기가 실패하고 있다(RM-33) — 쿼터 초과 · 저장소 막힘. 멈춘 것은 아니지만 「담기고 있습니다」는 거짓이 된다.
+    if (state === 'stop-failed') {
+      saveNote.dataset.bound = 'stop';
+      saveNote.textContent = fill('file.note.failed', { save });
       return;
     }
     if (state === 'browser') {

@@ -57,6 +57,9 @@ test('상태줄: 받는 중 · 듣는 중 · 담기 자리 · 되돌릴 수 있�
   assert.deepEqual(saveTargetState({ kind: 'server', bound: 'a', blocked: true, reason: 'conflict' }), { state: 'stop-conflict', bound: 'a' });
   assert.deepEqual(saveTargetState({ kind: 'server', bound: 'a', blocked: true, reason: 'future' }), { state: 'stop-future', bound: 'a' });
   assert.deepEqual(saveTargetState(null), { state: 'browser', bound: '' });
+  // 브라우저 칸이 받지 않으면(RM-33) 「이 브라우저에만 담김」이 아니라 실패다 — 막힘 다음, 자리보다 먼저.
+  assert.deepEqual(saveTargetState({ kind: 'browser', failed: true }), { state: 'stop-failed', bound: '' });
+  assert.deepEqual(statusParts({ save: { kind: 'browser', failed: true } })[0], { id: 'save', text: '⚠ 담기 실패 — 이 브라우저에 담지 못하고 있습니다', tone: 'warn' });
 
   // 담기가 멈췄으면 그것이 가장 앞이고 경고다 — 멈춘 줄 모르고 계속 작업하는 것이 가장 나쁜 실패다.
   const stopped = statusParts({ capture: { startSec: 3 }, save: { kind: 'server', bound: 'a', blocked: true, reason: 'conflict' } });
