@@ -269,7 +269,8 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | 파일 | 책임 |
 |---|---|
 | `browser.js` | uid·대화상자·파일 읽기/내려받기·`debounce`·`longPress` |
-| `localStore.js` | `localStorage` 7키의 유일한 창구. 최근 목록·즐겨찾기·링크 |
+| `localStore.js` | `localStorage` 키의 유일한 창구. 동작 · 카테고리 최근 목록·즐겨찾기·링크. **프로젝트 최근 목록은 여기서 읽지 않는다**(2026-11-02, RM-33 — `idbSnapshots.js` 로 갔다) |
+| `idbSnapshots.js` | 서버 없이 열었을 때 프로젝트를 이 브라우저에 담는 자리(2026-11-02, RM-33). IndexedDB `choreo_snapshots` 의 세 칸 — 목록(이름 · 저장 시각), 내용(이름 → 안무표), 작업 문서(`draft` 한 줄). 목록을 그릴 때 내용을 읽지 않고, 열 때 이름으로 한 개만 읽는다. 처음 켜질 때 옛 localStorage 키(`choreo_saved_files` · `choreo_draft`)를 옮기고 **되읽어 같은 것을 확인한 뒤에만** 옛 키를 비운다. 쓰기 실패는 `StorageError`(쿼터면 `QUOTA_EXCEEDED`)로 던지고, IndexedDB 가 없거나 열리지 않으면 같은 계약을 옛 localStorage 키 위에서 돈다 |
 | `youtubeOembed.js` | YouTube oEmbed 제목 조회 |
 | `nullMediaPlayer.js` | 소스 없음을 정상 상태로 표현하는 재생기 |
 | `media/youtubePlayer.js` | YouTube IFrame API 를 `MediaPlayer` 계약으로 감싼다. **이 앱의 첫 외부 스크립트 의존**이라 실패를 예외가 아니라 상태로 다룬다 — 스크립트가 막히면 `getState().load === 'error'` 이고 한국어 문구는 뷰가 만든다. 생성만으로는 DOM 도 네트워크도 안 건드린다 |
@@ -401,7 +402,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 명령(글쇠 · 버튼 · 명령 찾기로 부르는 일)을 더한다 | `src/domain/commands.js` 한 줄 + `src/app/main.js` 의 `COMMAND_RUNNERS` 한 줄 + 버튼이면 마크업에 `data-command="<id>"` | 마크업 글자는 등록부의 `button` 과 같게, `title` 은 적지 않는다(시험이 본다). 셋이 어긋나면 원칙 검사 D-14 가 붉어진다 |
 | 화면이 안 다시 그려진다 | 그 조작의 커맨드가 돌려주는 `Dirty` | `dev: true` 로 `assertDirtyCovers` 를 켜 본다 |
 | 저장 파일 포맷을 바꾼다 | `src/domain/project/schema.js` | `serialize` `normalize` `merge` `migrations` 넷을 함께([개발 원칙 D-4](PRINCIPLES.md#d-4)) |
-| 저장 위치·최근 목록을 바꾼다 | `src/ports/storage.js` + `src/adapters/localStore.js` | 용량 상한을 먼저 확인한다 |
+| 저장 위치·최근 목록을 바꾼다 | `src/ports/storage.js` + `src/adapters/localStore.js` · 서버 없는 프로젝트 목록과 작업 문서는 `src/adapters/idbSnapshots.js` | 용량 상한을 먼저 확인한다. 비동기 쓰기의 거부는 커맨드가 아니라 `app/main` 의 storage 다리가 받아 알린다 |
 | 드래그·터치 판정을 바꾼다 | `src/domain/boardGesture.js` · `src/domain/gestureMath.js` + `src/input/*` | 마우스와 터치는 하한도 알고리즘도 다르다. 통일하려면 동작 변경 커밋으로 |
 | 두 보드의 차이를 바꾼다 | `src/usecases/store.js` 의 `BOARD_POLICY` | 새 `if (boardId === 'main')` 를 쓰지 말고 정책 키를 추가한다 |
 | 영상 패널의 화면·문구를 바꾼다 | `src/ui/videoPanel.js` + `index.html` 의 `.video-*` 블록 | 오류 코드 5종의 한국어 문구는 뷰가 소유한다. 라벨을 바꿨으면 [기능 설명서](FEATURES.md) |
