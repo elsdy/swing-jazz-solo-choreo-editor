@@ -221,7 +221,7 @@ test('[RM-49 요구 0] plan 없는 트랙은 설명이 있으면 앵커를 재�
   assert.deepEqual(run([{ id: 'enc', plan: `docs/ROADMAP.md#${encodeURIComponent('다음-곧-만들-것')}` }]), []);
 });
 
-test('[RM-49 요구 2] 트랙이 가리키는 문서 앵커가 문서 뷰어에서 실제로 걸린다', () => {
+test('[RM-49 요구 3] 트랙이 가리키는 문서 앵커가 문서 뷰어에서 실제로 걸린다', () => {
   const { html } = renderMarkdown(mdText);
   const anchors = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
   assert.deepEqual(trackAnchorMismatches({ tracks: doc.tracks, anchors }), []);
