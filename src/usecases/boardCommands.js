@@ -399,6 +399,24 @@ export function toggleSelection(store, args) {
 }
 
 /**
+ * 선택을 **이 그룹들만**으로 바꾼다(RM-15) — Tab 으로 다음 `?` 로 옮겨 갈 때 쓴다. 토글이 아니다.
+ * ⚠ 보드 위에 없는 id 는 거른다. 고르기를 허용하지 않는 보드(루틴 편집기)면 아무 일도 없다.
+ * @param {{ boardId:'main'|'routine', groupIds:string[] }} args
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n) space=O(n) cc=4
+export function selectOnly(store, args) {
+  const { boardId, groupIds } = args;
+  if (!store.policy(boardId).allowsSelection) return NONE;
+  const present = new Set(boardOf(store.get(), boardId).placements.map(p => p.groupId));
+  const next = new Set((groupIds || []).filter(id => present.has(id)));
+  const cur = store.get().selection;
+  if (next.size === cur.size && [...next].every(id => cur.has(id))) return NONE;
+  store.update({ selection: next });
+  return { selection: true, toolbar: true };
+}
+
+/**
  * 선택을 모두 해제한다. clearSelection(4534-4539).
  * ⚠ 비어 있으면 아무 일도 하지 않는다 — 원본의 조기 반환(4535)이라 Dirty 도 NONE 이다.
  * @returns {object} Dirty

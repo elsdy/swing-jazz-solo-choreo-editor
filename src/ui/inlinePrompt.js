@@ -1,7 +1,7 @@
 // src/ui/inlinePrompt.js — 이름을 그 칸 위에서 바로 적는 입력 (ui 계층, RM-04)
 //
 // 브라우저 prompt 창을 걷어 낸 자리다. 동작 이름 · 카테고리 키 · 루틴 이름 · 블록 이름 · 영상 이름의
-// 다섯 곳이 이것을 쓴다. 누른 칸(anchor) 바로 위에 입력창이 겹쳐 뜨고, 그 자리에서 적는다.
+// 다섯 곳이 이것을 쓴다. 블록 이름은 2026-11-02(RM-15)부터 추천 목록 · Tab 이 붙은 askName 이다. 누른 칸(anchor) 바로 위에 입력창이 겹쳐 뜨고, 그 자리에서 적는다.
 //   Enter → 확정(적은 값)   Esc → 취소(null)   바깥을 누르면(포커스를 잃으면) → 확정
 // 취소는 prompt 와 같이 null 이다 — 호출부는 예전처럼 「null 이면 아무 일도 하지 않는다」.
 //
@@ -74,6 +74,139 @@ export function askText(opts) {
     doc.body.appendChild(box);
     input.focus();
     input.select();
+  });
+}
+
+/**
+ * @typedef {Object} NameAnswer
+ * @property {string|null} value 적은(고른) 이름. 취소 · 블록이 사라짐이면 null
+ * @property {'enter'|'tab'|'shift-tab'|'pick'|'blur'|'escape'|'gone'} via 어떻게 닫혔나 — 조립부는 tab · shift-tab 으로 다음 `?` 로 간다
+ */
+
+/**
+ * 블록 위 이름 입력(RM-15) — askText 에 **추천 목록 · 화살표 고르기 · Tab** 을 얹은 것.
+ *
+ *   글자를 칠 때마다 `suggest(질의)` 가 준 동작이 입력 아래에 줄로 선다(최대 8개). ↓ ↑ 로 고르고
+ *   Enter → 고른 것이 있으면 그 이름, 없으면 적은 글자(via 'enter')
+ *   Tab / Shift+Tab → 같은 값으로 닫되 via 'tab' · 'shift-tab' — 조립부가 다음 · 앞 `?` 로 옮겨 다시 연다
+ *   Esc → null   바깥을 누르면 → 적은 글자(via 'blur')   항목을 누르면 → 그 이름(via 'pick')
+ *
+ * ⚠ 한글 조합 중(isComposing)의 Enter · Tab 은 글자를 맺는 것이라 가로채지 않는다.
+ * ⚠ Tab 은 **이 입력이 열려 있을 때만** 가로챈다(여기 keydown 에서 멈춘다) — 평소의 포커스 이동은 그대로다.
+ * ⚠ 가리키던 블록(anchor)이 다시 그리기로 떨어져 나가면 입력도 닫는다(via 'gone', null) — 반쯤 친 이름이 엉뚱한 블록에
+ *   붙지 않게. 문서의 자식 변화를 보고 anchor.isConnected 를 되묻는다.
+ * ⚠ askText 와 같은 「한 번에 하나」다 — 새로 열면 앞의 것은 취소로 닫힌다.
+ *
+ * @param {{
+ *   anchor?: Element|null,
+ *   at?: { x: number, y: number },
+ *   title: string,
+ *   value?: string,
+ *   selectAll?: boolean,
+ *   suggest?: (query: string) => Array<{ name: string, category?: string }>,
+ *   doc?: Document
+ * }} opts selectAll 이 참이면 처음 값을 통째로 고른 채 연다(갈아 끼우기). 거짓이면 커서가 값 끝에 선다(첫 글자를 잇는다)
+ * @returns {Promise<NameAnswer>}
+ */
+// @complexity time=O(k) space=O(k) cc=14
+export function askName(opts) {
+  const doc = opts.doc || document;
+  if (closeCurrent) closeCurrent(null);
+
+  return new Promise((resolve) => {
+    const box = doc.createElement('div');
+    box.className = 'inline-prompt inline-prompt-name';
+    const label = doc.createElement('div');
+    label.className = 'inline-prompt-title';
+    label.textContent = opts.title;
+    const input = doc.createElement('input');
+    input.type = 'text';
+    input.className = 'inline-prompt-input';
+    input.value = opts.value ?? '';
+    input.setAttribute('aria-label', opts.title);
+    const list = doc.createElement('div');
+    list.className = 'inline-prompt-list';
+    const hint = doc.createElement('div');
+    hint.className = 'inline-prompt-hint';
+    hint.textContent = 'Enter 확정 · Tab 다음 ? · Esc 취소';
+    box.append(label, input, list, hint);
+
+    place(box, opts.anchor, doc, opts.at);
+
+    let done = false;
+    let observer = null;
+    const finish = (value, via) => {
+      if (done) return;
+      done = true;
+      if (closeCurrent === finish) closeCurrent = null;
+      if (observer) observer.disconnect();
+      box.remove();
+      resolve({ value, via });
+    };
+    closeCurrent = (value) => finish(value, 'escape');
+
+    /** @type {Array<{ name: string, category?: string }>} */
+    let items = [];
+    let active = -1;
+    const suggest = typeof opts.suggest === 'function' ? opts.suggest : () => [];
+    const paint = () => {
+      list.innerHTML = '';
+      items.forEach((m, i) => {
+        const row = doc.createElement('div');
+        row.className = 'inline-prompt-item' + (i === active ? ' is-active' : '');
+        row.textContent = m.name;
+        if (m.category) {
+          const cat = doc.createElement('span');
+          cat.className = 'inline-prompt-item-cat';
+          cat.textContent = m.category;
+          row.appendChild(cat);
+        }
+        // mousedown 에서 고른다 — click 까지 기다리면 그 사이 blur 가 먼저 와 적은 글자로 닫힌다.
+        row.addEventListener('mousedown', (e) => { e.preventDefault(); finish(m.name, 'pick'); });
+        list.appendChild(row);
+      });
+      list.style.display = items.length ? '' : 'none';
+    };
+    const refresh = () => {
+      items = (suggest(input.value) || []).slice(0, 8);
+      active = -1;
+      paint();
+    };
+    const chosen = () => (active >= 0 && items[active] ? items[active].name : input.value);
+
+    input.addEventListener('input', refresh);
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.isComposing) return;               // 한글 조합 중의 Enter · Tab 은 글자를 맺는 것이다
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!items.length) return;
+        e.preventDefault();
+        active = e.key === 'ArrowDown'
+          ? (active + 1) % items.length
+          : (active - 1 + items.length) % items.length;
+        paint();
+      } else if (e.key === 'Enter') { e.preventDefault(); finish(chosen(), 'enter'); }
+      else if (e.key === 'Tab') { e.preventDefault(); finish(chosen(), e.shiftKey ? 'shift-tab' : 'tab'); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(null, 'escape'); }
+    });
+    input.addEventListener('blur', () => {
+      if (typeof doc.hasFocus === 'function' && !doc.hasFocus()) return;
+      finish(input.value, 'blur');
+    });
+
+    doc.body.appendChild(box);
+    refresh();
+    input.focus();
+    if (opts.selectAll) input.select();
+    else if (typeof input.setSelectionRange === 'function') input.setSelectionRange(input.value.length, input.value.length);
+
+    // 가리키던 블록이 사라지면 닫는다. 자리 스냅샷(anchorOf)은 늘 isConnected 라 해당 없다.
+    const view = doc.defaultView;
+    const anchor = opts.anchor;
+    if (anchor && view && typeof view.MutationObserver === 'function' && 'isConnected' in anchor) {
+      observer = new view.MutationObserver(() => { if (!anchor.isConnected) finish(null, 'gone'); });
+      observer.observe(doc.body, { childList: true, subtree: true });
+    }
   });
 }
 

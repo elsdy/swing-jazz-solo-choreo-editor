@@ -65,3 +65,55 @@ test('루틴 편집기가 열려 있으면 단축키는 루틴 보드로 간다'
   assert.deepEqual(calls.map(c => `${c.id}@${c.board}`), ['undo@routine', 'redo@routine', 'undo@main'],
     '편집기가 열려 있는데 메인 보드가 되돌아갔다 — 활성 보드를 묻는 시점이 누를 때여야 한다');
 });
+
+// ── 블록 위 이름 입력을 여는 글쇠 (RM-15) ─────────────────────────────────────
+
+/** 고른 블록이 있는 채로 묶는다. */
+function boundWithSelection(hasSelection = () => true) {
+  const doc = fakeDoc();
+  const calls = [];
+  bindHotkeys({ doc, hasSelection, runCommand: (id, ctx) => { calls.push({ id, ...ctx }); return true; } });
+  return { doc, calls };
+}
+
+test('블록을 고른 채 글자를 치면 이름 입력을 연다', () => {
+  const { doc, calls } = boundWithSelection();
+  assert.equal(press(doc, { key: 's' }), true, '글자가 이름 입력으로 들어가므로 기본 동작을 막는다');
+  assert.deepEqual(calls, [{ id: 'nameBlock', board: 'main', source: 'key', initial: 's' }], '친 글자를 실어 부른다');
+  press(doc, { key: 'S', shift: true });
+  press(doc, { key: 'ㅈ' });
+  press(doc, { key: '3' });
+  assert.deepEqual(calls.slice(1).map(c => c.initial), ['S', 'ㅈ', '3'], 'Shift 글자 · 한글 자모 · 숫자도 글자다');
+  // Enter · F2 로도 연다 — 글자 없이
+  press(doc, { key: 'Enter' });
+  press(doc, { key: 'F2' });
+  assert.deepEqual(calls.slice(4), [
+    { id: 'nameBlock', board: 'main', source: 'key' }, { id: 'nameBlock', board: 'main', source: 'key' }]);
+
+  // 고른 블록이 없으면 글자는 아무 일도 하지 않는다
+  const none = boundWithSelection(() => false);
+  assert.equal(press(none.doc, { key: 's' }), false);
+  assert.equal(none.calls.length, 0, '고른 블록이 없는데 이름 입력을 열려 했다');
+  // 입력칸 안의 글자는 그 칸의 것이다
+  press(doc, { key: 's', target: { tagName: 'INPUT' } });
+  press(doc, { key: 'Enter', target: { tagName: 'TEXTAREA' } });
+  assert.equal(calls.length, 6, '입력칸 안에서 열렸다');
+  // 조합 글쇠 · 조합 중 · 빈칸은 글자가 아니다
+  press(doc, { key: 'x', ctrl: true });
+  press(doc, { key: 'x', meta: true });
+  doc.listener({ key: 'ㅎ', isComposing: true, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault() {} });
+  assert.equal(calls.length, 6);
+  // 단추에 포커스가 있을 때의 Enter 는 단추를 누르는 것이다
+  assert.equal(press(doc, { key: 'Enter', target: { tagName: 'BUTTON' } }), false);
+  assert.equal(calls.length, 6, '단추의 Enter 를 이름 입력이 가로챘다');
+});
+
+test('받아 적기 글쇠와 ? 는 블록을 골라 두어도 이름 입력을 열지 않는다', () => {
+  const { doc, calls } = boundWithSelection();
+  for (const key of ['b', 'K', 'n', ' ', '?']) press(doc, { key });
+  assert.deepEqual(calls.map(c => c.id), ['capture', 'capture', 'skip', 'play', 'shortcuts'], '원래 명령이 그대로 이긴다');
+  assert.equal(calls.some(c => c.id === 'nameBlock'), false);
+  // 화살표 · Delete · Backspace 도 키보드 편집 그대로
+  for (const key of ['ArrowLeft', 'Delete', 'Backspace']) press(doc, { key });
+  assert.deepEqual(calls.slice(5).map(c => c.id), ['nudgeLeft', 'deleteSelection', 'deleteSelection']);
+});

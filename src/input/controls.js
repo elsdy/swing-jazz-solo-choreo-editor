@@ -287,15 +287,19 @@ const PLAYER_KEYS = Object.freeze(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowD
  * ⚠ 실행기가 참을 돌려주면 기본 동작을 막는다. `Escape`(stop)는 언제나 거짓이다 — 예전에도 막지 않았다.
  *
  * @param {Object} deps
- * @param {(id: string, ctx?: {board?: string, source?: string}) => boolean} deps.runCommand  app/main 이 주입
+ * @param {(id: string, ctx?: {board?: string, source?: string, initial?: string}) => boolean} deps.runCommand  app/main 이 주입
  * @param {() => 'main'|'routine'} [deps.activeBoardId]
+ * @param {() => boolean} [deps.hasSelection] 고른 블록이 있는가(RM-15). 기본값(거짓)이면 글자 한 자로 이름 입력이 열리지 않는다
  * @param {() => Record<string, string[]>} [deps.hotkeys]
  * @param {Document} [deps.doc]
  * @returns {void}
  */
+// @complexity time=O(1) space=O(1) cc=2
 export function bindHotkeys(deps) {
   const {
     runCommand, activeBoardId = () => 'main', doc = document,
+    // 고른 블록이 있는가(RM-15) — 글자 한 자로 이름 입력을 열지 판정한다. 조립 층이 store 를 보고 답한다.
+    hasSelection = () => false,
     // ⚠ **게터다.** 설정에서 글쇠를 바꾸면 다음 입력부터 바로 들어야 한다 — 값으로 받으면 묶은
     //   시점의 표에 갇혀서, 바꾼 것이 새로고침 전까지 안 먹는다.
     hotkeys = () => DEFAULT_HOTKEYS
@@ -324,6 +328,13 @@ export function bindHotkeys(deps) {
     return tag === 'VIDEO' || tag === 'AUDIO';
   };
 
+  /** 단추 · 링크가 포커스를 쥔 채의 Enter 는 그 요소를 누르는 것이다 — 이름 입력(RM-15)이 가로채면 단추가 안 눌린다. */
+  const buttonOwnsEnter = (target, pressed) => {
+    if (pressed !== 'Enter') return false;
+    const tag = target && target.tagName;
+    return tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY';
+  };
+
   /** 지금 글자를 치고 있는가. 홑글쇠 단축키는 여기서 막힌다. */
   const typing = (target) => {
     const el = target;
@@ -336,8 +347,21 @@ export function bindHotkeys(deps) {
     const pressed = eventKey(e);
     // 재생기가 쥔 글쇠면 우리는 비킨다(위 ⚠⚠). 막지도 않는다.
     if (playerOwnsKey(e.target, pressed)) return;
-    const cmd = commandForKey(hotkeys(), pressed, typing(e.target));
-    if (!cmd) return;
+    const isTyping = typing(e.target);
+    const cmd = commandForKey(hotkeys(), pressed, isTyping);
+    if (!cmd) {
+      // 단축키가 아닌 **글자 한 자**를 고른 블록 위에서 치면 이름 입력이 그 글자로 열린다(RM-15).
+      //   · 입력칸 밖 · 조합 글쇠 없음(Shift 는 대문자라 허용) · 찍히는 글자(key 길이 1, 빈칸 아님) · 한글 조합 중이 아님
+      //   · 고른 블록이 있을 때만 — 없으면 글자는 전처럼 아무 일도 하지 않는다
+      // ⚠ Backspace · Delete · 화살표는 key 길이가 1 이 아니라 여기 오지 않는다. 받아 적기 글쇠와 `?` 는 위에서 먼저 걸린다.
+      if (isTyping || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      const ch = typeof e.key === 'string' ? e.key : '';
+      if (ch.length !== 1 || !ch.trim() || !hasSelection()) return;
+      if (runCommand('nameBlock', { board: activeBoardId(), source: 'key', initial: ch })) e.preventDefault();
+      return;
+    }
+    // 단추 · 링크에 포커스가 있을 때의 Enter 는 그 요소의 것이다(누름) — 이름 입력으로 가로채지 않는다.
+    if (cmd.id === 'nameBlock' && buttonOwnsEnter(e.target, pressed)) return;
     // ⚠ **결과와 무관하게 먼저 막는다.** `Space` 는 포커스가 버튼에 있으면 그 버튼을 다시
     //   누르고(`▮ 끊기` 를 손으로 누른 직후가 그렇다) 페이지를 한 화면 내린다.
     //   명령이 아무 일도 안 했더라도 그 둘은 일어나면 안 된다.

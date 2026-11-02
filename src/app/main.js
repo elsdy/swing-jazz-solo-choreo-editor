@@ -21,6 +21,8 @@
 import { createRenderer } from './render.js';
 
 import { createStore, mergeDirty, notice, NONE, BOARD_MAIN, BOARD_ROUTINE } from '../usecases/store.js';
+import { adjacentPendingGroupId, isPending } from '../domain/placements.js';
+import { suggestMoves } from '../domain/moveMatch.js';
 import * as History from '../usecases/historyCommands.js';
 import * as BoardCmd from '../usecases/boardCommands.js';
 import * as PaletteCmd from '../usecases/paletteCommands.js';
@@ -104,7 +106,7 @@ import { createPlayhead } from '../ui/playhead.js';
 import { SEL, DATA } from '../ui/domContract.js';
 import { confirmOnce } from '../ui/widgets.js';
 import { createToastView } from '../ui/toastView.js';
-import { askText } from '../ui/inlinePrompt.js';
+import { askName, askText } from '../ui/inlinePrompt.js';
 import { readCellW } from '../ui/cssVars.js';
 import { initLayout, isStacked, syncCellSize } from '../ui/layout.js';
 
@@ -912,6 +914,8 @@ const COMMAND_RUNNERS = Object.freeze({
     render(dirty);
     return true;
   },
+  // 블록 위 이름 입력(RM-15) — Enter · F2 · 글자 한 자(initial) · 영상 패널의 `고른 블록에 이름 붙이기` 가 모두 여기로 온다.
+  nameBlock: (ctx) => openNaming(ctx),
   quickPlace: ({ board }) => {
     const boardId = board === BOARD_ROUTINE ? BOARD_ROUTINE : BOARD_MAIN;
     render(BoardCmd.toggleQuickPlaceMode(store, { boardId }, { closeQuickPicker: () => quickPickers[boardId].close() }));
@@ -935,7 +939,100 @@ const COMMAND_RUNNERS = Object.freeze({
 function runCommand(id, ctx = {}) {
   const run = COMMAND_RUNNERS[id];
   if (typeof run !== 'function') return false;
-  return Boolean(run({ board: ctx.board || BOARD_MAIN, source: ctx.source || '' }));
+  return Boolean(run({ board: ctx.board || BOARD_MAIN, source: ctx.source || '', initial: ctx.initial || '', anchor: ctx.anchor || null }));
+}
+
+// ── 블록 위 이름 입력 (RM-15) ─────────────────────────────────────────────────
+//
+// 고른 블록 위에 이름 입력(ui/inlinePrompt.askName)을 띄우고, 닫힌 방식에 따라 붙이고 · 되돌리기 한 단계를 쌓고 ·
+// Tab 이면 표 위 차례의 다음 `?` 로 선택을 옮겨 다시 연다. 추천은 domain/moveMatch.suggestMoves(동작 고르기 창과 같은 규칙).
+// ⚠ 메인 보드만이다 — 고르기는 메인 보드에만 있다. 루틴 편집기가 열려 있으면 거짓을 돌려줘 글쇠의 기본 동작을 막지 않는다.
+// ⚠ 한글 자모 · IME 글쇠(`Process`)로 열릴 때는 **빈 입력**으로 열고 기본 동작을 막지 않는다 — 첫 자모를 값으로 옮기면
+//   다음 글쇠가 그 자모와 합쳐지지 않아 「ㅈ아」처럼 깨진다. 막지 않으면 브라우저가 그 글쇠를 방금 포커스한 입력에서 조합한다.
+
+/** 한글 자모 · IME 글쇠인가 — 첫 자를 값으로 옮기지 않고 빈 입력에서 조합을 잇는다. */
+const isImeKey = (ch) => ch === 'Process' || /[\u3131-\u318e\u1100-\u11ff\ua960-\ua97f\ud7b0-\ud7ff]/.test(ch);
+
+/** 메인 보드에서 지금 고른 그룹 — 보드 위에 있는 것만, 루틴 블록은 뺀다(루틴 이름은 루틴 목록이 주인). */
+// @complexity time=O(n+s) space=O(n) cc=4
+function selectedGroupsOnMain() {
+  const state = store.get();
+  const heads = new Map();
+  for (const p of state.boards[BOARD_MAIN].placements) if (!heads.has(p.groupId)) heads.set(p.groupId, p);
+  return [...(state.selection || [])].filter(id => heads.has(id) && heads.get(id).type !== 'routine');
+}
+
+/** 그룹의 첫 조각 요소. 다시 그린 뒤에 찾아야 한다 — 행을 다시 그리면 요소가 바뀐다. */
+const blockElOf = (groupId) => boardEl.querySelector(SEL.placementsOfGroup(groupId));
+
+/** 고른 그룹들 가운데 표 위 차례로 맨 뒤의 것 — 여럿에 붙인 뒤 Tab 이 그 뒤부터 잇는다. */
+// @complexity time=O(s·n log n) space=O(n) cc=3
+function lastByOrder(groupIds) {
+  const placements = store.get().boards[BOARD_MAIN].placements;
+  const firstOf = (gid) => placements.filter(p => p.groupId === gid).sort((a, b) => a.row - b.row || a.startIndex - b.startIndex)[0];
+  return [...groupIds].sort((a, b) => { const x = firstOf(a), y = firstOf(b); return x.row - y.row || x.startIndex - y.startIndex; }).pop();
+}
+
+/**
+ * 이름 입력을 연다. @returns {boolean} 열었고 글쇠의 기본 동작을 막을까
+ * @param {{ board?: string, initial?: string, anchor?: Element|null }} ctx
+ */
+// @complexity time=O(n) space=O(n) cc=12
+function openNaming(ctx = {}) {
+  if (boardIdOf(ctx.board) !== BOARD_MAIN) return false;
+  const chosen = selectedGroupsOnMain();
+  if (!chosen.length) return false;
+  const placements = store.get().boards[BOARD_MAIN].placements;
+  const ime = isImeKey(ctx.initial || '');
+  const first = ime ? '' : (ctx.initial || '');
+  const suggest = (q) => suggestMoves(store.get().library, q, store.get().favorites.moveNames);
+  const after = (named, via, from) => {
+    if (named) render(commitHistory(BOARD_MAIN));          // 블록 하나(한 번)에 되돌리기 한 단계
+    views.video?.syncSelection();                            // `이름 붙일 것 N개` 가 줄어든다
+    if (via === 'tab' || via === 'shift-tab') stepToPending(from, via === 'tab' ? 'next' : 'prev');
+  };
+
+  if (chosen.length > 1) {
+    // 여럿을 골랐으면 그중 이름 없는 것에만 한 이름 — 영상 패널의 `고른 블록에 이름 붙이기` 와 같은 커맨드다.
+    const pending = chosen.filter(gid => placements.some(p => p.groupId === gid && isPending(p)));
+    if (!pending.length) { render({ notify: notice('status', '고른 블록은 모두 이름이 있습니다.') }); return true; }
+    const title = pending.length > 1 ? `고른 블록 ${pending.length}개의 이름` : '이 블록의 이름';
+    askName({ anchor: ctx.anchor || blockElOf(pending[0]), title, value: first, suggest }).then(({ value, via }) => {
+      const { named, ...dirty } = CaptureCmd.nameSelected(store, { label: value }) || {};
+      render(dirty);
+      after(named, via, lastByOrder(pending));
+    });
+    return !ime;
+  }
+
+  const gid = chosen[0];
+  const head = placements.find(p => p.groupId === gid);
+  askName({
+    anchor: ctx.anchor || blockElOf(gid),
+    title: '이 블록의 이름',
+    value: first || (isPending(head) ? '' : head.name),
+    selectAll: !first,                                       // 이름 있는 블록은 통째로 골라 갈아 끼운다
+    suggest
+  }).then(({ value, via }) => {
+    const { named, ...dirty } = CaptureCmd.nameGroupTo(store, { boardId: BOARD_MAIN, groupId: gid, label: value }) || {};
+    render(dirty);
+    after(named, via, gid);
+  });
+  return !ime;
+}
+
+/** 표 위 차례의 다음(앞) `?` 를 골라 보이고 입력을 다시 연다. 더 없으면 알린다. */
+// @complexity time=O(n log n) space=O(n) cc=4
+function stepToPending(fromGroupId, dir) {
+  const next = adjacentPendingGroupId(store.get().boards[BOARD_MAIN].placements, fromGroupId, dir);
+  if (!next) {
+    render({ notify: notice('status', dir === 'next' ? '이름 없는 블록을 다 채웠습니다.' : '앞에 이름 없는 블록이 없습니다.') });
+    return;
+  }
+  render(BoardCmd.selectOnly(store, { boardId: BOARD_MAIN, groupIds: [next] }));
+  const el = blockElOf(next);
+  if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  openNaming({ board: BOARD_MAIN });
 }
 
 // 등록부와 실행 표가 어긋났는지 부팅 때 한 번 본다. ⚠ 던지지 않는다 — 명령 하나가 빠졌다고 앱이 안 뜨면 그게 더 나쁘다.
@@ -961,6 +1058,8 @@ bindControls({
   // 단축키가 먹는 보드(RM-13) — 루틴 편집기가 열려 있으면 루틴 보드다. 버튼은 `data-board` 로 따로 가른다.
   activeBoardId,
   rememberCell: rememberPasteCell,
+  // 글자 한 자로 이름 입력을 열지(RM-15) — 메인 보드에 고른 블록이 있을 때만.
+  hasSelection: () => selectedGroupsOnMain().length > 0,
   // ⚠ 게터다 — 설정에서 바꾸면 다음 입력부터 바로 들어야 한다(값으로 주면 묶은 시점에 갇힌다).
   hotkeys: () => hotkeyMap,
   commands: {
@@ -2100,6 +2199,8 @@ views.video = createVideoPanel({
     },
     markersToBlocks: () => CaptureCmd.markersToBlocks(store, {}, { ids: browserEnv }),
     nameSelected: (label) => CaptureCmd.nameSelected(store, { label }),
+    // `고른 블록에 이름 붙이기` 는 블록 위 이름 입력(RM-15)을 그 단추 위에 연다 — 추천 목록 · Tab 이 같다.
+    openNaming: (anchor) => openNaming({ board: BOARD_MAIN, anchor }),
     // 표 전체 옮기기(2026-09-20). 받아 적기와 같은 자리에 두지만 박자와는 무관하다 —
     // 놓인 블록을 카운트 축에서 통째로 민다.
     canShiftAll: () => store.board(BOARD_MAIN).placements.length > 0,

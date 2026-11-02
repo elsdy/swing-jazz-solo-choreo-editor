@@ -3326,6 +3326,15 @@
     .inline-prompt-title { font-size: 11px; font-weight: 800; color: var(--muted); }
     .inline-prompt-input { width: 100%; box-sizing: border-box; font-size: 14px; }
     .inline-prompt-hint { font-size: 11px; color: var(--muted); }
+    /* 블록 위 이름 입력의 추천 목록(RM-15) — ui/inlinePrompt.askName. 동작 고르기 창과 같은 규칙으로 추린다. */
+    .inline-prompt-list { display: grid; max-height: 200px; overflow-y: auto; margin: 0 -4px; }
+    .inline-prompt-item {
+      display: flex; justify-content: space-between; gap: 8px; align-items: baseline;
+      padding: 4px 8px; border-radius: 8px; font-size: 13px; cursor: pointer;
+    }
+    .inline-prompt-item:hover { background: rgba(255,255,255,0.06); }
+    .inline-prompt-item.is-active { background: rgba(34, 197, 94, 0.22); }
+    .inline-prompt-item-cat { font-size: 10px; color: var(--muted); }
 
     /* 명령 팔레트(Ctrl+K)와 단축키 일람(?) — ui/commandPalette 가 열 때 만들고 닫을 때 없앤다(RM-09). */
     .command-layer {
@@ -3401,6 +3410,7 @@
       box-shadow: 0 18px 46px rgba(0,0,0,0.35), 0 0 40px rgba(var(--t-glow), 0.12);
     }
     :root[data-theme] .inline-prompt { border-color: rgba(var(--t-glow), 0.55); }
+    :root[data-theme] .inline-prompt-item.is-active { background: rgba(var(--t-glow), 0.22); }
     :root[data-theme] .toast-status { border-left-color: rgb(var(--t-glow)); }
 
   </style>
