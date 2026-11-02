@@ -382,7 +382,7 @@ export function createSettingsView(deps) {
     Object.freeze({ id: 'models', label: '모델', hint: '자세 분석과 말로 채우기가 쓰는 모델' }),
     Object.freeze({ id: 'keys', label: '단축키', hint: '손을 자판에 두고 쓰는 글쇠' }),
     Object.freeze({ id: 'flow', label: '작업 차례', hint: '어떤 버튼 다음에 어떤 버튼을 눌렀나' }),
-    Object.freeze({ id: 'theme', label: '테마', hint: '화면 전체의 색과 빛' })
+    Object.freeze({ id: 'theme', label: '테마', hint: '화면 전체의 분위기(색)' })
   ]);
   const ALL_CAT = 'all';
 
