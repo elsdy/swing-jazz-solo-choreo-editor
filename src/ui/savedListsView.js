@@ -18,6 +18,7 @@
 
 import { CLS } from './domContract.js';
 import { escapeHtml, confirmOnce } from './widgets.js';
+import { str } from '../domain/strings.js';
 
 /** 목록 종류별 설정. key 는 store.recents 의 키이자 Dirty.savedLists 의 값이다. */
 const KIND_SPEC = {
@@ -130,11 +131,10 @@ export function createSavedListsView(deps) {
   function makeDeleteBtn(kind, item) {
     // ⚠ 프로젝트는 보관 폴더가 목록의 주인이라 이 버튼이 **파일까지 지운다**(2026-09-13).
     //   되돌릴 수 없으므로 무엇이 지워지는지 손끝에 알린다 — 라벨은 세 목록이 같아야 하니 title 로.
-    const hint = kind === 'projects'
-      ? '목록에서 지웁니다. 서버로 열었다면 보관 폴더의 파일도 함께 지워집니다 — 되돌릴 수 없습니다.'
-      : undefined;
-    return makeBtn(CLS.danger, '삭제', (btn) => {
-      confirmOnce(btn, '삭제', () => { render(commands.removeRecent(kind, item.fileName)); });
+    const hint = kind === 'projects' ? str('saved.delete.projectHint') : undefined;
+    const label = str('saved.delete');                               // 글자는 문자열 표(RM-10)
+    return makeBtn(CLS.danger, label, (btn) => {
+      confirmOnce(btn, label, () => { render(commands.removeRecent(kind, item.fileName)); });
     }, hint);
   }
 

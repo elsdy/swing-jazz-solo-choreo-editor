@@ -4654,7 +4654,8 @@ test('단축키 표: 바꿀 수 있는 것과 기본 글쇠', () => {
   assert.deepEqual(DEFAULT_HOTKEYS.play, ['Space']);
   // 명령 팔레트 · 단축키 일람(RM-09)도 바꿀 수 있다 — 글쇠를 비우면 그 화면은 버튼 · 팔레트로만 열린다.
   // 키보드 편집(RM-13)에서는 복제(Ctrl+D)와 저장(Ctrl+S)만 바꿀 수 있다 — 둘 다 브라우저가 따로 쓰는 글쇠다.
-  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play', 'duplicate', 'palette', 'shortcuts', 'saveProject']);
+  // 재생 헤드에서 자르기(RM-16, S)도 바꿀 수 있는 홑글쇠다.
+  assert.deepEqual(EDITABLE_ACTIONS.map(a => a.id), ['capture', 'skip', 'play', 'duplicate', 'splitAtPlayhead', 'palette', 'shortcuts', 'saveProject']);
   assert.equal(HOTKEY_ACTIONS.every(a => a.keys.length > 0), true, '글쇠 없는 동작을 두지 않는다');
   assert.equal(keysLabel(['B', 'K']), 'B · K');
   assert.equal(keysLabel([]), '없음');
@@ -4700,6 +4701,10 @@ test('commandForKey: 글쇠 → 명령, 글자를 치는 중에는 whileTyping �
   assert.equal(commandForKey(map, 'Cmd+K').id, 'palette');
   assert.equal(commandForKey(map, '?').id, 'shortcuts');
   assert.equal(commandForKey(map, '?', true), null, '이름에 ? 를 치는 사람이 있다');
+  // 재생 헤드에서 자르기(RM-16)는 홑글쇠 S — 이름칸에 글을 치는 중에는 먹지 않고, Ctrl+S(저장)와는 다른 글쇠다
+  assert.equal(commandForKey(map, 'S').id, 'splitAtPlayhead');
+  assert.equal(commandForKey(map, 'S', true), null, '이름에 s 를 치면 블록이 잘린다');
+  assert.equal(commandForKey(map, 'Ctrl+S', true).id, 'saveProject');
   assert.equal(normalizeKey({ key: '?', shift: true }), '?', 'Shift+/ 는 그대로 ? 다');
   // 사용자가 바꾼 글쇠를 따른다
   const moved = setKeys(map, 'play', ['P']);
@@ -5561,4 +5566,99 @@ test('draftStore: 쓰기를 한 줄로 세운다 — 자기 자신과 충돌하�
   release();
   await Promise.all([a, b]);
   assert.deepEqual(seen, [null, '11'], '두 번째는 첫 응답의 표식을 들고 나가야 한다');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 지난 판 되살리기(RM-25, 2026-11-02) — 되살리면 파일의 표식이 바뀐다. 어댑터는 그 표식을 버리지 않고,
+// 자동 담기는 그것을 「아는 판」으로 받아들이며, 되살리는 동안 나가 있던 · 기다리던 담기는 끼어들지 못한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('projectServer: 되살리기는 서버 응답의 mtimeNs·size 를 버리지 않고 돌려주고, 이력 목록은 kind 를 그대로 싣는다', async () => {
+  const f = fakeFetch(okJson({ ok: true, name: '공연.json', size: 777, mtime: 1, mtimeNs: '1700000000000000123', dir: '/p' }));
+  const api = createProjectServer({ fetchImpl: f });
+  assert.deepEqual(await api.restore('공연.20261102-120000.json', 'history'),
+    { name: '공연.json', size: 777, mtimeNs: '1700000000000000123' });
+  assert.equal(f.calls[0].method, 'POST');
+  assert.deepEqual(JSON.parse(f.calls[0].body), { file: '공연.20261102-120000.json', from: 'history' });
+  // ⚠ 표식은 글자 그대로다 — 숫자로 바꾸면 끝자리가 깎인다(D-15).
+  assert.equal(typeof (await api.restore('x.json', 'history')).mtimeNs, 'string');
+
+  const h = fakeFetch(okJson({ ok: true, items: [
+    { file: '공연.20261102-120000.auto.json', name: '공연', stamp: '20261102-120000', kind: 'auto', size: 10, mtime: 2 },
+    { file: '공연.20261101-090000.json', name: '공연', stamp: '20261101-090000', kind: 'manual', size: 9, mtime: 1 }
+  ] }));
+  const items = await createProjectServer({ fetchImpl: h }).history('공연');
+  assert.deepEqual(items.map((it) => it.kind), ['auto', 'manual']);
+  assert.match(h.calls[0].url, /\/api\/projects\/\.history\?name=%EA%B3%B5%EC%97%B0$/);
+  assert.equal(await createProjectServer({ fetchImpl: null }).restore('x.json', 'history'), null, '서버가 없으면 null 이다');
+});
+
+test('draftStore: 되살리는 동안 나가 있던 담기와 기다리던 담기가 되살린 판을 옛 화면으로 덮지 않는다 — 그 뒤 담기는 새 판의 표식으로 409 없이 이어진다', async () => {
+  const storage = fakeStorage();
+  // 가짜 서버 — 파일 하나, 판의 표식은 쓸 때마다 1 씩 는다. ifMtimeNs 가 지금 표식과 다르면 409.
+  const srv = {
+    file: { n: 0 }, ns: 100, calls: [],
+    async readWithMeta() { return { data: this.file, mtimeNs: String(this.ns) }; },
+    async read() { return this.file; },
+    async save(name, payload, opts) {
+      this.calls.push({ payload, ifMtimeNs: opts.ifMtimeNs });
+      if (this.calls.length === 1) await gate;          // 첫 담기(옛 화면)를 붙잡아 둔다 — 「나가 있던 담기」
+      if (opts.ifMtimeNs && String(opts.ifMtimeNs) !== String(this.ns)) return { conflict: true, mtimeNs: String(this.ns) };
+      this.file = payload; this.ns += 1;
+      return { name, mtimeNs: String(this.ns) };
+    },
+    async remove() { return true; }
+  };
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const conflicts = [];
+  const store = createDraftStore({ getServer: () => srv, storage, onConflict: (i) => conflicts.push(i.name) });
+  store.bind('공연');
+  await store.load();                                   // 표식 100 을 안다
+
+  // 가짜 타이머 — 기다리던 담기(옛 화면 payload 하나)를 걸어 둔다.
+  const timers = new Map(); let nextId = 1;
+  const saver = debounceSave((p) => store.save(p), {
+    waitMs: 1200,
+    setTimer: (fn, ms) => { const id = nextId++; timers.set(id, fn); return id; },
+    clearTimer: (id) => { timers.delete(id); }
+  });
+  const inFlight = store.save({ n: 1, screen: 'old' });   // 나가 있던 담기(gate 에 붙잡힘)
+  saver.schedule(() => ({ n: 2, screen: 'old' }));         // 기다리던 담기
+  assert.equal(timers.size, 1);
+
+  // ── 되살리기 흐름(main.restoreFromHistory 와 같은 차례) ──
+  saver.cancel();                                          // ① 기다리던 담기를 버린다
+  assert.equal(timers.size, 0);
+  const settled = store.settled();                         // ② 나가 있던 담기가 끝나기를 기다린다
+  release();
+  await settled;
+  await inFlight;
+  assert.deepEqual(srv.file, { n: 1, screen: 'old' }, '나가 있던 담기는 되살리기 **앞에** 끝나야 한다');
+  srv.file = { n: 9, screen: 'restored' }; srv.ns = 500;   // ③ 서버가 되살렸다(표식이 바뀐다)
+  const got = await srv.readWithMeta('공연');               // ④ 다시 읽는다
+  store.adopt('공연', got.mtimeNs);                         // ⑦ 새 표식을 받아들인다
+
+  // 버렸던 타이머를 돌려도(남아 있었다면) 아무것도 담지 않는다.
+  for (const fn of [...timers.values()]) fn();
+  await store.settled();
+  assert.deepEqual(srv.file, { n: 9, screen: 'restored' }, '기다리던 담기가 되살린 판을 옛 화면으로 덮었다');
+  assert.equal(srv.calls.length, 1, '옛 payload 를 실은 담기가 새 표식을 달고 서버에 닿았다');
+
+  // 이어서 다시 연 화면 내용으로 담으면 되살린 판의 표식을 싣고 409 없이 이어진다.
+  assert.equal(await store.save({ n: 10, screen: 'restored+edit' }), true);
+  assert.equal(srv.calls.at(-1).ifMtimeNs, '500', '되살린 판의 mtimeNs 를 ifMtimeNs 로 실어야 한다');
+  assert.equal(store.stopped(), false);
+  assert.deepEqual(conflicts, [], 'onConflict 가 불리면 안 된다');
+  assert.deepEqual(srv.file, { n: 10, screen: 'restored+edit' });
+  assert.equal(store.bound(), '공연', 'adopt 는 bind 도 한다');
+
+  // 충돌로 멈춰 있었어도 되살린 판은 내가 고른 새 판이다 — adopt 가 멈춤을 푼다.
+  srv.ns = 999;                                           // 다른 곳에서 바뀐 것처럼
+  await store.save({ n: 11 });
+  assert.equal(store.stopped(), true);
+  store.adopt('공연', '999');
+  assert.equal(store.stopped(), false);
+  assert.equal(await store.save({ n: 12 }), true);
+  assert.deepEqual(srv.file, { n: 12 });
 });

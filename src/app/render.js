@@ -16,7 +16,8 @@
 //   ③ selection 은 행을 다시 그리지 않는다. 클래스만 토글하고(boardView.setSelected),
 //      재렌더 시 복원은 placementView 가 store.selection 을 읽어 따로 한다 — 오늘의 두 경로다.
 //   ④ notify(알림 — block·toast·status 세 급, RM-04)는 **맨 마지막**이다. 부분 불러오기의 '병합 완료…' 가
-//      렌더 뒤에 떠야 원본 mergeProjectData(4174-4179)와 같은 순서가 된다. 어디에 띄울지는 views.notify(조립부)가 정한다.
+//      렌더 뒤에 떠야 원본 mergeProjectData(4174-4179)와 같은 순서가 된다. 어디에 띄울지는 views.notify(조립부 —
+//      app/noticeRouter)가 정한다: block → 모달 · toast → 토스트 · status → 상태줄(RM-19).
 //
 // ⚠ 이 파일은 커맨드를 부르지 않는다. store 는 **읽기만** 한다.
 
@@ -52,6 +53,7 @@ import { phraseMark } from '../domain/phrasing.js';
  *   thumb?: { render(): void },
  *   project?: { render(): void },
  *   bpm?: { render(): void },
+ *   status?: { render(): void, show(n: import('../usecases/store.js').Notice): void },
  *   notify?: (n: import('../usecases/store.js').Notice) => void
  * }} views
  * @param {{ dev?: boolean, paranoid?: boolean }} [options]
@@ -164,6 +166,11 @@ export function createRenderer(store, views, options = {}) {
       views.routineEditor?.syncHistory();
     }
     if (d.toolbar) views.toolbar?.render();
+    // 상태줄(RM-19)은 보드와 무관하다 — 받는 중(video) · 되돌릴 수 있음(history) · 루틴 편집 중(routineEditor)이
+    // 바뀌는 사건만 따른다. 음성 상태 · 담기 판정은 Dirty 를 타지 않으므로 조립부가 render() 를 직접 부른다.
+    // ⚠ boards 에 걸지 않는다 — 받아 적으며 블록이 놓일 때마다 상태줄까지 그릴 까닭이 없고, 뒤집어 상태줄 때문에
+    //   보드를 그리는 일은 더더욱 없다(받는 중 터치 끌기가 끊긴다).
+    if (d.video || d.history || d.routineEditor) views.status?.render();
 
     // ── ⑤ notify — 언제나 마지막(원본 mergeProjectData 4174-4179 의 순서) ──
     if (d.notify) views.notify?.(d.notify);

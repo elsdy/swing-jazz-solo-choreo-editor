@@ -4,7 +4,7 @@
 //   · updateMobileCellSize (2247-2266)            → syncCellSize
 //   · 스크롤 락 버튼 2개 + 핀치줌 차단 (1545-1595) → setScrollLock / isAnyLockActive
 //   · initResizeDivider IIFE (1597-1662)           → 사이드바↔워크스페이스 비율 드래그
-//   · focusout 뷰포트 줌 리셋 (1664-1678)
+//   · focusout 뷰포트 줌 리셋 (1664-1678) — 2026-11-02 지움(RM-27, U-10)
 //   · isRoutineOverlayMode (4779-4781)
 //
 // ⚠ 이 파일은 store·commands·adapters 를 모르고, 오직 CSS 변수·dataset·클래스만 만진다.
@@ -451,22 +451,11 @@ export function initLayout(deps = {}) {
   if (sheetBackdrop) on(sheetBackdrop, 'click', closeSheet);
   on(doc, 'keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
 
-  // ── 1664-1678: 입력 완료 후 뷰포트 줌 리셋 (모바일 포커스 줌 복구) ───────
-  // ⚠⚠ 알려진 결함이지만 그대로 옮긴다 — user-scalable=no 를 영구히 박고
-  //    window.scrollTo(0,0) 으로 스크롤 위치를 강제로 날린다. deviations 참조.
-  on(doc, 'focusout', (e) => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
-      // 약간의 딜레이 후 뷰포트를 강제 리셋
-      win.setTimeout(() => {
-        const vp = doc.querySelector(SEL.viewportMeta);
-        if (vp) {
-          vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
-        }
-        // 스크롤 위치 보정으로 줌 리셋 유도
-        win.scrollTo(0, 0);
-      }, 100);
-    }
-  });
+  // ── 1664-1678 의 「입력 후 뷰포트 줌 리셋」은 2026-11-02 에 지웠다(RM-27) ─────────
+  // focusout 마다 viewport 에 user-scalable=no 를 다시 박고 window 를 맨 위로 굴리던 자리다. 확대가 필요한
+  // 사람을 막고, 안무표 아래에서 이름을 고치면 화면이 꼭대기로 튀었다. iOS 의 입력 자동 확대는 좁은 화면의
+  // 입력칸 글자를 16px 로 두어 애초에 막는다(index.html). 잠금 중 핀치 차단(위 touchmove · gesturestart)은
+  // 편집 조작을 지키는 별개 장치라 남긴다. → 개발 원칙 U-10, tools/check-principles.mjs 가 되돌림을 잡는다.
 
   return {
     syncCellSize: sync,

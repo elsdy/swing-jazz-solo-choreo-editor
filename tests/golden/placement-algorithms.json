@@ -6,7 +6,7 @@
   "sourceSha": "ddc2d9bfce236ec4",
   "extractSha": "ddc2d9bfce236ec4",
   "note": "기대값은 index.html 의 현재 동작을 기록한 것이다. 여기 적힌 것이 \"옳은\" 동작이라는 뜻은 아니다 — 알려진 결함도 그대로 굳어 있다(desc 참고). 예외는 meta.intentionalChanges 에 적힌 시나리오들이다: 그것만은 원본 동작이 아니라 의도적으로 바꾼 동작을 실제 실행 결과로 다시 기록한 것이다.",
-  "scenarioCount": 150,
+  "scenarioCount": 166,
   "intentionalChanges": [
    {
     "scenario": "resize-05-stacks-instead-of-overwrite",
@@ -48,6 +48,13 @@
     "date": "2026-09-29",
     "why": "이름과 설명만 바꿨다 — 기대값은 그대로다. 옛 이름 「복사는 repack 을 부르지 않는다」가 RM-02 뒤로는 틀린 말이 된다. 이 시나리오는 빈 행에 복사하므로 다시 채우든 안 채우든 결과가 같고, 지금은 「원본 행은 건드리지 않는다」를 붙잡는다.",
     "pr": "#32"
+   },
+   {
+    "scenario": "split-01-same-row · split-02-crossrow-keeps-lane · split-03-edge-noop · mergegroups-01-adjacent-same-name · mergegroups-02-no-partner · mergegroups-03-repacks · rowinsert-01-shifts-after · rowinsert-02-cuts-crossing-block · rowinsert-03-intro-noop · rowdelete-01-only-in-row-vanishes · rowdelete-02-repacks-shrunk · rowdelete-03-last-row · rowduplicate-01-copies-below · rowmove-01-swap-down · rowmove-02-top-noop",
+    "previousId": null,
+    "date": "2026-11-02",
+    "why": "RM-16 — 분할 · 병합 · 마디 끼우기 · 지우기 · 복제 · 옮기기 전이(boardOps.splitGroup · mergeGroups · insertRow · deleteRow · duplicateRow · moveRow)를 새로 더했다. 원본 index.html 에 대응물이 없는 새 동작이라 열다섯 시나리오를 새로 넣었고, 기존 시나리오의 기대값은 건드리지 않았다. 기대값은 손으로 적지 않고 tests/replay.mjs 로 재생한 실제 결과를 기록했다. 규칙: 끼운 마디가 걸친 블록 한가운데를 지나면 블록을 그 자리에서 둘로 끊는다(카운트 길이 그대로) · 병합은 같은 이름 · 같은 층 · 바로 붙은 것만 · 층 다시 채우기(D-1)는 손댄 그룹의 행에만.",
+    "pr": "rm-16-split-merge-and-bar-insert-delete"
    }
   ]
  },
@@ -15601,6 +15608,1858 @@
     "aliases": {
      "X": "G1"
     }
+   }
+  },
+  {
+   "id": "split-01-same-row",
+   "desc": "한 행 안의 블록을 앞 2카운트에서 자른다 — 앞 조각이 번호를 지키고 뒤 조각은 새 번호, 이름·분류·층이 둘 다 남는다 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 1,
+      "length": 5,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "splitGroup",
+     "group": "A",
+     "frontCount": 2,
+     "as": "BACK"
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 1,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 3,
+      "length": 3,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:rows:[2]"
+    ],
+    "alerts": [],
+    "aliases": {
+     "BACK": "G2"
+    }
+   }
+  },
+  {
+   "id": "split-02-crossrow-keeps-lane",
+   "desc": "두 행에 걸친 블록을 행 경계 뒤에서 자른다 — 밑층의 턴과 겹쳐 층 1 이던 것이 두 조각 모두 층 1 로 남는다 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 1
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 1
+     },
+     {
+      "g": "B",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "B",
+      "name": "턴",
+      "category": "turn",
+      "row": 3,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "splitGroup",
+     "group": "A",
+     "frontCount": 3,
+     "as": "BACK"
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 1
+     },
+     {
+      "g": "G1",
+      "name": "턴",
+      "category": "turn",
+      "row": 3,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 0,
+      "length": 1,
+      "subRow": 1
+     },
+     {
+      "g": "G3",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 1,
+      "length": 3,
+      "subRow": 1
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:rows:[2,3]"
+    ],
+    "alerts": [],
+    "aliases": {
+     "BACK": "G3"
+    }
+   }
+  },
+  {
+   "id": "split-03-edge-noop",
+   "desc": "끝에서 자르면(앞 조각 0 또는 전부) 아무것도 바뀌지 않고 렌더도 없다 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "splitGroup",
+     "group": "A",
+     "frontCount": 0
+    },
+    {
+     "op": "splitGroup",
+     "group": "A",
+     "frontCount": 4
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "mergegroups-01-adjacent-same-name",
+   "desc": "붙어 있는 같은 이름·같은 층 두 블록을 하나로 — 앞 것의 번호가 남고 카운트가 합이다 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "B",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 4,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "B",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "mergeGroups",
+     "group": "B",
+     "withGroup": "A"
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+     },
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:rows:[2,3]"
+    ],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "mergegroups-02-no-partner",
+   "desc": "떨어져 있거나 이름·층이 다르면 합치지 않는다 — 배치 그대로, 알림만 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "B",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 3,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "C",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 5,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "D",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 2,
+      "length": 1,
+      "subRow": 1
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "mergeGroups",
+     "group": "A"
+    },
+    {
+     "op": "mergeGroups",
+     "group": "B"
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 3,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G3",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 5,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G4",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 2,
+      "length": 1,
+      "subRow": 1
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [],
+    "alerts": [
+     "옆에 붙은 같은 이름 · 같은 층의 블록이 없습니다.",
+     "옆에 붙은 같은 이름 · 같은 층의 블록이 없습니다."
+    ],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "mergegroups-03-repacks",
+   "desc": "합친 뒤 겹침이 사라진 행은 층을 위로 당긴다 (D-1) (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "B",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 4,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "C",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 2,
+      "length": 4,
+      "subRow": 1
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "mergeGroups",
+     "group": "A",
+     "withGroup": "B"
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 2,
+      "length": 4,
+      "subRow": 1
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:rows:[2]"
+    ],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "rowinsert-01-shifts-after",
+   "desc": "2행 위에 빈 마디를 끼우면 2행부터의 블록이 한 마디 밀리고 골격을 다시 세운다 — 1행·인트로는 그대로 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "Z",
+      "name": "폴",
+      "category": "fall",
+      "row": 0,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "B",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 2,
+      "length": 6,
+      "subRow": 0
+     },
+     {
+      "g": "B",
+      "name": "턴",
+      "category": "turn",
+      "row": 3,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "C",
+      "name": "점프",
+      "category": "jump",
+      "row": 4,
+      "startIndex": 4,
+      "length": 4,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "insertRow",
+     "row": 2
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "폴",
+      "category": "fall",
+      "row": 0,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "G3",
+      "name": "턴",
+      "category": "turn",
+      "row": 3,
+      "startIndex": 2,
+      "length": 6,
+      "subRow": 0
+     },
+     {
+      "g": "G3",
+      "name": "턴",
+      "category": "turn",
+      "row": 4,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G4",
+      "name": "점프",
+      "category": "jump",
+      "row": 5,
+      "startIndex": 4,
+      "length": 4,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:board:full"
+    ],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "rowinsert-02-cuts-crossing-block",
+   "desc": "끼운 마디가 걸친 블록 한가운데를 지나면 블록을 그 자리에서 둘로 끊는다 — 카운트 길이는 그대로 (RM-16 결정)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "insertRow",
+     "row": 2,
+     "as": "BACK"
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:board:full"
+    ],
+    "alerts": [],
+    "aliases": {
+     "BACK": "G2"
+    }
+   }
+  },
+  {
+   "id": "rowinsert-03-intro-noop",
+   "desc": "인트로 행(0) 위에는 끼울 수 없다 — 아무것도 바뀌지 않는다 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "insertRow",
+     "row": 0
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "rowdelete-01-only-in-row-vanishes",
+   "desc": "마디를 지우면 그 마디에만 있던 블록은 사라지고 이어지는 블록은 그만큼 짧아지며 뒤는 한 마디 당겨진다 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 0
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 0,
+      "length": 1,
+      "subRow": 0
+     },
+     {
+      "g": "D",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 2,
+      "length": 2,
+      "subRow": 1
+     },
+     {
+      "g": "C",
+      "name": "점프",
+      "category": "jump",
+      "row": 4,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "deleteRow",
+     "row": 2
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 1,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "점프",
+      "category": "jump",
+      "row": 3,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:board:full"
+    ],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "rowdelete-02-repacks-shrunk",
+   "desc": "지운 마디에서만 겹치던 블록은 남은 조각이 층 0 으로 올라온다 (D-1) (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 8,
+      "subRow": 1
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 1
+     },
+     {
+      "g": "B",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "deleteRow",
+     "row": 2
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:board:full"
+    ],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "rowdelete-03-last-row",
+   "desc": "마지막 행을 지우면 그 행의 블록만 사라지고 rows 가 하나 준다 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 7,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "B",
+      "name": "턴",
+      "category": "turn",
+      "row": 8,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "deleteRow",
+     "row": 8
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 7,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:board:full"
+    ],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "rowduplicate-01-copies-below",
+   "desc": "마디 복제 — 그 마디의 블록이 새 번호로 바로 아래 새 마디에 복사되고 뒤는 밀린다 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "Q",
+      "name": "턴",
+      "category": "turn",
+      "row": 1,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "C",
+      "name": "점프",
+      "category": "jump",
+      "row": 3,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "duplicateRow",
+     "row": 1
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "턴",
+      "category": "turn",
+      "row": 1,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G3",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G4",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G5",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "G6",
+      "name": "점프",
+      "category": "jump",
+      "row": 4,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:board:full"
+    ],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "rowmove-01-swap-down",
+   "desc": "마디를 아래로 옮기면 이웃 행과 자리가 바뀌고, 두 행의 경계에 걸친 블록은 끊긴다 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "W",
+      "name": "폴",
+      "category": "fall",
+      "row": 2,
+      "startIndex": 0,
+      "length": 1,
+      "subRow": 0
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "Q",
+      "name": "턴",
+      "category": "turn",
+      "row": 3,
+      "startIndex": 4,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "E",
+      "name": "점프",
+      "category": "jump",
+      "row": 4,
+      "startIndex": 0,
+      "length": 1,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "moveRow",
+     "row": 2,
+     "delta": 1
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 2,
+      "startIndex": 0,
+      "length": 4,
+      "subRow": 0
+     },
+     {
+      "g": "G2",
+      "name": "턴",
+      "category": "turn",
+      "row": 2,
+      "startIndex": 4,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G3",
+      "name": "폴",
+      "category": "fall",
+      "row": 3,
+      "startIndex": 0,
+      "length": 1,
+      "subRow": 0
+     },
+     {
+      "g": "G4",
+      "name": "스텝",
+      "category": "step",
+      "row": 3,
+      "startIndex": 6,
+      "length": 2,
+      "subRow": 0
+     },
+     {
+      "g": "G5",
+      "name": "점프",
+      "category": "jump",
+      "row": 4,
+      "startIndex": 0,
+      "length": 1,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [
+     "main:rows:[2,3]"
+    ],
+    "alerts": [],
+    "aliases": {}
+   }
+  },
+  {
+   "id": "rowmove-02-top-noop",
+   "desc": "맨 위 마디는 더 올릴 수 없다 — 배치 그대로, 알림만 (RM-16)",
+   "setup": {
+    "rows": 8,
+    "cols": 8,
+    "reRows": 4,
+    "reCols": 8,
+    "moves": [
+     {
+      "id": "mv-step",
+      "name": "스텝",
+      "category": "step"
+     },
+     {
+      "id": "mv-turn",
+      "name": "턴",
+      "category": "turn"
+     },
+     {
+      "id": "mv-jump",
+      "name": "점프",
+      "category": "jump"
+     },
+     {
+      "id": "mv-fall",
+      "name": "폴",
+      "category": "fall"
+     }
+    ],
+    "routines": [
+     {
+      "id": "rt-a",
+      "name": "샤임 4x8",
+      "rows": 4,
+      "cols": 8,
+      "color": "#6366f1",
+      "isFavorite": false,
+      "placements": []
+     },
+     {
+      "id": "rt-b",
+      "name": "짧은 루틴",
+      "rows": 1,
+      "cols": 4,
+      "color": "#f97316",
+      "isFavorite": false,
+      "placements": []
+     }
+    ],
+    "main": [
+     {
+      "g": "A",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ]
+   },
+   "ops": [
+    {
+     "op": "moveRow",
+     "row": 1,
+     "delta": -1
+    }
+   ],
+   "expect": {
+    "main": [
+     {
+      "g": "G1",
+      "name": "스텝",
+      "category": "step",
+      "row": 1,
+      "startIndex": 0,
+      "length": 2,
+      "subRow": 0
+     }
+    ],
+    "re": [],
+    "values": [],
+    "render": [],
+    "alerts": [
+     "맨 위 마디라 더 올리지 않았습니다."
+    ],
+    "aliases": {}
    }
   }
  ]

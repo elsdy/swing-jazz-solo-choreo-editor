@@ -95,3 +95,27 @@ test('대조군: 부분 불러오기(병합)는 고른 목록을 지우지 않�
   const groups = new Set(store.get().boards[BOARD_MAIN].placements.map(p => p.groupId));
   assert.ok(groups.has('g1') && groups.has('g2'), '병합 뒤에도 고른 블록이 남아 있어야 대조가 된다');
 });
+
+test('마디 지우기 뒤 그 마디에만 있던 블록이 고른 목록에서 빠진다 (RM-16)', () => {
+  const store = twoSelected();                                        // g1 은 0행(인트로), g2 는 1행
+  store.setBoard(BOARD_MAIN, { rows: 2 });
+  const dirty = Board.deleteRowAt(store, { boardId: BOARD_MAIN, row: 1 }, { ids: () => 'x' });
+  assert.deepEqual([...store.get().selection], ['g1'], 'g2 만 사라졌다');
+  assert.equal(dirty.selection, true);
+  assert.equal(dirty.toolbar, true);
+});
+
+test('옆과 합치기 뒤 사라진 그룹이 고른 목록에서 빠진다 (RM-16)', () => {
+  const store = twoSelected();
+  store.setBoard(BOARD_MAIN, {
+    placements: [
+      { id: 'p1', groupId: 'g1', name: 'Swing Out', category: 'basic', row: 1, startIndex: 0, length: 2, subRow: 0 },
+      { id: 'p2', groupId: 'g2', name: 'Swing Out', category: 'basic', row: 1, startIndex: 2, length: 2, subRow: 0 }
+    ]
+  });
+  let n = 0;
+  const dirty = Board.mergeWithNeighbor(store, { boardId: BOARD_MAIN, groupId: 'g1' }, { ids: () => `m${++n}` });
+  assert.deepEqual([...store.get().selection], ['g1']);
+  assert.equal(dirty.selection, true);
+  assert.equal(dirty.toolbar, true);
+});

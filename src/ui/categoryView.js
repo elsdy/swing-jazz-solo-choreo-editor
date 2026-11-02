@@ -17,6 +17,7 @@
 
 import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
 import { categoryNames, categoryColor } from '../domain/categories.js';
+import { str } from '../domain/strings.js';
 
 /** 히스토리를 커밋할 보드. 카테고리 조작은 전부 메인 보드 스냅샷이다(원본 saveHistory). */
 const MAIN = 'main';
@@ -118,7 +119,7 @@ export function createCategoryView(deps) {
       colorInput.type = 'color';
       colorInput.value = categoryColor(categories, name);
       colorInput.style.cssText = 'width:22px; height:22px; padding:0; border:1px solid rgba(148,163,184,0.2); border-radius:6px; cursor:pointer; background:none; flex:0 0 auto;';
-      colorInput.title = '색상 변경';
+      colorInput.title = str('category.color.title');
       colorInput.addEventListener('input', () => {
         // 2983-2987: 범례 · 팔레트 · 두 보드만 다시 그린다. 관리 행은 **일부러** 빼놓는다.
         render(commands.previewColor(name, colorInput.value));
@@ -134,7 +135,7 @@ export function createCategoryView(deps) {
       const input = document.createElement('input');
       input.type = 'text';
       input.value = categories[name].label;
-      input.placeholder = '카테고리 이름';
+      input.placeholder = str('category.name.placeholder');
       input.addEventListener('change', () => {
         // 2996-3001. ⚠ 빈 문자열이면 키 자체가 레이블이 되는 규칙은 커맨드 안에 있다.
         render(commands.renameLabel(name, input.value));
@@ -145,15 +146,15 @@ export function createCategoryView(deps) {
       const del = document.createElement('button');
       del.className = 'icon-btn';
       del.type = 'button';
-      del.textContent = '×';
-      del.title = '카테고리 삭제';
+      del.textContent = str('icon.delete');
+      del.title = str('category.delete.title');                      // 글자는 문자열 표(RM-10)
       del.addEventListener('click', () => {
         // ⚠ 가드가 confirmOnce **밖**이다(3012). 마지막 하나는 '정말요?' 없이 즉시 막힌다.
         if (categoryNames(store.categories).length <= 1) {
           render({ notify: { kind: 'toast', message: '카테고리는 최소 1개 이상 있어야 합니다.' } });
           return;
         }
-        confirmOnce(del, '×', () => {
+        confirmOnce(del, str('icon.delete'), () => {
           render(commands.removeCategory(name));
           render(commit(MAIN));
         });
@@ -166,7 +167,7 @@ export function createCategoryView(deps) {
       const catStarBtn = makeInlineStarBtn(
         () => store.favorites.categories.has(name),
         () => { render(commands.toggleCategoryFavorite(name)); },
-        { title: '즐겨찾기 (빠른 배치에 표시)', stopPropagation: false, toggleClass: false }
+        { title: str('favorite.quickPlace.title'), stopPropagation: false, toggleClass: false }
       );
 
       row.append(colorInput, input, catStarBtn, del);

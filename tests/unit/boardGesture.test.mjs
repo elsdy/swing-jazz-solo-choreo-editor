@@ -10,6 +10,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import * as G from '../../src/domain/boardGesture.js';
 
@@ -195,21 +196,32 @@ test('터치 그리기: 손가락 밑 칸에서 시작해 한 칸 프리뷰, 기
   assert.equal(previewOf(r).count, 1);
 });
 
-test('터치 그리기: 다른 행으로 끌어도 행을 넘지 않는다 — 시작 행 안에서 끝 칸까지만 센다', () => {
+test('터치 그리기: 다른 행으로 끌면 마우스처럼 행을 넘겨 센다 (RM-11 — 옛 「시작 행 안에서만」을 고쳤다)', () => {
   const r = run([
     [G.touchDrawStart, { ...at(2, 3), onPlacement: false }],
-    [G.touchDrawMove, at(5, 1)],   // 마우스라면 3행을 넘어 2+8+8+2 칸
+    [G.touchDrawMove, at(5, 1)],   // 2행 3..7(5) + 3·4행(16) + 5행 0..1(2)
   ], DRAW);
-  assert.equal(previewOf(r).count, 1);   // 끝 칸 1 < 시작 칸 3 → 하한 1
-  const r2 = G.touchDrawMove(r.state, at(5, 7), DRAW);
-  assert.equal(previewOf(r2).count, 5);  // 3..7
+  assert.equal(previewOf(r).count, 23);
+  const m = run([
+    [G.mouseDown, mouse(2, 3)],
+    [G.mouseMove, at(5, 1)],
+  ], DRAW);
+  assert.equal(previewOf(m).count, previewOf(r).count);   // 손가락과 마우스가 같은 답
+  const back = G.touchDrawMove(r.state, at(1, 7), DRAW);
+  assert.equal(previewOf(back).count, 1);  // 시작보다 앞이면 프리뷰 하한 1
 });
 
-test('터치 그리기: 떼면 시작 행 안에서 센 만큼(하한 기본 카운트) 놓고 커밋한다', () => {
+test('터치 그리기: 떼면 행을 넘겨 센 만큼(하한 기본 카운트) 놓고, 보드 끝에서 자른다', () => {
   const s = G.touchDrawStart(G.initialGestureState(), { ...at(2, 3), onPlacement: false }, DRAW).state;
   assert.equal(G.touchDrawEnd(s, at(2, 7), DRAW).effects[0].totalCount, 5);
+  assert.equal(G.touchDrawEnd(s, at(3, 1), DRAW).effects[0].totalCount, 7);
   assert.equal(G.touchDrawEnd(s, at(2, 3), DRAW).effects[0].totalCount, 4);
   assert.deepEqual(kinds(G.touchDrawEnd(s, at(2, 7), DRAW)), ['place', 'commit', 'clearPreview']);
+  // 마지막 행 너머를 가리키면 시작 자리에서 보드 끝까지(7행 4..7 + 8행 = 12칸)에서 자른다
+  const far = env({ activeMove: { moveId: 'm1' }, endAt: () => ({ endRow: 12, endCol: 7 }) });
+  const s7 = G.touchDrawStart(G.initialGestureState(), { ...at(7, 4), onPlacement: false }, far).state;
+  assert.equal(G.touchDrawEnd(s7, at(8, 7), far).effects[0].totalCount, 12);
+  assert.equal(previewOf(G.touchDrawMove(s7, at(8, 7), far)).count, 12);
 });
 
 test('터치 그리기: 보드 밖이나 블록 위에서 시작하면 아무 일도 없다', () => {
@@ -305,13 +317,80 @@ test('더블탭: 정확히 300ms 이거나 다른 블록이면 더블탭이 아�
   assert.deepEqual(other.state.tap, { time: 1100, groupId: 'g2' });
 });
 
-test('더블탭: 루틴 블록은 기본 동작만 막고 지우지 않는다 — 탭 기억이 남아 세 번째 탭도 더블탭이다(지금 동작)', () => {
-  const s1 = G.placementTap(G.initialGestureState(), tap(1000, 'r1', true)).state;
-  const second = G.placementTap(s1, tap(1100, 'r1', true));
-  assert.deepEqual(second.effects, [{ kind: 'preventDefault' }]);
-  assert.deepEqual(second.state.tap, { time: 1000, groupId: 'r1' });
+test('더블탭: 루틴 블록의 탭은 기본 동작을 막지 않고 지우지 않으며 탭 기억을 비운다 — 세 번째 탭도 더블탭이 아니다 (RM-11)', () => {
+  const s1 = G.placementTap(G.initialGestureState(), tap(1000, 'r1', true));
+  assert.deepEqual(s1.effects, []);
+  const second = G.placementTap(s1.state, tap(1100, 'r1', true));
+  assert.deepEqual(second.effects, []);                        // 옛 동작: [preventDefault] — 그래서 팝업이 안 떴다
+  assert.deepEqual(second.state.tap, { time: 0, groupId: null });
   const third = G.placementTap(second.state, tap(1250, 'r1', true));
-  assert.deepEqual(third.effects, [{ kind: 'preventDefault' }]);
+  assert.deepEqual(third.effects, []);
+  // 루틴 블록을 누른 뒤 동작 블록을 두 번 누르면 그것은 평소대로 더블탭이다
+  const n1 = G.placementTap(third.state, tap(1300, 'g1', false)).state;
+  assert.deepEqual(kinds(G.placementTap(n1, tap(1400, 'g1', false))), ['preventDefault', 'remove', 'commit']);
+});
+
+// ── 포인터 종류로 전이 고르기 (RM-11) ────────────────────────────────────────
+
+test('포인터 종류: touch 만 손가락이고 mouse · pen · 빈 값은 마우스다', () => {
+  assert.equal(G.pointerKind('touch'), 'touch');
+  for (const t of ['mouse', 'pen', '', undefined, null]) assert.equal(G.pointerKind(t), 'mouse');
+});
+
+test('포인터 종류로 고른 전이가 옛 리스너 차례 그대로다 — 마우스는 한 함수씩, 손가락은 그리기 뒤에 빠른 배치', () => {
+  const m = G.transitionsFor('mouse');
+  assert.deepEqual([m.down, m.move, m.up, m.cancel], [[G.mouseDown], [G.mouseMove], [G.mouseUp], [G.mouseCancel]]);
+  const f = G.transitionsFor('touch');
+  assert.deepEqual([f.down, f.move, f.up, f.cancel], [
+    [G.touchDrawStart, G.quickTouchStart], [G.touchDrawMove, G.quickTouchMove],
+    [G.touchDrawEnd, G.quickTouchEnd], [G.touchDrawCancel, G.quickTouchCancel],
+  ]);
+  assert.deepEqual(G.transitionsFor('pen'), m);
+});
+
+test('포인터 한 벌로 돌려도 마우스 그리기 · 손가락 그리기가 같은 할 일을 돌려준다(구조 커밋의 등가)', () => {
+  // 모든 전이가 같은 ev 모양 {x, y, track, row, onPlacement} 을 받는다 — 손가락 전이는 track·row 를 읽지 않는다.
+  const ev = (row, col) => mouse(row, col);
+  const run2 = (type, evs) => {
+    const T = G.transitionsFor(type);
+    let state = G.initialGestureState(); const out = [];
+    for (const [phase, e] of evs) for (const fn of T[phase]) { const r = fn(state, e, DRAW); state = r.state; out.push(...r.effects); }
+    return out;
+  };
+  const viaMouse = run2('mouse', [['down', ev(2, 3)], ['move', ev(2, 6)], ['up', ev(2, 6)]]);
+  const direct = [G.mouseDown, G.mouseMove, G.mouseUp].reduce((acc, fn, i) => {
+    const r = fn(acc.state, [ev(2, 3), ev(2, 6), ev(2, 6)][i], DRAW); return { state: r.state, fx: [...acc.fx, ...r.effects] };
+  }, { state: G.initialGestureState(), fx: [] }).fx;
+  assert.deepEqual(viaMouse, direct);
+  const viaFinger = run2('touch', [['down', ev(2, 3)], ['move', ev(2, 6)], ['up', ev(2, 6)]]);
+  assert.deepEqual(viaFinger, [
+    { kind: 'stopPropagation' }, { kind: 'preview', row: 2, startIndex: 3, count: 1 },
+    { kind: 'preview', row: 2, startIndex: 3, count: 4 },
+    { kind: 'place', moveId: 'm1', startRow: 2, startIndex: 3, totalCount: 4 }, { kind: 'commit' }, { kind: 'clearPreview' },
+  ]);
+});
+
+test('마우스 포인터의 취소는 그리기 · 빠른 배치 끌기를 지우고, 아무것도 없으면 아무 일도 없다', () => {
+  const d = G.mouseDown(G.initialGestureState(), mouse(2, 3), DRAW);
+  const r = G.mouseCancel(d.state, null, DRAW);
+  assert.deepEqual(kinds(r), ['clearPreview']);
+  assert.equal(r.state.draw, null);
+  const q = G.mouseDown(G.initialGestureState(), mouse(2, 3), QUICK);
+  assert.equal(G.mouseCancel(q.state, null, QUICK).state.quickDraw, null);
+  assert.deepEqual(G.mouseCancel(G.initialGestureState(), null, env()).effects, []);
+});
+
+// ── 블록 탭의 갈래 (RM-11 동작 커밋 ①) ──────────────────────────────────────
+
+test('탭 팝업 갈래: 창 폭이 아니라 pointerType 으로 — 넓은 폭의 touch 는 팝업, 좁은 폭의 mouse 는 선택 토글', () => {
+  // 창 폭은 인자에 없다 — 넓은 태블릿의 손가락도, 좁힌 데스크톱 창의 마우스도 종류로만 갈린다.
+  assert.equal(G.placementTapRoute({ pointerType: 'touch', isRoutine: false, hasActionPopup: true }), 'action-popup');
+  assert.equal(G.placementTapRoute({ pointerType: 'mouse', isRoutine: false, hasActionPopup: true }), 'toggle');
+  assert.equal(G.placementTapRoute({ pointerType: 'pen', isRoutine: false, hasActionPopup: true }), 'toggle');
+  // 팝업이 없는 보드(루틴 편집)는 손가락도 토글이고, 루틴 블록은 종류와 상관없이 루틴 팝업이다.
+  assert.equal(G.placementTapRoute({ pointerType: 'touch', isRoutine: false, hasActionPopup: false }), 'toggle');
+  assert.equal(G.placementTapRoute({ pointerType: 'touch', isRoutine: true, hasActionPopup: true }), 'routine-popup');
+  assert.equal(G.placementTapRoute({ pointerType: 'mouse', isRoutine: true, hasActionPopup: false }), 'routine-popup');
 });
 
 // ── 전이 함수의 성질 ─────────────────────────────────────────────────────────
@@ -325,4 +404,38 @@ test('전이 함수는 들어온 상태를 고치지 않는다(새 상태를 돌
   const before = JSON.stringify(r.state);
   G.mouseMove(r.state, at(3, 3), QUICK);
   assert.equal(JSON.stringify(r.state), before);
+});
+
+// ── 손가락 그리기 중 스크롤 막기 (RM-11 동작 ③) ───────────────────────────────
+// 포인터 이벤트는 브라우저가 스크롤을 시작하면 pointercancel 로 그리기를 빼앗는다. 그리고 touch-action 은
+// 누르는 순간(pointerdown 전)에 정해지므로, 그 보드가 그리기를 받을 상태일 때 **미리** 트랙에 걸어 둔다.
+
+test('손가락 그리기 무장: 동작을 골랐거나 빠른 배치가 켜진 보드만 트랙의 스크롤을 막는다', () => {
+  assert.equal(G.touchDrawArmed({ activeMove: null, quickPlaceMode: false }), false);
+  assert.equal(G.touchDrawArmed({ activeMove: { moveId: 'm1' }, quickPlaceMode: false }), true);
+  assert.equal(G.touchDrawArmed({ activeMove: null, quickPlaceMode: true }), true);
+  assert.equal(G.touchDrawArmed({}), false);
+});
+
+test('손가락 그리기 무장: 무장한 보드의 트랙은 CSS 가 touch-action: none 이다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  assert.match(html, /\.board\[data-touch-draw="1"\] \.track\s*\{[^}]*touch-action:\s*none/);
+});
+
+// ── 행 라벨 메뉴 (RM-16, 2026-11-02) ─────────────────────────────────────────
+
+test('행 라벨 우클릭·길게 누르기: 몸통 행이면 그 행 번호로 마디 메뉴를 열고, 인트로 행·라벨 밖이면 아무 일도 없다', () => {
+  const s = G.initialGestureState();
+  const e = env();
+  const r = G.rowLabelPress(s, { row: 3, x: 12, y: 130 }, e);
+  assert.deepEqual(r.effects, [
+    { kind: 'preventDefault' },
+    { kind: 'openRowMenu', row: 3, clientX: 12, clientY: 130, first: false, last: false },
+  ]);
+  assert.equal(r.state, s, '상태는 바꾸지 않는다');
+  assert.equal(G.rowLabelPress(s, { row: 1, x: 0, y: 0 }, e).effects[1].first, true, '맨 위 행');
+  assert.equal(G.rowLabelPress(s, { row: 8, x: 0, y: 0 }, e).effects[1].last, true, '맨 아래 행');
+  for (const row of [0, 9, null, undefined, NaN, 2.5]) {
+    assert.deepEqual(G.rowLabelPress(s, { row, x: 0, y: 0 }, e).effects, [], `row=${row} — 브라우저 메뉴를 막지도 않는다`);
+  }
 });

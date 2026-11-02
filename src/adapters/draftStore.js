@@ -6,7 +6,8 @@
 //
 // 담는 자리는 둘이고 **서버가 있으면 서버가 이긴다.**
 //   서버   `/api/projects` 의 한 칸. 폰과 PC 가 같은 서버를 보면 이어서 편집한다.
-//   브라우저 localStorage 한 칸. 정적 호스팅으로 열었을 때의 자리다.
+//   브라우저 한 칸. 정적 호스팅으로 열었을 때의 자리다 — 2026-11-02(RM-33)부터 **주입받는 칸**(`browserSlot`,
+//          app/main 은 adapters/idbSnapshots 의 IndexedDB 칸을 준다)이고, 안 주면 지금까지의 localStorage 한 칸이다.
 //
 // ── 어느 칸에 담나 — 「묶인 파일」 (2026-09-22) ─────────────────────────────────
 //
@@ -61,6 +62,8 @@ export const BOUND_KEY = 'choreo_draft_bound';
  * @property {() => Promise<any|null>} load 담아 둔 것. 없거나 깨졌으면 null
  * @property {() => Promise<boolean>} clear 비운다
  * @property {(name: string) => void} bind 이 이름의 파일에 묶는다(저장했거나 폴더에서 열었을 때)
+ * @property {(name: string, mtimeNs: string) => void} adopt 되살린 판을 「아는 판」으로 받아들인다(RM-25) — bind 에 표식까지, 멈춤도 푼다
+ * @property {() => Promise<void>} settled 나가 있는 담기가 모두 끝날 때까지 기다린다(RM-25)
  * @property {() => string} bound 묶인 이름. 없으면 빈 문자열
  * @property {() => void} unbind 묶임을 푼다(새 문서로 돌아간다)
  * @property {() => string} target 지금 담는 칸의 이름 — 묶였으면 그 이름, 아니면 `_작업중`
@@ -72,15 +75,20 @@ export const BOUND_KEY = 'choreo_draft_bound';
  * @param {{
  *   getServer?: () => ({ save(name, payload, opts): Promise<any>, read(name): Promise<any>, readWithMeta?(name): Promise<any>, remove(name): Promise<any> } | null),
  *   storage?: Storage,
+ *   browserSlot?: { save(payload: unknown): Promise<boolean>|boolean, load(): Promise<any|null>|any, clear(): Promise<boolean>|boolean },
  *   onConflict?: (info: {name: string}) => void
  * }} [options]
  *   getServer: **게터다.** 서버가 있는지는 probe 가 끝나야 정해지는데 이 함수는 그 전에 불린다 —
  *   값으로 받으면 서버가 있어도 영영 브라우저에 담는다.
+ *   browserSlot: 브라우저 칸(RM-33). 안 주면 `storage` 의 `choreo_draft` 한 키다. 셋 다 **던지지 않아야** 한다 —
+ *   그래도 여기서 한 번 더 받는다(실패는 false · null).
+ *   storage: 묶인 이름(`choreo_draft_bound`)을 담는 자리 — 이것은 작은 설정이라 IndexedDB 로 옮기지 않는다(부팅 때 동기로 읽힌다).
  *   onConflict: 다른 곳에서 그 파일이 바뀌어 담기를 멈췄다. 화면이 그 사실을 말해야 한다.
  * @returns {DraftStore}
  */
+// @complexity time=O(1) space=O(1) cc=6
 export function createDraftStore(options = {}) {
-  const { getServer = () => null, storage = safeLocalStorage(), onConflict = () => {} } = options;
+  const { getServer = () => null, storage = safeLocalStorage(), browserSlot = null, onConflict = () => {} } = options;
 
   /** 내가 아는 그 파일의 판. 읽기·쓰기의 응답으로만 새로워진다. */
   let seenNs = '';
@@ -97,8 +105,8 @@ export function createDraftStore(options = {}) {
     }
   };
 
-  /** 브라우저 한 칸. 서버가 없을 때의 자리이고, 서버가 있어도 **읽기의 폴백**이다. */
-  const browser = {
+  /** localStorage 한 키 — `browserSlot` 을 안 줬을 때의 브라우저 칸(2026-11-02 전까지의 유일한 자리). */
+  const localSlot = {
     save(payload) {
       if (!storage) return false;
       try {
@@ -128,6 +136,28 @@ export function createDraftStore(options = {}) {
       } catch {
         return false;
       }
+    }
+  };
+
+  /**
+   * 브라우저 한 칸. 서버가 없을 때의 자리이고, 서버가 있어도 **읽기의 폴백**이다.
+   * 주입받은 칸이 던지거나 거부해도 여기서 받는다 — 담기가 편집을 멈추면 안 된다는 규약은 칸이 무엇이든 같다.
+   */
+  const slot = browserSlot || localSlot;
+  const browser = {
+    async save(payload) {
+      try { return Boolean(await slot.save(payload)); } catch { return false; }
+    },
+    async load() {
+      try {
+        const data = await slot.load();
+        return data && typeof data === 'object' ? data : null;
+      } catch {
+        return null;
+      }
+    },
+    async clear() {
+      try { return Boolean(await slot.clear()); } catch { return false; }
     }
   };
 
@@ -166,6 +196,21 @@ export function createDraftStore(options = {}) {
     }
   }
 
+  /** 이 이름의 파일에 묶는다. 클로저다 — `adopt` 가 부르므로 `this` 에 기대지 않는다(readWithMeta 와 같은 까닭). */
+  // @complexity time=O(1) space=O(1) cc=4
+  function bind(name) {
+    const safe = String(name || '').trim();
+    // 다른 파일로 옮겨 가면 아는 판도 옛것이다. 그대로 두면 새 파일에 남의 표식을 들이민다.
+    seenNs = '';
+    if (!storage) return;
+    try {
+      if (safe && safe !== DRAFT_NAME) storage.setItem(BOUND_KEY, safe);
+      else storage.removeItem(BOUND_KEY);
+    } catch {
+      // 못 담아도 편집은 계속된다 — 그때는 이 세션이 `_작업중` 을 쓴다
+    }
+  }
+
   return {
     get kind() { return server() ? 'server' : 'browser'; },
 
@@ -174,24 +219,36 @@ export function createDraftStore(options = {}) {
     /** 다른 곳에서 바뀌어 담기를 멈췄는가. */
     stopped: () => stopped,
 
-    bind(name) {
-      const safe = String(name || '').trim();
-      // 다른 파일로 옮겨 가면 아는 판도 옛것이다. 그대로 두면 새 파일에 남의 표식을 들이민다.
-      seenNs = '';
-      if (!storage) return;
-      try {
-        if (safe && safe !== DRAFT_NAME) storage.setItem(BOUND_KEY, safe);
-        else storage.removeItem(BOUND_KEY);
-      } catch {
-        // 못 담아도 편집은 계속된다 — 그때는 이 세션이 `_작업중` 을 쓴다
-      }
-    },
+    bind,
 
     unbind() {
       if (!storage) return;
       try {
         storage.removeItem(BOUND_KEY);
       } catch { /* 위와 같다 */ }
+    },
+
+    /**
+     * 되살린 판을 **아는 판으로 받아들인다**(RM-25). 파일 서랍의 `지난 판` 에서 되살리면 파일의 표식이 바뀐다 —
+     * `bind` 는 표식을 비우기만 하므로 그대로 쓰면 다음 담기가 `ifMtimeNs` 없이 나가 **옛 화면으로 되살린 판을
+     * 덮어쓴다.** 되살린 뒤 다시 읽은 판의 표식을 여기로 넣는다. 충돌로 멈춰 있었어도 되살린 판은 내가 고른
+     * 새 판이므로 멈춤을 푼다.
+     * ⚠ 호출부는 그 전에 기다리던 담기를 버리고(debounceSave.cancel) 나가 있던 담기가 끝나기를(settled) 기다린다 —
+     *   그러지 않으면 옛 화면을 실은 담기가 이 표식을 달고 끼어든다.
+     * @param {string} name
+     * @param {string} mtimeNs
+     */
+    // @complexity time=O(1) space=O(1) cc=1
+    adopt(name, mtimeNs) {
+      bind(name);
+      seenNs = String(mtimeNs || '');
+      stopped = false;
+    },
+
+    /** 나가 있는 담기가 모두 끝날 때까지 기다린다. 실패한 담기도 「끝」이다 — 던지지 않는다. */
+    // @complexity time=O(1) space=O(1) cc=1
+    settled() {
+      return chain.then(() => undefined, () => undefined);
     },
 
     save(payload) {
@@ -234,7 +291,7 @@ export function createDraftStore(options = {}) {
       seenNs = '';
       stopped = false;
       this.unbind();
-      let ok = browser.clear();
+      let ok = await browser.clear();
       if (srv) {
         try {
           ok = Boolean(await srv.remove(DRAFT_NAME)) || ok;
