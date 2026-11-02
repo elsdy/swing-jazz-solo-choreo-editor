@@ -122,6 +122,12 @@ export const LABELS = Object.freeze({
   'part.label.title': '{name} 파트 ({from}~{to}마디) — 누르면 접고, 우클릭 · 길게 누르면 고칩니다',
   'part.label.titleFolded': '{name} 파트가 접혀 있습니다({from}~{to}마디) — 누르면 폅니다',
 
+  // ── 엄지 바 · 영상 띠 조작 줄 (ui/thumbBar) ──────────────────────────────
+  // `.short` 는 칸이 좁아 글자가 넘칠 때 접는 짧은 꼴이다(RM-63) — 접히면 전체 글자가 aria-label 로 남는다.
+  'thumb.rewind': '⏮ 처음으로',
+  'thumb.rewind.short': '⏮',
+  'thumb.rewind.title': '영상을 맨 처음으로 되감고 바로 재생한다',
+
   // ── 여러 자리가 같이 쓰는 것 ──────────────────────────────────────────────
   'icon.delete': ICON_DELETE,
   'favorite.quickPlace.title': FAVORITE_QUICK,
