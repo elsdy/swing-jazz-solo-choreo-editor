@@ -3428,7 +3428,7 @@
           <label class="file-menu-label" for="fileNameInput">안무표 이름</label>
           <div class="appbar-file">
             <input id="fileNameInput" type="text" placeholder="프로젝트 파일 이름" />
-            <button id="saveBtn" class="primary" data-command="saveProject">프로젝트 저장</button>
+            <button id="saveBtn" class="primary" data-command="saveProject">파일로 내보내기</button>
           </div>
           <div class="file-menu-row">
             <button id="loadFileBtn" class="ghost">전체 불러오기</button>
@@ -3460,8 +3460,8 @@
       </div>
 
       <div class="appbar-group">
-        <button id="undoBtn" class="ghost" data-command="undo">Undo</button>
-        <button id="redoBtn" class="ghost" data-command="redo">Redo</button>
+        <button id="undoBtn" class="ghost" data-command="undo">되돌리기</button>
+        <button id="redoBtn" class="ghost" data-command="redo">다시 하기</button>
       </div>
 
       <!-- main.js 가 여기에 `문서`·`⚙ 설정`·`✨ 말로 채우기` 를 붙인다.
@@ -3552,7 +3552,7 @@
       <details class="drawer">
         <summary>파일 — 최근 프로젝트 · 동작 · 카테고리</summary>
         <div class="stack">
-          <div class="helper">프로젝트 저장에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다. 저장·열기 버튼은 맨 위 줄에 있습니다.</div>
+          <div class="helper">내보낸 파일에는 안무표 크기, 카테고리 색상, 동작 목록, 배치 상태가 모두 포함됩니다. 내보내기·불러오기 버튼은 맨 위 줄의 파일 메뉴에 있습니다.</div>
           <div class="row" style="gap:4px;">
             <button id="savedSortRecentBtn" class="sort-mode-btn active" title="최근 작업순">최근순</button>
             <button id="savedSortAlphaBtn" class="sort-mode-btn" title="이름순">이름순</button>
@@ -3651,8 +3651,8 @@
               <span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><span class="size-pill-label">박자</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="reColsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="reColsInput" type="number" min="1" max="64" value="8" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reColsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><span class="size-pill-label">행</span><span class="size-pill" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><button id="reRowsDec" class="ghost" style="padding:0 4px;line-height:1;">−</button><input id="reRowsInput" type="number" min="1" max="32" value="4" style="width:2.4em;text-align:center;background:transparent;border:none;outline:none;font:inherit;padding:0;" /><button id="reRowsInc" class="ghost" style="padding:0 4px;line-height:1;">+</button></span></span>
               <button id="reQuickPlaceBtn" class="ghost" data-command="quickPlace" data-board="routine">+ 빠른 배치</button>
-              <button id="reUndoBtn" class="ghost" data-command="undo" data-board="routine" disabled>Undo</button>
-              <button id="reRedoBtn" class="ghost" data-command="redo" data-board="routine" disabled>Redo</button>
+              <button id="reUndoBtn" class="ghost" data-command="undo" data-board="routine" disabled>되돌리기</button>
+              <button id="reRedoBtn" class="ghost" data-command="redo" data-board="routine" disabled>다시 하기</button>
               <button id="reClearBtn" class="danger">초기화</button>
               <button id="closeRoutineEditorBtn" class="re-close-btn">✕ 닫기</button>
             </div>
@@ -3838,8 +3838,8 @@
               <div class="vstep-body">
             <div class="video-cut">
               <div class="video-field">
-                <button id="videoInBtn" class="ghost accent" type="button" data-label="video.in" data-title="video.in.title" title="지금 영상 시각을 구간의 시작(In)으로 찍습니다">[ In 지금 여기</button>
-                <button id="videoOutBtn" class="ghost accent" type="button" data-label="video.out" data-title="video.out.title" title="지금 영상 시각을 구간의 끝(Out)으로 찍습니다">Out ] 지금 여기</button>
+                <button id="videoInBtn" class="ghost accent" type="button" data-label="video.in" data-title="video.in.title" title="지금 영상 시각을 구간의 시작점으로 찍습니다">[ 시작점 지금 여기</button>
+                <button id="videoOutBtn" class="ghost accent" type="button" data-label="video.out" data-title="video.out.title" title="지금 영상 시각을 구간의 끝점으로 찍습니다">끝점 ] 지금 여기</button>
                 <button id="videoInGoBtn" class="ghost" type="button" title="영상을 In 지점으로 옮깁니다">In 으로</button>
                 <button id="videoOutGoBtn" class="ghost" type="button" title="영상을 Out 지점으로 옮깁니다">Out 으로</button>
                 <button id="videoLoopBtn" class="ghost" type="button" title="재생이 Out 에 닿으면 In 으로 되감습니다">구간 반복</button>

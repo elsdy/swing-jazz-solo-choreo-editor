@@ -1,6 +1,6 @@
 // tests/unit/strings.test.mjs — 라벨 문자열 표와 용어집 (RM-10)
 //
-// 앞의 시험 넷은 계획서(docs/roadmap/plans/RM-10.md)의 「요구 ↔ 시험」 표 1 · 2 · 3 이고(표 5 는 개명 커밋이 더한다) 이름이 표와 같아야 한다.
+// 앞의 시험 넷은 계획서(docs/roadmap/plans/RM-10.md)의 「요구 ↔ 시험」 표 1 · 2 · 3 · 5 이고 이름이 표와 같아야 한다.
 // 표의 글자는 마크업에도 남아 있다(처음 그릴 때 빈 단추가 뜨지 않게) — 둘이 어긋나면 여기서 붉어진다(원칙 D-14).
 
 import test from 'node:test';
@@ -47,7 +47,7 @@ function labelledElements(html) {
   return out;
 }
 
-// ── 「요구 ↔ 시험」 표 1 · 2 · 3 ────────────────────────────────────────
+// ── 「요구 ↔ 시험」 표 1 · 2 · 3 · 5 ────────────────────────────────────────
 
 test('용어집이 문서 등록표에 있고 명사·동사마다 뜻이 한 줄씩 있다', () => {
   const entry = DOCS.find(d => d.path === 'docs/GLOSSARY.md');
@@ -108,6 +108,20 @@ test('마크업의 data-label 버튼 — 키가 표에 있고 글자가 표의 �
     assert.doesNotMatch(el.attrs, /\bdata-command=/, `${el.key} — 명령 단추에는 data-label 을 달지 않는다(글자의 주인은 등록부)`);
   }
   for (const key of ['video.in', 'video.out']) assert.ok(els.some(e => e.key === key), `${key} 단추가 마크업에 없다`);
+});
+
+test('용어집과 어긋나던 옛 라벨이 표·등록부·마크업에 남지 않는다', () => {
+  const screen = collectScreenTexts({ ...srcFiles(), 'index.html': HTML });
+  const old = ['[ In 지금 여기', 'Out ] 지금 여기', '× 삭제', 'Undo 로 되돌릴'];
+  for (const label of old) assert.ok(!screen.raw.includes(label), `옛 라벨 「${label}」 이 화면 원문에 남아 있다`);
+  for (const word of ['Undo', 'Redo']) assert.doesNotMatch(screen.raw, new RegExp(`(^|[^A-Za-z])${word}([^A-Za-z]|$)`, 'm'), `영어 「${word}」 가 화면 원문에 남아 있다`);
+  for (const c of COMMANDS) {
+    for (const text of [c.label, c.button, c.title].filter(Boolean)) {
+      assert.ok(!/프로젝트 저장/.test(text), `${c.id} 의 글자에 「프로젝트 저장」 이 남아 있다`);
+      assert.doesNotMatch(text, /\b(?:Undo|Redo)\b/, `${c.id} 의 글자에 영어가 남아 있다`);
+    }
+  }
+  assert.doesNotMatch(HTML, />\s*프로젝트 저장\s*</, '마크업의 단추 글자 「프로젝트 저장」');
 });
 
 // ── 표 밖에서 덧댄 것 ───────────────────────────────────────────────────────
