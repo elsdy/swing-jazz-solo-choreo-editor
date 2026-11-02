@@ -219,8 +219,9 @@ export function formatRange(from, to, cols) {
  *   addMarker?: (args: {fromCount:number, toCount:number, label?:string}) => any,
  *   removeMarker?: (args: {id:string}) => any,
  *   clearMarkers?: () => any,
- *   applyMarkerToTempo?: (args: {id:string}) => any
- * }} commands app/main 이 videoCommands 를 store 에 묶어 넘긴다
+ *   applyMarkerToTempo?: (args: {id:string}) => any,
+ *   openNaming?: (anchor: HTMLElement) => boolean
+ * }} commands app/main 이 videoCommands 를 store 에 묶어 넘긴다. openNaming 은 블록 위 이름 입력(RM-15)을 그 단추 위에 연다
  * @property {{
  *   available: () => boolean,
  *   wanted: () => boolean,
@@ -1966,8 +1967,10 @@ export function createVideoPanel(deps) {
 
   if (shiftBackBtn) shiftBackBtn.onclick = () => shiftAll(-1);
   if (shiftFwdBtn) shiftFwdBtn.onclick = () => shiftAll(1);
-  if (nameSelBtn && commands.nameSelected) {
+  if (nameSelBtn && (commands.openNaming || commands.nameSelected)) {
     nameSelBtn.onclick = () => {
+      // 블록 위 이름 입력(RM-15)과 같은 입력이다 — 추천 목록 · Tab 이 함께 온다. 조립부가 이어 주지 않았으면 예전 입력으로.
+      if (commands.openNaming) { commands.openNaming(nameSelBtn); return; }
       // 이름은 버튼 위에서 바로 적는다(RM-04). 받아 적는 중에도 재생이 멈추지 않는다 — prompt 창은 멈췄다.
       askText({ anchor: nameSelBtn, title: '이 블록의 이름', value: '' }).then((label) => {
         const { named, ...dirty } = commands.nameSelected(label) || {};

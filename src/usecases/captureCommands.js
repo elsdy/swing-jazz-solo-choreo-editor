@@ -27,6 +27,7 @@ import { cellOf, linearOf } from '../domain/grid.js';
 import { normalizeMarkers } from '../domain/markers.js';
 import { activeClipOf } from '../domain/project/media.js';
 import { affectedRowsByGroup, isPending, nameGroup, pendingGroupIds } from '../domain/placements.js';
+import { normalizeName } from '../domain/moveMatch.js';
 
 /** 패널이 다시 그려져야 한다는 뜻(videoCommands 의 VIDEO 와 같은 값이다). */
 const VIDEO = Object.freeze({ video: true });
@@ -411,12 +412,13 @@ export function pendingCount(store, boardId = BOARD_MAIN) {
  *
  * ⚠ 선택 안에 이름 있는 블록이 섞여 있으면 **이름 없는 것만** 바꾼다 — 고르다 딸려 들어온 블록의
  *   이름을 조용히 덮어쓰면 되돌릴 길을 찾기 어렵다.
- * ⚠ 동작 목록에는 등록하지 않는다(placeBlockAt 과 같은 이유).
+ * ⚠ 동작 목록에는 등록하지 않는다(placeBlockAt 과 같은 이유). 목록에 **이미 있는** 이름이면 그 동작의 표기 · 카테고리를 쓴다(RM-15).
  *
  * @param {object} store
  * @param {{ boardId?:'main'|'routine', label?:string|null }} [args] label 이 null·빈 문자열이면 아무 일도 없다
  * @returns {object & {named?:number}} Dirty
  */
+// @complexity time=O(s·n) space=O(n) cc=7
 export function nameSelected(store, args = {}) {
   const { boardId = BOARD_MAIN } = args;
   const state = store.get();
@@ -425,12 +427,60 @@ export function nameSelected(store, args = {}) {
   if (!chosen.length) return NONE;
   const { label } = args;
   if (label == null || !String(label).trim()) return NONE;
+  // 목록에 있는 이름이면 그 동작의 표기 · 카테고리로(RM-15, nameGroupTo 와 같은 규칙) — 같은 동작이 한 이름으로 모인다.
+  const move = libraryMove(state, label);
   let placements = board.placements;
   const rows = [];
   for (const gid of chosen) {
     rows.push(...affectedRowsByGroup(placements, gid));
-    placements = nameGroup(placements, gid, label);
+    placements = move ? nameGroup(placements, gid, move.name, move.category) : nameGroup(placements, gid, label);
   }
   store.setBoard(boardId, { placements });
   return { boards: { [boardId]: { rows: [...new Set(rows)] } }, named: chosen.length };
+}
+
+/**
+ * 동작 목록에서 같은 이름의 동작 — 띄어쓰기 · 대소문자 · 붙임표를 가리지 않는다(`kick ball change` 도 `Kick Ball Change`). 없으면 null.
+ * @param {object} state
+ * @param {string} label
+ */
+// @complexity time=O(n·k) space=O(1) cc=3
+function libraryMove(state, label) {
+  const key = normalizeName(label);
+  if (!key) return null;
+  return (state.library || []).find(m => m && normalizeName(m.name) === key) || null;
+}
+
+/**
+ * 블록 하나(그룹)에 이름을 붙인다 — 블록 위 인라인 이름 입력(RM-15)이 Enter · Tab 마다 부른다.
+ *
+ * **목록에 있는 이름이면 그 동작으로**(표기와 카테고리까지 그 동작의 것), 없는 이름이면 **이름만** 붙이고 동작 목록에는
+ * 넣지 않는다(결정 사항 — Tab 으로 줄줄이 채우는 흐름이 카테고리 고르기에 끊기지 않게). 목록 대조는 띄어쓰기 · 대소문자를
+ * 가리지 않는다(`kick ball change` 도 `Kick Ball Change` 로 붙는다).
+ *
+ * ⚠ 이름 있는 블록도 갈아 끼운다(`✎` 와 같다). 루틴 블록은 건드리지 않는다 — 루틴의 이름은 루틴 목록이 주인이다.
+ * ⚠ 한 블록이 한 번이다 — 호출부가 `named` 를 보고 되돌리기 한 단계를 쌓는다.
+ *
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', groupId:string, label?:string|null }} args label 이 null·빈 문자열이면 아무 일도 없다
+ * @returns {object & {named?:number}} Dirty
+ */
+// @complexity time=O(n) space=O(n) cc=8
+export function nameGroupTo(store, args = {}) {
+  const { boardId = BOARD_MAIN, groupId, label } = args;
+  if (!groupId || label == null) return NONE;
+  const text = String(label).trim();
+  if (!text) return NONE;
+  const state = store.get();
+  const board = boardOf(state, boardId);
+  const head = board.placements.find(p => p.groupId === groupId);
+  if (!head || head.type === 'routine') return NONE;
+  const move = libraryMove(state, text);
+  const placements = move
+    ? nameGroup(board.placements, groupId, move.name, move.category)
+    : nameGroup(board.placements, groupId, text);
+  if (placements === board.placements) return NONE;
+  const rows = affectedRowsByGroup(board.placements, groupId);
+  store.setBoard(boardId, { placements });
+  return { boards: { [boardId]: { rows: [...new Set(rows)] } }, named: 1 };
 }

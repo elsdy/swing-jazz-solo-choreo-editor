@@ -36,6 +36,7 @@ import { CLS } from './domContract.js';
 import { makeInlineStarBtn } from './widgets.js';
 import { positionPopup, qDivider, qLabel, bindOutsideClose } from './popup.js';
 import { categoryNames, categoryColor, deriveKey } from '../domain/categories.js';
+import { matchMoves, suggestMoves } from '../domain/moveMatch.js';
 
 /**
  * 노브 기본값 = **메인 판**(원본 1842·2057). 루틴 인스턴스만 값을 뒤집는다.
@@ -315,7 +316,8 @@ export function createQuickPicker(deps, options = {}) {
 
       if (!ql) {
         addBtn.style.display = 'none';
-        const favs = library.filter(m => favNames.has(m.name));         // 1898
+        // 추리기 규칙은 domain/moveMatch 의 것이다(RM-15) — 블록 위 이름 입력과 같은 차례(즐겨찾기 → 나머지).
+        const favs = suggestMoves(library, '', favNames).filter(m => favNames.has(m.name));   // 1898
         const others = library.filter(m => !favNames.has(m.name));      // 1899
         if (favs.length) {
           resultList.appendChild(qLabel('즐겨찾기'));
@@ -326,7 +328,7 @@ export function createQuickPicker(deps, options = {}) {
         return;
       }
 
-      const matches = library.filter(m => m.name.toLowerCase().includes(ql));   // 1918
+      const matches = matchMoves(library, ql);                                   // 1918 — 규칙은 domain/moveMatch
       if (matches.length === 0) {
         addBtn.style.display = '';
         if (opts.addBtnKbActive) addBtn.classList.add(CLS.kbActive);    // 1923
