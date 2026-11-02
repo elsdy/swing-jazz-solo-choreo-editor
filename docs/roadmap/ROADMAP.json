@@ -3,7 +3,7 @@
   "version": 1,
   "project": {
     "id": "swing-jazz-choreo",
-    "name": "안무 편집기",
+    "name": "swing-jazz-choreo",
     "docs": "docs/ROADMAP.md"
   },
   "about": "로드맵의 추적 자리 — 항목마다 마지막으로 끝낸 걸음(stage)·PR 번호·사람이 고른 차례(order)·권장 흐름(flow)만 저장하고, 할 수 있음·차례 대기·결정 필요는 셈한다. 무엇을 왜 만드는지는 docs/ROADMAP.md 의 같은 RM 번호 항목이 말한다. 스키마는 roadmap-board 의 SCHEMA.md.",
