@@ -20,9 +20,9 @@
 
 import { SEL, CLS } from '../ui/domContract.js';
 import { hitTest, cellIndexAt } from './hitTest.js';
-import { resolveResizeCount, resizeHitKind } from '../domain/gestureMath.js';
+import { resolveResizeCount, resizeHitKind, resolveTrimStart } from '../domain/gestureMath.js';
 import { getGroup, groupCount } from '../domain/placements.js';
-import { buildSegments } from '../domain/grid.js';
+import { buildSegments, linearOf, cellOf, firstRowIndex } from '../domain/grid.js';
 
 /**
  * 리사이즈 세션을 만든다. 앱 전체에 **인스턴스 하나만** 두고 두 보드가 공유한다.
@@ -38,12 +38,12 @@ import { buildSegments } from '../domain/grid.js';
  *        showResizeCountBadge(el, count) / hideResizeCountBadge() /
  *        clearResizePreview(boardId) / renderResizePreview(boardId, segments, count) -> 첫 블록|null /
  *        unmarkDraggingGroups(boardId)
- * @param {(boardId: string, groupId: string, newCount: number) => void} deps.commit
- *        제스처 종료 시 딱 한 번. app/main.js 가
- *        `render(boardCommands.resizeGroupTo(store, {boardId, groupId, newCount}, {ids}))` 뒤에
- *        `history.commit(boardId)` 를 붙여 만든다(원본 3766 의 ctx===mainCtx 분기를 대칭화한 자리).
- *        ⚠ newCount 는 **미클램프 previewCount** 를 그대로 넘긴다 — 상한 클램프는 커맨드가 한다.
- * @returns {{ start: (boardId:string, groupId:string, clientX:number) => object|null,
+ * @param {(boardId: string, groupId: string, newCount: number, edge: 'left'|'right') => void} deps.commit
+ *        제스처 종료 시 딱 한 번. app/main.js 가 edge 로 가른다 — 'right' 는
+ *        `render(boardCommands.resizeGroupTo(store, {boardId, groupId, newCount}, {ids}))`, 'left'(RM-12 시작점 트리밍)는
+ *        `boardCommands.trimGroupStartTo` 이고, 뒤에 `history.commit(boardId)` 를 붙인다(원본 3766 의 ctx===mainCtx 분기를 대칭화한 자리).
+ *        ⚠ newCount 는 **미클램프 previewCount** 를 그대로 넘긴다 — 클램프는 커맨드가 한다.
+ * @returns {{ start: (boardId:string, groupId:string, clientX:number, edge?:'left'|'right') => object|null,
  *             isActive: (boardId?: string) => boolean,
  *             applyPreview: (clientX:number, clientY:number) => void,
  *             stop: () => void, stopTouch: () => void,
@@ -61,8 +61,10 @@ export function createPointerSession(deps) {
   } = deps;
 
   /**
-   * 원본 `ctx.resize` + `activeResizeCtx` 를 합친 단일 슬롯.
-   * @type {null | { boardId:string, groupId:string, startX:number, originRow:number,
+   * 원본 `ctx.resize` + `activeResizeCtx` 를 합친 단일 슬롯. edge 는 잡은 가장자리 — 'right' 는 원본의 늘이기,
+   * 'left' 는 RM-12 의 시작점 트리밍(originStart · originEnd 는 그때 쓰는 선형 카운트).
+   * @type {null | { boardId:string, groupId:string, edge:'left'|'right', startX:number, originRow:number,
+   *                 originStart:number, originEnd:number,
    *                 originStartIndex:number, originalCount:number, previewCount:number,
    *                 liveEl:HTMLElement|null, originTrack:HTMLElement|null,
    *                 name:string, originalWidth:string|null }}
@@ -80,13 +82,15 @@ export function createPointerSession(deps) {
   }
 
   /**
-   * 리사이즈 시작. 원본 startResize(3728-3754) 그대로.
+   * 리사이즈 시작. 원본 startResize(3728-3754) 그대로 — RM-12 부터 잡은 가장자리(edge)를 받는다.
    * @param {string} boardId
    * @param {string} groupId
    * @param {number} clientX
+   * @param {'left'|'right'} [edge='right']  'left' 면 끝 칸을 두고 시작점을 옮긴다
    * @returns {object|null} 만들어진 세션. 그룹이 없으면 null(원본의 조기 반환)
    */
-  function start(boardId, groupId, clientX) {
+  // @complexity time=O(p) space=O(k) cc=5
+  function start(boardId, groupId, clientX, edge = 'right') {
     const placements = getPlacements(boardId);
     const first = getGroup(placements, groupId)[0];
     if (!first) return null;
@@ -94,10 +98,15 @@ export function createPointerSession(deps) {
     const el = getBoardEl(boardId);
     const placementEl = el.querySelector(SEL.placementsOfGroup(groupId));
     const originTrack = placementEl?.closest(SEL.track) || null;
+    const cols = getBoard(boardId).cols;
+    const originStart = linearOf(first.row, first.startIndex, cols);
 
     active = {
       boardId,
       groupId,
+      edge: edge === 'left' ? 'left' : 'right',
+      originStart,
+      originEnd: originStart + groupCount(placements, groupId) - 1,
       startX: clientX,
       originRow: first.row,
       originStartIndex: first.startIndex,
@@ -153,6 +162,7 @@ export function createPointerSession(deps) {
    * @param {number} clientY
    * @returns {void}
    */
+  // @complexity time=O(k) space=O(k) cc=6
   function applyPreview(clientX, clientY) {
     const r = active;
     if (!r) return;
@@ -171,12 +181,22 @@ export function createPointerSession(deps) {
     const spec = kind === 'cross' ? { kind, endRow: hit.row, endCol: hit.col }
       : kind === 'sameRow' ? { kind, endCol: hit.col }
       : { kind, clientX, stepWidth: readCellW() };
-    const previewCount = resolveResizeCount(r, spec, board);
+    // 왼쪽(시작점 트리밍)은 포인터 밑 칸이 새 시작이고 끝 칸은 그대로다 — 프리뷰도 그 자리부터 그린다.
+    let from = { row: r.originRow, index: r.originStartIndex };
+    let previewCount;
+    if (r.edge === 'left') {
+      const trimmed = resolveTrimStart(r, spec.kind === 'step' ? spec : { kind, row: hit.row, col: hit.col }, board,
+        linearOf(firstRowIndex(board), 0, board.cols));
+      previewCount = trimmed.count;
+      from = cellOf(trimmed.start, board.cols);
+    } else {
+      previewCount = resolveResizeCount(r, spec, board);
+    }
     r.previewCount = previewCount;
 
     // 점선 프리뷰 블록 표시 (리사이즈 결과 미리보기)
     overlays.clearResizePreview(r.boardId);
-    const segments = buildSegments(r.originRow, r.originStartIndex, previewCount, board);
+    const segments = buildSegments(from.row, from.index, previewCount, board);
     const firstBlock = overlays.renderResizePreview(r.boardId, segments, previewCount);
     // 카운트 배지를 프리뷰 블록 위에 표시
     if (firstBlock) overlays.showResizeCountBadge(firstBlock, previewCount);
@@ -214,7 +234,7 @@ export function createPointerSession(deps) {
    * @param {object} r
    */
   function finalize(r) {
-    commit(r.boardId, r.groupId, r.previewCount);
+    commit(r.boardId, r.groupId, r.previewCount, r.edge);
   }
 
   return {

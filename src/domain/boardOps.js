@@ -384,6 +384,39 @@ export function resizeGroup(board, args, ids, opt) {
 }
 
 /**
+ * 그룹의 **시작점**을 당기거나 민다 — 왼쪽 가장자리 트리밍(RM-12). 끝 칸은 그대로 두고 시작 칸과 길이를 함께 바꾼다.
+ * newCount 는 끝 칸에서 거꾸로 센 새 길이다(오른쪽 늘이기 resizeGroup 의 newCount 와 같은 뜻, 방향만 반대).
+ *
+ * 쌓기 규칙은 늘이기와 같다(RESIZE_POLICY — D-2): 새 자리에 겹치는 그룹이 있으면 지우지 않고 findFreeLane 으로 빈 층을 찾아
+ * 내려가고, 끝에 손댄 행의 층을 다시 채운다. ⚠ 보드 앞 끝(인트로 행이 있으면 그 첫 칸)보다 앞으로 당기면 앞 끝에서 자른다.
+ * 여러 행에 걸친 그룹이면 시작 행이 바뀔 수 있다 — 그룹을 선형 구간으로 펴서 다시 자르므로 조각 수는 새 구간이 정한다.
+ *
+ * @param {object} board
+ * @param {{ groupId:string, newCount:number }} args
+ * @param {(()=>string)|{uid:()=>string}} ids
+ * @param {Partial<typeof RESIZE_POLICY>} [opt]
+ * @returns {{placements:object[], renderRows:number[]|'all'|null, changedRows:number[]}}
+ */
+// @complexity time=O(n log n) space=O(n) cc=4
+export function trimGroupStart(board, args, ids, opt) {
+  const policy = { ...RESIZE_POLICY, ...opt };
+  const { groupId } = args;
+  const newCount = Math.trunc(Number(args.newCount));
+  const group = getGroup(board.placements, groupId);
+  if (!group.length || !(newCount >= 1)) return noRender(board);
+  const span = spanOf(group, board.cols);
+  const front = linearOf(board.hasIntroRow ? 0 : 1, 0, board.cols);              // 보드 첫 칸
+  const from = Math.max(span.to - newCount + 1, front);                           // 앞 끝에서 자른다
+  const kept = board.placements.filter(p => p.groupId !== groupId);
+  const start = cellOf(from, board.cols);
+  const segments = buildSegments(start.row, start.index, span.to - from + 1, board);
+  const subRow = policy.keepLane ? span.subRow : findFreeLane(kept, segments);
+  const added = makeSegmentPlacements(segments, { groupId, ...metaOf(span.head) }, ids, { subRow });
+  const affectedRows = [...new Set([...rowsOf(span.segs), ...segments.map(s => s.row)])];
+  return finish([...kept, ...added], affectedRows, affectedRows, policy);
+}
+
+/**
  * 그룹을 삭제한다. removePlacementGroup(3567-3576).
  *
  * ⚠ 원본은 메인 보드일 때 `state.selectedGroupIds.delete(groupId)` + `updateCreateRoutineFromSelectionBtn()`

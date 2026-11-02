@@ -31,6 +31,7 @@
       /* 글자 다섯 단 · 간격 네 단 · 모서리 세 단 · 그림자 두 단 */
       --fs-1: 11px; --fs-2: 12px; --fs-3: 13px; --fs-4: 15px; --fs-5: 28px;   /* 5 = 영상 시계 */
       --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+      --edge-grab: 14px; /* 블록 가장자리 잡는 폭 — gestureMath.EDGE_GRAB_PX 와 같은 값(RM-12, tests/unit/gestureMath.test.mjs 가 잰다) */
       --r-1: 6px; --r-2: 10px; --r-pill: 999px;
       --shadow: 0 18px 40px rgba(var(--black-rgb), 0.24);
       --shadow-sm: 0 4px 12px rgba(var(--black-rgb), 0.25);
@@ -635,7 +636,10 @@
       box-shadow: var(--shadow-sm);
       overflow: visible;
       z-index: 3;
-      touch-action: none;
+      /* RM-12 — 몸통은 화면 넘기기를 열어 둔다(블록을 짚고 표를 굴린다). 손가락 옮기기는 길게 눌러야 시작되고,
+         그때부터는 boardController 의 touchmove 가 막는다. 가장자리 손잡이(.trim-handle · .resize-handle)는 none 이다. */
+      touch-action: manipulation;
+      -webkit-touch-callout: none;
     }
     .placement.is-dragging { opacity: 1; }
     /* 이름을 아직 안 붙인 블록(받아 적기). 자리는 잡혔지만 아직 비었다는 것이 한눈에 보여야 하므로
@@ -702,26 +706,37 @@
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
     }
-    .placement .move-handle,
+    /* 양쪽 가장자리 손잡이(RM-12, 2026-11-03) — 왼쪽은 시작점 트리밍, 오른쪽은 길이 조절.
+       ⚠ **자리를 차지하지 않는 장식이다**(absolute). 어느 쪽을 잡았는지는 손잡이 요소가 아니라 계산
+          (gestureMath.resolveGrabZone — 누른 x 와 블록 폭)이 가른다. 그래서 손잡이가 숨어 있어도 가장자리를 끌면 트리밍된다.
+       ⚠ 폭 `--edge-grab` 은 gestureMath.EDGE_GRAB_PX 와 **같은 값**이고 블록 폭의 1/4 을 넘지 않는다(grabEdgeWidth 와 같은 규칙) —
+          tests/unit/gestureMath.test.mjs 「잡은 자리: 화면이 그리는 손잡이 폭」 이 둘을 대조한다. 어긋나면 보이는 손잡이와 실제로 잡히는 자리가 달라진다.
+       ⚠ 마우스를 올렸거나 고른 블록에만 보인다 — 짧은 블록이 손잡이에 덮이지 않게. 숨길 때도 display 가 아니라 opacity 라
+          손잡이의 touch-action: none 은 남는다(가장자리를 짚은 손가락이 화면을 굴리지 않는다). */
+    .placement .trim-handle,
     .placement .resize-handle {
-      width: 18px;
-      min-height: 100%;
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: min(var(--edge-grab), 25%);
       border-radius: var(--r-2);
       border: 1px solid rgba(var(--black-rgb), 0.18);
-      background: rgba(var(--white-rgb), 0.28);
+      background: linear-gradient(180deg, rgba(var(--white-rgb), 0.34), rgba(var(--white-rgb), 0.18)), repeating-linear-gradient(90deg, rgba(var(--black-rgb), 0.38) 0, rgba(var(--black-rgb), 0.38) 2px, transparent 2px, transparent 5px);
       box-shadow: inset 0 0 0 1px rgba(var(--white-rgb), 0.12);
       touch-action: none;
-      flex: 0 0 auto;
-      position: relative;
-    }
-    .placement .move-handle {
-      cursor: grab;
-      background: linear-gradient(180deg, rgba(var(--white-rgb), 0.34), rgba(var(--white-rgb), 0.18)), repeating-linear-gradient(0deg, rgba(var(--black-rgb), 0.38) 0, rgba(var(--black-rgb), 0.38) 2px, transparent 2px, transparent 5px);
-    }
-    .placement .resize-handle {
       cursor: ew-resize;
-      background: linear-gradient(180deg, rgba(var(--white-rgb), 0.34), rgba(var(--white-rgb), 0.18)), repeating-linear-gradient(90deg, rgba(var(--black-rgb), 0.38) 0, rgba(var(--black-rgb), 0.38) 2px, transparent 2px, transparent 5px);
+      opacity: 0;
+      transition: opacity 0.12s;
     }
+    .placement .trim-handle { left: 0; }
+    .placement .resize-handle { right: 0; }
+    .placement:hover .trim-handle,
+    .placement:hover .resize-handle,
+    .placement.is-selected .trim-handle,
+    .placement.is-selected .resize-handle { opacity: 1; }
+    /* 몸통은 끌면 옮기기다(RM-12) — 마우스에게 그것을 알린다. 가장자리는 위 ew-resize 가 이긴다. */
+    .placement { cursor: grab; }
+    .placement.is-dragging { cursor: grabbing; }
     /* 동작 정하기 `✎`(2026-09-20). **고른 블록에만** 뜬다.
        ⚠⚠ **자리를 차지하지 않는다**(absolute). 흐름에 끼우면 고르는 순간 라벨이 밀리는데, 지우려는
           더블클릭은 `첫 클릭=선택` → `둘째 클릭` 이라 **그 밀림이 정확히 두 클릭 사이에 일어난다** —
@@ -1235,17 +1250,17 @@
       .palette-list { gap: 3px; max-height: none; overflow-x: hidden; }
       .placement { padding: 3px; gap: 3px; }
       .placement .label { font-size: var(--fs-1); }
-      .placement .move-handle,
-      .placement .resize-handle { width: 14px; min-width: 14px; }
-      .placement .move-handle::before,
+      /* 손가락이 짚기 쉽게 과녁을 블록 **바깥으로만** 넓힌다(RM-12 — 안쪽은 몸통이라 화면 넘기기 · 길게 눌러 옮기기의 자리다).
+         바깥을 짚어도 resolveGrabZone 은 그 쪽 가장자리로 친다(x < 0 이면 왼쪽, x ≥ 폭이면 오른쪽). */
+      .placement .trim-handle::before,
       .placement .resize-handle::before {
         content: '';
         position: absolute;
         top: -6px;
         bottom: -6px;
-        left: -10px;
-        right: -10px;
       }
+      .placement .trim-handle::before { left: -10px; right: 0; }
+      .placement .resize-handle::before { left: 0; right: -10px; }
     }
     @media (max-width: 720px) {
       :root {
@@ -1301,20 +1316,15 @@
       }
       .placement { padding: 3px; gap: 3px; }
       .placement .label { font-size: var(--fs-1); }
-      .placement .move-handle,
-      .placement .resize-handle {
-        width: 14px;
-        min-width: 14px;
-      }
-      .placement .move-handle::before,
+      .placement .trim-handle::before,
       .placement .resize-handle::before {
         content: '';
         position: absolute;
         top: -8px;
         bottom: -8px;
-        left: -12px;
-        right: -12px;
       }
+      .placement .trim-handle::before { left: -12px; right: 0; }
+      .placement .resize-handle::before { left: 0; right: -12px; }
       /* ── 모바일: 루틴 편집기 풀스크린 오버레이 ── */
       /* `body` 를 앞에 붙여 한 단 강하게 — 아래(뒤)에 있는 기본 규칙을 !important 없이 이긴다. */
       body .routine-editor-panel {
@@ -1611,11 +1621,12 @@
       background: var(--block-bg, linear-gradient(135deg, var(--routine) 0%, var(--routine) 100%));
     }
     .placement.is-routine .label { color: inherit; }
-    .placement.is-routine .move-handle,
+    .placement.is-routine .trim-handle,
     .placement.is-routine .resize-handle {
       background: rgba(var(--white-rgb), 0.25);
     }
-    /* 메인 보드의 루틴 배치는 크기 조절 불가 */
+    /* 메인 보드의 루틴 배치는 크기 조절 불가 — 양쪽 가장자리 모두(RM-12) */
+    .main-board-area .placement.is-routine .trim-handle,
     .main-board-area .placement.is-routine .resize-handle {
       display: none;
       pointer-events: none;
@@ -3551,7 +3562,7 @@
       }
       .placement.is-selected { outline: none !important; }
       .placement[data-routine-id], .placement.is-routine { border: 3px double #333 !important; }
-      .placement .resize-handle, .placement .move-handle { display: none !important; }
+      .placement .resize-handle, .placement .trim-handle { display: none !important; }
     }
   </style>
 </head>
@@ -3763,7 +3774,7 @@
           <div class="toolbar canvas-bar">
             <div>
               <h2 id="boardTitle">8x8 안무 테이블</h2>
-              <p>왼쪽 핸들로 이동 · 오른쪽 핸들로 길이 조절</p>
+              <p>몸통을 끌어 옮기기 · 양 끝을 끌어 자르기 · 두 번 눌러 동작 정하기</p>
             </div>
             <div class="canvas-actions">
               <button id="sidebarSheetBtn" class="ghost accent only-stacked" type="button" title="동작 목록을 아래에서 엽니다">≡ 동작</button>
