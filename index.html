@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>안무 편집기</title>
   <style>
     :root {
@@ -1037,7 +1037,11 @@
       .resize-divider.active {
         background: rgba(148, 163, 184, 0.08);
       }
-      /* viewport maximum-scale=1 로 iOS 줌 방지 처리됨 — 별도 font-size 강제 불필요 */
+      /* iOS 는 16px 미만 글자의 입력칸에 포커스가 가면 화면을 저절로 확대한다. 확대를 전면 차단하지 않고
+         입력칸 글자를 16px 로 두어 그 확대가 애초에 일어나지 않게 한다(2026-11-02, RM-27 · 개발 원칙 U-10). */
+      input, select, textarea {
+        font-size: 16px !important;
+      }
       /* 워크스페이스 락 시 터치 줌/스크롤 완전 차단 */
       .board-wrap[data-locked="1"] {
         touch-action: none;

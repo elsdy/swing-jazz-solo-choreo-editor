@@ -20,7 +20,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { blankJs, lineAt } from './lib/js-text.mjs';
+import { blankJs, lineAt, scanJs } from './lib/js-text.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -316,6 +316,45 @@ export function commandRunnerTable(mainText) {
 /** @typedef {{ file: string, line: number, principle: string, what: string, fix: string }} Violation */
 
 export const RULES = [
+  {
+    principle: 'U-10',
+    what: '폰 확대를 전면 차단한다 — viewport 의 user-scalable=no · maximum-scale=1, 또는 입력을 마칠 때(focusout) scrollTo(0, 0)',
+    fix: '확대를 막지 말고 좁은 화면의 input · select · textarea 글자를 16px 로 둔다(iOS 자동 확대가 애초에 안 일어난다). 편집 중 핀치는 잠금 중 차단으로만 막는다',
+    scan(files) {
+      const out = [];
+      const blocks = /user-scalable\s*=\s*(?:no|0)\b|maximum-scale\s*=\s*1(?:\.0*)?(?![\d.])/;
+      // ① 마크업의 viewport 메타
+      const html = files['index.html'] || '';
+      for (const m of html.matchAll(/<meta\b[^>]*name\s*=\s*["']viewport["'][^>]*>/gi)) {
+        if (!blocks.test(m[0])) continue;
+        const line = lineAt(html, m.index);
+        if (!excused(html, line, 'U-10')) out.push({ file: 'index.html', line, snippet: m[0].trim() });
+      }
+      for (const f of jsFiles(files)) {
+        const raw = files[f];
+        const { blanked, strings } = scanJs(raw);
+        // ② JS 가 viewport 에 다시 박는 글자(문자열 속 — 주석은 보지 않는다)
+        for (const str of strings) {
+          if (!blocks.test(str.text)) continue;
+          const line = lineAt(raw, str.offset);
+          if (!excused(raw, line, 'U-10')) out.push({ file: f, line, snippet: raw.split('\n')[line - 1].trim() });
+        }
+        // ③ focusout 처리기 안의 scrollTo(0, 0) — 입력을 마칠 때마다 화면이 꼭대기로 튄다
+        for (const str of strings) {
+          if (str.text !== 'focusout') continue;
+          const open = blanked.indexOf('{', str.offset);
+          if (open < 0) continue;
+          const close = matchBrace(blanked, open);
+          const body = blanked.slice(open, close < 0 ? blanked.length : close);
+          const hit = body.search(/scrollTo\(\s*0\s*,\s*0\s*\)/);
+          if (hit < 0) continue;
+          const line = lineAt(raw, open + hit);
+          if (!excused(raw, line, 'U-10')) out.push({ file: f, line, snippet: raw.split('\n')[line - 1].trim() });
+        }
+      }
+      return out;
+    },
+  },
   {
     principle: 'U-11',
     what: '속성을 빈 문자열로 끈다 — `[data-x]` 선택자는 값이 비어도 걸린다',

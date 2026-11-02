@@ -21,7 +21,7 @@ node tests/run.mjs                     # 격자 알고리즘 골든 150개
 node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스 단위 66개
 node tools/check-arch.mjs              # 계층 방향과 순수성
 node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지
-node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 여섯(U-11 · U-12 · D-5 · R-6 · R-10 · D-14)
+node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 일곱(U-10 · U-11 · U-12 · D-5 · R-6 · R-10 · D-14)
 ```
 
 둘의 역할이 다르다. 골든은 **격자 알고리즘의 현재 동작**을 기록한 것이라 undo·링크·영상처럼 격자 밖의 일은 지켜 주지 못한다. 그쪽 안전망이 단위 테스트다.
