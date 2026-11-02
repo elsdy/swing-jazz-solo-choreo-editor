@@ -284,7 +284,7 @@ function applyProjectData(deps, data) {
   // ⚠ 선택도 함께 비운다(RM-03) — Undo 복원(historyCommands.restoreMain)과 같은 자리·같은 방식이다.
   //   원본은 비우지 않아, 열기 전에 고른 블록을 가리키는 선택이 남고 `루틴으로 편성 (2)` 가 떠 있었다.
   //   부분 채우기(mergeProjectData)는 기존 블록이 남으므로 선택을 건드리지 않는다.
-  writeDoc(store, fields, { selection: new Set() });
+  writeDoc(store, fields, { selection: new Set(), selectionAnchor: null });   // RM-14 — 앵커도 비운다
   store.patch('favorites', { routineIds: normalized.favoriteRoutineIds }); // 4372·4376
   storage.saveRoutineFavorites([...normalized.favoriteRoutineIds]);  // 4373·4377 (두 갈래 모두)
 

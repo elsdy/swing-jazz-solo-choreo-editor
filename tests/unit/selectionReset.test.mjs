@@ -34,6 +34,7 @@ function twoSelected() {
   Board.toggleSelection(store, { boardId: BOARD_MAIN, groupId: 'g1' });
   Board.toggleSelection(store, { boardId: BOARD_MAIN, groupId: 'g2' });
   assert.equal(store.get().selection.size, 2, '준비: 둘 다 골랐다');
+  assert.equal(store.get().selectionAnchor, 'g2', '준비: 마지막에 누른 것이 Shift 범위의 앵커다(RM-14)');
   return store;
 }
 
@@ -45,6 +46,7 @@ const OTHER = {
 
 function assertCleared(store, dirty, what) {
   assert.equal(store.get().selection.size, 0, `${what}: 고른 목록이 남았다 — 「루틴으로 편성 (2)」가 계속 뜬다`);
+  assert.equal(store.get().selectionAnchor, null, `${what}: Shift 범위 앵커가 남았다 — 다음 Shift+클릭이 사라진 블록에서 센다(RM-14)`);
   assert.equal(dirty.selection, true, `${what}: 선택 표시를 다시 그리라고 알리지 않는다`);
   assert.equal(dirty.toolbar, true, `${what}: 도구 모음을 다시 그리라고 알리지 않는다 — 버튼이 사라지지 않는다`);
 }
@@ -83,6 +85,7 @@ test('형식이 틀린 불러오기는 아무것도 바꾸지 않는다 — 선�
   // RM-04 부터 즉시 alert 가 아니라 막는(block) 급의 알림을 돌려준다
   assert.deepEqual(dirty, { notify: { kind: 'block', message: '잘못된 프로젝트 파일 형식입니다.' } }, '준비: 형식 거절 길을 탔다');
   assert.equal(store.get().selection.size, 2);
+  assert.equal(store.get().selectionAnchor, 'g2');
 });
 
 test('대조군: 부분 불러오기(병합)는 고른 목록을 지우지 않는다 — 고른 블록이 그대로 남는다', () => {

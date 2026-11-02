@@ -11,6 +11,8 @@ import assert from 'node:assert/strict';
 import {
   groupSpan, groupsInRect, presentAnchor, presentOnly, rangeBetween, selectionAfterClick,
 } from '../../src/domain/selection.js';
+import { createStore, BOARD_MAIN, BOARD_ROUTINE } from '../../src/usecases/store.js';
+import * as Board from '../../src/usecases/boardCommands.js';
 
 const seg = (groupId, row, startIndex, length, extra = {}) =>
   ({ id: `${groupId}-${row}-${startIndex}`, groupId, name: groupId, category: 'basic', row, startIndex, length, subRow: 0, ...extra });
@@ -92,4 +94,87 @@ test('사라진 블록 걸러 내기: 없는 그룹은 선택과 앵커에서 �
   assert.equal(presentAnchor(BOARD, 'c'), 'c');
   assert.equal(presentAnchor(BOARD, 'ghost'), null);
   assert.equal(presentAnchor(BOARD, null), null);
+});
+
+// ── ② 보드 명령 ─────────────────────────────────────────────────────────────
+
+function storeWith(placements = BOARD.placements) {
+  const store = createStore();
+  store.setBoard(BOARD_MAIN, { placements });
+  return store;
+}
+const picked = (store) => [...store.get().selection].sort();
+
+test('클릭은 그것만, Ctrl/Cmd+클릭은 더하기/빼기, Shift+클릭은 범위 — 셋 다 앵커를 정한다', () => {
+  const store = storeWith();
+  // 그냥 클릭 — 그것만
+  let dirty = Board.selectOnly(store, { boardId: BOARD_MAIN, groupId: 'a' });
+  assert.deepEqual(picked(store), ['a']);
+  assert.equal(store.get().selectionAnchor, 'a');
+  assert.deepEqual(dirty, { selection: true, toolbar: true }, '행은 다시 그리지 않는다 — 클래스만');
+  Board.selectOnly(store, { boardId: BOARD_MAIN, groupId: 'd' });
+  assert.deepEqual(picked(store), ['d'], '그냥 클릭은 앞서 고른 것을 푼다');
+  assert.equal(store.get().selectionAnchor, 'd');
+
+  // Ctrl/Cmd+클릭 — 더하기/빼기
+  Board.toggleSelection(store, { boardId: BOARD_MAIN, groupId: 'a' });
+  assert.deepEqual(picked(store), ['a', 'd']);
+  assert.equal(store.get().selectionAnchor, 'a');
+  Board.toggleSelection(store, { boardId: BOARD_MAIN, groupId: 'd' });
+  assert.deepEqual(picked(store), ['a']);
+  assert.equal(store.get().selectionAnchor, 'd');
+
+  // Shift+클릭 — 앵커(d)부터 누른 블록(c)까지, 지금 고른 a 는 남는다
+  dirty = Board.selectRange(store, { boardId: BOARD_MAIN, groupId: 'c' });
+  assert.deepEqual(picked(store), ['a', 'c', 'd']);
+  assert.equal(store.get().selectionAnchor, 'c');
+  assert.deepEqual(dirty, { selection: true, toolbar: true });
+  // 다시 Shift+클릭 — c 부터 a 까지가 더해져 전부
+  Board.selectRange(store, { boardId: BOARD_MAIN, groupId: 'a' });
+  assert.deepEqual(picked(store), ['a', 'b', 'c', 'd', 'span', 'under']);
+  assert.equal(store.get().selectionAnchor, 'a');
+
+  // 앵커 없이 처음 누른 Shift+클릭은 그것만 더한다
+  const fresh = storeWith();
+  Board.selectRange(fresh, { boardId: BOARD_MAIN, groupId: 'c' });
+  assert.deepEqual(picked(fresh), ['c']);
+  assert.equal(fresh.get().selectionAnchor, 'c');
+
+  // 빈 곳 누름 — 선택과 앵커가 함께 풀린다
+  dirty = Board.clearSelection(fresh);
+  assert.deepEqual(picked(fresh), []);
+  assert.equal(fresh.get().selectionAnchor, null);
+  assert.deepEqual(dirty, { selection: true, toolbar: true });
+  assert.deepEqual(Board.clearSelection(fresh), {}, '이미 비었으면 무동작');
+
+  // 루틴 보드에는 고르기가 없다
+  const routine = storeWith();
+  for (const fn of [Board.selectOnly, Board.toggleSelection, Board.selectRange]) {
+    assert.deepEqual(fn(routine, { boardId: BOARD_ROUTINE, groupId: 'a' }), {});
+  }
+  assert.deepEqual(picked(routine), []);
+});
+
+test('네모 고르기 명령: 닿은 그룹이 선택이 되고 앵커는 그중 첫 것, 빈 네모는 선택을 푼다', () => {
+  const store = storeWith();
+  Board.selectOnly(store, { boardId: BOARD_MAIN, groupId: 'd' });
+  const dirty = Board.selectInRect(store, { boardId: BOARD_MAIN, rect: { rowFrom: 1, rowTo: 2, colFrom: 3, colTo: 7 } });
+  assert.deepEqual(picked(store), ['b', 'span', 'under'], '앞서 고른 d 는 풀리고 네모 안만 남는다');
+  assert.equal(store.get().selectionAnchor, 'b');
+  assert.deepEqual(dirty, { selection: true, toolbar: true });
+
+  Board.selectInRect(store, { boardId: BOARD_MAIN, rect: { rowFrom: 5, rowTo: 5, colFrom: 0, colTo: 7 } });
+  assert.deepEqual(picked(store), [], '빈 네모는 빈 곳 누름과 같다');
+  assert.equal(store.get().selectionAnchor, null);
+
+  // 빈 상태에서 빈 네모는 무동작
+  assert.deepEqual(Board.selectInRect(store, { boardId: BOARD_MAIN, rect: { rowFrom: 5, rowTo: 5, colFrom: 0, colTo: 7 } }), {});
+  assert.deepEqual(Board.selectInRect(store, { boardId: BOARD_ROUTINE, rect: { rowFrom: 0, rowTo: 8, colFrom: 0, colTo: 7 } }), {});
+});
+
+test('selectedOn 은 보드 위에 실제로 있는 고른 그룹만 돌려준다', () => {
+  const store = storeWith();
+  store.update({ selection: new Set(['a', 'ghost', 'c']) });
+  assert.deepEqual(Board.selectedOn(store, BOARD_MAIN), ['a', 'c']);
+  assert.deepEqual(Board.selectedOn(store, BOARD_ROUTINE), []);
 });

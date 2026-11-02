@@ -299,6 +299,8 @@ function createInitialState(ids) {
       sortDir: 'asc'          // 1415 'asc' | 'desc'
     },
     selection: new Set(),     // 1418 selectedGroupIds — 메인 보드 전용(BOARD_POLICY.allowsSelection)
+    // Shift+클릭 범위의 출발점(RM-14, 2026-11-02). 마지막으로 누른 그룹 id — 선택과 함께 비워지고, 저장 · 되돌리기에 들지 않는다.
+    selectionAnchor: null,
     session: {
       // ⚠ 소유권 확정: activePaletteMove 와 quickPlaceMode 는 **store 소유이고 보드마다 하나씩**이다.
       //   activePaletteMove 를 input 에 두면 renderPalette(3066)가 .palette-active 를 못 붙여
