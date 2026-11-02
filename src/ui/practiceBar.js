@@ -179,7 +179,7 @@ export function createPracticeBar(deps) {
         ? `${where} · ${clock(span.startSec)} ~ ${clock(span.endSec)}` + (p.loop ? ' — 반복 중' : ' — `🔁 반복` 을 켜면 끝에서 처음으로 되감습니다')
         : `${where} — 박자가 맞지 않아 반복할 수 없습니다.`;
     } else if (span && p.loop) {
-      help.textContent = `In ${clock(span.startSec)} ~ Out ${clock(span.endSec)} 을 반복합니다(④ 의 In/Out).`;
+      help.textContent = `In ${clock(span.startSec)} ~ Out ${clock(span.endSec)} 을 반복합니다(도구 「구간 잡고 잘라내기」 의 In/Out).`;
     } else {
       help.textContent = '마디를 골라 `마디 반복`, 또는 안무표에서 블록을 고르고 `고른 블록 반복` 을 누르면 그 구간이 되풀이됩니다.';
     }
