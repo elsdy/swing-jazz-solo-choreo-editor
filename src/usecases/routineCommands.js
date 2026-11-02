@@ -94,7 +94,8 @@ export function createFromSelection(deps) {
   const routine = { ...built.routine, color: takeRoutineColor(store) }; // 4605
   store.update(s => ({
     routines: [...s.routines, routine],                           // 4607
-    selection: new Set()                                          // 4610 clearSelection
+    selection: new Set(),                                         // 4610 clearSelection
+    selectionAnchor: null                                         // RM-14 — 앵커도
   }));
 
   // clearSelection(4531-4539) = 선택 집합 비우기 + .is-selected 제거 + 툴바 버튼 갱신

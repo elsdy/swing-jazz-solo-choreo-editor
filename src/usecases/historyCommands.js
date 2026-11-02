@@ -99,7 +99,7 @@ function restoreMain(store, snapshot, storage) {
   });
   // 보드 칸(rows·cols·placements)은 setBoard, 나머지는 update 한 번 — 이름이 다른 것(moveLibrary → library)도
   // 등록표가 옮긴다. 패치에 'routines' 키가 없으면 기존 routines 를 **건드리지 않는다**(2850, 보존 대상 결함).
-  writeDoc(store, patch, { selection: new Set() });   // state.selectedGroupIds.clear() (2851)
+  writeDoc(store, patch, { selection: new Set(), selectionAnchor: null });   // state.selectedGroupIds.clear() (2851)
   store.patch('session', {
     youtubeTitleFetch: { status: 'idle', title: patch.links.youtubeTitle }
   });

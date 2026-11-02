@@ -11,7 +11,6 @@ import { matchMoves, suggestMoves } from '../../src/domain/moveMatch.js';
 import { adjacentPendingGroupId, isPending, pendingGroupIds } from '../../src/domain/placements.js';
 import { createStore, BOARD_MAIN, NONE } from '../../src/usecases/store.js';
 import * as CaptureCmd from '../../src/usecases/captureCommands.js';
-import * as Board from '../../src/usecases/boardCommands.js';
 
 const seg = (groupId, row, startIndex, length, extra = {}) =>
   ({ id: `${groupId}-${row}-${startIndex}`, groupId, name: groupId, category: 'basic', row, startIndex, length, subRow: 0, ...extra });
@@ -114,15 +113,6 @@ test('nameGroupTo: 붙였으면 named 를 돌려주고, 빈 이름·null 은 아
   const again = CaptureCmd.nameGroupTo(store, { groupId: 'a', label: 'Shim Sham' });
   assert.equal(again.named, 1);
   assert.deepEqual(groupOf(store, 'a').map(p => [p.name, p.category]), [['Shim Sham', 'routine']]);
-});
-
-test('selectOnly: 고른 것을 그 그룹들만으로 바꾼다 — 토글이 아니고, 보드에 없는 id 는 거른다', () => {
-  const store = storeWith([pending('a', 1, 0, 4), pending('b', 2, 0, 2)]);
-  Board.toggleSelection(store, { boardId: BOARD_MAIN, groupId: 'a' });
-  assert.deepEqual(Board.selectOnly(store, { boardId: BOARD_MAIN, groupIds: ['b', 'zzz'] }), { selection: true, toolbar: true });
-  assert.deepEqual([...store.get().selection], ['b']);
-  assert.equal(Board.selectOnly(store, { boardId: BOARD_MAIN, groupIds: ['b'] }), NONE, '같으면 아무 일도 없다');
-  assert.equal(Board.selectOnly(store, { boardId: 'routine', groupIds: ['b'] }), NONE, '루틴 보드에는 고르기가 없다');
 });
 
 test('nameSelected: 여럿에 붙일 때도 목록에 있는 이름이면 그 동작의 표기 · 카테고리다', () => {

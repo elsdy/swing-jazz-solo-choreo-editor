@@ -9,11 +9,14 @@
 
 import * as boardOps from '../domain/boardOps.js';
 import { allGroupIds, cellAfter, clipOf, pastePlan, planNudge } from '../domain/keyboardEdit.js';
+import { groupsInRect, presentAnchor, presentOnly, selectionAfterClick } from '../domain/selection.js';
 import { clamp, clampToGrid, totalCellsFrom } from '../domain/grid.js';
 import { affectedRowsByGroup, getGroup, groupCount, nameGroup, shiftAllPlacements } from '../domain/placements.js';
+import { boundaryCount, isTempoUsable } from '../domain/tempo.js';
+import { linearOf } from '../domain/grid.js';
 import { BOARD_MAIN, BOARD_ROUTINE, NONE, boardOf, mergeDirty, notice } from './store.js';
 import { clearLinks } from './linkCommands.js';
-import { clearMedia } from './videoCommands.js';
+import { clearMedia, mediaState } from './videoCommands.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 공통 규약
@@ -166,6 +169,23 @@ export function copyGroupTo(store, args, deps = {}) {
 }
 
 /**
+ * 그룹 하나를 **바로 뒤 칸에** 복사한다 — 블록 동작 팝업의 「⧉ 뒤에 복사」(RM-11). 손가락에는 Alt+끌기가 없어
+ * 같은 커맨드(copyGroupTo — RM-02 가 층 정리까지 맡긴 복사)를 놓을 자리만 정해 부른다. 자리는 붙여넣기와 같은
+ * 규칙(domain/keyboardEdit.cellAfter — 그 블록이 끝난 다음 칸)이다. 고른 것과 담아 둔 것은 건드리지 않는다.
+ * @param {object} store
+ * @param {{ boardId:'main'|'routine', groupId:string }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty — 표 끝이라 못 놓으면 상태줄 알림만
+ */
+// @complexity time=O(p) space=O(p) cc=2
+export function copyGroupAfter(store, args, deps = {}) {
+  const { boardId, groupId } = args;
+  const at = cellAfter(boardOf(store.get(), boardId), [groupId]);
+  if (!at) return { notify: notice('status', '표 끝이라 복사하지 않았습니다.') };
+  return copyGroupTo(store, { boardId, groupId, targetRow: at.row, targetStartIndex: at.startIndex }, deps);
+}
+
+/**
  * 리사이즈를 확정한다. finalizeResize(3828-3834) + rebuildGroup(3706-3726).
  *
  * ⚠ 카운트 결정(제스처 → 숫자)은 domain/gestureMath.resolveResizeCount 가 하고 input 이 부른다.
@@ -213,7 +233,8 @@ export function removeGroup(store, args) {
   if (!store.policy(boardId).allowsSelection) return dirty;             // ctx !== mainCtx (3570)
   const next = new Set(store.get().selection);
   for (const removed of result.selectionRemoved) next.delete(removed);  // 3571
-  store.update({ selection: next });
+  // 앵커도 함께 — 지운 블록을 가리키는 앵커가 남으면 다음 Shift+클릭이 유령에서 센다(RM-14)
+  store.update({ selection: next, selectionAnchor: presentAnchor(boardOf(store.get(), boardId), store.get().selectionAnchor) });
   return { ...dirty, selection: true, toolbar: true };                  // 3572
 }
 
@@ -317,7 +338,7 @@ export function clearPlacements(store) {
   // ⚠ `rows` 는 중복을 남긴 채 넘긴다 — clearBoard(원본 4482)와 같은 모양이라 렌더 경로가 같다.
   const rows = board.placements.map(p => p.row);
   store.setBoard(BOARD_MAIN, { placements: [] });
-  store.update({ selection: new Set() });                    // RM-03 — 알리기만 하고 비우지 않아 (2) 가 남았다
+  store.update({ selection: new Set(), selectionAnchor: null });   // RM-03 — 알리기만 하고 비우지 않아 (2) 가 남았다 · RM-14 앵커도
   return { boards: { [BOARD_MAIN]: { rows } }, selection: true, toolbar: true };
 }
 
@@ -351,7 +372,7 @@ export function clearBoard(store, deps = {}) {
   const board = boardOf(store.get(), BOARD_MAIN);
   const rows = board.placements.map(p => p.row);            // 4482 ⚠ Set 없음
   store.setBoard(BOARD_MAIN, { placements: [] });           // 4483
-  store.update({ selection: new Set() });                   // RM-03 — 원본에 없다
+  store.update({ selection: new Set(), selectionAnchor: null });   // RM-03 — 원본에 없다 · RM-14 앵커도
   const saveLinks = deps.storage?.saveLinks ?? deps.saveLinks;
   const linksDirty = clearLinks({ store, storage: { saveLinks } });  // 4484-4489
   return mergeDirty(
@@ -382,48 +403,77 @@ export function clearRoutineBoard(store) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 배치 클릭 선택 토글. 보드 click 핸들러(2453-2465)의 도메인 부분.
+ * 클릭 한 번의 뜻을 store 에 적는다(RM-14). 판정은 domain/selection.selectionAfterClick 이 한다.
  * ⚠ 루틴 배치는 여기 오지 않는다(2447-2452 가 팝업으로 가로챈다) — 그 판정은 input 의 몫이다.
  * ⚠ 선택 표시는 행 재렌더가 아니라 클래스 토글이다 → Dirty 는 boards 가 아니라 selection 이다
  *   (다시 그리면 드래그·툴팁·포커스 동작이 바뀐다).
- * @param {{ boardId:'main'|'routine', groupId:string }} args
- * @returns {object} Dirty
  */
-export function toggleSelection(store, args) {
-  const { boardId, groupId } = args;
+// @complexity time=O(p) space=O(g) cc=2
+function clickSelection(store, boardId, groupId, mode) {
   if (!store.policy(boardId).allowsSelection) return NONE;   // 2446 `if (ctx !== mainCtx) return;`
-  const next = new Set(store.get().selection);
-  if (next.has(groupId)) next.delete(groupId); else next.add(groupId);  // 2457-2461
-  store.update({ selection: next });
+  const state = store.get();
+  const next = selectionAfterClick(boardOf(state, boardId), { selection: state.selection, anchor: state.selectionAnchor }, groupId, mode);
+  store.update({ selection: next.selection, selectionAnchor: next.anchor });
   return { selection: true, toolbar: true };                 // 2463-2465
 }
 
 /**
- * 선택을 **이 그룹들만**으로 바꾼다(RM-15) — Tab 으로 다음 `?` 로 옮겨 갈 때 쓴다. 토글이 아니다.
- * ⚠ 보드 위에 없는 id 는 거른다. 고르기를 허용하지 않는 보드(루틴 편집기)면 아무 일도 없다.
- * @param {{ boardId:'main'|'routine', groupIds:string[] }} args
+ * 그냥 클릭 — **그것만** 고른다(RM-14 · Q84 편집기 관습). 2026-11-02 전에는 클릭이 더하기/빼기였다.
+ * @param {{ boardId:'main'|'routine', groupId:string }} args
  * @returns {object} Dirty
  */
-// @complexity time=O(n) space=O(n) cc=4
+// @complexity time=O(p) space=O(g) cc=1
 export function selectOnly(store, args) {
-  const { boardId, groupIds } = args;
+  return clickSelection(store, args.boardId, args.groupId, 'only');
+}
+
+/**
+ * Ctrl/Cmd+클릭 — 더하기/빼기. 보드 click 핸들러(2453-2465)의 도메인 부분이었던 것이고, 블록 팝업의 `☐ 선택하기` 도 이것이다.
+ * @param {{ boardId:'main'|'routine', groupId:string }} args
+ * @returns {object} Dirty
+ */
+// @complexity time=O(p) space=O(g) cc=1
+export function toggleSelection(store, args) {
+  return clickSelection(store, args.boardId, args.groupId, 'toggle');
+}
+
+/**
+ * Shift+클릭 — 앵커부터 누른 블록까지를 지금 고른 것에 더한다. 앵커가 없으면 그것 하나.
+ * @param {{ boardId:'main'|'routine', groupId:string }} args
+ * @returns {object} Dirty
+ */
+// @complexity time=O(p) space=O(g) cc=1
+export function selectRange(store, args) {
+  return clickSelection(store, args.boardId, args.groupId, 'range');
+}
+
+/**
+ * 네모(빈 칸 끌기)에 닿은 그룹을 고른다 — 앞서 고른 것은 풀린다. 앵커는 그중 시간이 가장 이른 것.
+ * 아무것도 닿지 않으면 빈 곳 누름과 같다(선택과 앵커를 푼다). 이미 비어 있었으면 NONE.
+ * @param {{ boardId:'main'|'routine', rect:import('../domain/selection.js').CellRect }} args
+ * @returns {object} Dirty
+ */
+// @complexity time=O(p) space=O(g) cc=4
+export function selectInRect(store, args) {
+  const { boardId, rect } = args;
   if (!store.policy(boardId).allowsSelection) return NONE;
-  const present = new Set(boardOf(store.get(), boardId).placements.map(p => p.groupId));
-  const next = new Set((groupIds || []).filter(id => present.has(id)));
-  const cur = store.get().selection;
-  if (next.size === cur.size && [...next].every(id => cur.has(id))) return NONE;
-  store.update({ selection: next });
+  const state = store.get();
+  const ids = groupsInRect(boardOf(state, boardId), rect);
+  if (!ids.length && !state.selection.size && state.selectionAnchor === null) return NONE;
+  store.update({ selection: new Set(ids), selectionAnchor: ids[0] || null });
   return { selection: true, toolbar: true };
 }
 
 /**
- * 선택을 모두 해제한다. clearSelection(4534-4539).
+ * 선택을 모두 해제한다. clearSelection(4534-4539). 앵커도 함께 푼다(RM-14).
  * ⚠ 비어 있으면 아무 일도 하지 않는다 — 원본의 조기 반환(4535)이라 Dirty 도 NONE 이다.
  * @returns {object} Dirty
  */
+// @complexity time=O(1) space=O(1) cc=2
 export function clearSelection(store) {
-  if (!store.get().selection.size) return NONE;              // 4535
-  store.update({ selection: new Set() });                    // 4537
+  const state = store.get();
+  if (!state.selection.size && state.selectionAnchor === null) return NONE;   // 4535
+  store.update({ selection: new Set(), selectionAnchor: null });               // 4537
   return { selection: true, toolbar: true };                 // 4538-4539
 }
 
@@ -524,23 +574,30 @@ export function shiftAllCounts(store, args, deps = {}) {
 // ⚠ 히스토리 커밋은 이 파일의 공통 규약대로 호출부(app/main)가 한다. 글쇠 한 번이 되돌리기 한 단계다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 이 보드에서 지금 고른 그룹 id — 보드 위에 실제로 있는 것만. */
-function selectedOn(store, boardId) {
+/**
+ * 이 보드에서 지금 고른 그룹 id — 보드 위에 실제로 있는 것만(domain/selection.presentOnly). 선택 액션 바의 「N개 고름」도 이것을 센다.
+ * @param {object} store
+ * @param {'main'|'routine'} boardId
+ * @returns {string[]}
+ */
+// @complexity time=O(p+k) space=O(g) cc=2
+export function selectedOn(store, boardId) {
   if (!store.policy(boardId).allowsSelection) return [];
   const state = store.get();
-  const present = new Set(boardOf(state, boardId).placements.map(p => p.groupId));
-  return [...state.selection].filter(id => present.has(id));
+  return presentOnly(boardOf(state, boardId), state.selection);
 }
 
 /**
- * 고른 블록을 delta 카운트만큼 옮긴다(←/→ ±1 · ↑/↓ ±행 · Shift+←/→ ±8).
- * ⚠ 하나라도 표 밖이나 잘릴 자리로 가면 **아무것도 옮기지 않는다**(keyboardEdit.planNudge).
+ * 고른 묶음을 delta 카운트만큼 **같은 거리로** 옮긴다 — 화살표(nudgeSelection)와 손잡이 끌기(RM-14 묶음 이동)가 같은 함수다.
+ * ⚠ 하나라도 표 밖이나 잘릴 자리로 가면 **아무것도 옮기지 않는다**(keyboardEdit.planNudge) — 서로의 간격이 말없이 바뀌지 않게.
+ * ⚠ 옮겼는지는 Dirty 에 `boards` 가 있는지로 안다 — 호출부는 그때만 히스토리를 한 번 커밋한다(끌어 놓기 한 번 = 되돌리기 한 단계).
  * @param {object} store
  * @param {{ boardId?:'main'|'routine', delta:number }} args
- * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @param {{ ids:(()=>string)|{uid:()=>string}, unmarkDragging?:()=>void }} deps
  * @returns {object} Dirty — 고른 것이 없으면 NONE, 막혔으면 notify 만
  */
-export function nudgeSelection(store, args, deps = {}) {
+// @complexity time=O(k·p) space=O(k) cc=5
+export function moveSelectionBy(store, args, deps = {}) {
   const { boardId = BOARD_MAIN, delta } = args;
   const picked = selectedOn(store, boardId);
   if (!picked.length || !delta) return NONE;
@@ -551,6 +608,18 @@ export function nudgeSelection(store, args, deps = {}) {
     dirty = mergeDirty(dirty, moveGroupTo(store, { boardId, groupId: step.groupId, targetRow: step.row, targetStartIndex: step.startIndex }, deps));
   }
   return dirty;
+}
+
+/**
+ * 고른 블록을 delta 카운트만큼 옮긴다(←/→ ±1 · ↑/↓ ±행 · Shift+←/→ ±8). moveSelectionBy 와 같다 — 글쇠 쪽 이름.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', delta:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(k·p) space=O(k) cc=1
+export function nudgeSelection(store, args, deps = {}) {
+  return moveSelectionBy(store, args, deps);
 }
 
 /**
@@ -614,7 +683,7 @@ export function pasteClip(store, args, deps = {}) {
     dirty = mergeDirty(dirty, applied);
   }
   if (pasted.length && store.policy(boardId).allowsSelection) {
-    store.update({ selection: new Set(pasted) });
+    store.update({ selection: new Set(pasted), selectionAnchor: pasted[0] });
     dirty = mergeDirty(dirty, { selection: true, toolbar: true });
   }
   // 묶음의 뒤쪽이 표 밖으로 나가 빠졌으면 말한다 — 말없이 빠지면 둘을 붙였는데 하나만 보인다.
@@ -634,6 +703,220 @@ export function selectAll(store, args = {}) {
   if (!store.policy(boardId).allowsSelection) return NONE;
   const ids = allGroupIds(boardOf(store.get(), boardId));
   if (!ids.length) return NONE;
-  store.update({ selection: new Set(ids) });
+  store.update({ selection: new Set(ids), selectionAnchor: store.get().selectionAnchor ?? ids[0] });
   return { selection: true, toolbar: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 분할 · 병합 · 마디 편집 (2026-11-02, RM-16)
+//
+// 전이는 전부 domain/boardOps 에 있다(splitGroup · mergeGroups · insertRow · deleteRow · duplicateRow · moveRow).
+// 여기서 하는 일은 셋 — 재생 헤드 초를 카운트로 바꾸기(템포는 store 의 활성 클립 것), 행 수를 보드에 적기,
+// 사라진 그룹을 고른 목록에서 걷어 내기(D-16). 히스토리 커밋은 이 파일의 공통 규약대로 호출부가 한 번 한다 —
+// 한 번 누름이 되돌리기 한 단계다.
+// ⚠ 마커 · 보정점은 건드리지 않는다(계획서 결정). 끼우거나 지운 마디 뒤를 가리키던 마커 수만 한 줄로 알린다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 사라진 그룹을 고른 목록에서 걷어 내고 Dirty 에 selection · toolbar 를 싣는다(removeGroup 과 같은 자리). */
+// @complexity time=O(s+r) space=O(s) cc=4
+function dropFromSelection(store, boardId, dirty, removed) {
+  if (!removed?.length || !store.policy(boardId).allowsSelection) return dirty;
+  const next = new Set(store.get().selection);
+  for (const id of removed) next.delete(id);
+  store.update({ selection: next });
+  return { ...dirty, selection: true, toolbar: true };
+}
+
+/**
+ * 재생 헤드(초)가 가리키는 **카운트 경계**(선형). 템포가 없으면 null.
+ * 받아 적기와 같이 가장 가까운 경계로 붙인다 — 반 칸까지는 반응 지연으로 본다.
+ */
+// @complexity time=O(p) space=O(1) cc=3
+function playheadBoundary(store, sec) {
+  const tempo = mediaState(store).tempo;
+  if (!isTempoUsable(tempo)) return null;
+  const b = boundaryCount(sec, tempo, 1);
+  return b ? b.snapped : null;
+}
+
+/** 그룹의 선형 시작 카운트와 길이. 없으면 null. */
+// @complexity time=O(n) space=O(k) cc=2
+function spanOfGroup(board, groupId) {
+  const group = getGroup(board.placements, groupId);
+  if (!group.length) return null;
+  const from = linearOf(group[0].row, group[0].startIndex, board.cols);
+  return { from, total: groupCount(board.placements, groupId) };
+}
+
+/**
+ * 블록 하나를 둘로 나눈다. 자르는 자리는 둘 중 하나로 받는다 —
+ *   · `countInGroup`: 뒤 조각이 시작할 그룹 안 카운트 번호(1부터). 2..길이 만 뜻이 있다(팝업의 「몇 번째 카운트에서」)
+ *   · `sec`: 재생 헤드의 초. 템포로 카운트 경계를 셈해 그 경계가 블록 안에 있을 때만 자른다
+ * 자리가 블록 안이 아니면 NONE — 호출부(팝업)가 카운트 고르기로 떨어진다. 템포가 없는데 초로 불렀으면 알림만.
+ *
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', groupId:string, countInGroup?:number, sec?:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=5
+export function splitGroupAt(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, groupId, countInGroup, sec } = args;
+  const board = boardOf(store.get(), boardId);
+  const span = spanOfGroup(board, groupId);
+  if (!span) return NONE;
+  let frontCount;
+  if (Number.isFinite(countInGroup)) frontCount = Math.trunc(countInGroup) - 1;
+  else if (Number.isFinite(sec)) {
+    const boundary = playheadBoundary(store, sec);
+    if (boundary === null) return { notify: notice('status', '박자가 없어 재생 헤드로는 자를 수 없습니다. 블록 팝업에서 몇 번째 카운트인지 고르세요.') };
+    frontCount = boundary - span.from;
+  } else return NONE;
+  const result = boardOps.splitGroup(board, { groupId, frontCount }, deps.ids);
+  return applyBoardResult(store, boardId, result) || NONE;
+}
+
+/**
+ * 재생 헤드(초)에 걸친 블록을 모두 그 자리에서 나눈다 — `S` 글쇠. 층이 여럿이면 층마다 하나씩이다.
+ * 헤드가 블록의 첫 카운트에 있거나 빈 칸이면 아무것도 자르지 않고 알린다.
+ *
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', sec:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(t·n log n) space=O(n) cc=7
+export function splitAtPlayhead(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, sec } = args;
+  const boundary = playheadBoundary(store, sec);
+  if (boundary === null) return { notify: notice('status', '박자가 없어 재생 헤드로는 자를 수 없습니다. 블록 팝업에서 몇 번째 카운트인지 고르세요.') };
+  const board = boardOf(store.get(), boardId);
+  const targets = [...new Set(board.placements.map(p => p.groupId))].filter(groupId => {
+    const span = spanOfGroup(board, groupId);
+    return span && boundary > span.from && boundary <= span.from + span.total - 1;
+  });
+  let dirty = NONE;
+  for (const groupId of targets) {
+    const result = boardOps.splitGroup(boardOf(store.get(), boardId), { groupId, frontCount: boundary - spanOfGroup(boardOf(store.get(), boardId), groupId).from }, deps.ids);
+    dirty = mergeDirty(dirty, applyBoardResult(store, boardId, result) || NONE);
+  }
+  if (dirty === NONE || !dirty.boards) return { notify: notice('status', '재생 헤드에 걸친 블록이 없습니다.') };
+  return dirty;
+}
+
+/**
+ * 이 블록과 합칠 이웃의 그룹 번호 — 바로 뒤, 없으면 바로 앞. 없으면 null(팝업이 줄을 감춘다).
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', groupId:string }} args
+ * @returns {string|null}
+ */
+// @complexity time=O(n log n) space=O(n) cc=1
+export function mergePartnerOf(store, args) {
+  const { boardId = BOARD_MAIN, groupId } = args;
+  const board = boardOf(store.get(), boardId);
+  return boardOps.mergePartner(board.placements, board.cols, groupId);
+}
+
+/**
+ * 블록을 옆에 붙은 같은 이름 · 같은 층의 블록과 합친다. 사라진 그룹은 고른 목록에서 빠진다.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', groupId:string }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty — 짝이 없으면 알림만
+ */
+// @complexity time=O(n log n) space=O(n) cc=3
+export function mergeWithNeighbor(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, groupId } = args;
+  const withGroupId = mergePartnerOf(store, { boardId, groupId });
+  if (!withGroupId) return { notify: notice('status', '옆에 붙은 같은 이름 · 같은 층의 블록이 없습니다.') };
+  const result = boardOps.mergeGroups(boardOf(store.get(), boardId), { groupId, withGroupId }, deps.ids);
+  const dirty = applyBoardResult(store, boardId, result);
+  if (!dirty) return NONE;
+  return dropFromSelection(store, boardId, dirty, result.selectionRemoved);
+}
+
+/** 행 수가 바뀐 전이의 결과를 보드에 적는다 — 골격부터 다시 세운다(setBoardRows 와 같은 Dirty). */
+// @complexity time=O(1) space=O(1) cc=2
+function applyRowsResult(store, boardId, result) {
+  if (result.renderRows === null) return null;
+  store.setBoard(boardId, { rows: result.rows, placements: result.placements });
+  return { ...BOARD_SIZE_DIRTY[boardId], boards: { [boardId]: { skeleton: true, rows: 'all' } } };
+}
+
+/** 끼우거나 지운 마디 뒤를 가리키는 마커가 있으면 한 줄로 알린다(마커는 옮기지 않는다 — 계획서 결정). */
+// @complexity time=O(m) space=O(m) cc=4
+function staleMarkerNotice(store, boardId, boundaryRow, dirty) {
+  if (boardId !== BOARD_MAIN) return dirty;
+  const cols = boardOf(store.get(), boardId).cols;
+  const boundary = linearOf(boundaryRow, 0, cols);
+  const stale = (mediaState(store).markers || []).filter(m => m.toCount > boundary).length;
+  if (!stale) return dirty;
+  return mergeDirty(dirty, { notify: notice('status', `영상 마커 ${stale}개는 옛 자리를 가리킵니다 — 마커는 옮기지 않습니다.`) });
+}
+
+/**
+ * `row` 위에 빈 마디 하나를 끼운다. 그 행부터의 블록이 한 마디 밀리고 마지막 행 번호가 하나 는다.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', row:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=2
+export function insertRowAt(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, row } = args;
+  const result = boardOps.insertRow(boardOf(store.get(), boardId), { row }, deps.ids);
+  const dirty = applyRowsResult(store, boardId, result);
+  if (!dirty) return NONE;
+  return staleMarkerNotice(store, boardId, row, dirty);
+}
+
+/**
+ * `row` 마디를 지운다. 그 마디에만 있던 블록은 사라지고(고른 목록에서도 빠진다), 이어지는 블록은 그만큼 짧아진다.
+ * 인트로 행과 마지막 남은 몸통 행은 지우지 않는다(알림).
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', row:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=4
+export function deleteRowAt(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, row } = args;
+  const board = boardOf(store.get(), boardId);
+  if (board.rows <= 1 && row === 1) return { notify: notice('status', '마지막 남은 마디는 지우지 않습니다.') };
+  const result = boardOps.deleteRow(board, { row }, deps.ids);
+  const dirty = applyRowsResult(store, boardId, result);
+  if (!dirty) return NONE;
+  return staleMarkerNotice(store, boardId, row, dropFromSelection(store, boardId, dirty, result.selectionRemoved));
+}
+
+/**
+ * `row` 마디를 바로 아래에 복제한다 — 새 마디가 끼고 그 마디의 블록이 새 그룹 번호로 복사된다.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', row:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=2
+export function duplicateRowAt(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, row } = args;
+  const result = boardOps.duplicateRow(boardOf(store.get(), boardId), { row }, deps.ids);
+  const dirty = applyRowsResult(store, boardId, result);
+  if (!dirty) return NONE;
+  return staleMarkerNotice(store, boardId, row + 1, dirty);
+}
+
+/**
+ * `row` 마디를 위(-1) · 아래(+1)의 이웃 마디와 맞바꾼다. 맨 위 · 맨 아래에서는 알림만.
+ * @param {object} store
+ * @param {{ boardId?:'main'|'routine', row:number, delta:number }} args
+ * @param {{ ids:(()=>string)|{uid:()=>string} }} deps
+ * @returns {object} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=3
+export function moveRowBy(store, args, deps = {}) {
+  const { boardId = BOARD_MAIN, row, delta } = args;
+  const result = boardOps.moveRow(boardOf(store.get(), boardId), { row, delta }, deps.ids);
+  const dirty = applyBoardResult(store, boardId, result);
+  if (!dirty) return { notify: notice('status', delta < 0 ? '맨 위 마디라 더 올리지 않았습니다.' : '맨 아래 마디라 더 내리지 않았습니다.') };
+  return dirty;
 }

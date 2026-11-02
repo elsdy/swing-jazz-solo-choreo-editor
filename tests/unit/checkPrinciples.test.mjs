@@ -55,7 +55,7 @@ test('위반이 있으면 종료 코드 1과 파일:줄 — 원칙 꼴로 찍는
   assert.match(good.stdout, /원칙 검사 통과 — 어긴 자리 0/);
 
   // 원칙마다 규칙이 표 한 줄 — { 원칙, 무엇, 고치는 법, scan }
-  assert.deepEqual(RULES.map(r => r.principle), ['U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14']);
+  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14', 'U-15']);
   for (const r of RULES) {
     assert.equal(typeof r.scan, 'function');
     assert.ok(r.what && r.fix, `${r.principle}: 무엇 · 고치는 법이 비었다`);
@@ -207,4 +207,57 @@ test('실제 저장소 — 짝 하나 · 이름 하나를 틀리면 붉어진다
   const typo = { ...files, 'src/app/main.js': files['src/app/main.js'].replace('\n  play: ', '\n  playy: ') };
   assert.notEqual(typo['src/app/main.js'], files['src/app/main.js'], '바꿀 자리를 못 찾았다 — 시험이 빈손이다');
   assert.ok(checkPrinciples(typo, only('D-14')).length > 0);
+});
+
+// ── RM-27 요구 ↔ 시험 8 ────────────────────────────────────────────────────
+
+test('U-10 폰 확대 차단(user-scalable=no · maximum-scale=1 · focusout 때 scrollTo(0,0))을 잡는다', () => {
+  const head = (content) => `<!doctype html><html><head><meta name="viewport" content="${content}" /></head><body></body></html>`;
+  // ① viewport 메타
+  const meta = run('U-10', { 'index.html': head('width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no') });
+  assert.equal(meta.length, 1);
+  assert.equal(meta[0].file, 'index.html');
+  assert.equal(meta[0].line, 1);
+  assert.equal(run('U-10', { 'index.html': head('width=device-width, maximum-scale=1') }).length, 1);
+  // maximum-scale=5 처럼 확대를 허용하는 값은 넘긴다
+  assert.equal(run('U-10', { 'index.html': head('width=device-width, initial-scale=1.0, maximum-scale=5') }).length, 0);
+
+  // ② focusout 처리기가 viewport 를 다시 박고 맨 위로 굴린다 — 두 줄 다 잡는다
+  const handler = [
+    "on(doc, 'focusout', (e) => {",
+    '  win.setTimeout(() => {',
+    "    vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');",
+    '    win.scrollTo(0, 0);',
+    '  }, 100);',
+    '});',
+    ''
+  ].join('\n');
+  const v = run('U-10', { 'src/ui/layout.js': handler });
+  assert.deepEqual(v.map(x => x.line).sort(), [3, 4]);
+
+  // 명령줄로 띄우면 파일:줄과 종료 코드 1
+  const bad = runCli({ 'index.html': head('width=device-width, user-scalable=no'), 'src/ui/layout.js': handler });
+  assert.equal(bad.status, 1, bad.stdout + bad.stderr);
+  assert.match(bad.stderr, /✗ index\.html:1 — U-10 /);
+  assert.match(bad.stderr, /✗ src\/ui\/layout\.js:4 — U-10 /);
+
+  // 16px 입력 글자만 둔 꼴 · 다른 처리기의 scrollTo · 주석 속 글자는 통과한다
+  const good = runCli({
+    'index.html': page('@media (max-width: 1040px) { input, select, textarea { font-size: 16px !important; } }', '')
+      .replace('<head>', '<head><meta name="viewport" content="width=device-width, initial-scale=1.0" />'),
+    'src/ui/layout.js': "// 옛날에는 user-scalable=no 를 박았다\non(doc, 'click', () => { win.scrollTo(0, 0); });\non(doc, 'focusout', () => { save(); });\n"
+  });
+  assert.equal(good.status, 0, good.stdout + good.stderr);
+});
+
+test('U-15 · 팝업 자리 함수에 잰 높이를 주지 않으면 잡는다', () => {
+  // 2026-11-02(RM-16) — 마디 메뉴 · 블록 팝업이 다섯 줄이 됐는데 가정 높이(132)로 자리를 잡아 창 아래로 40px 넘쳤다
+  const bad = "const { left, top } = placePlacementActionPopup({\n  clientX, clientY, viewW: innerWidth, viewH: innerHeight,\n});\n";
+  const v = run('U-15', { 'src/ui/p.js': bad });
+  assert.equal(v.length, 1);
+  assert.equal(v[0].line, 1);
+  const good = bad.replace('viewH: innerHeight,', 'viewH: innerHeight, height: popup.offsetHeight,');
+  assert.equal(run('U-15', { 'src/ui/p.js': good }).length, 0);
+  // 정의(domain)와 시험은 넘긴다 — ui · input 의 호출만 본다
+  assert.equal(run('U-15', { 'src/domain/popupPlacement.js': 'export function placePlacementActionPopup({ clientX }) {}\n' }).length, 0);
 });

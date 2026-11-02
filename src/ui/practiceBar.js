@@ -10,6 +10,7 @@
 // ⚠ 반복 · 배속 · 미러 · 소리는 전부 화면 상태다. 저장되지 않고 undo 에도 남지 않는다 — 커밋하지 않는다.
 
 import { CLS } from './domContract.js';
+import { applyGuide, practiceGuide } from './guideLines.js';
 import { rowIndices } from '../domain/grid.js';
 import { isTempoUsable } from '../domain/tempo.js';
 import { countRangeLabel, normalizeCountRange, placementsToCountRange, rowsToCountRange } from '../domain/practice.js';
@@ -171,18 +172,18 @@ export function createPracticeBar(deps) {
     for (const sel of [fromRow, toRow]) if (sel) sel.disabled = !ready;
 
     if (!help) return;
-    if (!ready) {
-      help.textContent = '마디로 반복하려면 박자가 있어야 합니다 — `② 박자 맞추기` 에서 BPM 을 정하세요. 영상이 없어도 BPM 만 있으면 박자로 돕니다.';
-    } else if (practice) {
+    // 안내 줄은 평소에 비고(RM-19) — 박자가 없을 때만 경고, 반복 중일 때만 그 구간을 적는다.
+    // 평소의 사용법 설명은 처음 한 번 안내(ui/onceHint 의 practice)로 갔다.
+    let text = '';
+    if (ready && practice) {
       const where = countRangeLabel(practice, b.cols);
-      help.textContent = span
+      text = span
         ? `${where} · ${clock(span.startSec)} ~ ${clock(span.endSec)}` + (p.loop ? ' — 반복 중' : ' — `🔁 반복` 을 켜면 끝에서 처음으로 되감습니다')
         : `${where} — 박자가 맞지 않아 반복할 수 없습니다.`;
-    } else if (span && p.loop) {
-      help.textContent = `In ${clock(span.startSec)} ~ Out ${clock(span.endSec)} 을 반복합니다(④ 의 In/Out).`;
-    } else {
-      help.textContent = '마디를 골라 `마디 반복`, 또는 안무표에서 블록을 고르고 `고른 블록 반복` 을 누르면 그 구간이 되풀이됩니다.';
+    } else if (ready && span && p.loop) {
+      text = `In ${clock(span.startSec)} ~ Out ${clock(span.endSec)} 을 반복합니다(도구 「구간 잡고 잘라내기」 의 In/Out).`;
     }
+    applyGuide(help, practiceGuide({ ready, text }), CLS.isError);
   }
 
   // ── 입력 — 한 번만 묶는다 ────────────────────────────────────────────────
@@ -200,5 +201,25 @@ export function createPracticeBar(deps) {
     fromRow.onchange = () => { if (Number(toRow.value) < Number(fromRow.value)) toRow.value = fromRow.value; };
   }
 
-  return { render: renderAll, renderPlay };
+  /**
+   * 고른 블록 반복을 할 수 있나 — `고른 블록 반복` 단추의 켜짐과 같은 판정(박자 · 재생기 · 고른 구간). 선택 액션 바가 읽는다(RM-14).
+   * @returns {boolean}
+   */
+  // @complexity time=O(p) space=O(1) cc=3
+  function canPracticeSelection() {
+    return isTempoUsable(tempo()) && hasPlayer() && !!selectionRange();
+  }
+
+  /**
+   * 고른 블록이 덮는 구간을 반복한다 — `고른 블록 반복` 단추와 같은 길. 할 수 없으면 거짓.
+   * @returns {boolean}
+   */
+  // @complexity time=O(p) space=O(1) cc=2
+  function practiceSelection() {
+    if (!canPracticeSelection()) return false;
+    onPractice(selectionRange());
+    return true;
+  }
+
+  return { render: renderAll, renderPlay, canPracticeSelection, practiceSelection };
 }

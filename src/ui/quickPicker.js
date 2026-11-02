@@ -245,6 +245,15 @@ export function createQuickPicker(deps, options = {}) {
     const header = document.createElement('div');
     header.className = CLS.quickPopupHeader;
     header.appendChild(qLabel(target.kind === 'group' ? '동작 정하기' : opts.title));
+    // 설명서의 그 절로 가는 작은 `?`(RM-26). 누름은 docsHub 가 문서 전체에서 위임받는다 — 여기서 걸지 않는다.
+    const helpBtn = document.createElement('button');
+    helpBtn.className = 'help-q';
+    helpBtn.type = 'button';
+    helpBtn.dataset.help = 'quick-place';
+    helpBtn.setAttribute('aria-label', '빠른 배치 설명 보기');
+    helpBtn.title = '설명서의 이 절로';
+    helpBtn.textContent = '?';
+    header.appendChild(helpBtn);
     const closeBtn = document.createElement('button');
     closeBtn.className = CLS.iconBtn;
     closeBtn.type = 'button';

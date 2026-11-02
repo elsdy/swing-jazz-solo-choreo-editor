@@ -56,7 +56,7 @@ export const CLEAR_BOARD_BTN_LABEL = '안무표만 비우기';
  *   fileNameInput, moveListFileNameInput, categoryFileNameInput,
  *   boardColsInput, boardColsDec, boardColsInc,
  *   defaultCountInput, defaultCountDec, defaultCountInc,
- *   addRoutineBtn, createRoutineFromSelectionBtn,
+ *   addRoutineBtn,
  *   mainBoardEl
  * @param {Object} deps.commands  커맨드 파사드(아래 본문의 호출부가 계약이다)
  * @param {(id: string, ctx?: {board?: string, source?: string}) => boolean} deps.runCommand  명령 등록부의 실행기(app/main) —
@@ -223,7 +223,6 @@ export function bindControls(deps) {
 
   // ── 루틴 버튼 (2382-2383) ──────────────────────────────────────────────────
   els.addRoutineBtn.addEventListener('click', () => apply(commands.createRoutine()));
-  els.createRoutineFromSelectionBtn.addEventListener('click', () => apply(commands.createRoutineFromSelection()));
 
   // ── 안무표 빈 영역 클릭 시 선택 해제 (init 1527-1529) ──────────────────────
   // ⚠ 원본은 bindBoardDelegatedEvents(mainCtx) **다음에** 이 리스너를 붙인다. 같은 요소의
