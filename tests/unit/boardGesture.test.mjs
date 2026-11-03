@@ -436,13 +436,14 @@ test('포인터 종류: touch 만 손가락이고 mouse · pen · 빈 값은 마
   for (const t of ['mouse', 'pen', '', undefined, null]) assert.equal(G.pointerKind(t), 'mouse');
 });
 
-test('포인터 종류로 고른 전이가 옛 리스너 차례 그대로다 — 마우스는 한 함수씩, 손가락은 그리기 뒤에 빠른 배치', () => {
+test('포인터 종류로 고른 전이가 옛 리스너 차례 그대로다 — 마우스는 한 함수씩, 손가락은 그리기 뒤에 빠른 배치, 맨 뒤에 네모(RM-48)', () => {
   const m = G.transitionsFor('mouse');
   assert.deepEqual([m.down, m.move, m.up, m.cancel], [[G.mouseDown], [G.mouseMove], [G.mouseUp], [G.mouseCancel]]);
   const f = G.transitionsFor('touch');
+  // 손가락 네모(RM-48)의 시작은 길게 누르기 시계가 부르므로 down 에는 없다 — move · up · cancel 의 맨 뒤에만 선다.
   assert.deepEqual([f.down, f.move, f.up, f.cancel], [
-    [G.touchDrawStart, G.quickTouchStart], [G.touchDrawMove, G.quickTouchMove],
-    [G.touchDrawEnd, G.quickTouchEnd], [G.touchDrawCancel, G.quickTouchCancel],
+    [G.touchDrawStart, G.quickTouchStart], [G.touchDrawMove, G.quickTouchMove, G.touchMarqueeMove],
+    [G.touchDrawEnd, G.quickTouchEnd, G.touchMarqueeEnd], [G.touchDrawCancel, G.quickTouchCancel, G.touchMarqueeCancel],
   ]);
   assert.deepEqual(G.transitionsFor('pen'), m);
 });
@@ -592,4 +593,87 @@ test('[RM-57 요구 5] 몸통 3번째 칸을 잡고 위 행으로 곧게 옮기�
   ], env());
   assert.deepEqual(r.effects.find(fx => fx.kind === 'move'), { kind: 'move', groupId: 'g1', row: 2, startIndex: 0 },
     '고치기 전에는 놓은 칸(2)이 시작이 되어 블록이 다음 마디로 넘쳤다');
+});
+
+// ── 손가락 네모 고르기 (RM-48) ─────────────────────────────────────────────
+// 손가락의 빈 칸 끌기는 화면 넘기기라 누르자마자 네모가 될 수 없다 — 빈 칸을 길게 눌러야 시작한다(Q115). 시작은 입력 계층의
+// 길게 누르기 시계가 touchMarqueeStart 를 부르고, 그 뒤의 이동 · 뗌 · 취소는 손가락 전이 표(transitionsFor('touch'))가 돌린다.
+
+/** 손가락 전이 표의 한 단계(move · up · cancel)를 차례대로 돌린다 — 리스너가 하는 그대로. */
+function fingerPhase(state, phase, ev, e) {
+  const fx = [];
+  for (const fn of G.transitionsFor('touch')[phase]) { const r = fn(state, ev, e); state = r.state; fx.push(...r.effects); }
+  return { state, effects: fx };
+}
+
+test('[RM-48 요구 0] 손가락 네모: 길게 눌러 시작하면 점선 네모를 그리고, 떼면 네모 안 그룹을 고르고 네모를 지운다', () => {
+  // 2행 5칸의 빈 칸을 길게 눌렀다 — 누른 한 칸을 점선 네모로 바로 보인다(이제 네모 고르기다).
+  const s0 = G.touchMarqueeStart(G.initialGestureState(), { ...at(2, 5), onPlacement: false }, env());
+  assert.deepEqual(s0.effects, [{ kind: 'marquee', rect: { rowFrom: 2, rowTo: 2, colFrom: 5, colTo: 5 } }]);
+  assert.ok(s0.state.marquee, '네모 상태가 생겼다');
+  // 끌면 손가락 밑 끝 칸까지 네모가 자란다 — 다음 행 · 시작보다 왼쪽이어도 정규화된다. 마우스 네모와 같은 rectCellRange 다.
+  const m1 = fingerPhase(s0.state, 'move', at(3, 1), env());
+  assert.deepEqual(m1.effects, [{ kind: 'marquee', rect: { rowFrom: 2, rowTo: 3, colFrom: 1, colTo: 5 } }]);
+  // 보드 밖으로 끌면 시작 행으로 되돌아간 끝 칸을 쓴다(endAt 의 앵커 규칙)
+  const m2 = fingerPhase(m1.state, 'move', { x: 3 * CELL_W + 5, y: 9999 }, env());
+  assert.deepEqual(m2.effects, [{ kind: 'marquee', rect: { rowFrom: 2, rowTo: 2, colFrom: 3, colTo: 5 } }]);
+  const m3 = fingerPhase(m2.state, 'move', at(3, 1), env());
+  // 끄는 동안의 할 일은 점선 네모뿐 — 프리뷰 · 놓기 · 커밋 · 선택 바꾸기가 없다(그리기 · 빠른 배치 전이는 아무것도 내지 않는다).
+  for (const fx of [...m1.effects, ...m2.effects, ...m3.effects]) assert.equal(fx.kind, 'marquee');
+  // 떼면 네모 안을 고르고(selectRect) 그다음 네모를 지운다 — 이 차례로.
+  const up = fingerPhase(m3.state, 'up', at(3, 1), env());
+  assert.deepEqual(up.effects, [
+    { kind: 'selectRect', rect: { rowFrom: 2, rowTo: 3, colFrom: 1, colTo: 5 } },
+    { kind: 'clearMarquee' },
+  ]);
+  assert.equal(up.state.marquee, null);
+});
+
+test('[RM-48 요구 1] 손가락 네모: 동작을 골랐거나 빠른 배치면 시작하지 않고, 길게 누르지 않은 손가락 이동은 아무 할 일도 내지 않는다', () => {
+  const blank = { ...at(2, 5), onPlacement: false };
+  const init = G.initialGestureState();
+  // 동작을 고른 보드 · 빠른 배치 보드 — 그 손가락 끌기는 그리기 · 빠른 배치의 것이다. 상태도 할 일도 그대로다.
+  for (const e of [DRAW, QUICK]) {
+    const r = G.touchMarqueeStart(init, blank, e);
+    assert.equal(r.state, init, '상태를 바꾸지 않는다');
+    assert.deepEqual(r.effects, []);
+  }
+  // 손가락 그리기가 이미 돌고 있으면(같은 누름의 down 이 그리기를 시작했다) 길게 누르기가 와도 빼앗지 않는다.
+  const drawing = G.touchDrawStart(init, blank, DRAW).state;
+  assert.equal(G.touchMarqueeStart(drawing, blank, env()).state, drawing);
+  // 블록 위 · 보드 밖의 길게 누르기도 네모가 아니다(블록은 몸통 옮기기의 몫).
+  assert.deepEqual(G.touchMarqueeStart(init, { ...blank, onPlacement: true }, env()).effects, []);
+  assert.deepEqual(G.touchMarqueeStart(init, { x: 5, y: 9999, onPlacement: false }, env()).effects, []);
+  // 길게 누르지 않은 손가락 이동(화면 넘기기) — 네모 전이는 아무 할 일도 내지 않는다.
+  assert.deepEqual(G.touchMarqueeMove(init, at(3, 1), env()), { state: init, effects: [] });
+  assert.deepEqual(fingerPhase(init, 'move', at(3, 1), env()).effects, []);
+  // 마우스가 그리던 네모(finger 없음)는 손가락 전이가 건드리지 않는다.
+  const mouseM = G.mouseDown(init, mouse(2, 5), env()).state;
+  assert.deepEqual(G.touchMarqueeMove(mouseM, at(3, 1), env()).effects, []);
+  assert.deepEqual(G.touchMarqueeEnd(mouseM).effects, []);
+});
+
+test('[RM-48 요구 2] 손가락 네모: 취소는 네모만 지우고 고르지 않으며, 끌기 전에 떼면 아무 할 일도 없다', () => {
+  const s0 = G.touchMarqueeStart(G.initialGestureState(), { ...at(2, 5), onPlacement: false }, env()).state;
+  const dragged = fingerPhase(s0, 'move', at(4, 2), env()).state;
+  // 브라우저가 포인터를 빼앗았다(pointercancel) — 네모만 지우고 고르지 않는다.
+  const c = fingerPhase(dragged, 'cancel', null, env());
+  assert.deepEqual(c.effects, [{ kind: 'clearMarquee' }]);
+  assert.equal(c.state.marquee, null);
+  // 길게 누르고 끌지 않고 뗐다(rect 가 없다) — 누른 칸 표시만 지우고 고르지 않는다.
+  const still = G.touchMarqueeEnd(s0);
+  assert.deepEqual(still.effects, [{ kind: 'clearMarquee' }]);
+  assert.ok(!still.effects.some(fx => fx.kind === 'selectRect'), 'rect 가 없으면 selectRect 를 내지 않는다');
+  // 길게 누르기 전에(네모가 시작되기 전에) 뗐다 — 아무 할 일도 없다. 취소도 마찬가지다.
+  const init = G.initialGestureState();
+  assert.deepEqual(G.touchMarqueeEnd(init), { state: init, effects: [] });
+  assert.deepEqual(G.touchMarqueeCancel(init), { state: init, effects: [] });
+  assert.deepEqual(fingerPhase(init, 'up', at(2, 5), env()).effects, []);
+});
+
+test('[RM-48 요구 4] 손가락 네모: 고르기를 허락하지 않는 보드(env.marquee 거짓)에서는 시작하지 않는다', () => {
+  const init = G.initialGestureState();
+  const r = G.touchMarqueeStart(init, { ...at(2, 5), onPlacement: false }, env({ marquee: false }));
+  assert.equal(r.state, init);
+  assert.deepEqual(r.effects, []);
 });

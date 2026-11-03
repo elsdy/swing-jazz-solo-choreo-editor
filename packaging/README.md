@@ -11,7 +11,7 @@
 | `make_icon.py` | 아이콘을 코드로 그린다(표준 라이브러리만) — png · ico · iconset |
 | `app.json` | 이름 · 보이는 이름 · 번들 id · 판 번호 · 펴낸이 |
 | `windows/choreo.iss` | 윈도우 설치 파일의 틀(내 계정에만 깔림, 관리자 권한 없음) |
-| `ffmpeg-lgpl-mac.sh` | 맥에 실을 LGPL ffmpeg 를 소스에서 짓는다 |
+| `ffmpeg-lgpl-mac.sh` | 맥에 실을 LGPL ffmpeg 를 소스에서 짓는다 — 2026-11-03 이 맥에서 돌려 7.1.1 을 지었다(결과는 아래 「ffmpeg」 절) |
 
 ## 짓기
 
@@ -38,6 +38,8 @@ python3 -m venv ~/.venvs/choreo-pack
 
 - **맥** — `sh packaging/ffmpeg-lgpl-mac.sh` 가 ffmpeg 7.1.1 소스를 받아 바깥 라이브러리 없이(`--disable-autodetect`) VideoToolbox · AudioToolbox 만
   켜고 정적으로 짓는다 → `packaging/build/ffmpeg/ffmpeg`. Xcode 명령줄 도구가 있어야 한다.
+  2026-11-03 이 맥(arm64)에서 돌려 7.1.1 을 지었다 — `otool -L` 로 링크는 `/System` · `/usr/lib` 뿐이고, H.264 인코더는 `h264_videotoolbox`
+  하나다. `build.py --ffmpeg packaging/build/ffmpeg/ffmpeg` 이 그것을 받아 앱 묶음 안 `Contents/Frameworks/bin/ffmpeg` 에 싣는다.
 - **윈도우** — BtbN 의 FFmpeg-Builds 에서 이름에 `lgpl` 이 든 win64 정적 빌드(`ffmpeg-n7.1-latest-win64-lgpl-7.1.zip` 꼴)를 받아 `bin\ffmpeg.exe` 를 준다.
   자르기의 H.264 는 Media Foundation(`h264_mf`)이 맡는다.
 
@@ -76,12 +78,38 @@ Homebrew ffmpeg 로 켜면 전처럼 libx264 를 쓴다.
 
 7. 앱을 지우고(맥은 휴지통, 윈도우는 앱 제거) 다시 깔아 안무표가 남아 있는지.
 
-## 아직 재지 못한 것 (2026-11-03)
+## 잰 것과 남은 것 (2026-11-03)
 
-- 맥 `.dmg` 는 이 맥(arm64)에서 짓고, 얼린 앱을 켜서 화면 · 문서 · 예제 · `/admin` 이 뜨는 것, 포트 기억, 둘째 실행, 「끄기」를 쟀다.
-  VideoToolbox 로 자르는 길은 인코더 차례를 강제해 쟀다.
-- **LGPL ffmpeg 를 실은 빌드**는 아직 짓지 못했다 — `ffmpeg-lgpl-mac.sh` 는 돌려 보지 않은 대본이다.
-- **윈도우 빌드 · 설치 파일 · PowerShell 창**은 윈도우 기계에서 아직 돌려 보지 않았다.
-- 다른 맥(인텔 칩 · 다른 판의 macOS)에서 켜기.
-- 맥 첫 실행의 「그래도 열기」 길(RM-67)은 화면으로 따라가 보지 못했다 — 격리 표시를 붙인 앱을 `spctl --assess` 가 `rejected` 로 막는 것까지 쟀다.
-  단추 글자 · 확인 창 차례는 애플 안내를 따른 것이다. 언어 목록에 한국어가 아예 없는 맥에서 Finder 이름도 재지 못했다.
+첫 판(0.1.0)을 낼 때 위 손 점검표 가운데 무엇을 어떻게 쟀는지다. **「API 로 쟀다」는 서버에 HTTP 요청을 넣어 응답을 본 것이지, 사람이
+화면을 눈으로 본 것이 아니다** — 창 · 경고 화면 · 단추 글자는 「남은 것」에 둔다. 다음 판을 낼 때 같은 기계 · 판으로 다시 재어 견준다.
+
+**잰 것**
+
+- **맥 · 지은 기계** — 이 맥(arm64 · macOS 27.0.1)에서 `.dmg` 를 짓고, 얼린 앱을 켜서 화면 · 문서 · 예제 · `/admin` 이 뜨는 것, 포트 기억,
+  둘째 실행, 「끄기」를 쟀다.
+
+- **맥 · LGPL ffmpeg** — `ffmpeg-lgpl-mac.sh` 로 ffmpeg 7.1.1 을 짓고(링크는 `/System` · `/usr/lib` 뿐, 인코더 `h264_videotoolbox`) `--ffmpeg` 를
+  붙여 `.dmg` 를 다시 지었다. 그 앱으로 자르기(`/api/clips/trim`)가 HTTP 201 을 냈다 — 이 맥과 **지은 기계가 아닌 맥**(mac-mini · M6 ·
+  macOS 27.2) 둘 다에서 API 로 쟀다.
+
+- **윈도우 · 설치 파일** — 윈도우 기계(WSL 노드에서 윈도우 쪽 파이썬 3.13.17 을 불러)에서 Inno Setup 6.7.3 · `Korean.isl` 로
+  `SwingChoreo-0.1.0-setup.exe` 를 지었다. 그 설치 파일로 깔기 · 켜기 · 영상 넣기 · 안무표 저장 · 다시 켜서 같은 포트 · 둘째 실행 ·
+  지우고 다시 깔아 안무표가 남는 것을 API 로 쟀다(손 점검표 1 · 3 · 5 · 6 · 7 의 서버 쪽).
+
+- **맥 · Finder 이름** — 언어 목록이 영어 먼저인 맥(en-KR · ko-KR)에서도 `안무 편집기` 로 보였다(위 손 점검표 1, `osascript` 로 잼).
+
+**남은 것** — 눈으로 보거나 아직 돌리지 않은 것
+
+- **윈도우 자르기** — Media Foundation(`h264_mf`) 길. 윈도우 설치 파일로 자르기를 아직 재지 않았다 — BtbN 의 LGPL 빌드를 `--ffmpeg` 로
+  실은 설치 파일에서 손 점검표 4 를 돈다.
+
+- **두 OS 의 첫 실행 경고 화면** — 맥의 「그래도 열기」(시스템 설정 → 「개인정보 보호 및 보안」 → 확인 창 → 암호)와 윈도우 SmartScreen 의
+  「추가 정보」 → 「실행」을 화면으로 따라가 보지 못했다. 맥은 격리 표시를 붙인 앱을 `spctl --assess` 가 `rejected` 로 막는 것까지 쟀고,
+  단추 글자 · 확인 창 차례는 애플 · 마이크로소프트 안내를 따른 것이다.
+
+- **윈도우 「켜져 있음」 창** — 위의 윈도우 점검은 API 로 했으니 창(「브라우저로 열기」 · 「끄기」)과 기본 브라우저가 뜨는 것(손 점검표 2)은
+  눈으로 보지 않았다.
+
+- **다른 맥** — 인텔 칩 맥과 macOS 26 이하에서 켜기. 잰 두 맥은 모두 M 계열 · macOS 27 이다.
+
+- **한국어가 없는 맥의 Finder 이름** — 언어 목록에 한국어가 아예 없는 맥에서 앱 이름이 무엇으로 보이는지.
