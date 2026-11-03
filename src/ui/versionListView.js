@@ -1,7 +1,7 @@
 // src/ui/versionListView.js — 사이드바 프로젝트 칸의 「판본」 목록 (ui 계층, RM-29 · 2026-11-03)
 //
 // 한 안무의 A안 · B안 · 공연본을 이름 붙여 떠 두고, 고른 판으로 돌아간다. 줄마다 이름 · 뜬 날 · 마디와 블록 수 ·
-// 부모(어느 판에서 갈라졌나)가 보이고, 지금 안무표가 갈라져 나온 판에는 `◆ 지금 이 판에서` 가 붙는다.
+// 부모(어느 판에서 갈라졌나)가 보이고, 지금 안무표가 갈라져 나온 판에는 `지금 이 판에서` 가 붙는다.
 //
 // ⚠ 목록에는 판본 **요약**만 온다(domain versionSummaries) — 본문(안무표 통째)은 열 때만 쓴다.
 // ⚠ `이 판 열기` 는 되돌리기 한 단계로 물릴 수 있지만, 지금 안무표가 어느 판본에도 없으면 confirmOnce 로 한 번 더 묻는다
@@ -9,6 +9,8 @@
 // ⚠ 글자는 domain/strings 의 표가 주인이다(str · fill).
 
 import { str, fill } from '../domain/strings.js';
+
+import { iconLabel, iconOnly } from './icon.js';
 
 /**
  * @param {{
@@ -56,7 +58,7 @@ export function createVersionListView(options) {
     const add = doc.createElement('button');
     add.className = 'ghost project-sub-add';
     add.type = 'button';
-    add.textContent = str('version.snapshot');
+    iconLabel(add, 'plus', str('version.snapshot'), doc);
     add.title = str('version.snapshot.title');
     add.onclick = () => commands.snapshot();
     head.append(title, add);
@@ -74,7 +76,7 @@ export function createVersionListView(options) {
     }
   }
 
-  // @complexity time=O(1) space=O(1) cc=6
+  // @complexity time=O(1) space=O(1) cc=7
   function row(v, isBase, labels) {
     const box = doc.createElement('div');
     box.className = 'project-clip project-version' + (isBase ? ' is-active' : '');
@@ -92,7 +94,7 @@ export function createVersionListView(options) {
     if (isBase) {
       const now = doc.createElement('span');
       now.className = 'project-clip-now';
-      now.textContent = str('version.base');
+      iconLabel(now, 'dot', str('version.base'), doc);
       now.title = str('version.base.title');
       head.appendChild(now);
     }
@@ -126,7 +128,8 @@ export function createVersionListView(options) {
     const edit = doc.createElement('button');
     edit.className = 'ghost project-clip-edit';
     edit.type = 'button';
-    edit.textContent = '✎';
+    if (openId === v.id) iconLabel(edit, '', '접기', doc);
+    else iconOnly(edit, 'pencil', '고치기', doc);
     edit.title = str('version.edit.title');
     edit.onclick = () => { openId = openId === v.id ? '' : v.id; render(); };
     meta.appendChild(edit);

@@ -119,7 +119,7 @@ export const LABELS = Object.freeze({
 
   // ── 판본 (ui/projectPanel · usecases/versionCommands, RM-29) — 되돌리기를 타지 않으니 없애는 말은 「삭제」다 ──
   'version.head': '판본',
-  'version.snapshot': '+ 판본 뜨기',
+  'version.snapshot': '판본 뜨기',
   'version.snapshot.title': '지금 안무표를 이름 붙인 판본(A안 · 공연본)으로 한 장 떠 둡니다. 영상과 링크는 판본마다 갈리지 않고 함께 씁니다',
   'version.empty': '아직 판본이 없습니다. 지금 안무표를 판본으로 떠 두면 이것저것 바꿔 본 뒤에도 그 판으로 돌아갑니다.',
   'version.defaultName': '판본 {n}',
@@ -129,7 +129,7 @@ export const LABELS = Object.freeze({
   'version.open': '이 판 열기',
   'version.open.title': '이 판의 안무표를 지금 안무표로 엽니다. 되돌리기는 이 판에서 다시 시작합니다',
   'version.open.unkept.title': '지금 안무표는 어느 판본에도 떠 두지 않았습니다 — 열면 지금 것이 사라지고 되돌리기로도 돌아오지 않습니다. 남기려면 먼저 판본을 뜨세요. 한 번 더 누르면 엽니다',
-  'version.base': '◆ 지금 이 판에서',
+  'version.base': '지금 이 판에서',
   'version.base.title': '지금 안무표가 이 판에서 갈라져 나왔습니다. 새로 뜨는 판본의 부모가 됩니다',
   'version.counts': '{bars}마디 · 블록 {blocks}',
   'version.parent': '← {label}',
@@ -144,7 +144,7 @@ export const LABELS = Object.freeze({
 
   // ── 연습 기록 (ui/practiceLogView · ui/projectPanel, RM-29) ────────────────
   'log.head': '연습 기록',
-  'log.add': '+ 연습 기록',
+  'log.add': '기록 더하기',
   'log.add.title': '오늘 한 연습을 한 줄 적습니다. 연습기에 마디 반복 구간이 걸려 있으면 그 구간과 배속이 채워집니다',
   'log.empty': '아직 연습 기록이 없습니다. 연습한 날마다 구간 · 속도 · 몇 번 깨끗했는지를 한 줄씩 적으면 나아진 것이 보입니다.',
   'log.take': '이 테이크 기록',

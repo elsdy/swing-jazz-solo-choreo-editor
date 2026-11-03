@@ -9,6 +9,8 @@
 // ⚠ 글자는 domain/strings 의 표가 주인이다(str · fill).
 
 import { str } from '../domain/strings.js';
+
+import { iconLabel } from './icon.js';
 import { PRACTICE_RATES } from '../domain/practice.js';
 import { parseScope, scopeLabel, practiceLogParts, RATING_MAX } from '../domain/project/versions.js';
 
@@ -51,7 +53,7 @@ export function createPracticeLogView(options) {
     const add = doc.createElement('button');
     add.className = 'ghost project-sub-add';
     add.type = 'button';
-    add.textContent = str('log.add');
+    iconLabel(add, 'plus', str('log.add'), doc);
     add.title = str('log.add.title');
     add.onclick = () => openDraft(commands.draft());
     head.append(title, add);
@@ -231,7 +233,7 @@ export function createPracticeLogView(options) {
     return row;
   }
 
-  /** 초안 하나로 편집기를 연다(「이 테이크 기록」 · `+ 연습 기록`). */
+  /** 초안 하나로 편집기를 연다(「이 테이크 기록」 · `기록 더하기`). */
   // @complexity time=O(n) space=O(n) cc=1
   function openDraft(log) {
     draft = { ...log };
