@@ -560,3 +560,113 @@ test('print: [RM-46 요구 1] 블록으로 흐른 행 사이 간격을 margin �
   assert.notEqual(noStart, html);
   assert.notEqual(spacing(noStart).blockStart, spacing(noStart).gridStart);
 });
+
+// ── RM-47: 비고 열이 Chrome 인쇄엔 빠지고 Safari 인쇄엔 찍혔다 ──────────────────────────────────────
+// Chrome 은 인쇄할 때 미디어 폭을 종이 쪽 너비(A4 · 여백 10mm 면 약 718px)로 잰다. 그래서 1040px 아래 블록의 「비고는 부를 때만」
+// 규칙(body[data-notes="off"] — 넓은 화면에는 토글이 없어 늘 off 다)이 종이에 먹어 비고 열이 접혔고, WebKit 은 화면 폭으로 재서
+// 넓은 화면에서는 찍었다. headless Chrome printToPDF 와 WebKit 인쇄 작업으로 같은 12마디 표를 화면 1280 에서 찍으면 비고가
+// Chrome 0줄 · WebKit 34줄이었다. 미디어 폭을 어떻게 재는지는 node 로 잴 수 없으므로, 아래 시험은 숨김 규칙이 화면 전용인지 본다.
+
+/**
+ * index.html 의 <style> 을 괄호 짝으로 걸어, 규칙마다 셀렉터 · 본문 · 그 규칙을 감싼 @media 조건들을 돌려준다.
+ * 주석은 먼저 걷는다(주석 속 괄호 · 따옴표가 짝을 흐리지 않게).
+ * @returns {{sel:string, body:string, media:string[]}[]}
+ */
+// @complexity time=O(n) space=O(n) cc=7
+function cssRulesWithMedia(html) {
+  const css = ((html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const stack = [];
+  const rules = [];
+  let start = 0;
+  for (let i = 0; i < css.length; i++) {
+    const ch = css[i];
+    if (ch === '{') {
+      stack.push({ prelude: css.slice(start, i).trim(), at: i + 1 });
+      start = i + 1;
+    } else if (ch === '}') {
+      const open = stack.pop();
+      if (open && !open.prelude.startsWith('@')) {
+        const media = stack.filter(s => s.prelude.startsWith('@media')).map(s => s.prelude.replace(/^@media\s*/, ''));
+        rules.push({ sel: open.prelude, body: css.slice(open.at, i), media });
+      }
+      start = i + 1;
+    } else if (ch === ';' && !(stack.length && !stack[stack.length - 1].prelude.startsWith('@'))) {
+      start = i + 1; // 선언 블록 밖의 한 줄 at 규칙(@import 같은 것) 다음 — 선언 안의 ; 는 셀렉터의 시작이 아니다
+    }
+  }
+  return rules;
+}
+
+/** 비고를 접는 규칙(body[data-notes="off"] 로 시작하는 셀렉터 · --noteCol 0 이나 display:none) 모음. */
+// @complexity time=O(n) space=O(n) cc=2
+const notesOffRules = (html) => cssRulesWithMedia(html)
+  .filter(r => /body\[data-notes="off"\]/.test(r.sel) && (/--noteCol:\s*0(px)?\s*;/.test(r.body) || /display:\s*none/.test(r.body)));
+
+/** 인쇄에도 먹는 비고 접기 규칙의 셀렉터 — 감싼 @media 어디에도 `screen` 이 없으면 종이에 먹는다. 빈 목록이 맞는 꼴이다. */
+// @complexity time=O(n) space=O(n) cc=2
+function printNotesScreenOnly(html) {
+  return notesOffRules(html)
+    .filter(r => !r.media.some(m => /(^|[\s,(])(only\s+)?screen\b/.test(m) && !/\bnot\s+screen\b/.test(m)))
+    .map(r => r.sel.replace(/\s+/g, ' '));
+}
+
+/** 고치기 전 꼴 — 비고 접기 규칙을 감싼 @media screen { … } 을 걷는다(안의 규칙은 그대로 둔다). */
+// @complexity time=O(n) space=O(n) cc=1
+const unwrapNotesScreen = (html) => html.replace(/\n {6}@media screen \{\n((?: {8}[^\n]*\n)+) {6}\}/, (_, inner) => '\n' + inner.replace(/^ {2}/gm, '').replace(/\n$/, ''));
+
+test('print: [RM-47 요구 0] 비고 숨김 규칙은 화면 전용이라 인쇄에는 먹지 않는다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const rules = notesOffRules(html);
+  assert.equal(rules.length, 2, `비고 접기 규칙은 둘(--noteCol 0 · 머리 칸 · 비고 칸 숨김)이다: ${rules.map(r => r.sel)}`);
+  assert.deepEqual(printNotesScreenOnly(html), [], '인쇄에도 먹는 비고 접기 규칙이 없다 — Chrome 이 종이 폭을 좁은 화면으로 읽어도 비고 열이 찍힌다');
+  // 인쇄 블록은 비고를 따로 숨기지 않고, 비고 폭을 0 으로 못박지도 않는다
+  for (const r of printRules(html)) {
+    const sels = r.sel.split(',').map(s => s.trim());
+    if (sels.some(s => /\.note-(header|cell)$/.test(s))) assert.doesNotMatch(r.body, /display:\s*none/, `인쇄 블록의 ${r.sel} 가 비고를 숨긴다`);
+    assert.doesNotMatch(r.body, /--noteCol:\s*0(px)?\s*[;!]/, `인쇄 블록의 ${r.sel} 가 비고 폭을 0 으로 둔다`);
+  }
+  // 고치기 전 꼴(@media screen 묶음이 없다)을 넣으면 붉어진다 — 검사가 실제로 그 결함을 잡는지
+  const before = unwrapNotesScreen(html);
+  assert.notEqual(before, html);
+  assert.equal(notesOffRules(before).length, 2, '걷어도 규칙 둘은 그대로 남는다');
+  assert.deepEqual(printNotesScreenOnly(before), [
+    'body[data-notes="off"] .board-wrap',
+    'body[data-notes="off"] .note-header, body[data-notes="off"] .note-cell',
+  ]);
+});
+
+test('print: [RM-47 요구 1] 좁은 화면의 비고 토글 규칙은 그대로 남는다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const rules = notesOffRules(html);
+  const wrap = rules.find(r => r.sel === 'body[data-notes="off"] .board-wrap');
+  const cells = rules.find(r => r.sel.replace(/\s+/g, ' ') === 'body[data-notes="off"] .note-header, body[data-notes="off"] .note-cell');
+  assert.ok(wrap, '비고 열 폭을 접는 규칙이 셀렉터 글자 그대로 있다');
+  assert.ok(cells, '비고 머리 칸 · 비고 칸을 숨기는 규칙이 셀렉터 글자 그대로 있다');
+  assert.match(wrap.body, /--noteCol:\s*0px/, '격자가 읽는 --noteCol 을 0 으로 둔다(--noteW 는 덮지 않는다)');
+  assert.doesNotMatch(wrap.body, /--noteW/, 'ui/cssVars 가 렌더마다 쓰는 --noteW 를 덮지 않는다');
+  assert.match(cells.body, /display:\s*none/);
+  for (const r of [wrap, cells]) {
+    assert.ok(r.media.includes('(max-width: 1040px)'), `${r.sel}: 1040px 아래 블록 안에 있다 — 넓은 화면은 비고가 늘 보인다(${r.media})`);
+    assert.ok(r.media.includes('screen'), `${r.sel}: 화면 전용으로 묶였다(${r.media})`);
+  }
+  // 켜는 쪽(📝 단추가 켜짐 색을 받는 규칙)도 그대로 있다
+  assert.ok(cssRulesWithMedia(html).some(r => /body\[data-notes="on"\] #notesToggleBtn/.test(r.sel) && r.media.includes('(max-width: 1040px)')), '📝 비고 단추의 켜짐 표시 규칙');
+});
+
+test('print: [RM-47 요구 0] 인쇄 비고 폭은 화면에서 잰 폭과 상관없이 종이의 25% 다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const paperPx = 190 * PX_PER_MM;
+  // @complexity time=O(n) space=O(n) cc=1
+  const noteW = (src, screen) => {
+    const wrap = { ...screen, ...Object.fromEntries(Object.entries(printDecls(src, '.board-wrap')).filter(([k]) => k.startsWith('--'))) };
+    return cssPx(wrap['--printNoteW'], wrap);
+  };
+  // 좁은 화면은 비고가 접힌 채 재서 --noteW 가 하한값 60px(ui/cssVars.setNoteWidth)다 — 넓은 화면은 내용대로 잰다
+  for (const measured of ['60px', '203px', '280px']) {
+    assert.ok(Math.abs(noteW(html, { '--noteW': measured }) - paperPx * 0.25) < 0.01, `화면에서 잰 비고 ${measured}: 종이의 25%`);
+  }
+  // 고치기 전 꼴(화면에서 잰 --noteW 를 그대로 쓴다)을 넣으면 좁은 화면의 60px 가 종이에 찍힌다
+  const before = html.replace('--printNoteW: min(var(--noteCol, calc(var(--printW) * 0.25))', '--printNoteW: min(var(--noteCol, var(--noteW))');
+  assert.notEqual(before, html);
+  assert.equal(noteW(before, { '--noteW': '60px' }), 60);
+});
