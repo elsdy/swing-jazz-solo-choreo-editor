@@ -289,3 +289,40 @@ test('print: 인쇄 블록의 「보이게」 규칙이 숨긴 사이드바 · �
   assert.notEqual(before, html);
   assert.deepEqual(printRevivesHidden(before), ['panel']);
 });
+
+// RM-44: 처음 안내 말풍선(.coachmark)은 ui/coachmarks.js 가 따로 넣는 스타일이라 RM-21 의 숨김 목록에서 빠졌다 —
+// 말풍선이 열린 채 인쇄하면 position:fixed 라 Chrome 에서 모든 쪽에 찍혔다(headless Chrome 인쇄 매체로 재현).
+/** 인쇄 블록의 규칙을 { sel, body } 로 읽는다. printRevivesHidden 과 같은 꼴로 블록을 자른다. */
+// @complexity time=O(n) space=O(n) cc=1
+function printRules(html) {
+  const block = (html.match(/@media print \{([\s\S]*?)\n {4}\}/) || [])[1] || '';
+  return [...block.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(m => ({ sel: m[1].replace(/\/\*[\s\S]*?\*\//g, '').trim(), body: m[2] }));
+}
+/** 인쇄 블록에서 display:none 을 받는 클래스 모음 — 숨김 규칙이 여럿이면 모두 합친다. */
+// @complexity time=O(n) space=O(n) cc=2
+function printHiddenClasses(html) {
+  const hidden = new Set();
+  for (const r of printRules(html)) {
+    if (!/display:\s*none/.test(r.body)) continue;
+    for (const x of r.sel.split(',').map(s => s.trim())) if (/^\.[\w-]+$/.test(x)) hidden.add(x.slice(1));
+  }
+  return hidden;
+}
+
+test('print: 인쇄 블록이 처음 안내 말풍선(.coachmark)을 숨긴다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  assert.ok(printHiddenClasses(html).has('coachmark'), '인쇄 숨김 목록에 .coachmark 가 없다 — 말풍선이 종이에 찍힌다');
+  // 고치기 전 꼴(목록에서 뺀 것)을 넣으면 붉어진다 — 검사기가 실제로 그 결함을 잡는지
+  const before = html.replace(/,\s*\.coachmark(?=[\s,{])/, '');
+  assert.notEqual(before, html);
+  assert.equal(printHiddenClasses(before).has('coachmark'), false);
+});
+
+test('print: 인쇄 블록이 안내 대상 강조([data-coach]) 애니메이션 · 그림자를 걷는다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const rule = printRules(html).find(r => r.sel.split(',').some(s => /^\[data-coach(="1")?\]$/.test(s.trim())));
+  assert.ok(rule, '인쇄 블록에 [data-coach] 규칙이 없다 — 대상의 숨 쉬는 강조가 종이에 찍힌다');
+  // coachmarks.js 의 <style> 이 index.html 의 인쇄 규칙보다 뒤에 들어오므로 !important 가 있어야 이긴다
+  assert.match(rule.body, /animation:\s*none\s*!important/);
+  assert.match(rule.body, /box-shadow:\s*none\s*!important/);
+});
