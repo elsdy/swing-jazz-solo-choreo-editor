@@ -452,15 +452,19 @@ RM-49 — 같은 꼴의 네 번째. 항목에 둔 「계획서 **또는** 설명
 `check-docs` 가 따라 들어가 맥의 앱 폴더 전체를 훑다 순환 링크(ELOOP)에서 죽어, 문서 시험이 붉어졌다. ② PyInstaller 가 봉한 `.app` 의
 `Info.plist` 에 보이는 이름 · 판 번호를 고쳐 넣었더니 봉인이 깨졌다. 내 맥에서 명령줄로 켜면 아무 일 없이 돌아 알아채지 못한다 — 받은
 사람의 맥은 「확인되지 않은 개발자」(넘기는 길이 있다)가 아니라 「손상되었기 때문에 열 수 없습니다」(길이 없다)로 막는다.
+RM-67 에서 한 번 더 — Info.plist 에 보이는 이름을 「안무 편집기」로 적어 두었지만 Finder 는 「SwingChoreo」를 보였고, 한국어 이름 표를 더해도
+Info.plist 의 값이 파일 이름과 달라 macOS 가 이름 표를 버렸다. 적은 값이 아니라 Finder 가 돌려주는 이름으로 재야 보인다.
 
 **어떻게 확인할까.** `node tools/check-arch.mjs` 가 `src/` · `server.py` 의 `packaging/` 글자를 막고 `tests/unit/checkArch.test.mjs` 가
 일부러 어긴 조각으로 그 규칙을 잰다. `tools/check-docs.mjs` 는 심볼릭 링크를 따라가지 않고 `packaging/` 를 등록 대상에서 뺀다.
 `packaging/build.py` 는 고친 뒤 다시 봉하고 `codesign --verify --deep --strict` 가 지나야 `.dmg` 를 만들며, 실을 ffmpeg 가 다른 라이브러리에
 링크되었으면(`otool -L`) · GPL 이면 거절한다. 서명 · 첫 실행 경고 · 다른 기계에서 켜기는 기계가 잴 수 없어 `packaging/README.md` 의
-손 점검표로 본다.
+손 점검표로 본다. 맥 앱의 보이는 이름은 `tests/unit/tutorialInstall.test.mjs` 가 이름 표(`ko.lproj`)와 Info.plist 쪽 값(파일 이름)을,
+튜토리얼이 끌라고 한 이름과 `app.json` 을 대조하고, 지은 앱의 Finder 이름은 손 점검표의 `osascript … displayed name` 으로 본다.
 
 **근거 버그.** [.dmg 재료의 링크를 따라가 문서 검사가 맥의 앱 폴더에서 죽음](BUG_REPORTS.md#dmg-재료의-링크를-따라가-문서-검사가-맥의-앱-폴더에서-죽음)(2026-11-03, RM-28).
 [앱 정보를 고쳐 넣은 .app 의 봉인이 깨짐](BUG_REPORTS.md#앱-정보를-고쳐-넣은-app-의-봉인이-깨짐)(2026-11-03, RM-28).
+[한국어 이름 표를 넣어도 Finder 가 앱을 SwingChoreo 로 보임](BUG_REPORTS.md#한국어-이름-표를-넣어도-finder-가-앱을-swingchoreo-로-보임)(2026-11-03, RM-67).
 
 <a id="d-22"></a>
 ### D-22 · 사람에게 보이는 날짜는 지역 날짜로 만든다 — UTC 시각 문자열을 잘라 날짜로 쓰지 않는다
