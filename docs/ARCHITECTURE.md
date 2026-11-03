@@ -251,6 +251,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `stepTodos.js` | 작업 차례 단계마다의 할 일 목록(2026-09-21). 아무 일도 안 한 경로는 **들어온 객체를 그대로** 돌려준다 — 호출부가 참조 비교 한 번으로 "바뀐 것 없음"을 안다 |
 | `flowStats.js` | 「어떤 버튼 다음에 어떤 버튼」 세기(2026-09-21). 같은 id 연속은 세지 않는다. **이 표로 화면을 움직이지 않는다** — 판정은 2026-10-05 로 미뤘다([로드맵](ROADMAP.md)) |
 | `practice.js` | 마디 반복 연습기의 규칙(2026-10-01, RM-22). 마디 · 고른 블록 → 카운트 구간(`rowsToCountRange` · `placementsToCountRange`), 그것을 지금 박자로 초 구간에(`countRangeToSpan` — 박자가 없으면 null), 배속 목록(`PRACTICE_RATES` — 유튜브와 파일이 둘 다 받는 값만), 카운트 소리의 예약 계획(`planClicks` — 표본 하나로 다음 0.35초 안의 카운트를 정하고, 되감기 · 탐색 · 배속 바꿈이면 버리라고 하고, 반복 구간의 끝에서 자른다) |
+| `pendingQueue.js` | `?` 정리함의 줄(2026-11-03, RM-24). 이름 없는 그룹을 **첫 조각의 표 위 차례**(행 → 칸)로 세워 자리(`8x3·1`) · 길이 · 카운트 구간을 주고, 길이와 마디 안 시작 칸이 같은 것을 「아까 그것」 무리로 묶는다(`pendingRepeatGroups` · `repeatsOf`). 반복 구간의 앞뒤 한 카운트 여유(`paddedRange`)도 여기다 — 앞 여유는 0 아래로 내려가지 않는다 |
 | `flowTrack.js` | 작업 차례 줄의 스플라인·리본 기하(2026-09-21). 그리는 일은 `ui/videoPanel` 이 한다 |
 | `themes.js` | 테마 목록과 정규화(2026-09-21). 기본 테마는 속성을 아예 안 붙인다 |
 | `supportMatrix.js` | 지원 매트릭스(2026-11-02, RM-27). 기능 × 필요한 조건 × 알려진 OS · 브라우저 결과(`○` · `△` · `✕`)의 **주인 표**(`FEATURES` · `CONDITIONS` · `ENVIRONMENTS`)와, 탐지 결과를 표에 맞춰 「안 되는 것」 목록 · 까닭 · 토스트 문구 · 환경 지문 · 알릴지 판정을 내는 순수 함수. 설정의 `이 환경` 절과 `docs/SUPPORT.md` 가 이 표를 읽고, 문서 표는 시험이 칸마다 대조한다 |
@@ -312,6 +313,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `phrasingCommands.js` | 곡 구조 바꾸기(프리셋·토글·직접 입력). Dirty 는 `{phrasing:true}` 하나 — 배치가 안 바뀌므로 행을 다시 그리지 않는다 |
 | `captureCommands.js` | 받아 적기(영상 → 안무표). 경계를 **두 카운트 격자**에 붙이고(`domain/tempo`), 자리가 모자라면 마디를 늘리고, 격자에서 벗어난 거리를 표본으로 모은다. 붙일 이름은 `session.video.voiceHeard` 를 읽어 온다 — `voiceNameCommands` 와 서로 import 하지 않고 **그 키 하나가 둘 사이의 계약**이다 |
 | `voiceNameCommands.js` | 마이크로 말한 이름을 **그때 열려 있던 구간**에 붙인다(2026-09-22). 확신이 서면 그 자리에서 정식 표기로(공짜), 아니면 들은 대로 붙여 놓고 LLM 줄에 세운다. LLM 이 고쳐 끼울 때 **사람이 이미 손댄 블록은 건드리지 않는다** |
+| `pendingTrayCommands.js` | `?` 정리함(2026-11-03, RM-24). 열 때 지금의 마디 반복을 `session.video.tray` 에 기억하고, 줄을 고르면 선택을 그 블록 하나로 옮기며 박자가 있으면 그 대목을 `videoCommands.setPracticeRange` 로 되풀이한다(In/Out 은 건드리지 않는다). 이름 붙이기는 무리 전체에 — 목록에 있으면 `captureCommands.nameGroupTo`, 없으면 `paletteCommands.createAndSetGroupMove` 로 갈래와 함께 목록에 넣는다. 히스토리 커밋은 호출부가 한 번. 닫으면 기억한 반복으로 되돌린다. 들은 말을 고른 `?` 에 붙이는 것은 `voiceNameCommands.hearForTray` 다 — 받아 적는 중이면 물러선다 |
 | `stepTodoCommands.js` | 작업 차례 단계별 할 일. `domain/stepTodos` 의 참조 비교로 "바뀐 것 없음"을 가린다 |
 | `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 등록표의 10필드, 루틴은 3필드. 뽑기 · 되돌리기 · 다시 그리기는 `docFields` 를 돈다. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
 
@@ -337,6 +339,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `routineActionPopup.js` | 메인 보드 루틴 블록의 편집/삭제 팝업 |
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
 | `practiceBar.js` | 영상 패널의 연습 조작 줄(2026-10-01, RM-22) — `▶ 재생` · 배속 · `🔁 반복` · `⇋ 미러` · `🔔 카운트 소리` · 마디 반복. 재생기 · 소리 장치는 `app/main` 이 감싸 넘긴 함수로만 닿는다. 미러는 `#videoFrame` 의 `data-mirror` 속성 하나다 |
+| `pendingTray.js` | `?` 정리함의 목록 화면(2026-11-03, RM-24) — 영상 패널 ③ 안. 줄을 고르면 그 줄 위에 `inlinePrompt.askName` 을 연다. 명령은 `app/main` 이 묶어 넘긴다. 줄은 **서명이 바뀔 때만** 다시 만든다 — askName 은 가리키던 단추가 떨어지면 닫히므로, 줄과 무관한 렌더(LLM 이 늦게 고쳐 끼우기)가 적던 이름을 날리면 안 된다 |
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
 | `composeView.js` | 상단 `✨ 말로 채우기` 팝업. 음성 인식(webkitSpeechRecognition) → 다듬기 → 스키마 → 미리보기 → 채우기의 세 단. LLM 은 주입받은 어댑터로, 배치는 주입받은 유스케이스로 |
 | `settingsView.js` | 상단 `설정` 과 설정 팝업. 절을 갈래(`data-cat`)로 묶어 옆단에서 고르고, 제목 옆 검색칸이 절의 글자와 `data-keywords` 를 함께 훑는다. **절의 `hidden` 을 정하는 자리는 `applyFilter` 하나다** — 쓸 수 있는가(`data-available`)와 갈래·검색에 걸리는가가 곱해진다 |

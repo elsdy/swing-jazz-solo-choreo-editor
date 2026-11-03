@@ -33,7 +33,8 @@
 
 import { NONE, boardOf, BOARD_MAIN } from './store.js';
 import { cleanSpoken, resolveSpokenName } from '../domain/moveMatch.js';
-import { nameGroup } from '../domain/placements.js';
+import { isPending, nameGroup } from '../domain/placements.js';
+import { pendingQueue, repeatsOf } from '../domain/pendingQueue.js';
 
 /** 패널이 다시 그려져야 한다는 뜻(captureCommands 의 VIDEO 와 같은 값이다). */
 const VIDEO = Object.freeze({ video: true });
@@ -112,6 +113,44 @@ export function hearUtterance(store, args = {}) {
     ...patchVideo(store, { voiceHeard: { heard, name, needsLlm, atSec: Number.isFinite(atSec) ? atSec : 0 } }),
     name, heard, needsLlm
   };
+}
+
+/**
+ * `?` 정리함(RM-24)에서 들은 한마디 — **지금 고른 `?`** 에 붙인다. 받아 적는 중이 아닐 때만이다.
+ *
+ * 받아 적는 중(`captureSec` 이 있음)이면 아무 일도 하지 않는다(NONE) — 그때 들은 말은 열린 구간의 것이고 hearUtterance 가
+ * 받는다. 들은 말이 붙을 곳이 둘이 되지 않게 이쪽이 물러선다.
+ * 붙이는 규칙은 받아 적기 때와 같다 — 동작 목록과 분명히 맞으면 정식 이름(과 그 동작의 갈래)으로, 헷갈리면 **들은 대로** 붙이고
+ * `needsLlm` 으로 알린다. 호출부가 LLM 줄(queueForLlm)에 세우고, 고쳐 끼우는 applyLlmNames 는 사람이 손으로 고친 블록을
+ * 건드리지 않는다.
+ * ⚠ 같은 모양의 `?` 무리(domain/pendingQueue)에도 함께 붙인다 — 정리함의 입력칸과 같은 규칙이다. 붙인 그룹은 `groupIds` 로
+ *   모두 돌려준다(LLM 줄은 그룹마다 선다).
+ * ⚠ 동작 목록에는 넣지 않는다 — 들은 대로의 이름은 틀렸을 수 있다. 목록에 넣는 것은 입력칸에서 고른 갈래와 함께다.
+ *
+ * @param {object} store
+ * @param {{ text:string, groupId:string }} args
+ * @returns {object & {named?:number, name?:string, heard?:string, needsLlm?:boolean, groupId?:string, groupIds?:string[]}} Dirty
+ */
+// @complexity time=O(n log n) space=O(n) cc=9
+export function hearForTray(store, args = {}) {
+  const v = store.get().session.video || {};
+  if (Number.isFinite(v.captureSec)) return NONE;   // 받아 적는 중 — 열린 구간이 받는다
+  const heard = cleanSpoken(args.text);
+  const groupId = String(args.groupId || '');
+  if (!heard || !groupId) return NONE;
+  const board = boardOf(store.get(), BOARD_MAIN);
+  if (!board.placements.some((p) => p.groupId === groupId && isPending(p))) return NONE;
+  const { name, needsLlm } = resolveSpokenName(heard, moveNamesOf(store));
+  const move = needsLlm ? null : (store.get().library || []).find((m) => m.name === name) || null;
+  const targets = [groupId, ...repeatsOf(pendingQueue(board.placements, board.cols), groupId)];
+  let placements = board.placements;
+  const rows = new Set();
+  for (const gid of targets) {
+    for (const p of placements) if (p.groupId === gid) rows.add(p.row);
+    placements = nameGroup(placements, gid, name, move ? move.category : undefined);
+  }
+  store.setBoard(BOARD_MAIN, { placements });
+  return { boards: { [BOARD_MAIN]: { rows: [...rows] } }, named: targets.length, name, heard, needsLlm, groupId, groupIds: targets };
 }
 
 /** 구간이 놓였거나 받아 적기가 끝났다 — 들어 둔 이름을 비운다. */

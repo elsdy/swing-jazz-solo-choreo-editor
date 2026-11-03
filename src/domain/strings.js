@@ -51,6 +51,24 @@ export const LABELS = Object.freeze({
   'video.inout.needOut': 'In {in} — 이제 구간의 끝점을 찍으세요.',
   'video.inout.needIn': 'Out {out} — 이제 구간의 시작점을 찍으세요.',
 
+  // ── `?` 정리함 — ③ 받아 적기 안의 이름 없는 블록 목록 (ui/videoPanel 의 입구 · ui/pendingTray, RM-24) ──
+  'tray.open': '이름 붙일 것 {n}개',
+  'tray.open.title': '받아 적은 이름 없는 블록(?)만 모아 차례로 이름을 붙이는 목록을 엽니다. 줄을 고르면 영상이 그 대목을 되풀이합니다',
+  'tray.title': '이름 붙일 것 {n}개',
+  'tray.close': '닫기',
+  'tray.close.title': '목록을 닫고 열기 전의 마디 반복으로 되돌립니다. 마이크도 끕니다',
+  'tray.basis': '지금 영상 기준 — 다른 영상으로 받아 적은 ? 는 엉뚱한 대목이 나올 수 있습니다',
+  'tray.noTempo': '박자가 없어 재생 못 함',
+  'tray.count': '{n}카운트',
+  'tray.same': '↑ 와 같음',
+  'tray.same.title': '{place} 와 같은 모양(길이 · 마디 안 시작 칸)이라 하나에 붙이면 함께 붙습니다',
+  'tray.name': '이름 적기',
+  'tray.name.title': '이 블록의 이름',
+  'tray.category': '새 이름이면 이 갈래로 동작 목록에 넣습니다',
+  'tray.hint': 'Enter · Tab 으로 붙이면 다음 ? 로 넘어갑니다. 🎤 로 말해도 고른 줄에 붙습니다.',
+  'tray.empty': '이름 없는 블록이 없습니다 — 받아 적기로 ? 를 쌓으면 여기에 모입니다.',
+  'tray.done': '이름 없는 블록을 다 채웠습니다.',
+
   // ── 파일 메뉴 — 어디에 담기는가 한 줄 (ui/fileMenu). {save} 는 saveProject 명령의 단추 글자 ──
   'file.untitled': '제목 없는 안무',
   'file.note.conflict': '⚠ 담기를 멈췄습니다 — `{what}` 이 다른 탭이나 기기에서 바뀌었습니다. 덮어쓰지 않았습니다. '

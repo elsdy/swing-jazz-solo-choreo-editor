@@ -340,6 +340,7 @@ export function createVideoPanel(deps) {
   const pipSideBtn = byId('videoPipSideBtn');
   const markerBlocksBtn = byId('videoMarkerBlocksBtn');
   const nameSelBtn = byId('videoNameSelBtn');
+  const pendingBtn = byId('videoPendingBtn');        // `?` 정리함의 입구(RM-24) — 「이름 붙일 것 N개」
   const captureHelp = byId('videoCaptureHelp');
   const voiceField = byId('videoVoiceField');
   const voiceBtn = byId('videoVoiceBtn');
@@ -701,6 +702,14 @@ export function createVideoPanel(deps) {
       nameSelBtn.disabled = pending === 0;
       nameSelBtn.textContent = pending > 1 ? `고른 블록 ${pending}개에 이름 붙이기` : '고른 블록에 이름 붙이기';
     }
+    // `?` 정리함의 입구(RM-24). 셀 것이 없으면 잠그고, 열려 있으면 잠근다(목록이 바로 아래에 있다).
+    if (pendingBtn) {
+      const count = typeof commands.pendingCount === 'function' ? commands.pendingCount() : 0;
+      const trayOn = typeof commands.trayOpen === 'function' && commands.trayOpen();
+      pendingBtn.textContent = fill('tray.open', { n: count });
+      pendingBtn.title = str('tray.open.title');
+      pendingBtn.disabled = count === 0 || trayOn;
+    }
     // 평소에는 빈 줄이다(RM-19). 박자가 없을 때의 막힘과, 받는 중 박자 밀림(오른쪽 위 배지와 **같은 판정**)만 적는다 —
     // 배지는 짧게(`· 영상이 더 느림 ≈126`), 여기는 **무엇을 하면 되는지**까지. 받는 중이라는 사실과 시각은 상태줄이 말한다.
     if (captureHelp) {
@@ -731,8 +740,10 @@ export function createVideoPanel(deps) {
     const listening = voice.listening();
     const heard = voice.heard ? voice.heard() : null;
 
+    // `?` 정리함(RM-24)이 열려 있으면 받아 적지 않아도 마이크를 켠다 — 들은 말은 고른 줄에 붙고, 박자가 없어도 된다.
+    const trayOn = typeof commands.trayOpen === 'function' && commands.trayOpen();
     if (voiceBtn) {
-      voiceBtn.disabled = !ready || (!running && !wanted);
+      voiceBtn.disabled = !trayOn && (!ready || (!running && !wanted));
       iconLabel(voiceBtn, 'mic', wanted ? '마이크 끄기' : '마이크 켜기');
       voiceBtn.dataset.listening = wanted ? (listening ? 'on' : 'wait') : 'off';
     }
@@ -745,7 +756,7 @@ export function createVideoPanel(deps) {
     }
     // 평소에는 빈 줄이다(RM-19). 오류 · 다시 켜는 중 · 지금 붙을 이름만 적는다 — 듣는 중은 상태줄 · 엄지 바가 말하고,
     // 설명(그때 열려 있던 구간에 붙는다 · 크롬은 구글 서버로 보낸다)은 마이크 버튼의 툴팁과 처음 한 번 안내에 있다.
-    if (voiceHelp) applyGuide(voiceHelp, voiceGuide({ error: voice.error(), ready, wanted, listening, heard }), CLS.isError);
+    if (voiceHelp) applyGuide(voiceHelp, voiceGuide({ error: voice.error(), ready: ready || trayOn, wanted, listening, heard }), CLS.isError);
   }
 
   /**
@@ -2043,6 +2054,7 @@ export function createVideoPanel(deps) {
       });
     };
   }
+  if (pendingBtn && commands.openTray) pendingBtn.onclick = () => { commands.openTray(); renderCapture(); };
   if (markerBlocksBtn && commands.markersToBlocks) {
     markerBlocksBtn.onclick = () => {
       const { placed, ...dirty } = commands.markersToBlocks() || {};
