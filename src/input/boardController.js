@@ -184,6 +184,8 @@ export function createBoardController(deps) {
    * ⚠ 보드 click 리스너 가운데 이 컨트롤러의 것이 먼저 등록된다(app/main 의 차례) — stopImmediatePropagation 이 그래서 먹는다.
    */
   let swallowClick = false;
+  /** 손가락 네모 고르기를 그리는 중인가(RM-48) — 스크롤 · contextmenu 를 막는 조건이다. */
+  const fingerMarquee = () => !!gestureState.marquee?.finger;
 
   /** 전이 함수가 이벤트마다 읽는 세션 값과 측정 함수. 측정은 전이 함수가 부를 때만 일어난다. */
   const gestureEnv = () => ({
@@ -404,8 +406,9 @@ export function createBoardController(deps) {
   // ⚠ 마우스의 한 번/두 번 클릭은 그대로 둔다(손에 익었고 과녁도 충분하다). 우클릭은 **더하는**
   //   길이라 빼앗는 것이 없다 — 동작 목록의 이름도 같은 관습이다(우클릭·롱프레스로 메뉴).
   el.addEventListener('contextmenu', (e) => {
-    // 손가락으로 길게 눌러 블록을 옮기는 중(RM-12)이면 안드로이드가 뒤늦게 보내는 contextmenu 로 팝업을 열지 않는다
-    if (currentDrag()?.isTouchDragging) { e.preventDefault(); return; }
+    // 손가락으로 길게 눌러 블록을 옮기거나(RM-12) 네모를 그리는 중(RM-48)이면 안드로이드가 뒤늦게 보내는 contextmenu 로
+    // 팝업 · 브라우저 메뉴를 열지 않는다
+    if (currentDrag()?.isTouchDragging || fingerMarquee()) { e.preventDefault(); return; }
     // 루틴 편집 보드도 연다(RM-12 — 두 번 누르기가 지우지 않아 거기서는 이 팝업의 `× 지우기` 가 지우는 길이다)
     if (!placementActionPopup) return;
     const placementEl = e.target.closest(SEL.placement);
@@ -536,26 +539,38 @@ export function createBoardController(deps) {
     steps(gesture.transitionsFor(e.pointerType).move, e, pointerEv(e));
   });
 
-  // ── 손가락 몸통 옮기기 — 길게 누르기(RM-12, 계획서 결정 「길게 눌러야 옮기기」) ─────────────────────
+  // ── 손가락 길게 누르기 — 몸통 옮기기(RM-12) · 빈 칸 네모 고르기(RM-48) ─────────────────────────────
   // 몸통은 스크롤을 열어 두므로(CSS `.placement` 의 touch-action) 짚고 굴리면 화면이 넘어가고, 그 전에 8px 넘게 움직이면
-  // 시계가 풀린다. 움직이지 않고 BODY_LONG_PRESS_MS 를 채우면 옛 이동 손잡이와 같은 손가락 끌기(touchDrag)가 시작된다.
-  // ⚠ 끌기가 시작된 뒤의 첫 touchmove 를 막아야 브라우저가 스크롤을 열지 않는다(pointercancel 로 끌기를 빼앗기지 않는다) —
+  // 시계가 풀린다. 움직이지 않고 BODY_LONG_PRESS_MS 를 채우면 —
+  //   블록 몸통: 옛 이동 손잡이와 같은 손가락 끌기(touchDrag)가 시작된다. 고른 블록(둘 이상)이면 묶음 전체다(RM-48 · Q116).
+  //   빈 칸   : 네모 고르기가 시작된다(RM-48 · Q115). 동작을 골랐거나 빠른 배치면 그 끌기는 이미 그리기라 시작하지 않는다
+  //             (판정은 domain/boardGesture.touchMarqueeStart). 무장하지 않은 트랙은 스크롤이 열려 있어 시계가 필요하다.
+  // ⚠ 시작된 뒤의 첫 touchmove 를 막아야 브라우저가 스크롤을 열지 않는다(pointercancel 로 끌기 · 네모를 빼앗기지 않는다) —
   //   동작 목록 카드의 길게 누르기(input/paletteInput)와 같은 장치다. 몸짓은 위 pointermove 가 듣는다.
   if (typeof longPress === 'function') {
     longPress(el, {
       delayMs: BODY_LONG_PRESS_MS, moveTolerancePx: LONGPRESS_MOVE_THRESHOLD_PX, resetOnStart: true,
       onLongPress: ({ x, y, event }) => {
-        const placementEl = event.target.closest?.(SEL.placement);
-        if (!placementEl || !placementEl.isConnected || event.target.closest(SEL.nameBtn)) return;
+        if (!event.target?.closest || !event.target.isConnected || event.target.closest(SEL.nameBtn)) return;
         if (pointerSession.isActive() || currentDrag()) return;
+        const placementEl = event.target.closest(SEL.placement);
+        if (!placementEl) {
+          if (event.target.closest(SEL.placementOrHandles)) return;   // 손잡이 — 트리밍의 몫이다
+          step(gesture.touchMarqueeStart, event, { x, y, onPlacement: false });
+          if (fingerMarquee()) swallowClick = true;   // 떼면 오는 합성 click 이 「빈 곳 누름 = 선택 풀기」로 가지 않게
+          return;
+        }
         const rect = placementEl.getBoundingClientRect();
         if (resolveGrabZone(x - rect.left, rect.width) !== 'body') return;
+        const groupId = placementEl.dataset[DATA.groupId];
         overlays.showFloatingTooltip(placementEl);
-        touchDrag.start(placementEl.dataset[DATA.groupId], x, y);
+        touchDrag.start(groupId, x, y, bundleOf(groupId));
         swallowClick = true;   // 떼면 오는 합성 click 이 블록 팝업을 열지 않게
       },
     });
-    el.addEventListener('touchmove', (e) => { if (currentDrag()?.isTouchDragging) e.preventDefault(); }, { passive: false });
+    el.addEventListener('touchmove', (e) => {
+      if (currentDrag()?.isTouchDragging || fingerMarquee()) e.preventDefault();
+    }, { passive: false });
   }
 
   // ── pointerup(보드) — 툴팁 · 손가락 블록 이동 종료(⑪) ───────────────────────────────────

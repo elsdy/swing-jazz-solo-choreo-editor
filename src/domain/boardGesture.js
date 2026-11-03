@@ -10,6 +10,8 @@
 //   quickTouch  빠른 배치 모드의 손가락 끌기          { x, y, track, row, startIndex, count, isDrag, clientX?, clientY? }
 //   tap         더블탭 판정의 지난 탭                 { time, groupId }
 //   marquee     빈 칸에서 시작한 네모 고르기(RM-14)   { row, startIndex, track, x, y, rect|null }  — rect 가 생기면 끌기가 됐다
+//               손가락은 빈 칸을 길게 눌러 시작한다(RM-48) — 그때는 finger:true 이고, 누른 한 칸 네모를 바로 그리지만 rect 는
+//               끌어야 생긴다(길게 누르고 그냥 떼면 아무것도 고르지 않는다)
 //   body        블록 몸통을 누른 마우스(RM-12)        { groupId, x, y, grab, copy, bundle, dragging } — 임계를 넘으면 dragging
 //               grab 은 누른 칸이 블록 시작에서 몇째 칸인가(RM-57) — 놓을 시작은 포인터 밑 칸 − grab 이다
 //
@@ -26,7 +28,7 @@
 //   { kind: 'preview', row, startIndex, count } | { kind: 'clearPreview' }
 //   { kind: 'place', moveId, startRow, startIndex, totalCount } | { kind: 'remove', groupId } | { kind: 'commit' }
 //   { kind: 'openPicker', row, startIndex, clientX, clientY, count }
-//   { kind: 'marquee', rect } | { kind: 'clearMarquee' } | { kind: 'selectRect', rect }   ← RM-14 네모 고르기(마우스만 — 터치는 RM-11 때)
+//   { kind: 'marquee', rect } | { kind: 'clearMarquee' } | { kind: 'selectRect', rect }   ← RM-14 네모 고르기(손가락은 RM-48 — 길게 눌러 시작)
 //   { kind: 'startTrim', edge, groupId, clientX }                                            ← RM-12 가장자리 트리밍 시작
 //   { kind: 'beginMove', groupId, copy, bundle } | { kind: 'movePreview', row, startIndex } | { kind: 'endMove' }
 //   { kind: 'move' | 'copy' | 'moveBundle', groupId, row, startIndex } | { kind: 'swallowClick' }   ← RM-12 몸통 끌기
@@ -35,9 +37,12 @@
 // ⚠ 블록을 누른 자리의 주인(RM-12): 양쪽 가장자리(gestureMath.resolveGrabZone)는 트리밍, 몸통은 끌면 옮기기 · 떼면 클릭이다.
 //   몸통 클릭(고르기 · 팝업)은 여전히 보드의 click 리스너가 한다 — 여기서는 「끌기가 됐으면 그 click 을 삼켜라」만 낸다.
 //   손가락의 몸통 옮기기는 길게 누르기로 시작한다(계획서 결정) — 그 시계는 입력 계층의 longPress 가 잰다.
+//   고른 블록(둘 이상)을 길게 눌러 끌면 묶음 전체가 간다(RM-48 결정 — 마우스 몸통 끌기와 같은 규칙).
 //
 // ⚠ 빈 칸 끌기의 주인(Q86): 동작을 골랐거나(activeMove) 빠른 배치면 그리기, 아니면 네모 고르기다. 평소 빈 칸 끌기는 전에 아무 일도
 //   하지 않았으므로 빼앗는 동작이 없다. 끄는 동안 행을 다시 그리지 않는다 — 점선 네모(overlays) 하나만 움직인다.
+//   손가락(RM-48)의 빈 칸 끌기는 화면 넘기기라 누르자마자 네모가 될 수 없다 — 빈 칸을 **길게 눌러야** 네모 고르기다(Q115).
+//   시작은 시계(입력 계층의 longPress)가 touchMarqueeStart 를 불러 정하고, 손가락 전이 표(transitionsFor)의 down 에는 없다.
 
 import {
   resolveDragCount, isDoubleTap, exceedsThreshold, rectCellRange,
@@ -81,11 +86,12 @@ export function pointerKind(pointerType) {
 // @complexity time=O(1) space=O(1) cc=2
 export function transitionsFor(pointerType) {
   if (pointerKind(pointerType) === 'touch') {
+    // 네모 고르기(RM-48)는 맨 뒤다 — 그리기 · 빠른 배치의 할 일 차례를 바꾸지 않는다. 시작(down)은 시계가 정하므로 down 에는 없다.
     return {
       down: [touchDrawStart, quickTouchStart],
-      move: [touchDrawMove, quickTouchMove],
-      up: [touchDrawEnd, quickTouchEnd],
-      cancel: [touchDrawCancel, quickTouchCancel],
+      move: [touchDrawMove, quickTouchMove, touchMarqueeMove],
+      up: [touchDrawEnd, quickTouchEnd, touchMarqueeEnd],
+      cancel: [touchDrawCancel, quickTouchCancel, touchMarqueeCancel],
     };
   }
   return { down: [mouseDown], move: [mouseMove], up: [mouseUp], cancel: [mouseCancel] };
@@ -400,6 +406,73 @@ export function quickTouchEnd(state, ev, env) {
 export function quickTouchCancel(state) {
   if (!state.quickTouch) return same(state);
   return { state: { ...state, quickTouch: null }, effects: [{ kind: 'clearPreview' }] };
+}
+
+// ── 손가락 네모 고르기 (RM-48) ─────────────────────────────────────────────────────────────
+
+/**
+ * 손가락 네모 고르기 시작 — 빈 칸을 길게 눌렀다(RM-48, Q115 「빈 칸을 길게 눌러 시작」). 입력 계층의 longPress 가 부른다.
+ * 동작을 골랐거나(activeMove) 빠른 배치면 그 손가락 끌기는 그리기 · 빠른 배치의 것이라 시작하지 않는다. 고르기를 허락하지 않는
+ * 보드(env.marquee 거짓 — 루틴 편집)도, 블록 위 · 보드 밖도, 이미 다른 몸짓(그리기 · 빠른 배치 · 네모)이 도는 중에도 시작하지 않는다.
+ * 시작하면 누른 한 칸을 점선 네모로 바로 그린다 — 「이제 네모 고르기다」를 손가락 밑에 보인다. 다만 rect 는 아직 비운다:
+ * 끌지 않고 떼면 마우스의 「끌지 않은 누름」처럼 아무것도 고르지 않는다.
+ * @param {object} state
+ * @param {{x:number, y:number, onPlacement:boolean}} ev
+ * @param {GestureEnv} env
+ */
+// @complexity time=O(1) space=O(1) cc=8
+export function touchMarqueeStart(state, ev, env) {
+  if (!env.marquee || env.activeMove || env.quickPlaceMode) return same(state);
+  if (state.draw || state.quickTouch || state.marquee || ev.onPlacement) return same(state);
+  const hit = env.hitAt(ev.x, ev.y);
+  if (!hit.inBoard) return same(state);
+  const marquee = { row: hit.row, startIndex: hit.col, track: hit.track, x: ev.x, y: ev.y, rect: null, finger: true };
+  return {
+    state: { ...state, marquee },
+    effects: [{ kind: 'marquee', rect: rectCellRange({ row: hit.row, col: hit.col }, { row: hit.row, col: hit.col }) }],
+  };
+}
+
+/**
+ * 손가락 네모 고르기 이동(RM-48). 길게 누르기가 이미 뜻을 정했으므로 임계 없이 손가락 밑의 끝 칸까지 네모를 넓힌다 —
+ * 마우스 네모와 같은 rectCellRange · 보드 밖이면 시작 행으로 되돌아가는 endAt 이다. 네모가 없으면(길게 누르지 않은
+ * 손가락 이동 — 화면 넘기기) 아무 할 일도 없다.
+ * @param {object} state
+ * @param {{x:number, y:number}} ev
+ * @param {GestureEnv} env
+ */
+// @complexity time=O(1) space=O(1) cc=4
+export function touchMarqueeMove(state, ev, env) {
+  const m = state.marquee;
+  if (!m || !m.finger) return same(state);
+  const { endRow, endCol } = env.endAt(m, ev.x, ev.y);
+  const rect = rectCellRange({ row: m.row, col: m.startIndex }, { row: endRow, col: endCol }) || m.rect;
+  if (!rect) return same(state);
+  return { state: { ...state, marquee: { ...m, rect } }, effects: [{ kind: 'marquee', rect }] };
+}
+
+/**
+ * 손가락 네모 고르기 뗌(RM-48). 끌어서 네모가 생겼으면 그 안의 그룹을 고르고(selectRect — 뒤따르는 합성 click 도 삼킨다)
+ * 네모를 지운다. 길게 누르고 끌지 않고 떼면 누른 칸 표시만 지우고 고르지 않는다. 네모가 없으면 아무 할 일도 없다.
+ * @param {object} state
+ */
+// @complexity time=O(1) space=O(1) cc=4
+export function touchMarqueeEnd(state) {
+  const m = state.marquee;
+  if (!m || !m.finger) return same(state);
+  const effects = m.rect ? [{ kind: 'selectRect', rect: m.rect }, { kind: 'clearMarquee' }] : [{ kind: 'clearMarquee' }];
+  return { state: { ...state, marquee: null }, effects };
+}
+
+/**
+ * 손가락 네모 고르기 취소(RM-48) — 브라우저가 포인터를 빼앗았다(pointercancel). 네모만 지우고 고르지 않는다.
+ * @param {object} state
+ */
+// @complexity time=O(1) space=O(1) cc=3
+export function touchMarqueeCancel(state) {
+  const m = state.marquee;
+  if (!m || !m.finger) return same(state);
+  return { state: { ...state, marquee: null }, effects: [{ kind: 'clearMarquee' }] };
 }
 
 /**

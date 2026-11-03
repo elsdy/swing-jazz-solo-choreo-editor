@@ -13,6 +13,7 @@ import * as Board from '../../src/usecases/boardCommands.js';
 import * as History from '../../src/usecases/historyCommands.js';
 import { createDragSession } from '../../src/input/dragSession.js';
 import { createBoardController } from '../../src/input/boardController.js';
+import { createPlacementTouchDrag } from '../../src/input/touchDrag.js';
 import { SEL, DATA } from '../../src/ui/domContract.js';
 import { groupSpan } from '../../src/domain/selection.js';
 
@@ -42,15 +43,25 @@ function setup() {
     moveGroup: (args) => Board.moveGroupTo(store, { boardId: BOARD_MAIN, ...args }, { ids: ids() }),
     copyGroup: (args) => Board.copyGroupTo(store, { boardId: BOARD_MAIN, ...args }, { ids: ids() }),
     moveSelection: (args) => Board.moveSelectionBy(store, { boardId: BOARD_MAIN, ...args }, { ids: ids() }),
+    selectInRect: (args) => Board.selectInRect(store, { boardId: BOARD_MAIN, ...args }),
     commitHistory: () => History.commit(hist, BOARD_MAIN),
   };
+  const hitTest = {
+    cellIndexAt: (_track, x) => x,
+    hitTest: (x, y) => (y >= 0
+      ? { inBoard: true, track: { classList: { add() {}, remove() {} } }, row: y, col: x }
+      : { inBoard: false, track: null, row: null, col: null }),
+  };
+  const dragSession = createDragSession();
+  // 손가락 끌기(RM-48)는 진짜 touchDrag 를 쓴다 — 길게 누르기 시계는 가짜다: 부르면 그 자리에서 onLongPress 를 쏜다.
+  const touchDrag = createPlacementTouchDrag({
+    el, boardId: BOARD_MAIN, store, commands, render: () => {}, overlays, hitTest, dragSession, doc,
+  });
+  const longPresses = [];
   createBoardController({
-    el, boardId: BOARD_MAIN, store, commands, render: () => {}, overlays,
-    hitTest: {
-      cellIndexAt: (_track, x) => x,
-      hitTest: (x, y) => (y >= 0 ? { inBoard: true, track: {}, row: y, col: x } : { inBoard: false, track: null, row: null, col: null }),
-    },
-    dragSession: createDragSession(), pointerSession: { isActive: () => false }, touchDrag: {}, quickPicker: {},
+    el, boardId: BOARD_MAIN, store, commands, render: () => {}, overlays, hitTest,
+    dragSession, pointerSession: { isActive: () => false }, touchDrag, quickPicker: {},
+    longPress: (_target, opts) => longPresses.push(opts.onLongPress),
     doc,
   });
   const fire = (on, type, ev) => { for (const fn of on[type] || []) fn(ev); };
@@ -66,9 +77,36 @@ function setup() {
     fire(listeners, 'pointermove', { ...base, target: onTrack, clientX: col, clientY: row });
     fire(docListeners, 'pointerup', { ...base, target: onTrack, clientX: col, clientY: row });
   };
+  /** 손가락으로 (pressRow, pressCol) 칸을 길게 눌러(블록이면 groupId) (row, col) 칸까지 끌어 뗀다(RM-48). */
+  const fingerDrag = (groupId, [pressRow, pressCol], [row, col], { cancel = false } = {}) => {
+    const base = { pointerType: 'touch', button: 0, preventDefault() {}, stopPropagation() {} };
+    const placementEl = groupId && { dataset: { [DATA.groupId]: groupId }, classList: { contains: () => false },
+      getBoundingClientRect: () => ({ left: pressCol - 100, width: 200 }) };
+    const track = { dataset: { [DATA.row]: String(pressRow) }, classList: { add() {}, remove() {} } };
+    const target = {
+      isConnected: true,
+      closest: (sel) => (groupId
+        ? (sel === SEL.placement || sel === SEL.placementOrHandles ? placementEl : sel === SEL.track ? track : null)
+        : (sel === SEL.track ? track : null)),
+    };
+    const down = { ...base, target, clientX: pressCol, clientY: pressRow };
+    fire(listeners, 'pointerdown', down);
+    for (const cb of longPresses) cb({ x: pressCol, y: pressRow, event: down });
+    const moveTrack = { dataset: { [DATA.row]: String(row) }, classList: { add() {}, remove() {} } };
+    const onTrack = { closest: (sel) => (sel === SEL.track ? moveTrack : null) };
+    const touchmove = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+    fire(listeners, 'touchmove', touchmove);
+    fire(listeners, 'pointermove', { ...base, target: onTrack, clientX: col, clientY: row });
+    const end = { ...base, target: onTrack, clientX: col, clientY: row };
+    fire(listeners, cancel ? 'pointercancel' : 'pointerup', end);
+    fire(docListeners, cancel ? 'pointercancel' : 'pointerup', end);
+    let swallowed = false;
+    fire(listeners, 'click', { ...base, target: onTrack, stopImmediatePropagation() { swallowed = true; } });
+    return { scrollBlocked: touchmove.defaultPrevented, clickSwallowed: swallowed };
+  };
   const start = (id) => groupSpan(store.board(BOARD_MAIN), id).start;
   const cells = () => store.board(BOARD_MAIN).placements.map(p => `${p.groupId}@${p.row}:${p.startIndex}+${p.length}`).sort();
-  return { store, hist, dragDrop, start, cells, marked, previews };
+  return { store, hist, dragDrop, fingerDrag, start, cells, marked, previews };
 }
 
 test('고른 블록 하나의 몸통을 끌어 놓으면 묶음 전체가 간격을 지켜 옮겨지고, 하나라도 표 밖이면 아무것도 옮기지 않으며, 되돌리기 한 번에 모두 제자리로 온다', () => {
@@ -106,5 +144,60 @@ test('고른 블록 하나의 몸통을 끌어 놓으면 묶음 전체가 간격
     assert.equal(t.start('a'), 0);
     assert.equal(t.start('c'), 6);
     assert.equal(t.start('b'), 18);
+  }
+});
+
+// ── 손가락 (RM-48) — 길게 누르기로 묶음 끌기 · 네모 고르기 ──────────────────────────────
+
+test('[RM-48] 손가락: 고른 블록을 길게 눌러 끌면 묶음 전체가 간격을 지켜 옮겨지고, 표 밖이면 아무것도 옮기지 않으며, 되돌리기 한 번에 제자리', () => {
+  // ① 함께 간다 — a(1행 0칸)를 길게 눌러 2행 1칸으로 끌면 거리 9. 마우스 몸통 끌기와 같은 결과다.
+  {
+    const t = setup();
+    const before = { a: t.start('a'), b: t.start('b'), c: t.start('c') };
+    const steps = t.hist.stack(BOARD_MAIN).past.length;
+    const r = t.fingerDrag('a', [1, 0], [2, 1]);
+    assert.ok(r.scrollBlocked, '끄는 동안 touchmove 를 막아 브라우저가 스크롤을 열지 않는다');
+    assert.ok(r.clickSwallowed, '떼고 오는 합성 click 이 블록 팝업을 열지 않는다');
+    assert.deepEqual(t.marked.sort(), ['a', 'c'], '묶음 전체가 끌리는 표시를 받는다');
+    assert.equal(t.previews.at(-1).label, '2개 함께');
+    assert.deepEqual(t.previews.at(-1).items.map(i => [i.row, i.startIndex, i.count]).sort(), [[2, 1, 2], [2, 7, 2]]);
+    assert.equal(t.start('a') - before.a, 9);
+    assert.equal(t.start('c') - before.c, 9);
+    assert.equal(t.start('b'), before.b, '고르지 않은 b 는 그대로다');
+    assert.equal(t.hist.stack(BOARD_MAIN).past.length, steps + 1, '끌어 놓기 한 번 = 히스토리 한 칸');
+    History.undo(t.hist, BOARD_MAIN);
+    assert.deepEqual({ a: t.start('a'), b: t.start('b'), c: t.start('c') }, before, '되돌리기 한 번에 둘 다 제자리');
+  }
+  // ② 하나라도 표 밖이면 아무것도 — 프리뷰도 그리지 않는다.
+  {
+    const t = setup();
+    const cellsBefore = t.cells();
+    const steps = t.hist.stack(BOARD_MAIN).past.length;
+    t.fingerDrag('a', [1, 0], [8, 1]);
+    assert.deepEqual(t.cells(), cellsBefore);
+    assert.equal(t.hist.stack(BOARD_MAIN).past.length, steps);
+    assert.equal(t.previews.length, 0);
+  }
+  // ③ 고르지 않은 블록은 그 하나만 간다.
+  {
+    const t = setup();
+    t.fingerDrag('b', [1, 3], [3, 2]);
+    assert.deepEqual([t.start('a'), t.start('c'), t.start('b')], [0, 6, 18]);
+  }
+});
+
+test('[RM-48] 손가락: 빈 칸을 길게 눌러 끌면 네모에 닿은 블록을 고르고, 떼고 오는 click 이 그것을 풀지 않으며, 취소하면 고르지 않는다', () => {
+  {
+    const t = setup();
+    // 1행 2칸(빈 칸)을 길게 눌러 1행 4칸까지 — b(1행 3..4)만 닿는다.
+    const r = t.fingerDrag(null, [1, 2], [1, 4]);
+    assert.deepEqual([...t.store.get().selection].sort(), ['b'], '네모에 닿은 b 만 골라졌다');
+    assert.ok(r.scrollBlocked, '네모를 그리는 동안 touchmove 를 막는다');
+    assert.ok(r.clickSwallowed, '떼고 오는 합성 click 을 삼켜 「빈 곳 누름 = 선택 풀기」로 보내지 않는다');
+  }
+  {
+    const t = setup();
+    t.fingerDrag(null, [1, 2], [1, 4], { cancel: true });
+    assert.deepEqual([...t.store.get().selection].sort(), ['a', 'c'], '빼앗긴 네모는 선택을 바꾸지 않는다');
   }
 });
