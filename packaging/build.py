@@ -19,6 +19,7 @@
 import argparse
 import json
 import os
+import plistlib
 import re
 import shutil
 import subprocess
@@ -107,15 +108,38 @@ def run_pyinstaller(stage, icon, ffmpeg, out):
     subprocess.run(cmd, check=True)
 
 
+# @complexity time=O(1) space=O(1) cc=1
+def localize_mac_name(app):
+    """맥 묶음에 한국어 이름 표(ko.lproj)를 넣어 Finder 에 displayName 이 보이게 한다(RM-67).
+
+    Info.plist 의 CFBundleDisplayName 만으로는 Finder 가 묶음 이름(SwingChoreo)을 보인다 — LSHasLocalizedDisplayName 을
+    켜고 언어별 InfoPlist.strings 가 있어야 그 언어의 이름을 쓴다.
+    ⚠ Info.plist 쪽 CFBundleDisplayName 은 **파일 이름(name)** 이어야 한다 — 「안무 편집기」로 두면 파일 이름과 달라 macOS 가
+      「사람이 이름을 바꿨다」고 보고 이름 표를 버린다(2026-11-03 지어 쟀다: Finder 가 SwingChoreo 를 보였다).
+    """
+    lproj = app / 'Contents' / 'Resources' / 'ko.lproj'
+    lproj.mkdir(parents=True, exist_ok=True)
+    name = APP['displayName'].replace('\\', '\\\\').replace('"', '\\"')
+    (lproj / 'InfoPlist.strings').write_text(
+        f'"CFBundleDisplayName" = "{name}";\n"CFBundleName" = "{name}";\n', encoding='utf-8')
+    plist = app / 'Contents' / 'Info.plist'
+    with plist.open('rb') as f:
+        info = plistlib.load(f)
+    info['CFBundleDisplayName'] = APP['name']
+    info['LSHasLocalizedDisplayName'] = True
+    plist.write_bytes(plistlib.dumps(info))
+
+
 # @complexity time=O(1) space=O(1) cc=3
 def finish_mac(out):
     """.app 의 보이는 이름 · 판 번호를 채우고 .dmg 로 싼다(서명 없음 — 결정: 첫 판은 경고 넘기는 법을 안내)."""
     app = out / f'{APP["name"]}.app'
     plist = app / 'Contents' / 'Info.plist'
-    for key, value in (('CFBundleDisplayName', APP['displayName']), ('CFBundleShortVersionString', APP['version']),
+    for key, value in (('CFBundleShortVersionString', APP['version']),
                        ('CFBundleVersion', APP['version']), ('NSHumanReadableCopyright', APP['copyright'])):
         subprocess.run(['plutil', '-replace', key, '-string', value, str(plist)], check=True)
-    # ⚠ PyInstaller 가 붙인 임시 서명(ad-hoc)은 Info.plist 까지 봉한다 — 고친 뒤 다시 봉하지 않으면 받은 사람의 맥이
+    localize_mac_name(app)
+    # ⚠ PyInstaller 가 붙인 임시 서명(ad-hoc)은 Info.plist · 이름 표(ko.lproj)까지 봉한다 — 고친 뒤 다시 봉하지 않으면 받은 사람의 맥이
     #   「확인되지 않은 개발자」가 아니라 「손상되었기 때문에 열 수 없습니다」로 막는다(넘기는 길이 없다). 개발자 서명은
     #   아니다(결정: 첫 판은 서명 없이) — 봉인만 맞춘다.
     subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(app)], check=True)
