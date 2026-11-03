@@ -5,6 +5,10 @@
     python3 server.py --port 8080
     python3 server.py --root ~/Movies      # 보관 루트를 바꾼다(아래의 video-clip·projects 는 그대로)
     python3 server.py --subdir clips       # 영상 하위 폴더 이름을 바꾼다
+    python3 server.py --port 0 --open      # 지난번 포트(없으면 빈 포트)로 켜고 브라우저를 연다 — 설치형 앱의 런처가 쓴다
+    python3 server.py --static <폴더>      # 앱 파일(index.html · src/)을 그 폴더에서 낸다(기본: 이 저장소)
+
+포트가 이미 쓰이면 까닭을 한 문장으로 말하고 코드 1 로 물러난다(2026-11-03, RM-28).
 
 보관 자리는 **저장소 밖**이 기본이다(2026-09-13). 저장소는 코드의 자리이고, 안무표와 영상은
 잃으면 복구할 수 없는 사용자의 것이라 수명이 다르다. 데이터·설정·캐시 셋으로 갈라 둔다 —
@@ -90,12 +94,14 @@ import mimetypes
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+import webbrowser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -123,20 +129,36 @@ DEFAULT_SUBDIR = 'video-clip'
 APP_NAME = 'choreo'
 
 
-def _xdg(env, mac_tail, linux_tail):
-    """XDG 환경 변수 > macOS 관례 > 리눅스 기본. 윈도는 리눅스 쪽으로 떨어진다(홈 아래 점폴더)."""
+# ⚠ 윈도우는 홈 아래 점폴더가 아니라 OS 관례 자리다(2026-11-03, RM-28). 설정(LLM 키)은 로밍 프로필의
+#   %APPDATA% 에, 데이터·캐시는 이 기기에만 머무는 %LOCALAPPDATA% 에 둔다 — 영상 수 GB 가 로밍으로
+#   다른 기기에 끌려 다니지 않게. 데이터와 캐시는 한 부모 아래 서로 다른 하위 폴더라 **설정 ≠ 데이터 ≠ 캐시**
+#   가 윈도우에서도 그대로다.
+WIN_HOMES = {'data': ('LOCALAPPDATA', 'data'), 'config': ('APPDATA', ''), 'cache': ('LOCALAPPDATA', 'cache')}
+WIN_FALLBACK = {'APPDATA': 'AppData/Roaming', 'LOCALAPPDATA': 'AppData/Local'}
+
+
+# @complexity time=O(1) space=O(1) cc=5
+def _xdg(env, mac_tail, linux_tail, kind):
+    """XDG 환경 변수 > OS 관례(macOS · 윈도우) > 리눅스 기본. 돌려주는 자리는 앱 이름까지 붙은 폴더다."""
     base = os.environ.get(env, '').strip()
     if base:
-        return Path(base).expanduser()
+        return Path(base).expanduser() / APP_NAME
     home = Path.home()
-    return home / mac_tail if sys.platform == 'darwin' else home / linux_tail
+    if sys.platform == 'win32':
+        win_env, tail = WIN_HOMES[kind]
+        win_base = os.environ.get(win_env, '').strip()
+        root = Path(win_base) if win_base else home / WIN_FALLBACK[win_env]
+        return root / APP_NAME / tail if tail else root / APP_NAME
+    return (home / mac_tail if sys.platform == 'darwin' else home / linux_tail) / APP_NAME
 
 
+# @complexity time=O(1) space=O(1) cc=1
 def data_home():
     """잃으면 복구 못 하는 것. macOS 에서는 Time Machine 이 알아서 담는 자리다."""
-    return _xdg('XDG_DATA_HOME', 'Library/Application Support', '.local/share') / APP_NAME
+    return _xdg('XDG_DATA_HOME', 'Library/Application Support', '.local/share', 'data')
 
 
+# @complexity time=O(1) space=O(1) cc=1
 def config_home():
     """이 기기의 설정. 데이터와 **다른 자리**여야 한다 — LLM 키가 여기 있다.
 
@@ -144,12 +166,13 @@ def config_home():
       폴더를 통째로 건네거나 클라우드에 올릴 때 키가 따라간다 — 가르려던 까닭이 그 자리에서
       무너진다. 그래서 macOS 에서만 Preferences 쪽으로 뺀다.
     """
-    return _xdg('XDG_CONFIG_HOME', 'Library/Preferences', '.config') / APP_NAME
+    return _xdg('XDG_CONFIG_HOME', 'Library/Preferences', '.config', 'config')
 
 
+# @complexity time=O(1) space=O(1) cc=1
 def cache_home():
     """지워도 되는 것. 지우면 모델을 다시 받을 뿐 데이터는 그대로다."""
-    return _xdg('XDG_CACHE_HOME', 'Library/Caches', '.cache') / APP_NAME
+    return _xdg('XDG_CACHE_HOME', 'Library/Caches', '.cache', 'cache')
 
 
 def is_loopback(addr):
@@ -263,22 +286,41 @@ def _has_anything(path, pattern='*'):
         return False
 
 
+# @complexity time=O(1) space=O(1) cc=2
+def is_packaged():
+    """설치형 앱으로 포장된 채 도는가(2026-11-03, RM-28). 얼린 실행 파일(sys.frozen)이거나 런처가
+    CHOREO_PACKAGED=1 을 준 때다.
+
+    ⚠ 포장된 앱에서는 REPO_DIR 이 **앱 묶음 안**(얼린 실행의 압축 해제 자리)이다. 거기를 옛 자리로
+      읽으면 앱을 업데이트하거나 지울 때 안무표가 묶음과 함께 날아간다. 그래서 옛 자리 판정을 끈다.
+    """
+    return bool(getattr(sys, 'frozen', False)) or os.environ.get('CHOREO_PACKAGED') == '1'
+
+
+# @complexity time=O(1) space=O(1) cc=3
 def default_config_file():
-    """옛 설정이 저장소에 남아 있으면 그것을 계속 쓴다(이 기기의 설정을 잃지 않는다)."""
-    return LEGACY_CONFIG_FILE if LEGACY_CONFIG_FILE.is_file() else config_home() / 'config.json'
+    """옛 설정이 저장소에 남아 있으면 그것을 계속 쓴다(이 기기의 설정을 잃지 않는다). 포장된 앱은 보지 않는다."""
+    if not is_packaged() and LEGACY_CONFIG_FILE.is_file():
+        return LEGACY_CONFIG_FILE
+    return config_home() / 'config.json'
 
 
+# @complexity time=O(k) space=O(1) cc=4
 def default_data_root():
-    """저장소 안에 이미 영상이나 안무표가 쌓여 있으면 거기가 그대로 루트다."""
-    for name in (DEFAULT_SUBDIR, 'projects'):
-        if _has_anything(REPO_DIR / name):
-            return REPO_DIR
+    """저장소 안에 이미 영상이나 안무표가 쌓여 있으면 거기가 그대로 루트다. 포장된 앱은 보지 않는다."""
+    if not is_packaged():
+        for name in (DEFAULT_SUBDIR, 'projects'):
+            if _has_anything(REPO_DIR / name):
+                return REPO_DIR
     return data_home()
 
 
+# @complexity time=O(k) space=O(1) cc=3
 def default_models_dir():
-    """받아 둔 모델이 저장소 안에 있으면 다시 받게 하지 않는다(17~42MB 다)."""
-    return LEGACY_MODELS_DIR if _has_anything(LEGACY_MODELS_DIR, '*.task') else cache_home() / 'models'
+    """받아 둔 모델이 저장소 안에 있으면 다시 받게 하지 않는다(17~42MB 다). 포장된 앱은 보지 않는다."""
+    if not is_packaged() and _has_anything(LEGACY_MODELS_DIR, '*.task'):
+        return LEGACY_MODELS_DIR
+    return cache_home() / 'models'
 
 
 # ⚠ 프로젝트 파일은 영상과 **다른 폴더**다(2026-09-13). 같은 root 아래 형제로 두어 한 자리만
@@ -367,17 +409,59 @@ def find_ffmpeg(explicit=None):
     return None
 
 
+# ⚠ 설치형 앱에 싣는 ffmpeg 는 **LGPL 빌드**다(2026-10-13 결정, RM-28) — libx264(GPL)가 없다. 그래서 H.264
+#   인코더를 차례로 고른다: libx264 가 있으면 지금 그대로(화질·속도가 시험된 조합), 없으면 OS 하드웨어 인코더
+#   (macOS VideoToolbox · 윈도우 Media Foundation), 그것도 없으면 openh264. 하드웨어 인코더는 crf 를 모르니
+#   비트레이트로 화질을 잡는다. 어느 것도 없으면 None — 자르기가 까닭을 말하고 실패한다.
+H264_ENCODERS = (
+    ('libx264', ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20']),
+    ('h264_videotoolbox', ['-c:v', 'h264_videotoolbox', '-b:v', '8M']),
+    ('h264_mf', ['-c:v', 'h264_mf', '-b:v', '8M']),
+    ('libopenh264', ['-c:v', 'libopenh264', '-b:v', '8M']),
+)
+_encoder_cache = {}
+
+
+# @complexity time=O(1) space=O(1) cc=3
+def video_encoder_args(encoders):
+    """쓸 수 있는 인코더 이름들에서 H.264 인코더 인자를 고른다. 없으면 None."""
+    for name, args in H264_ENCODERS:
+        if name in encoders:
+            return args + ['-pix_fmt', 'yuv420p']
+    return None
+
+
+# @complexity time=O(n) space=O(n) cc=4
+def ffmpeg_encoders(ffmpeg):
+    """이 ffmpeg 가 아는 인코더 이름들(`ffmpeg -encoders`). 실행 파일마다 한 번만 묻는다. 묻지 못하면 libx264 를
+    가정한다 — 지금까지의 동작이고, 틀렸으면 자르기가 ffmpeg 의 오류를 그대로 돌려준다."""
+    if ffmpeg in _encoder_cache:
+        return _encoder_cache[ffmpeg]
+    try:
+        res = subprocess.run([ffmpeg, '-hide_banner', '-encoders'], capture_output=True, text=True, timeout=30)
+        names = {parts[1] for parts in (line.split() for line in res.stdout.splitlines()) if len(parts) > 1}
+    except (OSError, subprocess.TimeoutExpired):
+        names = {'libx264'}
+    _encoder_cache[ffmpeg] = names
+    return names
+
+
+# @complexity time=O(1) space=O(1) cc=4
 def run_trim(ffmpeg, src, dst, in_sec, out_sec, timeout=3600):
     """src 의 [in_sec, out_sec) 를 다시 인코딩해 dst 로. 성공이면 (True, ''), 실패면 (False, stderr 끝부분).
 
     -ss 를 -i 앞에 두면 입력을 그 시각으로 탐색한 뒤 디코드하므로 재인코딩에서는 프레임 단위로 정확하다.
     libx264 veryfast/crf 20 + aac 160k + faststart 는 "브라우저가 바로 여는 MP4" 의 무난한 조합이다.
+    libx264 가 없는 ffmpeg(설치형 앱의 LGPL 빌드)는 video_encoder_args 가 고른 다른 H.264 인코더를 쓴다.
     소리가 없는 영상도 되게 -c:a 만 두고 오디오 스트림 존재를 전제하지 않는다."""
+    video = video_encoder_args(ffmpeg_encoders(ffmpeg))
+    if video is None:
+        return False, '이 ffmpeg 에는 H.264 인코더(libx264 · VideoToolbox · Media Foundation · openh264)가 없습니다.'
     cmd = [
         ffmpeg, '-y', '-hide_banner', '-loglevel', 'error', '-nostdin',
         '-ss', f'{in_sec:.3f}', '-i', str(src), '-t', f'{out_sec - in_sec:.3f}',
         '-map', '0:v:0', '-map', '0:a?',
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+        *video,
         '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart',
         str(dst),
     ]
@@ -1222,9 +1306,13 @@ class Handler(SimpleHTTPRequestHandler):
     config = None          # Config. main() 이 넣는다
     quiet = False
     ffmpeg = None          # ffmpeg 실행 파일 경로 또는 None. main() 이 넣는다
+    # 정적 파일(index.html · src/ · admin.html · 문서)의 뿌리. 기본은 저장소 자리이고, 설치형 앱의 런처는
+    # --static 으로 앱 묶음 안의 자리를 준다(2026-11-03, RM-28) — 얼린 실행에서 __file__ 의 자리는 임시
+    # 압축 해제 폴더라 저장소 자리에 박아 두면 앱 파일을 못 찾는다.
+    static_dir = REPO_DIR
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(REPO_DIR), **kwargs)
+        super().__init__(*args, directory=str(self.static_dir), **kwargs)
 
     def log_message(self, fmt, *args):
         if not self.quiet:
@@ -1940,18 +2028,99 @@ class Handler(SimpleHTTPRequestHandler):
 # 진입점
 # ─────────────────────────────────────────────────────────────────────────────
 
-def main(argv=None):
+# ⚠ 포트를 기억한다(2026-11-03, RM-28). 브라우저는 주소의 포트까지 출처로 보아 localStorage · IndexedDB 를
+#   가른다 — 켤 때마다 빈 포트를 새로 잡으면 최근 목록 · 초안이 켤 때마다 사라진 것처럼 보인다. 그래서
+#   `--port 0` 이면 지난번에 잡은 포트를 먼저 시도하고, 쓰이고 있을 때만 새로 잡으며 그 사실을 알린다.
+#   기억은 설정 파일 곁의 작은 파일에 둔다 — 설정 스키마(Config)를 넓히지 않는다.
+ADDR_IN_USE = {48, 98, 10048}      # macOS · 리눅스 · 윈도우의 EADDRINUSE
+
+
+class AppServer(ThreadingHTTPServer):
+    """⚠ 윈도우의 SO_REUSEADDR 는 「이미 쓰이는 포트에도 묶기」다 — 파이썬 기본값(allow_reuse_address)대로 두면
+    두 번째 서버가 첫째의 포트를 조용히 가로채 충돌을 알릴 길이 없다. 윈도우에서는 끄고 독점 묶기를 청한다."""
+    allow_reuse_address = os.name != 'nt'
+
+    # @complexity time=O(1) space=O(1) cc=3
+    def server_bind(self):
+        if os.name == 'nt' and hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+# @complexity time=O(1) space=O(1) cc=1
+def port_memory_file(config_path):
+    """기억한 포트를 두는 파일 — 설정 파일 곁의 `<이름>.port.json`."""
+    return Path(config_path).with_name(Path(config_path).stem + '.port.json')
+
+
+# @complexity time=O(1) space=O(1) cc=3
+def remembered_port(config_path):
+    """지난번에 잡은 포트. 없거나 읽지 못하면 None."""
+    try:
+        port = json.loads(port_memory_file(config_path).read_text()).get('port')
+    except (OSError, ValueError, AttributeError):
+        return None
+    return port if isinstance(port, int) and 0 < port < 65536 else None
+
+
+# @complexity time=O(1) space=O(1) cc=2
+def remember_port(config_path, port):
+    """잡은 포트를 기억한다. 쓰지 못해도 서버는 그대로 돈다(다음에 다른 포트가 될 뿐이다)."""
+    try:
+        target = port_memory_file(config_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({'port': port}))
+    except OSError:
+        pass
+
+
+# @complexity time=O(1) space=O(1) cc=7
+def bind_server(host, port, config_path):
+    """서버를 세운다. (서버, 알림 또는 '') — 포트가 쓰이고 있으면 OSError 를 그대로 올린다.
+
+    port 가 0 이면 기억한 포트를 먼저 시도하고, 그것이 쓰이고 있으면 빈 포트를 새로 잡아 알린다."""
+    note = ''
+    if port == 0:
+        wanted = remembered_port(config_path)
+        if wanted:
+            try:
+                return AppServer((host, wanted), Handler), ''
+            except OSError as e:
+                if e.errno not in ADDR_IN_USE:
+                    raise
+                note = (f'  ⚠ 지난번 포트 {wanted} 를 다른 프로그램이 쓰고 있어 새 포트를 잡았습니다 — 주소가 바뀌어 '
+                        '브라우저에 둔 최근 목록 · 초안이 보이지 않을 수 있습니다. 그 프로그램을 끄고 다시 켜면 돌아옵니다.')
+    httpd = AppServer((host, port), Handler)
+    if port == 0:
+        remember_port(config_path, httpd.server_address[1])
+    return httpd, note
+
+
+# @complexity time=O(1) space=O(1) cc=13
+def main(argv=None, on_ready=None):
+    """서버를 켜고 끌 때까지 돈다. 돌려주는 값은 종료 코드다(0 정상 · 1 포트를 못 잡음 · 2 앱 파일 없음).
+
+    on_ready(주소, 서버) 는 묶은 뒤 한 번 불린다 — 설치형 앱의 런처가 주소를 알고, 「끄기」에서 서버를
+    shutdown() 하려고 받는다. 런처가 어디 있는지는 모른다(포장은 바깥 껍데기다, RM-28)."""
     ap = argparse.ArgumentParser(description='안무 편집기 로컬 서버 (정적 파일 + 영상 클립 보관)')
     ap.add_argument('--host', default='127.0.0.1')
-    ap.add_argument('--port', type=int, default=8000)
+    ap.add_argument('--port', type=int, default=8000,
+                    help='포트(기본: 8000). 0 이면 지난번에 잡은 포트를 먼저 쓰고, 쓰이고 있으면 빈 포트를 잡는다')
     ap.add_argument('--root', default=None, help='보관 루트 — 영상과 안무표가 이 아래 형제로 선다(기본: 저장소 밖의 데이터 폴더). 설정 파일보다 우선한다')
     ap.add_argument('--subdir', default=None, help='루트 아래 하위 폴더(기본: video-clip)')
     ap.add_argument('--projects', default=None, help='프로젝트 파일 하위 폴더(기본: projects). 영상과 같은 루트 아래 형제다')
     ap.add_argument('--config', default=None, help='설정 파일 경로(기본: 저장소 밖의 설정 폴더. 옛 .clipserver.json 이 저장소에 남아 있으면 그것)')
     ap.add_argument('--models', default=None, help='자세 분석 모델 보관 폴더(기본: 저장소 밖의 캐시 폴더). 설정에서도 바꾼다')
     ap.add_argument('--ffmpeg', default=None, help='ffmpeg 실행 파일(기본: 환경 변수 CHOREO_FFMPEG 또는 PATH 의 ffmpeg). 없으면 자르기만 꺼진다')
+    ap.add_argument('--static', default=None, help='앱 파일(index.html · src/)을 낼 폴더(기본: 이 server.py 가 있는 저장소)')
+    ap.add_argument('--open', action='store_true', help='켜지면 기본 브라우저로 안무표 화면을 연다')
     ap.add_argument('--quiet', action='store_true')
     args = ap.parse_args(argv)
+
+    static_dir = Path(args.static).expanduser().resolve() if args.static else REPO_DIR
+    if not (static_dir / 'index.html').is_file():
+        print(f'안무 편집기를 켜지 못했습니다 — 앱 파일 폴더 {static_dir} 에 index.html 이 없습니다.', file=sys.stderr)
+        return 2
 
     config = Config.load(str(default_data_root()), DEFAULT_SUBDIR,
                          Path(args.config) if args.config else default_config_file())
@@ -1976,25 +2145,44 @@ def main(argv=None):
     Handler.config = config
     Handler.quiet = args.quiet
     Handler.ffmpeg = find_ffmpeg(args.ffmpeg)
-    httpd = ThreadingHTTPServer((args.host, args.port), Handler)
+    Handler.static_dir = static_dir
+    # ⚠ 포트가 이미 쓰이면 파이썬 오류 더미를 내며 죽던 자리다(2026-11-03, RM-28). 두 번 눌러 켜는 앱에서는
+    #   그 더미를 볼 사람이 없다 — 무엇이 막혔고 무엇을 하면 되는지를 한 문장으로 말하고 0 이 아닌 코드로 물러난다.
+    try:
+        httpd, note = bind_server(args.host, args.port, config.path)
+    except OSError as e:
+        if e.errno in ADDR_IN_USE:
+            print(f'안무 편집기를 켜지 못했습니다 — 포트 {args.port} 를 다른 프로그램이 쓰고 있습니다. '
+                  f'이미 켜 둔 안무 편집기가 있으면 그 창을 쓰거나, --port 로 다른 포트를 주세요.', file=sys.stderr)
+        else:
+            print(f'안무 편집기를 켜지 못했습니다 — {args.host}:{args.port} 에 묶지 못했습니다: {e}', file=sys.stderr)
+        return 1
     port = httpd.server_address[1]
+    url = f'http://{args.host}:{port}/'
     cut = f'자르기: {Handler.ffmpeg}' if Handler.ffmpeg else '자르기: 꺼짐(ffmpeg 없음)'
     m = config.models_json()
     pose = f'자세 분석: 준비됨({config.pose_model})' if m['ready'] else f'자세 분석: 모델 {m["missing"]}개 필요 — 설정에서 내려받기'
     # 어디에 쌓이는지를 첫 줄에 밝힌다 — 기본값이 저장소 밖으로 나갔으니(2026-09-13) 말해 주지
     # 않으면 사용자가 자기 안무표를 찾지 못한다.
-    print(f'안무 편집기: http://{args.host}:{port}/   {cut}   {pose}', flush=True)
+    print(f'안무 편집기: {url}   {cut}   {pose}', flush=True)
     print(f'  보관: 영상 {config.dir}\n        안무표 {config.projects_dir}\n'
           f'        모델 {config.models_dir}\n        설정 {config.path}', flush=True)
+    if note:
+        print(note, flush=True)
     if config.root == REPO_DIR:
         print('  ⚠ 보관 루트가 저장소 안입니다(옛 자리). 옮기려면 폴더를 옮기고 --root 로 가리키세요.',
               flush=True)
+    if args.open:
+        threading.Timer(0.3, webbrowser.open, args=(url,)).start()
+    if on_ready:
+        on_ready(url, httpd)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         httpd.server_close()
+    return 0
 
 
 if __name__ == '__main__':

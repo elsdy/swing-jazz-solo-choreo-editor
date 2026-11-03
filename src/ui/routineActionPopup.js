@@ -18,6 +18,7 @@
 //   ui/popup.js 의 bindOutsideClose 를 그대로 쓴다. setTimeout 0 등록 · pointerdown · 비캡처 ·
 //   '실제로 닫았을 때만 리스너 해제'(= 죽은 리스너가 쌓이는 오늘의 누수)까지 동일하다.
 
+import { iconLabel } from './icon.js';
 import { CLS } from './domContract.js';
 import { bindOutsideClose } from './popup.js';
 import { placeRoutineActionPopup } from '../domain/popupPlacement.js';
@@ -64,6 +65,7 @@ export function createRoutineActionPopup(deps) {
    * @param {number} clientX
    * @param {number} clientY
    */
+  // @complexity time=O(1) space=O(1) cc=1
   function open(placement, clientX, clientY) {
     close();                                                        // 1726
     const popup = document.createElement('div');
@@ -77,7 +79,7 @@ export function createRoutineActionPopup(deps) {
 
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-    editBtn.textContent = str('routineBlock.edit');                  // 1738 — 글자는 문자열 표(RM-10)
+    iconLabel(editBtn, 'pencil', str('routineBlock.edit'));          // 1738 — 글자는 문자열 표(RM-10), 그림은 스프라이트(RM-18)
     editBtn.addEventListener('click', () => {
       close();                                                       // 1740 — 먼저 닫는다
       if (placement.routineId) render(commands.openRoutineEditor(placement.routineId));  // 1741
@@ -87,7 +89,7 @@ export function createRoutineActionPopup(deps) {
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = CLS.danger;                                   // 1747
-    delBtn.textContent = str('routineBlock.remove');                 // 1748 — 글자는 문자열 표(RM-10)
+    iconLabel(delBtn, 'x', str('routineBlock.remove'));              // 1748 — 글자는 문자열 표(RM-10), 그림은 스프라이트(RM-18)
     // ⚠ 여기에는 confirmOnce 가 없다(원본 1749-1753). 한 번 누르면 바로 지워진다 — 오늘 동작이다.
     delBtn.addEventListener('click', () => {
       close();                                                       // 1750

@@ -107,7 +107,10 @@ const DIRTY_FLAGS = Object.freeze([
   // ⚠ 배치는 건드리지 않으므로 `boards` 를 함께 세우지 마라 — 행을 다시 그릴 이유가 없다.
   'phrasing',
   // 2026-11-03 신설(RM-29). 사이드바 프로젝트 칸의 판본 목록과 연습 기록 목록이 이 플래그로 다시 그려진다.
-  'versions'
+  'versions',
+  // 2026-11-03 신설(파트, RM-23). 마디 이름 칸의 띠 · 꼬리표 · 접힌 줄이 이 플래그로 다시 입혀진다.
+  // ⚠ 프레이즈와 같다 — 블록이 안 바뀐 파트 변경(이름 · 색 · 긋기 · 접기)에는 boards 를 세우지 않는다.
+  'parts'
 ]);
 const DIRTY_KEYS = new Set([...DIRTY_FLAGS, 'boards', 'savedLists', 'notify']);
 const BOARD_DIRTY_KEYS = new Set(['rows', 'skeleton']);
@@ -298,6 +301,9 @@ function createInitialState(ids) {
     versions: [],
     practiceLogs: [],
     versionBase: '',
+    // 2026-11-03 신설(파트, RM-23). `{name, startRow, endRow, color}` 목록이며 UNDO_FIELDS·DOC_FIELDS 의 11번째 필드다 —
+    // 곡 구조는 안무의 일부다. 접힘은 여기 없다 — 화면의 일이라 session.partFolds 에 둔다.
+    parts: [],
     recents: {                // 1403-1405, 각각 상한 10 / 3 / 3 (4042·4053·4063)
       projects: [],
       moves: [],
@@ -340,6 +346,8 @@ function createInitialState(ids) {
       //   rate · mirror · clicks  배속 · 좌우 반전 · 카운트 소리(RM-22). 연습 도구의 손잡이라 저장하지 않는다
       // ⚠ 여기에도 재생 위치(currentSec)는 없다. 있으면 초당 60번 store 가 바뀐다.
       video: { open: false, collapsed: false, follow: true, tempoPoints: [], taps: [], inSec: null, outSec: null, loop: false, captureSec: null, floating: false, floatX: null, floatY: null, floatW: null, practice: null, rate: 1, mirror: false, clicks: false },
+      // 접힌 파트의 시작 마디들(RM-23). 화면의 일이라 저장하지도 되돌리지도 않는다 — 다시 열면 모두 펴져 있다.
+      partFolds: new Set(),
       // 자세 분석의 **요약만** 둔다(2026-09-12). 관절점 수만 개는 app/main.js 가 모듈 변수로 들고 있다 —
       // store 에 넣으면 undo 스냅샷이 그만큼 불어나고, 되돌릴 값도 아니다(usecases/poseCommands.js 경계 ①).
       pose: { state: 'idle', done: 0, total: 0, error: '', frames: 0, maxSubjects: 0,
@@ -458,6 +466,7 @@ export function createStore(initial = {}) {
     get stepTodos() { return state.stepTodos; },
     get versions() { return state.versions; },
     get practiceLogs() { return state.practiceLogs; },
+    get parts() { return state.parts; },
     get recents() { return state.recents; },
     get palette() { return state.palette; },
     get selection() { return state.selection; },

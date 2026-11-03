@@ -25,9 +25,11 @@ import { mergeProject } from '../domain/project/merge.js';
  * 이 파일의 커맨드가 받는 협력자. 전부 주입이다.
  * @typedef {Object} ProjectDeps
  * @property {ReturnType<import('./store.js').createStore>} store
- * @property {{ uid: () => string, now: () => number, nowIso: () => string }} env
+ * @property {{ uid: () => string, now: () => number, nowIso: () => string, localDate?: () => string }} env
  *   ⚠ nowIso() 는 `new Date().toISOString()` 의 포트면이다. ports/env.js 의 counterEnv 에는 없으므로
  *     테스트는 `{ ...counterEnv(), nowIso: () => '2024-01-01T00:00:00.000Z' }` 로 감싸 넘겨라.
+ *   ⚠ localDate() 는 이 기계의 지역 날짜 `YYYY-MM-DD` 다(RM-62). 이름 칸이 빈 저장의 기본 이름에만 쓴다 —
+ *     빈 이름으로 저장하는 테스트는 `localDate: () => '2026-11-03'` 도 넘겨라.
  * @property {object} [dialogs]  ⚠ 2026-10-01(RM-04)부터 쓰지 않는다 — 실패는 Dirty.notify 로 돌려준다
  * @property {{ downloadJson: (payload: unknown, fileName: string) => unknown }} files
  * @property {{ saveRecents: (kind: RecentKind, list: unknown[]) => unknown,
@@ -58,6 +60,18 @@ function nowIso(env) {
     throw new TypeError('ProjectDeps.env.nowIso() 가 필요하다 — adapters/browser.js 의 browserEnv 가 제공한다');
   }
   return env.nowIso();
+}
+
+/**
+ * 사람에게 보이는 날짜 — 이 기계의 지역 날짜 `YYYY-MM-DD`(RM-62).
+ * ⚠ nowIso(env) 를 앞 열 글자로 자르지 않는다. 그것은 UTC 날짜라 한국 00:00~08:59 에는 어제다(개발 원칙 D-22).
+ */
+// @complexity time=O(1) space=O(1) cc=3
+function localDate(env) {
+  if (!env || typeof env.localDate !== 'function') {
+    throw new TypeError('ProjectDeps.env.localDate() 가 필요하다 — adapters/browser.js 의 browserEnv 가 제공한다');
+  }
+  return env.localDate();
 }
 
 /** 원본 saveHistory() + updateHistoryButtons() 한 쌍. */
@@ -252,18 +266,19 @@ function readProjectData(raw, env) {
  * 프로젝트 파일 저장(saveProjectFile 4038-4045).
  * ⚠ 내려받기(4041)가 최근목록 쓰기(4043)보다 **먼저**다. 쿼터가 차면 "파일은 받아졌는데 목록엔 없음"이
  *   되는데 그게 오늘 동작이다.
- * ⚠ 기본 파일명의 날짜와 payload.savedAt 은 원본이 `new Date()` 를 두 번 부른 것을 그대로 따라
- *   각각 env.nowIso() 를 부른다(입력이 비었을 때만 두 번).
+ * ⚠ 기본 파일명의 날짜는 env.localDate()(지역 날짜), payload.savedAt 은 env.nowIso()(UTC ISO)다.
+ *   원본은 둘 다 `new Date().toISOString()` 에서 잘라 0~9시(KST)에 이름이 어제로 붙었다(RM-62).
  * @see index.html:4038
  * @param {ProjectDeps} deps
  * @param {{ fileName?: string }} [options] fileNameInput 의 날값
  * @returns {import('./store.js').Dirty}
  */
+// @complexity time=O(n) space=O(n) cc=3
 export function saveProject(deps, options = {}) {
   const { store, env, files } = deps;
   const state = store.get();
   const raw = typeof options.fileName === 'string' ? options.fileName : '';
-  const fileName = (raw.trim() || `project_${nowIso(env).slice(0, 10)}`).replace(/\.+$/g, '');
+  const fileName = (raw.trim() || `project_${localDate(env)}`).replace(/\.+$/g, '');
   const payload = buildProjectFile(mainView(state), {
     fileName,
     savedAt: nowIso(env),
@@ -281,11 +296,12 @@ export function saveProject(deps, options = {}) {
  * @param {{ fileName?: string }} [options] moveListFileNameInput 의 날값
  * @returns {import('./store.js').Dirty}
  */
+// @complexity time=O(n) space=O(n) cc=3
 export function saveMoveList(deps, options = {}) {
   const { store, env, files } = deps;
   const state = store.get();
   const raw = typeof options.fileName === 'string' ? options.fileName : '';
-  const fileName = (raw.trim() || `moves_${nowIso(env).slice(0, 10)}`).replace(/\.+$/g, '');
+  const fileName = (raw.trim() || `moves_${localDate(env)}`).replace(/\.+$/g, '');
   const payload = buildMoveListFile(
     { moveLibrary: state.library, categories: state.categories },
     { fileName, savedAt: nowIso(env) }
@@ -301,11 +317,12 @@ export function saveMoveList(deps, options = {}) {
  * @param {{ fileName?: string }} [options] categoryFileNameInput 의 날값
  * @returns {import('./store.js').Dirty}
  */
+// @complexity time=O(n) space=O(n) cc=3
 export function saveCategories(deps, options = {}) {
   const { store, env, files } = deps;
   const state = store.get();
   const raw = typeof options.fileName === 'string' ? options.fileName : '';
-  const fileName = (raw.trim() || `categories_${nowIso(env).slice(0, 10)}`).replace(/\.+$/g, '');
+  const fileName = (raw.trim() || `categories_${localDate(env)}`).replace(/\.+$/g, '');
   const payload = buildCategoryFile({ categories: state.categories }, { fileName, savedAt: nowIso(env) });
   files.downloadJson(payload, `${fileName}-categories.json`);
   return pushRecent(deps, 'categories', { fileName, savedAt: payload.savedAt, data: payload });
@@ -354,6 +371,7 @@ function applyProjectData(deps, data, options = {}) {
     : {};
   writeDoc(store, fields, { selection: new Set(), selectionAnchor: null, ...history });   // RM-14 — 앵커도 비운다
   if (withHistory) store.patch('session', { versionSig: '' });
+  store.patch('session', { partFolds: new Set() });   // RM-23 — 접힘은 화면의 일이다. 다른 안무표를 열면 모두 펴진다
   store.patch('favorites', { routineIds: normalized.favoriteRoutineIds }); // 4372·4376
   storage.saveRoutineFavorites([...normalized.favoriteRoutineIds]);  // 4373·4377 (두 갈래 모두)
 

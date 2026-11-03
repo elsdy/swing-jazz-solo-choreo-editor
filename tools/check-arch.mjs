@@ -9,7 +9,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'src');
@@ -47,6 +47,24 @@ const IMPURE = [
   'Date', 'Math.random', 'crypto', 'structuredClone', 'performance',
 ];
 const PURE_LAYERS = new Set(['domain', 'ports', 'usecases']);
+
+// ── 포장은 바깥 껍데기다: 앱 코드와 서버는 packaging/ 를 모른다 (2026-11-03, RM-28) ──────
+// 설치형 앱의 빌드 스크립트 · 런처 · 아이콘 · 앱 정보는 packaging/ 에만 있다. 화살표는 packaging → 앱 한쪽뿐이다 —
+// 앱이 포장을 알기 시작하면 「브라우저가 그대로 읽는 ES 모듈 · 표준 라이브러리 서버」가 포장 도구에 묶인다.
+// 주석에서 가리키는 것도 막는다: 「모른다」는 이름조차 모르는 것이다. 포장된 채 도는지는 server.py 의
+// is_packaged()(sys.frozen · CHOREO_PACKAGED) 로만 안다.
+export const PACKAGING_GUARDED = (rel) => rel === 'server.py' || rel.startsWith('src/');
+const PACKAGING_REF = /(?<![\w-])packaging[\\/]/;
+
+// @complexity time=O(n) space=O(1) cc=3
+export function packagingRefs(rel, text) {
+  if (!PACKAGING_GUARDED(rel)) return [];
+  const hits = [];
+  text.split('\n').forEach((line, idx) => {
+    if (PACKAGING_REF.test(line)) hits.push(`${rel}:${idx + 1}: packaging/ 를 가리킨다 — 앱 코드와 server.py 는 포장 폴더를 모른다(화살표는 packaging → 앱 한쪽)\n      ${line.trim().slice(0, 90)}`);
+  });
+  return hits;
+}
 
 // ── 소스에서 주석·문자열·정규식 리터럴을 지운다 (오탐 제거) ───────────────────
 function strip(src) {
@@ -144,6 +162,11 @@ function layerOf(relPath) {
 }
 
 // ── 실행 ────────────────────────────────────────────────────────────────────
+// 시험(tests/unit/checkArch.test.mjs)이 규칙 함수만 불러갈 때는 돌지 않는다.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli();
+
+// @complexity time=O(n·m) space=O(n) cc=15
+function runCli() {
 const listOnly = process.argv.includes('--list');
 const problems = [];
 const files = walk(SRC).sort();
@@ -211,6 +234,12 @@ for (const abs of files) {
   }
 }
 
+// 4) 포장 폴더를 모른다 — src/ 와 server.py
+for (const abs of [...files, join(ROOT, 'server.py')]) {
+  const rel = relative(ROOT, abs).replaceAll('\\', '/');
+  problems.push(...packagingRefs(rel, readFileSync(abs, 'utf8')));
+}
+
 if (listOnly) console.log('');
 
 if (problems.length) {
@@ -221,4 +250,5 @@ if (problems.length) {
   process.exit(1);
 }
 
-console.log(`계층 규칙 통과 — ${files.length}개 파일, 위반 0건`);
+console.log(`계층 규칙 통과 — ${files.length}개 파일 + server.py, 위반 0건`);
+}

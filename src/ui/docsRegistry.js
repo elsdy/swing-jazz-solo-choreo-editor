@@ -112,7 +112,14 @@ export const DOCS = [
     group: 'dev',
     title: '개발 원칙',
     path: 'docs/PRINCIPLES.md',
-    desc: '버그 기록에서 뽑아낸 재발 방지 규칙 44개',
+    desc: '버그 기록에서 뽑아낸 재발 방지 규칙 52개',
+  },
+  {
+    id: 'icons',
+    group: 'dev',
+    title: '아이콘 한 벌',
+    path: 'docs/ICONS.md',
+    desc: '단추의 그림이 오는 SVG 스프라이트, 부르는 법, 이름 54개, Lucide 라이선스(RM-18)',
   },
   {
     id: 'bugs',

@@ -18,7 +18,6 @@
 // 자주 인용되는 단추 글자 — 안내 문장이 같은 글자를 두 번 적지 않게 여기서 한 번만.
 const VIDEO_IN = '[ 시작점 지금 여기';      // 「[ In 지금 여기」였다(~2026-11-02) — 용어집: 찍는 단추는 긴 말, 시각 표시는 In · Out
 const VIDEO_OUT = '끝점 ] 지금 여기';
-const ICON_DELETE = '×';
 const FAVORITE_QUICK = '즐겨찾기 (빠른 배치에 표시)';
 
 /**
@@ -28,17 +27,18 @@ const FAVORITE_QUICK = '즐겨찾기 (빠른 배치에 표시)';
 export const LABELS = Object.freeze({
   // ── 안무표 블록 팝업 (ui/placementActionPopup) ───────────────────────────
   'block.untitled': '이름 없는 블록',
-  'block.pick': '✎ 동작 정하기',
-  'block.select': '☐ 선택하기',
-  'block.deselect': '☑ 선택 풀기',
-  'block.remove': '× 지우기',
+  // 아래 단추 글자는 그림 글자 없이 적는다 — 그림은 부르는 자리가 iconLabel 로 붙인다(RM-18, 개발 원칙 U-19)
+  'block.pick': '동작 정하기',
+  'block.select': '선택하기',
+  'block.deselect': '선택 풀기',
+  'block.remove': '지우기',
   // 블록 양쪽 가장자리 손잡이의 툴팁(ui/placementView, RM-12). 왼쪽은 「위치 이동」이었다(~2026-11-03) — 옮기기는 이제 몸통 끌기다.
   'block.trimStart.title': '시작점 조절',
   'block.resize.title': '길이 조절',
 
   // ── 루틴 블록 팝업 (ui/routineActionPopup) ────────────────────────────────
-  'routineBlock.edit': '✏ 편집',
-  'routineBlock.remove': '× 지우기',          // 「× 삭제」였다(~2026-11-02) — 되돌리기로 돌아오니 지우기다. 안무표 블록 팝업과 같은 말
+  'routineBlock.edit': '편집',
+  'routineBlock.remove': '지우기',            // 「× 삭제」였다(~2026-11-02) — 되돌리기로 돌아오니 지우기다. 안무표 블록 팝업과 같은 말
 
   // ── 영상 구간 — ④ 구간 잡고 잘라내기 (index.html data-label · ui/videoPanel) ──
   'video.in': VIDEO_IN,
@@ -50,6 +50,24 @@ export const LABELS = Object.freeze({
   'video.inout.looping': ' · 구간 반복 중',
   'video.inout.needOut': 'In {in} — 이제 구간의 끝점을 찍으세요.',
   'video.inout.needIn': 'Out {out} — 이제 구간의 시작점을 찍으세요.',
+
+  // ── `?` 정리함 — ③ 받아 적기 안의 이름 없는 블록 목록 (ui/videoPanel 의 입구 · ui/pendingTray, RM-24) ──
+  'tray.open': '이름 붙일 것 {n}개',
+  'tray.open.title': '받아 적은 이름 없는 블록(?)만 모아 차례로 이름을 붙이는 목록을 엽니다. 줄을 고르면 영상이 그 대목을 되풀이합니다',
+  'tray.title': '이름 붙일 것 {n}개',
+  'tray.close': '닫기',
+  'tray.close.title': '목록을 닫고 열기 전의 마디 반복으로 되돌립니다. 마이크도 끕니다',
+  'tray.basis': '지금 영상 기준 — 다른 영상으로 받아 적은 ? 는 엉뚱한 대목이 나올 수 있습니다',
+  'tray.noTempo': '박자가 없어 재생 못 함',
+  'tray.count': '{n}카운트',
+  'tray.same': '↑ 와 같음',
+  'tray.same.title': '{place} 와 같은 모양(길이 · 마디 안 시작 칸)이라 하나에 붙이면 함께 붙습니다',
+  'tray.name': '이름 적기',
+  'tray.name.title': '이 블록의 이름',
+  'tray.category': '새 이름이면 이 갈래로 동작 목록에 넣습니다',
+  'tray.hint': 'Enter · Tab 으로 붙이면 다음 ? 로 넘어갑니다. 🎤 로 말해도 고른 줄에 붙습니다.',
+  'tray.empty': '이름 없는 블록이 없습니다 — 받아 적기로 ? 를 쌓으면 여기에 모입니다.',
+  'tray.done': '이름 없는 블록을 다 채웠습니다.',
 
   // ── 파일 메뉴 — 어디에 담기는가 한 줄 (ui/fileMenu). {save} 는 saveProject 명령의 단추 글자 ──
   'file.untitled': '제목 없는 안무',
@@ -154,8 +172,35 @@ export const LABELS = Object.freeze({
   'log.delete': '기록 삭제',
   'log.delete.title': '이 기록을 삭제합니다 — 되돌릴 수 없습니다',
 
+  // ── 파트(섹션) — 마디 이름 칸의 띠 · 마디 메뉴 · 파트 팝업 (ui/partView · ui/rowActionPopup · app/render, RM-23) ──
+  'part.menu.new': '파트로 묶기…',
+  'part.menu.edit': '파트 고치기…',
+  'part.new.title': '새 파트 — {from}마디부터',
+  'part.pick.range': '{from}~{to}마디 — 다른 마디 이름을 누르면 끝이 바뀝니다',
+  'part.edit.title': '{name} 파트 — {from}~{to}마디',
+  'part.name.label': '이름',
+  'part.name.placeholder': 'A파트 · 인트로 · 브레이크',
+  'part.end.label': '끝 마디',
+  'part.color.label': '색',
+  'part.create': '파트로 묶기',
+  'part.apply': '이름 · 끝 · 색 바꾸기',
+  'part.fold': '접기',
+  'part.unfold': '펴기',
+  'part.repeat': '한 번 더',
+  'part.moveUp': '파트를 위로',
+  'part.moveDown': '파트를 아래로',
+  'part.remove': '파트 지우기',
+  'part.removed': '파트를 지웠습니다 — 마디와 블록은 그대로입니다.',
+  'part.emptySummary': '빈 파트',
+  'part.label.title': '{name} 파트 ({from}~{to}마디) — 누르면 접고, 우클릭 · 길게 누르면 고칩니다',
+  'part.label.titleFolded': '{name} 파트가 접혀 있습니다({from}~{to}마디) — 누르면 폅니다',
+
+  // ── 엄지 바 · 영상 띠 조작 줄 (ui/thumbBar) ──────────────────────────────
+  // `.short` 는 칸이 좁아 글자가 넘칠 때 접는 짧은 꼴이다(RM-63) — 접히면 전체 글자가 aria-label 로 남는다.
+  'thumb.rewind': '처음으로', // 좁으면 아이콘(skip-back)만 남는다(RM-63 · RM-18)
+  'thumb.rewind.title': '영상을 맨 처음으로 되감고 바로 재생한다',
+
   // ── 여러 자리가 같이 쓰는 것 ──────────────────────────────────────────────
-  'icon.delete': ICON_DELETE,
   'favorite.quickPlace.title': FAVORITE_QUICK,
 });
 

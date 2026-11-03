@@ -11,6 +11,8 @@
 // 하고, 둘 다에 있으면 칸·규모·선행이 같아야 한다. 판에만 있는 항목은 계획서나 설명(what)이 있으면 문서에 없어도 된다 —
 // 보드가 found 로 더한 버그 항목은 계획서 없이 설명만 갖는다(2026-11-02, RM-40). 문서가 「정하기를 미룬 것」에 둔 질문에
 // 판이 답을 적은 것도 붉히지 않고 「문서에서 거둘 것」으로 알리기만 한다 — 판이 원본이라 답이 틀린 것이 아니라 문서 줄이 묵은 것이다.
+// 트랙도 같다 — 보드가 더하는 출처 트랙(from-factoriel)은 plan 없이 설명만 가지니, plan 이 있는 트랙만 앵커를 재고 plan 도
+// 설명도 없는 빈 트랙만 붉힌다(2026-11-03, RM-49).
 //
 // 규모는 문서의 두 자리 — 추적 표의 칸과 세 칸 항목 줄의 「(규모)」 — 에 적힌다. 판이 다시 다듬으며 규모만 바꿨을 때
 // 표만 고치고 본문 괄호를 빠뜨리지 않게 두 자리 모두 판과 잰다(2026-10-20, RM-38).
@@ -64,6 +66,25 @@ function mismatches({ rows, inBody, items, hasPlan }) {
   }
   for (const it of items.values()) {
     if (!inTable.has(it.id) && !hasPlan(it)) out.push(`${it.id} 는 판 파일에만 있고 계획서도 설명도 없다 — 문서에 적거나 계획서 · 설명을 둔다`);
+  }
+  return out;
+}
+
+/**
+ * 판의 트랙(tracks)이 가리키는 문서 앵커가 문서 뷰어의 앵커 집합(anchors)에 있는지 잰다 — 어긋남 글 목록, 비면 맞다.
+ * plan 이 있는 트랙만 앵커를 잰다. 보드가 더하는 출처 트랙(from-factoriel, B899)은 plan 없이 설명(what)만 갖는다 —
+ * 원본(판)이 실제로 남기는 꼴이라 설명이 있으면 통과시키고, plan 도 설명도 없는 빈 트랙만 붉힌다(2026-11-03, RM-49).
+ */
+// @complexity time=O(t) space=O(t) cc=5
+function trackAnchorMismatches({ tracks, anchors }) {
+  const out = [];
+  for (const t of tracks) {
+    if (!t.plan) {
+      if (!(t.what && t.what.trim())) out.push(`${t.id} 는 plan 도 설명도 없다 — 문서 앵커나 설명(what)을 둔다`);
+      continue;
+    }
+    const hash = decodeURIComponent(t.plan.split('#')[1] || '');
+    if (!anchors.has(hash)) out.push(`${t.id} 의 plan 앵커 #${hash} 가 없다`);
   }
   return out;
 }
@@ -184,11 +205,40 @@ test('[RM-40 요구 3] 정하기를 미룬 것의 번호가 로드맵 파일의 
   for (const line of stale) t.diagnostic(`문서에서 거둘 것: ${line}`);
 });
 
-test('트랙이 가리키는 문서 앵커가 문서 뷰어에서 실제로 걸린다', () => {
+test('[RM-49 요구 0] plan 없는 트랙은 설명이 있으면 앵커를 재지 않는다', () => {
+  const anchors = new Set(['다음-곧-만들-것']);
+  const run = tracks => trackAnchorMismatches({ tracks, anchors });
+  // plan 없이 설명만 있는 출처 트랙 — 보드가 남기는 꼴(B899)이라 통과하고 던지지 않는다
+  assert.deepEqual(run([{ id: 'from-factoriel', name: '🏭', what: 'factoriel 에서 올라온 버그' }]), []);
+  // plan 도 설명도 없으면(없음 · 빈 글 · 공백) 읽히는 글로 붉다 — 던지지 않는다
+  for (const what of [undefined, '', '   ']) {
+    assert.deepEqual(run([{ id: 'empty', name: '빈', what }]), ['empty 는 plan 도 설명도 없다 — 문서 앵커나 설명(what)을 둔다']);
+  }
+  // plan 이 있으면 앵커를 잰다 — 있으면 통과, 없으면 지금처럼 붉다
+  assert.deepEqual(run([{ id: 'next', plan: 'docs/ROADMAP.md#다음-곧-만들-것' }]), []);
+  assert.deepEqual(run([{ id: 'gone', plan: 'docs/ROADMAP.md#없는-절', what: '설명이 있어도 plan 이 있으면 앵커를 잰다' }]), ['gone 의 plan 앵커 #없는-절 가 없다']);
+  // 퍼센트 인코딩한 앵커도 풀어서 잰다
+  assert.deepEqual(run([{ id: 'enc', plan: `docs/ROADMAP.md#${encodeURIComponent('다음-곧-만들-것')}` }]), []);
+});
+
+test('[RM-49 요구 3] 트랙이 가리키는 문서 앵커가 문서 뷰어에서 실제로 걸린다', () => {
   const { html } = renderMarkdown(mdText);
   const anchors = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
-  for (const t of doc.tracks) {
-    const hash = decodeURIComponent(t.plan.split('#')[1] || '');
-    assert.ok(anchors.has(hash), `${t.id} 의 plan 앵커 #${hash} 가 없다`);
+  assert.deepEqual(trackAnchorMismatches({ tracks: doc.tracks, anchors }), []);
+});
+
+test('[RM-53 요구 1] 판의 출처 트랙(from-*)은 plan 없이 설명만으로 앵커 대조를 지난다', () => {
+  const { html } = renderMarkdown(mdText);
+  const anchors = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
+  // 보드가 실제로 남긴 출처 트랙을 잰다 — 하나도 없으면 아무것도 재지 않고 통과하므로 있는지부터 본다(보드가 이름을 바꾸면 붉다)
+  const sources = doc.tracks.filter(t => t.id.startsWith('from-'));
+  assert.ok(sources.length >= 1, '판에 from- 으로 시작하는 출처 트랙이 없다 — 보드가 트랙 이름을 바꿨나');
+  for (const t of sources) {
+    // 같은 TypeError(RM-49 · RM-53 — plan 없는 트랙에서 t.plan.split)가 또 나면 이 트랙 이름으로 붉다
+    assert.deepEqual(trackAnchorMismatches({ tracks: [t], anchors }), [], `${t.id} 가 앵커 대조를 지나지 못한다`);
+    // 설명까지 비면 붉다 — 빈 트랙을 통과시키지 않는다
+    const bare = { ...t, what: '' };
+    delete bare.plan;
+    assert.deepEqual(trackAnchorMismatches({ tracks: [bare], anchors }), [`${t.id} 는 plan 도 설명도 없다 — 문서 앵커나 설명(what)을 둔다`]);
   }
 });

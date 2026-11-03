@@ -63,7 +63,7 @@ import {
 } from '../../src/domain/project/schema.js';
 import { applySnapshot, pickUndoFields, toLinkBundle } from '../../src/domain/project/snapshot.js';
 import * as History from '../../src/usecases/historyCommands.js';
-import { clearBoard, setBoardRows, shiftAllCounts } from '../../src/usecases/boardCommands.js';
+import { clearBoard, setBoardRows, shiftAllCounts, splitAtPlayhead } from '../../src/usecases/boardCommands.js';
 import { serializeLinks } from '../../src/domain/links.js';
 import { CLEAR_BOARD_BTN_LABEL, CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
@@ -72,6 +72,7 @@ import {
   isEmptyMedia, normalizeMedia, normalizeMediaSource, serializeMedia
 } from '../../src/domain/project/media.js';
 import { buildProjectFile } from '../../src/domain/project/serialize.js';
+import { normalizeParts } from '../../src/domain/parts.js';
 import { createYouTubePlayer, YT_CAPABILITIES } from '../../src/adapters/media/youtubePlayer.js';
 import { mediaSourceFromUrl, pickPlayer, pickPlayerKind, toMediaSource } from '../../src/adapters/media/pickPlayer.js';
 import { createFilePlayer, FILE_CAPABILITIES } from '../../src/adapters/media/filePlayer.js';
@@ -577,7 +578,7 @@ test('schema: UNDO_FIELDS 에 links·media·phrasing·stepTodos 가 있고 ROUTI
   assert.deepEqual([...UNDO_FIELDS].sort(), [...DOC_FIELDS].sort());
   // 키 순서 = 스냅샷 JSON 바이트 순서. 앞 6개는 원본 리터럴 순서 그대로이고 신설은 꼬리에 붙는다.
   assert.deepEqual([...UNDO_FIELDS],
-    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing', 'stepTodos']);
+    ['rows', 'cols', 'placements', 'moveLibrary', 'categories', 'routines', 'links', 'media', 'phrasing', 'stepTodos', 'parts']);
   assert.deepEqual([...ROUTINE_UNDO_FIELDS], ['rows', 'cols', 'placements']);
 });
 
@@ -2288,6 +2289,29 @@ test('media: 빈 블록은 저장 바이트를 한 글자도 늘리지 않는다
   assert.equal(guarded.미래필드, 1, '알 수 없는 키는 여전히 왕복해야 한다');
 });
 
+test('parts: 한 번도 안 쓴 문서의 저장 파일에는 parts 키가 없고 바이트가 예전과 같다', () => {
+  // media 시험과 같은 꼴 — parts 를 뺀 source 와 빈 parts 를 더한 source 가 글자 하나 다르지 않아야 한다(RM-23).
+  const source = {
+    rows: 8, cols: 8, categories: {}, moveLibrary: [], placements: [], routines: [],
+    youtubeUrl: '', youtubeTitle: '', clickupUrl: '', customLinks: []
+  };
+  const before = JSON.stringify(buildProjectFile(source, { fileName: 'a', savedAt: 'S' }));
+  const withEmpty = JSON.stringify(buildProjectFile({ ...source, parts: normalizeParts(null) }, { fileName: 'a', savedAt: 'S' }));
+  assert.equal(withEmpty, before, '빈 parts 가 파일에 새어 나갔다 — 저장할 때 늘 `parts: []` 를 내보내면 여기가 붉다');
+  assert.ok(!before.includes('"parts"'));
+
+  // parts 가 없는 옛 파일을 열었다 다시 저장해도 parts 키가 생기지 않는다(등록표의 optional 이 빠지면 여기가 잡는다)
+  const opened = normalizeProject(V1_FILE, { ids: { uid: () => 'x' }, defaultCategories: DEFAULT_CATEGORIES });
+  assert.deepEqual(opened.parts, []);
+  const resaved = buildProjectFile({ ...V1_FILE, ...opened }, { fileName: 'demo', savedAt: 'S' });
+  assert.equal('parts' in resaved, false, '옛 파일을 열었다 저장하자 parts 키가 생겼다');
+
+  // 값이 있으면 맨 뒤에 붙는다(키 순서 = 바이트 순서)
+  const filled = buildProjectFile({ ...source, parts: [{ name: 'A', startRow: 1, endRow: 2, color: '#38bdf8' }] }, { fileName: 'a', savedAt: 'S' });
+  assert.deepEqual(Object.keys(filled).slice(-1), ['parts']);
+  assert.deepEqual(filled.parts, [{ name: 'A', startRow: 1, endRow: 2, color: '#38bdf8' }]);
+});
+
 test('media: normalizeMedia 는 손상된 입력을 기본값으로 접고 isEmptyMedia 가 그것을 알아본다', () => {
   for (const bad of [null, undefined, 42, '문자열', [], { tempo: 'x', source: 7 }]) {
     assert.deepEqual(normalizeMedia(bad), DEFAULT_MEDIA, `${JSON.stringify(bad)} 가 기본값으로 안 접혔다`);
@@ -2673,6 +2697,41 @@ test('flowTrack: 마디는 고르게 놓이고 길은 닫힌 리본을 함께 �
   assert.equal(Track.flowTrack({ width: 0, height: 96, count: 6 }), null);
   assert.equal(Track.flowTrack({ width: 400, height: 96, count: 1 }), null);
   assert.equal(Track.flowTrack({ width: NaN, height: 96, count: 6 }), null);
+});
+
+/**
+ * 테마의 마디(지름 34px)와 그 아래 이름(여백 4 + 줄 14)이 띠 높이를 넘으면 `overflow:hidden` 인 띠가 잘라
+ * 이름이 사라진다(RM-58). 띠가 낮으면 활을 낮춰서라도 띠 안에 넣는다 — 띠는 늘이지 않는다(결정 2026-11-03).
+ */
+test('[RM-58 요구 1] flowTrack: 마디와 이름이 띠 높이 안에 든다', () => {
+  const cases = [
+    { height: 104 }, { height: 60 },
+    // 40 에는 기본 마디(34) + 이름(18) 이 들어갈 수 없다 — 작은 마디로 셈만 잰다.
+    { height: 40, nodeR: 8, labelH: 12 }
+  ];
+  for (const c of cases) {
+    const nodeR = c.nodeR ?? Track.FLOW_NODE_R;
+    const labelH = c.labelH ?? Track.FLOW_LABEL_H;
+    for (let count = 2; count <= 6; count++) {
+      const t = Track.flowTrack({ width: 1068, count, ...c });
+      for (const p of t.points) {
+        assert.ok(p.y - nodeR >= 0, `높이 ${c.height} · 마디 ${count}: 마디 위가 띠 위로 나갔다(y=${p.y})`);
+        assert.ok(p.y + nodeR + labelH <= c.height, `높이 ${c.height} · 마디 ${count}: 이름이 띠 아래로 나갔다(y=${p.y})`);
+      }
+    }
+  }
+  // 104(지금 테마 띠)에서는 그림이 그대로다 — 끝 마디가 가운데 마디보다 아래, 활 26px.
+  const t = Track.flowTrack({ width: 1068, height: 104, count: 3 });
+  assert.deepEqual(t.points.map(p => Math.round(p.y)), [65, 39, 65]);
+  // 60 에서는 활이 낮아질 뿐 여전히 가운데가 솟는다.
+  const low = Track.flowTrack({ width: 1068, height: 60, count: 3 });
+  assert.ok(low.points[1].y < low.points[0].y, '낮은 띠에서도 가운데 마디가 솟아야 한다');
+  // 마디와 이름이 아예 안 들어가는 띠는 마디를 띠 위에 붙인다 — 마디가 보이는 것이 이름보다 먼저다.
+  const tiny = Track.flowTrack({ width: 1068, height: 30, count: 3 });
+  assert.ok(tiny.points.every(p => p.y === Track.FLOW_NODE_R), '못 담는 띠에서는 마디를 위에 붙인다');
+  // 기본 테마(마디 · 이름 몫 0)는 RM-58 전과 같은 좌표다 — 낮은 줄(43px)에서도 활이 그대로다(요구 4).
+  const basic = Track.flowTrack({ width: 1068, height: 43, count: 3, nodeR: 0, labelH: 0 });
+  assert.deepEqual(basic.points.map(p => Math.round(p.y * 100) / 100), [27.95, 15.05, 27.95]);
 });
 
 test('themes: 모르는 값은 기본으로 떨어지고, 기본은 표식이 없다', () => {
@@ -5094,6 +5153,32 @@ test('boundaryCount: 격자에 붙이고 남은 거리를 버리지 않고 돌�
   assert.equal(boundaryCount(Number.NaN, T120, 2), null, '읽을 수 없으면 null 이다');
 });
 
+// RM-60 — `Number(null)`·`Number('')` 은 0 이라 `Number.isFinite(Number(sec))` 로 거르면 못 읽는 초가 「0초」로 통과했다.
+test('[RM-60 요구 0] boundaryCount: null · undefined · 빈 글 초는 읽을 수 없어 null 이고 0 은 0초다', () => {
+  for (const sec of [null, undefined, '', '4.5', '  ', true, [], {}]) {
+    assert.equal(boundaryCount(sec, T120, 2), null, `${JSON.stringify(sec)} 는 초가 아니다`);
+  }
+  const zero = boundaryCount(0, T120, 2);
+  assert.ok(zero, '0 은 0초다 — 읽을 수 있다');
+  assert.equal(zero.raw, timeToCount(0, T120));
+});
+
+test('[RM-60 요구 1] splitAtPlayhead 는 sec 가 null 이면 카운트 0 에서 자르지 않는다', () => {
+  // 0초 = 카운트 0. 블록 「a」 는 intro 행 7카운트(-2)에서 1행 2카운트(1)까지 — 카운트 0 경계를 가로지른다.
+  const store = createStore();
+  const seg = (row, startIndex, length) => ({ id: `a-${row}`, groupId: 'a', name: 'a', category: 'basic', row, startIndex, length, subRow: 0 });
+  store.setBoard(BOARD_MAIN, { rows: 4, cols: 8, hasIntroRow: true, placements: [seg(0, 6, 2), seg(1, 0, 2)] });
+  VideoCmd.setTempo(store, { tempo: { bpm: 120, beatsPerCount: 1, anchorSec: 0, anchorCount: 0, points: [] } });
+  const before = JSON.stringify(store.get().boards[BOARD_MAIN].placements);
+  for (const sec of [null, undefined, '']) {
+    const dirty = splitAtPlayhead(store, { boardId: BOARD_MAIN, sec }, { ids: () => 'n1' });
+    assert.equal(dirty.boards, undefined, `sec=${JSON.stringify(sec)} 로 자르면 안 된다`);
+    assert.equal(JSON.stringify(store.get().boards[BOARD_MAIN].placements), before, '배치가 그대로다');
+  }
+  // 대조 — 0 은 0초라서 같은 자리에서 자른다(수 0 은 그대로 읽는다)
+  assert.ok(splitAtPlayhead(store, { boardId: BOARD_MAIN, sec: 0 }, { ids: () => 'n1' }).boards, '0초는 카운트 0 에서 자른다');
+});
+
 test('noteDriftSample: 최근 것만 들고, 읽을 수 없는 값에는 같은 배열을 그대로 돌려준다', () => {
   let list = [];
   for (let k = 0; k < MAX_DRIFT_SAMPLES + 5; k++) list = noteDriftSample(list, { at: k * 2, off: 0.1 });
@@ -5372,6 +5457,44 @@ test('applyLlmNames: 모르겠다는 답과 사람이 고친 블록은 그대로
   });
   assert.equal(VoiceCmd.applyLlmNames(store, asked, [{ heard: '뭔지모를말', name: 'Charleston', sure: true }]), NONE);
   assert.equal(store.board(BOARD_MAIN).placements[0].name, '내가 고친 이름');
+});
+
+test('hearForTray: 정리함이 열려 있고 받아 적는 중이 아니면 들은 말이 고른 ? 에 붙는다', () => {
+  const store = voiceStore();
+  const ids = counterEnv();
+  // 받아 적기로 ? 셋을 쌓는다 — 0~4초 · 4~8초 · 8~10초(120bpm 이라 앞 둘은 같은 모양의 한 마디, 셋째는 4카운트)
+  CaptureCmd.captureToggle(store, { sec: 0 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 4 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 8 }, { ids });
+  CaptureCmd.captureToggle(store, { sec: 10 }, { ids });
+
+  // ① 받아 적는 중이면 물러선다 — 들은 말은 열린 구간(hearUtterance)만 받는다
+  const [g1, g2, g3] = [...new Set(store.board(BOARD_MAIN).placements.map(p => p.groupId))];
+  assert.equal(VoiceCmd.hearForTray(store, { text: '찰스턴', groupId: g3 }), NONE, '받아 적는 중이면 NONE');
+  assert.ok(store.board(BOARD_MAIN).placements.every(p => p.pending), '아무것도 붙지 않았다');
+  CaptureCmd.stopCapture(store);
+
+  // ② 분명히 맞는 말 — 정식 이름과 그 동작의 갈래로 붙고, LLM 은 부르지 않는다
+  const cat = store.get().library.find(m => m.name === '찰스턴').category;
+  const sure = VoiceCmd.hearForTray(store, { text: '어 찰스톤', groupId: g3 });
+  assert.equal(sure.name, '찰스턴');
+  assert.equal(sure.needsLlm, false);
+  assert.equal(sure.groupId, g3);
+  assert.ok(store.board(BOARD_MAIN).placements.filter(p => p.groupId === g3).every(p => p.name === '찰스턴' && p.category === cat && !p.pending));
+
+  // ③ 헷갈리는 말 — 들은 대로 붙이고 needsLlm 으로 알린다. 같은 모양의 ? 무리(g1 · g2)에 함께 붙는다
+  const unsure = VoiceCmd.hearForTray(store, { text: '킥볼체인지', groupId: g1 });
+  assert.equal(unsure.needsLlm, true);
+  assert.equal(unsure.heard, '킥볼체인지');
+  assert.equal(unsure.groupId, g1);
+  assert.deepEqual(unsure.groupIds, [g1, g2], '무리에도 붙인 그룹을 모두 돌려준다 — LLM 줄은 그룹마다');
+  assert.ok(store.board(BOARD_MAIN).placements.filter(p => p.groupId !== g3).every(p => p.name === '킥볼체인지' && !p.pending));
+  assert.equal(store.get().library.some(m => m.name === '킥볼체인지'), false, '들은 대로의 이름은 동작 목록에 넣지 않는다');
+
+  // ④ 이미 이름이 있는 블록 · 없는 그룹 · 빈 말은 아무 일도 없다
+  assert.equal(VoiceCmd.hearForTray(store, { text: '찰스턴', groupId: g1 }), NONE, '이름 있는 블록은 덮지 않는다');
+  assert.equal(VoiceCmd.hearForTray(store, { text: '찰스턴', groupId: '없음' }), NONE);
+  assert.equal(VoiceCmd.hearForTray(store, { text: '  ', groupId: g1 }), NONE);
 });
 
 test('받아 적기를 끝내면 들어 둔 이름은 비우고 LLM 줄은 남긴다', () => {

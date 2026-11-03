@@ -86,7 +86,7 @@ export const CLS = Object.freeze({
   quickPopupDivider: 'quick-popup-divider',
   kbActive: 'kb-active',              // 1878 · 2134 — 키보드 커서
   newAction: 'new-action',            // ⚠ CSS(947)에만 있고 JS 에서 붙이는 곳이 0곳이다 — 죽은 클래스
-  quickBtnActive: 'quick-btn-active', // 1683 · 4842 — '+ 빠른 배치' 토글 버튼
+  quickBtnActive: 'quick-btn-active', // 1683 · 4842 — `빠른 배치` 토글 버튼
 
   // ── 루틴 ──
   routineCard: 'routine-card',
@@ -98,6 +98,10 @@ export const CLS = Object.freeze({
   routineActionPopup: 'routine-action-popup', // 1728
   rapTitle: 'rap-title',                      // 1732
   rapCounts: 'rap-counts',                    // 2026-11-02 RM-16 — 「몇 번째 카운트에서」 단추 격자
+  partPopup: 'part-popup',                    // 2026-11-03 RM-23 — 파트 만들기 · 고치기 팝업(ui/partView)
+  partPopupRow: 'part-popup-row',
+  partSwatch: 'part-swatch',
+  partSwatchOn: 'is-on',
   routineEditorPanel: 'routine-editor-panel',
   reToolbar: 're-toolbar',
   reCloseBtn: 're-close-btn',
@@ -155,6 +159,15 @@ export const CLS = Object.freeze({
   isCollapsed: 'is-collapsed',   // .video-panel.is-collapsed — 본문을 접는다(헤더만 남는다)
   isError: 'is-error',           // .video-status.is-error — 재생기 오류 문구
   playhead: 'playhead',          // 재생 헤드. z-index 6 = .snap-indicator 와 동급
+
+  // ── `?` 정리함 (RM-24 · 2026-11-03) — ui/pendingTray 가 줄을 만든다. CSS 는 index.html 의 `.inline-prompt` 규칙 옆 ──
+  pendingRow: 'pending-row',
+  pendingRowPick: 'pending-row-pick',
+  pendingRowSame: 'pending-row-same',
+  pendingRowNote: 'pending-row-note',
+  pendingRowName: 'pending-row-name',
+  pendingRowCat: 'pending-row-cat',
+  isCurrent: 'is-current',       // .pending-row.is-current — 지금 고른 줄(영상이 되풀이하는 블록)
 
   // ── 공통 유틸 클래스 (마크업과 JS 가 함께 쓴다) ──
   row: 'row', wrap: 'wrap', stack: 'stack', section: 'section', softCard: 'soft-card',
@@ -232,6 +245,17 @@ export const SEL = Object.freeze({
   placementsOfGroupRaw(groupId) {
     return `.placement[data-group-id="${groupId}"]`;
   },
+
+  /**
+   * `?` 정리함의 한 줄(RM-24). 줄은 그룹의 groupId 를 `data-group-id` 로 단다.
+   * @param {string} groupId
+   * @returns {string}
+   */
+  pendingRowOf(groupId) {
+    return `.pending-row[data-group-id="${cssEscapeLocal(groupId)}"]`;
+  },
+  /** 정리함 줄의 이름 단추 — 이름 입력(askName)이 이 위에 뜬다. */
+  pendingRowName: '.pending-row-name',
 });
 
 /**
@@ -286,6 +310,29 @@ export const DATA = Object.freeze({
   /** 마디 이름 칸의 `코러스-프레이즈` 꼬리표. ::after 가 attr() 로 읽는다. */
   phraseTag: 'phraseTag',
   phraseTagAttr: 'data-phrase-tag',
+
+  // ── 파트(섹션) 표시(2026-11-03, RM-23). ui/boardView.syncParts 가 쓰고 CSS 가 읽는다 — 프레이즈와 같은 결.
+  //    ⚠ 파트가 있는 마디에는 프레이즈 표시가 붙지 않는다(domain/parts.boardMarkOf — 파트가 이긴다).
+  /** 행이 파트 안이다. 값은 파트 이름(툴팁 · 시험이 읽는다). 색은 CSS 변수 --partColor. */
+  part: 'part',
+  partAttr: 'data-part',
+  /** 파트의 첫 마디 — 윗변을 굵게 칠한다 */
+  partStart: 'partStart',
+  partStartAttr: 'data-part-start',
+  /** 마디 이름 칸의 파트 이름 꼬리표(첫 마디에만). ::after 가 attr() 로 읽는다 */
+  partTag: 'partTag',
+  partTagAttr: 'data-part-tag',
+  /** 접힌 파트가 감춘 행 — CSS 가 display:none 으로 숨긴다(행을 지우지 않는다 — 자가치유 가드 · 행 번호가 그대로다) */
+  partHidden: 'partHidden',
+  partHiddenAttr: 'data-part-hidden',
+  /** 접힌 파트의 첫 마디. 트랙에 한 줄 요약(data-part-summary)이 뜬다 */
+  partFolded: 'partFolded',
+  partFoldedAttr: 'data-part-folded',
+  partSummary: 'partSummary',
+  partSummaryAttr: 'data-part-summary',
+  /** 범위 고르기 중인 마디 이름 칸(ui/partView 가 쓰고 지운다 — 팝업이 닫히면 없다) */
+  partPick: 'partPick',
+  partPickAttr: 'data-part-pick',
 
   // 겹침 행의 레이어 수(3379). CSS 가 [data-layers] 로 구분선을 그린다.
   // ⚠ 0 이 아니라 **키 자체를 delete** 해서 끈다(3380).

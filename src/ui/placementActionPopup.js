@@ -22,6 +22,7 @@
 // ⚠ 지우기에 확인 단계를 두지 않는다. 형제 팝업과 같고, 블록 삭제는 `되돌리기` 한 번이면 돌아온다.
 //   (되돌릴 수 없는 일에만 confirmOnce 를 쓴다 — 저장소 관습.)
 
+import { iconLabel } from './icon.js';
 import { CLS } from './domContract.js';
 import { bindOutsideClose } from './popup.js';
 import { placePlacementActionPopup } from '../domain/popupPlacement.js';
@@ -87,12 +88,13 @@ export function createPlacementActionPopup(deps) {
     title.textContent = Number.isFinite(count) ? `${name} ${count}c` : name;
     popup.appendChild(title);
 
-    /** 줄 하나. 누르면 **먼저 닫고** 그다음에 일한다(형제 팝업과 같은 순서). */
-    const row = (label, run, cls) => {
+    /** 줄 하나. 누르면 **먼저 닫고** 그다음에 일한다(형제 팝업과 같은 순서). 그림은 스프라이트의 이름(RM-18). */
+    // @complexity time=O(1) space=O(1) cc=2
+    const row = (icon, label, run, cls) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       if (cls) btn.className = cls;
-      btn.textContent = label;
+      iconLabel(btn, icon, label);
       btn.addEventListener('click', () => { close(); run(); });
       popup.appendChild(btn);
       return btn;
@@ -119,17 +121,18 @@ export function createPlacementActionPopup(deps) {
     };
 
     // ⚠ 차례가 뜻을 만든다: 가장 자주 하는 일이 맨 위, 되돌리기 어려운 일이 맨 아래다.
-    row(str('block.pick'), () => commands.openPicker(groupId, clientX, clientY));
+    row('pencil', str('block.pick'), () => commands.openPicker(groupId, clientX, clientY));
     if (commands.toggleSelection) {
-      row(isSelected(groupId) ? str('block.deselect') : str('block.select'), () => render(commands.toggleSelection(groupId)));
+      const on = isSelected(groupId);
+      row(on ? 'square-check' : 'square', on ? str('block.deselect') : str('block.select'), () => render(commands.toggleSelection(groupId)));
     }
     // 손가락에는 마우스의 Alt+끌기 복사가 없다 — 그 블록 바로 뒤에 같은 복사 커맨드로 놓는다(RM-11).
-    row('⧉ 뒤에 복사', () => render(commands.copyAfter(groupId)));
+    row('copy', '뒤에 복사', () => render(commands.copyAfter(groupId)));
     // 분할 · 병합(RM-16). 1카운트 블록은 자를 데가 없고, 루틴 블록은 이 팝업에 오지 않는다.
     if (commands.splitAtCount && Number.isFinite(count) && count >= 2) {
       const splitBtn = document.createElement('button');
       splitBtn.type = 'button';
-      splitBtn.textContent = '✂ 여기서 자르기';
+      iconLabel(splitBtn, 'scissors', '여기서 자르기');
       splitBtn.addEventListener('click', () => {
         const dirty = commands.splitAtPlayhead ? commands.splitAtPlayhead(groupId) : null;
         if (dirty) { close(); render(dirty); return; }
@@ -138,9 +141,9 @@ export function createPlacementActionPopup(deps) {
       popup.appendChild(splitBtn);
     }
     if (commands.mergeWithNeighbor && commands.mergePartner && commands.mergePartner(groupId)) {
-      row('⊕ 옆과 합치기', () => render(commands.mergeWithNeighbor(groupId)));
+      row('merge', '옆과 합치기', () => render(commands.mergeWithNeighbor(groupId)));
     }
-    row(str('block.remove'), () => render(commands.removeGroup(groupId)), CLS.danger);
+    row('x', str('block.remove'), () => render(commands.removeGroup(groupId)), CLS.danger);
 
     document.body.appendChild(popup);
 

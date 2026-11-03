@@ -10,6 +10,7 @@
 // ⚠ dragend(4712)의 화면 정리(clearTrackHighlights + clearPreview)는 dragSession 의 일이 아니다.
 //   ui/overlays 가 하는 일이므로 app/main 이 onDragEnd 로 감싸 넘긴다.
 
+import { iconLabel, iconOnly } from './icon.js';
 import { CLS } from './domContract.js';
 import { askText } from './inlinePrompt.js';
 import { DEFAULT_ROUTINE_COLOR } from '../domain/categories.js';
@@ -143,6 +144,7 @@ export function createRoutineListView(deps) {
    * @param {any} routine
    * @returns {HTMLElement}
    */
+  // @complexity time=O(1) space=O(1) cc=3
   function buildCard(routine) {
     const card = document.createElement('div');
     // 4702 — 편집 중인 루틴만 .is-editing
@@ -206,8 +208,7 @@ export function createRoutineListView(deps) {
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.className = CLS.editBtn;                                // 4735
-    editBtn.textContent = '✏';                                      // 4736
-    editBtn.title = str('routine.edit.title');                      // 4737 — 글자는 문자열 표(RM-10)
+    iconOnly(editBtn, 'pencil', str('routine.edit.title'));         // 4736 — 「✏」 글자였다(~2026-11-03, RM-18). 이름은 문자열 표(RM-10)
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       render(commands.openRoutineEditor(routine.id));               // 4738
@@ -216,12 +217,11 @@ export function createRoutineListView(deps) {
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = CLS.iconBtn;                                 // 4742
-    delBtn.textContent = str('icon.delete');                        // 4743
-    delBtn.title = str('routine.delete.title');                     // 4744 — 글자는 문자열 표(RM-10)
+    iconOnly(delBtn, 'x', str('routine.delete.title'));             // 4743 · 4744 — 이름은 문자열 표(RM-10), 그림은 스프라이트(RM-18)
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      // 4747 — 2초 안에 두 번 눌러야 지워진다. 되돌릴 라벨은 '×'.
-      confirmOnce(delBtn, str('icon.delete'), () => { render(commands.deleteRoutine(routine.id)); });
+      // 4747 — 2초 안에 두 번 눌러야 지워진다. 되돌릴 것은 아이콘(confirmOnce 가 안의 노드를 그대로 되돌린다).
+      confirmOnce(delBtn, str('routine.delete.title'), () => { render(commands.deleteRoutine(routine.id)); });
     });
 
     actions.append(starBtn, editBtn, delBtn);                       // 4749
@@ -230,6 +230,7 @@ export function createRoutineListView(deps) {
   }
 
   /** 목록 전체를 다시 그린다(원본 renderRoutineList 4691-4770). */
+  // @complexity time=O(n)? space=O(n)? cc=4
   function renderList() {
     closeColorPicker();     // 칩이 새로 그려지면 견본판이 옛 칩에 매달린 채 남지 않게(RM-34)
     root.innerHTML = '';                                            // 4692
@@ -245,7 +246,7 @@ export function createRoutineListView(deps) {
     if (favs.length) {                                              // 4753
       const favHeader = document.createElement('div');
       favHeader.style.cssText = FAV_HEADER_STYLE;                   // 4755
-      favHeader.textContent = '★ 즐겨찾기';                          // 4756
+      iconLabel(favHeader, 'star', '즐겨찾기');                     // 4756 — 「★ 즐겨찾기」였다(RM-18)
       root.appendChild(favHeader);
       favs.forEach(r => root.appendChild(buildCard(r)));            // 4758
       if (others.length) {                                          // 4759
