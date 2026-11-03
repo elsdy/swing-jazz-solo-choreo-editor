@@ -381,6 +381,7 @@ export function initLayout(deps = {}) {
     sync();
   }
 
+  // @complexity time=O(1) space=O(1) cc=2
   function onEnd() {
     if (!dragging) return;
     dragging = false;
@@ -411,7 +412,7 @@ export function initLayout(deps = {}) {
   // store 에 넣지 않는다 — 스크롤 락과 같은 성격이고, 저장하거나 Undo 할 값이 아니다.
   // 값은 <body> 의 data-* 하나로 두고 CSS 가 읽는다(마크업의 기본값이 전부 'off').
   //
-  // ⚠ 넓은 화면에서는 `≡ 동작`·`비고` 가 `display:none` 이라 눌리지 않는다(`🔗` 은 보인다).
+  // ⚠ 넓은 화면에서는 `동작`·`비고` 가 `display:none` 이라 눌리지 않는다(`🔗` 은 보인다).
   //   그래도 dataset 은 남으므로, 폭을 넓혔다 줄여도 마지막 상태가 그대로 돌아온다.
 
   /** <body data-*> 한 칸을 뒤집고 버튼의 aria-expanded 를 맞춘다. */

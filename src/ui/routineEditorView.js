@@ -24,9 +24,11 @@ import { CLS } from './domContract.js';
 import { askText } from './inlinePrompt.js';
 import { isRoutineOverlayMode as layoutIsRoutineOverlayMode } from './layout.js';
 import { commandById } from '../domain/commands.js';
+import { iconLabel } from './icon.js';
 
-/** `+ 빠른 배치` — 글자의 주인은 명령 등록부다(RM-09). 메인 표의 버튼과 같은 글자여야 한다. */
+/** `빠른 배치` — 글자의 주인은 명령 등록부다(RM-09). 메인 표의 버튼과 같은 글자여야 한다. */
 const QUICK_PLACE_LABEL = commandById('quickPlace').button;
+const QUICK_PLACE_ICON = commandById('quickPlace').icon;
 
 /** 루틴 편집기 보드의 store 상 id. usecases/store.BOARD_ROUTINE 과 같은 문자열이다(ui 는 usecases 를 import 하지 않는다). */
 const BOARD_ROUTINE = 'routine';
@@ -92,6 +94,7 @@ export function createRoutineEditorView(deps) {
   // ── 바인딩 (원본 4827-4860 을 한 번만) ────────────────────────────────────
 
   /** 원본 applyReBoardSizeFromInput(4862-4864)의 입력 읽기. ⚠ Math.max(1,·) 클램프는 커맨드가 한다. */
+  // @complexity time=O(1) space=O(1) cc=3
   function applySizeFromInput() {
     const cols = parseInt(reColsInput.value || COLS_FALLBACK, 10);   // 4863
     const rows = parseInt(reRowsInput.value || ROWS_FALLBACK, 10);   // 4864
@@ -114,7 +117,7 @@ export function createRoutineEditorView(deps) {
 
   // 4839-4850 — 버튼 클래스는 여기서 만지지 않는다. 커맨드가 store.session.quickPlaceMode.routine 을
   // 뒤집고 Dirty.routineEditor 를 돌려주면 sync() 가 클래스를 재도출한다.
-  // ⚠ 누름은 `data-command="quickPlace" data-board="routine"` 이 듣는다(RM-09) — 메인 표의 `+ 빠른 배치` 와 한 명령이다.
+  // ⚠ 누름은 `data-command="quickPlace" data-board="routine"` 이 듣는다(RM-09) — 메인 표의 `빠른 배치` 와 한 명령이다.
 
   if (reColsInput) reColsInput.onchange = applySizeFromInput;          // 4854
   if (reRowsInput) reRowsInput.onchange = applySizeFromInput;          // 4855
@@ -138,6 +141,7 @@ export function createRoutineEditorView(deps) {
   // ── 렌더 ─────────────────────────────────────────────────────────────────
 
   /** 원본 syncReBoardSizeUI(2944-2950). */
+  // @complexity time=O(n)? space=O(n)? cc=6
   function syncBoardSizeUI() {
     const board = store.board(BOARD_ROUTINE);
     if (reColsInput) reColsInput.value = board.cols;                   // 2945
@@ -148,16 +152,17 @@ export function createRoutineEditorView(deps) {
   }
 
   /**
-   * '+ 빠른 배치' 버튼. 원본은 두 자리에서 만졌다:
+   * `빠른 배치` 버튼(더하기 아이콘 + 글자, RM-18 전에는 「+ 빠른 배치」 글자). 원본은 두 자리에서 만졌다:
    *   열 때(4825-4826)  : className = 'ghost' · textContent = '+ 빠른 배치'
    *   토글(4841-4848)   : classList add/remove 로 'quick-btn-active' ↔ 'ghost'
    * 둘 다 결과 클래스는 정확히 하나이므로 store 값에서 재도출한다.
    */
+  // @complexity time=O(1) space=O(1) cc=3
   function syncQuickPlaceBtn() {
     if (!reQuickPlaceBtn) return;
     const on = !!store.session.quickPlaceMode[BOARD_ROUTINE];
     reQuickPlaceBtn.className = on ? CLS.quickBtnActive : CLS.ghost;
-    reQuickPlaceBtn.textContent = QUICK_PLACE_LABEL;                   // 4826
+    iconLabel(reQuickPlaceBtn, QUICK_PLACE_ICON, QUICK_PLACE_LABEL);   // 4826
   }
 
   /** Dirty.routineEditor 의 적용점. 위 ①~⑤ 를 store 에서 재도출한다. */

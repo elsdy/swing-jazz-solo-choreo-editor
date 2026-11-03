@@ -28,12 +28,14 @@
 
 import { CLS, DATA } from './domContract.js';
 import { confirmOnce } from './widgets.js';
+import { iconLabel, iconLabelHtml, iconOnly } from './icon.js';
 import { askText } from './inlinePrompt.js';
 import { cellOf, clamp, linearOf, rowIndices } from '../domain/grid.js';
 import { bpmFromTaps, driftCounts, isTempoUsable, normalizeTempo, tapSpread } from '../domain/tempo.js';
 import { driftReport } from '../domain/captureDrift.js';
 import { QUIET, applyGuide, captureGuide, exportGuide, markGuide, markerGuide, pointGuide, tapGuide, trimGuide, voiceGuide } from './guideLines.js';
 import { isStacked } from './layout.js';
+import { measureBandChrome, settleOnResize } from './resizeSettle.js';
 import { flowTrack } from '../domain/flowTrack.js';
 import { openCount } from '../domain/stepTodos.js';
 import { markersAt, normalizeMarkers } from '../domain/markers.js';
@@ -64,15 +66,15 @@ const DEFAULT_PANEL = Object.freeze({ open: false, collapsed: false, follow: tru
  */
 const ERROR_TEXT = Object.freeze({
   'not-found': '영상을 찾을 수 없습니다. `① 영상 고르기` 의 주소를 확인하세요.',
-  'not-embeddable': '이 영상은 외부 재생이 막혀 있습니다. 주소 칸 옆 ↗ 버튼으로 유튜브에서 여세요.',
+  'not-embeddable': '이 영상은 외부 재생이 막혀 있습니다. 주소 칸 옆 `새 창에서 열기` 단추로 유튜브에서 여세요.',
   'network': '유튜브 재생 스크립트를 불러오지 못했습니다. 광고 차단기·사내망·오프라인 상태를 확인하세요.',
   'unsupported': '지원하지 않는 영상 주소입니다.',
   'unknown': '영상을 재생할 수 없습니다.'
 });
 
 /** 소스가 없을 때의 안내. `① 영상 고르기` 의 주소 칸과 파일 버튼을 가리킨다 — 입구는 그 한 자리다(RM-20). */
-const CLOCK_TEXT = '영상 없이 박자만으로 돕니다 — 아래 `▶ 재생` 으로 재생 헤드와 카운트 소리를 안무표 위에서 돌립니다. 영상을 고르면 그 영상으로 바뀝니다.';
-const NO_SOURCE_TEXT = '`① 영상 고르기` 의 `YouTube URL 입력...` 칸에 주소를 넣거나 `📁 영상 파일 열기` 로 내 컴퓨터의 영상을 고르면 여기에 뜹니다.';
+const CLOCK_TEXT = '영상 없이 박자만으로 돕니다 — 아래 `재생` 으로 재생 헤드와 카운트 소리를 안무표 위에서 돌립니다. 영상을 고르면 그 영상으로 바뀝니다.';
+const NO_SOURCE_TEXT = '`① 영상 고르기` 의 `YouTube URL 입력...` 칸에 주소를 넣거나 `영상 파일 열기` 로 내 컴퓨터의 영상을 고르면 여기에 뜹니다.';
 
 /**
  * 파일 소스는 저장됐는데 이 세션에서 아직 안 골랐을 때의 안내.
@@ -80,17 +82,17 @@ const NO_SOURCE_TEXT = '`① 영상 고르기` 의 `YouTube URL 입력...` 칸�
  * @param {string} name
  * @returns {string}
  */
-const REPICK_TEXT = (name) => `이 안무표는 영상 파일 \`${name}\` 을 쓰던 것입니다. 브라우저는 파일 위치를 기억하지 못하므로 \`📁 영상 파일 열기\` 로 같은 파일을 다시 골라 주세요.`;
+const REPICK_TEXT = (name) => `이 안무표는 영상 파일 \`${name}\` 을 쓰던 것입니다. 브라우저는 파일 위치를 기억하지 못하므로 \`영상 파일 열기\` 로 같은 파일을 다시 골라 주세요.`;
 
 /**
  * 보관 폴더에 복사해 둔 파일인데 아직 이 세션에서 못 읽었을 때의 안내. 권한만 다시 받으면 되므로 버튼을 가리킨다.
  * @param {string} path
  * @returns {string}
  */
-const LIB_TEXT = (path) => `보관 폴더의 \`${path}\` 을 쓰던 안무표입니다. \`📂 보관 폴더에서 불러오기\` 를 누르면 다시 읽어 옵니다(브라우저가 폴더 사용 허가를 물으면 허용하세요).`;
+const LIB_TEXT = (path) => `보관 폴더의 \`${path}\` 을 쓰던 안무표입니다. \`보관 폴더에서 불러오기\` 를 누르면 다시 읽어 옵니다(브라우저가 폴더 사용 허가를 물으면 허용하세요).`;
 
 /** 보관 폴더에서 읽으려 했는데 파일이 없을 때. 옮겼거나 지웠거나 다른 컴퓨터다. */
-const LIB_MISSING_TEXT = (path) => `보관 폴더에 \`${path}\` 이 없습니다. 파일을 옮겼거나 다른 컴퓨터라면 \`📁 영상 파일 열기\` 로 다시 고르세요(고르면 다시 보관됩니다).`;
+const LIB_MISSING_TEXT = (path) => `보관 폴더에 \`${path}\` 이 없습니다. 파일을 옮겼거나 다른 컴퓨터라면 \`영상 파일 열기\` 로 다시 고르세요(고르면 다시 보관됩니다).`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 표시용 순수 헬퍼
@@ -135,6 +137,7 @@ function formatBpm(bpm) {
  * @param {number} cols
  * @returns {string}
  */
+// @complexity time=O(1) space=O(1) cc=4
 export function formatRange(from, to, cols) {
   const a = cellOf(from, cols);
   const b = cellOf(to - 1, cols);
@@ -161,7 +164,7 @@ export function formatRange(from, to, cols) {
  *   저장 파일에서 연 직후에는 이름만 있고 파일이 없다 — 그때 "다시 골라 달라"고 안내한다
  * @property {(file: File) => void} [onFileChosen] 사용자가 파일을 골랐다. blob URL 을 만들고 소스를
  *   확정하는 것은 어댑터를 아는 자리(app/main)의 몫이라 여기서 하지 않는다
- * @property {() => void} [onOpenFromLibrary] `📂 보관 폴더에서 불러오기`. 클릭 콜스택 안에서 권한을 묻는다
+ * @property {() => void} [onOpenFromLibrary] `보관 폴더에서 불러오기`. 클릭 콜스택 안에서 권한을 묻는다
  * @property {() => 'idle'|'missing'} [getLibraryState] 마지막 보관 폴더 읽기 시도의 결과. 'missing' 이면 파일이 없었다
  * @property {() => {load:string, play:string, error:{code:string,message:string}|null}} getPlayerState
  *   MediaPlayer.getState() 를 감싼 게터
@@ -170,6 +173,9 @@ export function formatRange(from, to, cols) {
  *   받아 적기를 열 때 안무표를 영상 길이만큼 늘리는 데 쓴다 — 재생기는 어댑터라 여기서 만지지 않는다
  * @property {() => void} [onTogglePlay] `P`. 재생과 일시정지를 번갈아 한다 — 재생기는 어댑터라
  *   여기서 만지지 않는다. 키 입력은 사용자 제스처라 needsUserGesture 재생기에서도 통한다
+ * @property {() => void} [onSettled] 창 크기가 바뀐 뒤 띠·띄운 창을 **다시 놓은 다음에** 불린다(RM-66).
+ *   놓인 자리를 재는 쪽(조작 줄의 접힘 — RM-63)은 resize 를 따로 듣지 말고 여기에 건다 — 놓기가 다음 틀로
+ *   미뤄졌으므로, 따로 들으면 옛 폭을 잰다.
  * @property {(shown: boolean) => void} [onSync] 렌더가 끝날 때마다 "패널이 실제로 화면에 있는가"로 불린다.
  *   호출부는 이것으로 재생기를 준비하거나 멈춘다 — **멱등이어야 한다**(매 렌더 불린다).
  *   ⚠ 값이 바뀔 때만 부르면 안 된다: 패널이 열린 채로 URL 만 바뀌는 경로(링크바 change)가
@@ -184,15 +190,15 @@ export function formatRange(from, to, cols) {
  *   서버가 받아 두는가(`server`), 브라우저에 지정한 폴더인가(`folder`), 아무 데도 아닌가(`browser`)
  * @property {() => 'unavailable'|'off'|'on'} [getPipState] 화면 속 화면을 지금 쓸 수 있는가.
  *   'unavailable' 이면 버튼을 아예 감춘다 — 눌러도 안 되는 버튼을 두지 않는다
- * @property {() => void} [onTogglePip] `⧉ PiP`. ⚠ **클릭 콜스택 안에서** 재생기까지 닿아야 켜진다
+ * @property {() => void} [onTogglePip] `PiP`. ⚠ **클릭 콜스택 안에서** 재생기까지 닿아야 켜진다
  * @property {() => 'ready'|'busy'|'no-inout'|'not-file'|'no-server'|'no-ffmpeg'|'not-stored'} [getTrimState]
  *   잘라내기를 지금 할 수 있는가, 안 되면 왜인가. In/Out 유무는 뷰가 스스로 보므로 호출부는 나머지만 답해도 된다
  * @property {() => string} [getTrimError] 마지막 잘라내기 실패 이유(서버 문구). 비어 있으면 실패가 없었다
- * @property {(range: {inSec:number, outSec:number}) => void} [onTrim] `✂ 잘라서 새 클립으로`. 서버에 자르기를 시키고
+ * @property {(range: {inSec:number, outSec:number}) => void} [onTrim] `잘라서 새 클립으로`. 서버에 자르기를 시키고
  *   끝나면 applyTrim 커맨드로 소스를 갈아 끼우는 것까지 호출부(app/main)의 몫이다
  * @property {() => string} [getExportError] 마지막 내보내기 실패 이유(서버 문구). 비어 있으면 실패가 없었다
  * @property {(req: {startSec:number, endSec:number, label:string}) => void} [onExportExcerpt]
- *   `🎞 고른 대목 잘라 내보내기`(RM-31). 서버에 자르기를 시키고 끝나면 addExcerptClip 으로 **목록에 더하기만** 하는 것까지
+ *   `고른 대목 잘라 내보내기`(RM-31). 서버에 자르기를 시키고 끝나면 addExcerptClip 으로 **목록에 더하기만** 하는 것까지
  *   호출부의 몫이다. 서버·파일 조건(busy 포함)은 getTrimState 를 함께 쓴다 — 한 번에 하나만 자른다
  * @property {{
  *   togglePanel: () => any, closePanel: () => any,
@@ -271,6 +277,7 @@ export function createVideoPanel(deps) {
     getExportError = () => '',
     onExportExcerpt = () => {},
     onSync = () => {},
+    onSettled = () => {},
     commands,
     elements = {}
   } = deps;
@@ -363,6 +370,8 @@ export function createVideoPanel(deps) {
   let floatOriginCache = null;
   /** 창이 지금 무엇 때문에 떠 있는가 — `'float'`(⤢ 크게) · `'pip'`(받아 적는 중) · `null`(제자리). */
   let detachMode = null;
+  /** 길을 마지막으로 그린 차례 줄 크기(`폭x높이`). 띠 크기가 바뀌었을 때만 다시 그리려고 둔다(RM-58). */
+  let trackSize = '';
 
   // ── store 읽기 (얇은 접근자) ──────────────────────────────────────────────
 
@@ -508,6 +517,7 @@ export function createVideoPanel(deps) {
    * ⚠ 제목이 여기 함께 있는 이유: 제목은 링크바가 700ms 디바운스 뒤에 비동기로 채우므로
    *   Dirty 를 타지 않는다. 재생기 상태 변화(loading → ready)에 얹어 따라오게 한다.
    */
+  // @complexity time=O(1) space=O(1) cc=31
   function renderStatus() {
     const source = getSource();
     const isFile = !!source && source.kind === 'file';
@@ -528,7 +538,7 @@ export function createVideoPanel(deps) {
     }
     if (fileClearBtn) fileClearBtn.hidden = !isFile;
     if (fileLibBtn) fileLibBtn.hidden = !(inLibrary && !getFileLoaded());
-    if (fileBtn) fileBtn.textContent = isFile ? '📁 다른 파일 열기' : '📁 영상 파일 열기';
+    if (fileBtn) iconLabel(fileBtn, 'folder', isFile ? '다른 파일 열기' : '영상 파일 열기');
 
     if (!statusEl) return;
     if (isFile && !getFileLoaded()) {
@@ -719,6 +729,7 @@ export function createVideoPanel(deps) {
    *   그 틈을 `wait` 로 드러낸다 — 안 듣는 줄 모르고 말하는 것이 이 기능의 가장 나쁜 실패다.
    * ⚠ 받아 적는 중이 아니면 마이크를 켤 수 없다. 붙일 구간이 없기 때문이다.
    */
+  // @complexity time=O(1) space=O(1) cc=17
   function renderVoice(ready, running) {
     const usable = Boolean(voice && voice.available());
     if (voiceField) voiceField.hidden = !usable;
@@ -733,7 +744,7 @@ export function createVideoPanel(deps) {
     const trayOn = typeof commands.trayOpen === 'function' && commands.trayOpen();
     if (voiceBtn) {
       voiceBtn.disabled = !trayOn && (!ready || (!running && !wanted));
-      voiceBtn.textContent = wanted ? '🎤 마이크 끄기' : '🎤 마이크 켜기';
+      iconLabel(voiceBtn, 'mic', wanted ? '마이크 끄기' : '마이크 켜기');
       voiceBtn.dataset.listening = wanted ? (listening ? 'on' : 'wait') : 'off';
     }
     if (voiceNow) {
@@ -767,6 +778,7 @@ export function createVideoPanel(deps) {
    *   아직 안 찍었을 뿐일 수 있고, 0% 막대는 "이 영상은 아무 데도 안 맞는다"는 거짓말이 된다.
    * ⚠ 전체 카운트는 메인 보드에서 읽는다. 안무표 크기를 바꾸면 막대 비율도 함께 달라진다.
    */
+  // @complexity time=O(n)? space=O(n)? cc=12
   function renderClips() {
     if (!clipList) return;
     const { clips: list, activeId } = clips();
@@ -784,8 +796,7 @@ export function createVideoPanel(deps) {
       pick.type = 'button';
       pick.className = 'video-clip-pick';
       pick.dataset.act = 'pick';
-      pick.textContent = c.id === activeId ? '◉' : '○';
-      pick.title = c.id === activeId ? '지금 보고 있는 영상' : '이 영상으로 갈아타기';
+      iconOnly(pick, c.id === activeId ? 'circle-dot' : 'circle', c.id === activeId ? '지금 보고 있는 영상' : '이 영상으로 갈아타기');
 
       const main = document.createElement('div');
       main.className = 'video-clip-main';
@@ -820,7 +831,7 @@ export function createVideoPanel(deps) {
       acts.className = 'video-clip-acts';
       const ren = document.createElement('button');
       ren.type = 'button'; ren.className = CLS.ghost;
-      ren.textContent = '✎'; ren.title = '이름 바꾸기';
+      iconOnly(ren, 'pencil', '이름 바꾸기');
       ren.onclick = () => {
         if (!commands.renameClip) return;
         // 그 줄 위에서 바로 적는다(RM-04 — 전에는 prompt 창이 재생을 가렸다)
@@ -832,9 +843,10 @@ export function createVideoPanel(deps) {
       };
       const del = document.createElement('button');
       del.type = 'button'; del.className = CLS.ghost;
-      del.textContent = '✕'; del.title = '이 영상을 목록에서 빼기(찍어 둔 박자·마커도 함께 사라집니다)';
+      del.title = '이 영상을 목록에서 빼기(찍어 둔 박자·마커도 함께 사라집니다)';
+      iconOnly(del, 'x', '목록에서 빼기');
       // ⚠ 되돌리는 길이 Undo 하나뿐이라 2단계 확인을 받는다(이 저장소의 confirmOnce 관습).
-      del.onclick = () => confirmOnce(del, '✕', () => {
+      del.onclick = () => confirmOnce(del, '목록에서 빼기', () => {
         if (!commands.removeClip) return;
         render(commands.removeClip({ id: c.id }));
         commitHistory();
@@ -842,6 +854,7 @@ export function createVideoPanel(deps) {
       acts.append(ren, del);
 
       // 줄 아무 데나 눌러도 갈아탄다 — 작은 ○ 만 과녁이면 손가락으로 못 맞힌다.
+      // @complexity time=O(1) space=O(1) cc=2
       const pickIt = () => {
         if (!commands.selectClip) return;
         render(commands.selectClip({ id: c.id }));
@@ -878,7 +891,8 @@ export function createVideoPanel(deps) {
    */
   const BAND_DOCK_H = 44;
 
-  /** 화면 크기에 맞춘 `⤢ 크게` 의 기본 폭. 큰 모니터에서 너무 커지지 않게 위를 막는다. */
+  /** 화면 크기에 맞춘 `크게` 의 기본 폭. 큰 모니터에서 너무 커지지 않게 위를 막는다. */
+  // @complexity time=O(1) space=O(1) cc=1
   function defaultFloatWidth() {
     return Math.round(Math.max(420, Math.min(window.innerWidth * 0.56, 1100)));
   }
@@ -886,7 +900,7 @@ export function createVideoPanel(deps) {
   /**
    * 기록 · 할 일에 쓰는 단계 열쇠 — 마크업의 `data-step`(step1~6). 라벨을 고쳐도, 자리를 옮겨도 기록이 끊기지 않는다.
    * ⚠ RM-20 전에는 마크업 **위치 차례**(`step${i+1}`)였다. 도구를 다른 그릇으로 옮기면서 글자로 박았다 —
-   *   이미 저장된 할 일(stepTodos 의 step4~6)과 `⚙ 설정 → 작업 차례` 기록이 갈 곳을 잃지 않게. 없는 마크업만 차례로 돌아간다.
+   *   이미 저장된 할 일(stepTodos 의 step4~6)과 `설정 → 작업 차례` 기록이 갈 곳을 잃지 않게. 없는 마크업만 차례로 돌아간다.
    * @param {HTMLElement} el `<details class="vstep">`
    * @param {number} i 0-based
    */
@@ -965,6 +979,7 @@ export function createVideoPanel(deps) {
    * ⚠ 엄지 바와 같은 규약으로 **버튼을 갈아 끼우지 않는다.** 누르는 순간 엘리먼트가 사라지면 그
    *   클릭이 허공에 떨어진다. 같은 자리면 라벨·상태만 고친다.
    */
+  // @complexity time=O(n)? space=O(n)? cc=3
   function renderFlowSteps() {
     if (!flowSteps || detachMode !== 'band') return;
     const els = stepEls();
@@ -979,7 +994,7 @@ export function createVideoPanel(deps) {
       // 아이콘의 주인은 **마크업의 `data-icon`** 이다(이름과 같다) — 여기에 목록을 적지 않는다.
       const icon = btn.querySelector('.flow-icon');
       const nameEl = btn.querySelector('.flow-name');
-      if (icon) icon.textContent = el.dataset.icon || '·';
+      if (icon) iconLabel(icon, el.dataset.icon || 'dot');
       // ⚠ `✓` 를 이름 앞에 붙이지 않는다 — 끝난 것은 **색**이 말한다(data-state="done").
       //   아이콘·✓·번호·이름 넷을 한 칸에 욱여넣으면 넷 다 안 읽힌다.
       if (nameEl) nameEl.textContent = stepLabel(el);
@@ -1030,7 +1045,7 @@ export function createVideoPanel(deps) {
     }
     els.forEach((el, i) => {
       const btn = toolTabs.children[i];
-      btn.querySelector('.vtool-icon').textContent = el.dataset.icon || '·';
+      iconLabel(btn.querySelector('.vtool-icon'), el.dataset.icon || 'dot');
       btn.querySelector('.vtool-name').textContent = stepLabel(el);
       btn.dataset.state = el.open ? 'now' : 'idle';
       btn.setAttribute('aria-expanded', String(Boolean(el.open)));
@@ -1060,6 +1075,7 @@ export function createVideoPanel(deps) {
    * ⚠ 입력 중에는 커밋하지 않는다. 확정(Enter·`+ 추가`)에서만 히스토리에 넣는다 — 글자마다
    *   커밋하면 되돌리기 한 번이 한 글자를 지운다.
    */
+  // @complexity time=O(n)? space=O(n)? cc=1
   function renderStepTodos() {
     [...stepEls(), ...toolEls()].forEach((el, i) => {
       if (!el.open) return;
@@ -1071,10 +1087,11 @@ export function createVideoPanel(deps) {
         box.className = 'step-todo';
         box.innerHTML = '<div class="step-todo-head"></div><div class="step-todo-list"></div>'
           + '<div class="step-todo-add"><input type="text" placeholder="여기서 할 일을 적어 둡니다 — Enter" maxlength="120" />'
-          + '<button type="button" class="ghost accent">+ 추가</button></div>';
+          + '<button type="button" class="ghost accent">' + iconLabelHtml('plus', '추가') + '</button></div>';
         body.appendChild(box);
         const input = box.querySelector('input');
         const addBtn = box.querySelector('button');
+        // @complexity time=O(1) space=O(1) cc=2
         const submit = () => {
           const text = input.value.trim();
           if (!text) return;
@@ -1101,7 +1118,7 @@ export function createVideoPanel(deps) {
         const check = document.createElement('button');
         check.type = 'button';
         check.className = 'step-todo-check';
-        check.textContent = todo.done ? '☑' : '☐';
+        iconOnly(check, todo.done ? 'square-check' : 'square', todo.done ? '아직 안 한 것으로' : '했다고 표시');
         check.title = todo.done ? '아직 안 한 것으로' : '했다고 표시';
         check.onclick = () => {
           applyCommitting({ ...commands.toggleStepTodo({ stepId: stepId(el, i), id: todo.id }), committed: true });
@@ -1113,8 +1130,8 @@ export function createVideoPanel(deps) {
         const del = document.createElement('button');
         del.type = 'button';
         del.className = 'step-todo-del';
-        del.textContent = '✕';
         del.title = '이 할 일을 지웁니다';
+        iconOnly(del, 'x', '이 할 일 지우기');
         del.onclick = () => {
           applyCommitting({ ...commands.removeStepTodo({ stepId: stepId(el, i), id: todo.id }), committed: true });
           renderStepTodos();
@@ -1176,15 +1193,22 @@ export function createVideoPanel(deps) {
    * ⚠ SVG 는 `aria-hidden` 이다. 누를 수 있는 것은 여전히 버튼이고, 길은 그 버튼들이 어떤 차례로
    *   이어지는지를 **보여 주기만** 한다(원본도 같은 구조였다 — 장식 SVG + 진짜 button).
    * ⚠ 폭이 바뀌면 다시 그린다. 값을 캐시하지 않는다 — 한 번 그린 길이 창 크기를 따라오지 않으면
-   *   마디가 버튼과 어긋나고, 그 어긋남은 화면에서 바로 보인다.
+   *   마디가 버튼과 어긋나고, 그 어긋남은 화면에서 바로 보인다. 렌더 밖에서 띠 크기가 바뀌는 때(창 크기 ·
+   *   테마 켜고 끄기 · 띠가 처음 자리 잡기)는 아래 watchFlowTrackSize 의 ResizeObserver 가 다시 부른다(RM-58).
+   * ⚠ 마디가 띠 안에 든다는 것(마디 반지름 + 그 아래 이름)은 domain/flowTrack 이 보장한다 — 여기서 고치지 않는다.
    */
+  // @complexity time=O(n) space=O(n) cc=7
   function drawFlowTrack(count) {
     if (!flowSteps) return;
     let svg = flowSteps.querySelector('.flow-track');
     const rect = flowSteps.getBoundingClientRect();
     const w = Math.round(rect.width);
     const h = Math.round(rect.height);
-    const track = flowTrack({ width: w, height: h, count });
+    trackSize = `${w}x${h}`;
+    // 마디 · 이름 몫(RM-58)은 테마의 둥근 마디에만 있다. 기본 테마의 단추는 흐름 속 네모라 그 몫을 0 으로 —
+    // 그러면 셈이 RM-58 전과 같다(기본 테마의 모양 · 자리는 이 일로 바뀌지 않는다. 그쪽의 밀림은 RM-55).
+    const themed = document.documentElement.hasAttribute('data-theme');
+    const track = flowTrack({ width: w, height: h, count, ...(themed ? {} : { nodeR: 0, labelH: 0 }) });
     if (!track) { if (svg) svg.remove(); return; }
 
     if (!svg) {
@@ -1226,6 +1250,7 @@ export function createVideoPanel(deps) {
    *   단계가 영상에 덮이거나 빈 띠만큼 아래가 내려앉는다.
    * ⚠ `padding-top` 은 rect 의 top·width 를 바꾸지 않는다 — 그래서 재고 쓰는 순서가 엉키지 않는다.
    */
+  // @complexity time=O(1) space=O(1) cc=3
   function placeBand() {
     const strip = panel;
     if (!strip) return;
@@ -1233,11 +1258,11 @@ export function createVideoPanel(deps) {
 
     // ── 창을 재서 영상 크기를 정한다 ───────────────────────────────────────────
     // 가로로는 띠의 폭까지, 세로로는 **남는 만큼**. 둘 중 먼저 걸리는 쪽이 크기를 정한다.
-    // ⚠ 머리줄과 단계 칸은 **실측**한다. 둘 다 띠의 padding-top 과 무관하므로 재는 순서가 엉키지
-    //   않는다(그 패딩은 이 함수가 마지막에 쓴다).
-    const head = strip.querySelector('.video-head');
-    const chromeH = (head ? head.getBoundingClientRect().height : 0)
-      + (bodyEl ? bodyEl.getBoundingClientRect().height : 0);
+    // ⚠ 머리줄과 단계 칸은 **실측**한다. 다만 단계 칸은 띠의 padding-top 과 **무관하지 않다** —
+    //   띠 칸의 높이가 묶여 있어 지난번 padding 이 크면 단계 칸이 눌린다(RM-66: 1600x1500 → 1200x820 에서
+    //   옛 padding 656px 에 단계 칸이 16px 로 눌려 띠가 한 번 늦게 줄었다). 그래서 **padding 을 비우고 잰다**
+    //   — 몇 번째로 재든 처음 연 것과 같은 값이 된다. 새 padding 은 이 함수가 마지막에 쓴다.
+    const chromeH = measureBandChrome(strip, [strip.querySelector('.video-head'), bodyEl]);
     const roomH = window.innerHeight - r.top - chromeH - BAND_DOCK_H - BAND_GAP * 3 - BOARD_MIN_H;
     const widthCap = Math.max(240, r.width - BAND_GAP * 2);
     const h0 = Math.max(BAND_MIN_H, Math.min(roomH, widthCap * 9 / 16));
@@ -1313,6 +1338,7 @@ export function createVideoPanel(deps) {
    * 포함 블록을 만드는지 맞히려 들면 CSS 가 하나 늘 때마다 틀린다.
    * @returns {{x:number, y:number}}
    */
+  // @complexity time=O(n)? space=O(n)? cc=3
   function floatOrigin() {
     if (floatOriginCache) return floatOriginCache;
     const keep = ['left', 'top', 'right', 'bottom'].map(k => [k, frame.style[k]]);
@@ -1325,7 +1351,7 @@ export function createVideoPanel(deps) {
   }
 
   /**
-   * `⤢ 크게` 로 띄운 창을 기억된 자리·크기에 놓는다(한 번도 옮긴 적이 없으면 오른쪽 아래).
+   * `크게` 로 띄운 창을 기억된 자리·크기에 놓는다(한 번도 옮긴 적이 없으면 오른쪽 아래).
    * @param {any} p 패널 상태
    */
   function placeFloat(p) {
@@ -1368,6 +1394,7 @@ export function createVideoPanel(deps) {
   }
 
   /** 구간 자르기·마커 구획. In/Out 은 화면 상태, 마커는 media 에서 읽는다. */
+  // @complexity time=O(n)? space=O(n)? cc=34
   function renderCut() {
     const board = mainBoard();
     const p = panelState();
@@ -1401,7 +1428,7 @@ export function createVideoPanel(deps) {
     const state = range ? getTrimState() : 'no-inout';
     if (trimBtn) {
       trimBtn.disabled = state !== 'ready';
-      trimBtn.textContent = state === 'busy' ? '✂ 잘라내는 중…' : '✂ 잘라서 새 클립으로';
+      iconLabel(trimBtn, 'scissors', state === 'busy' ? '잘라내는 중…' : '잘라서 새 클립으로');
     }
     // 평소에는 빈 줄이다(RM-19) — 실패 · 도는 중 · 환경 막힘(서버 · ffmpeg · 보관 전)만 적는다.
     if (trimHelp) applyGuide(trimHelp, trimGuide({ state, error: getTrimError() }), CLS.isError);
@@ -1436,8 +1463,8 @@ export function createVideoPanel(deps) {
         const play = document.createElement('button');
         play.type = 'button';
         play.className = CLS.ghost;
-        play.textContent = '▶';
         play.title = '이 구간을 In/Out 으로 삼고 그 시작에서 재생합니다';
+        iconOnly(play, 'play', '이 구간 재생');
         play.onclick = () => {
           if (commands.setInOut) render(commands.setInOut({ inSec: m.inSec, outSec: m.outSec }));
           onSeek(m.inSec, { play: true });
@@ -1471,8 +1498,8 @@ export function createVideoPanel(deps) {
         const del = document.createElement('button');
         del.type = 'button';
         del.className = CLS.ghost;
-        del.textContent = '✕';
         del.title = '이 마커를 지웁니다';
+        iconOnly(del, 'x', '이 마커 지우기');
         del.onclick = () => {
           if (!commands.removeMarker) return;
           markerRejectedId = '';
@@ -1487,6 +1514,7 @@ export function createVideoPanel(deps) {
   }
 
   /** Dirty.video 의 적용점. store 만 보고 패널의 모든 표시를 재도출한다. */
+  // @complexity time=O(1) space=O(1) cc=15
   function renderPanel() {
     const p = panelState();
     // 루틴 편집기와 동시에 열지 않는다 — CSS 가 실제로 가리는 조건과 **같은 식**이어야 한다.
@@ -1515,11 +1543,11 @@ export function createVideoPanel(deps) {
     // ⚠ 패널이 닫히거나 접히면 띄운 창도 내린다. 안 그러면 패널을 닫았는데 영상만 화면에 남는다.
     if (floatBtn) {
       // ⚠ className 을 통째로 쓰지 않는다. 이 버튼은 마크업에서 `only-wide` 를 달고 있고(좁은 화면에서
-      //   숨기는 장치), 통째로 덮으면 그 클래스가 날아가 **폰에서 `⤢ 크게` 가 보인다** — 화면보다 큰
+      //   숨기는 장치), 통째로 덮으면 그 클래스가 날아가 **폰에서 `크게` 가 보인다** — 화면보다 큰
       //   창을 띄우는 버튼이 폰에 뜬 채로 2026-09-13 까지 있었다. 상태 클래스만 토글한다.
       floatBtn.classList.toggle(CLS.quickBtnActive, mode === 'float');
       floatBtn.classList.toggle(CLS.ghost, mode !== 'float');
-      floatBtn.textContent = mode === 'float' ? '⤡ 제자리로' : '⤢ 크게';
+      iconLabel(floatBtn, mode === 'float' ? 'minimize' : 'maximize', mode === 'float' ? '제자리로' : '크게');
     }
 
     renderFlowSteps();
@@ -1544,6 +1572,7 @@ export function createVideoPanel(deps) {
    * @param {any} result 커맨드의 반환값
    * @returns {boolean} 히스토리를 커밋했는가
    */
+  // @complexity time=O(1) space=O(1) cc=3
   function applyCommitting(result) {
     const { committed, ...dirty } = result || {};
     render(dirty);
@@ -1552,42 +1581,43 @@ export function createVideoPanel(deps) {
   }
 
   /**
-   * `⧉ PiP` 버튼. **쓸 수 없으면 아예 감춘다** — 눌러도 안 되는 버튼은 없느니만 못하다.
+   * `PiP` 버튼. **쓸 수 없으면 아예 감춘다** — 눌러도 안 되는 버튼은 없느니만 못하다.
    * 재생기가 iframe(YouTube)이거나 영상이 아직 안 실렸으면 'unavailable' 이다.
    * OS 쪽에서 창을 닫아도 상태가 따라오도록 app/main 이 재생기의 상태 변화에서 다시 부른다.
    */
+  // @complexity time=O(1) space=O(1) cc=9
   function renderPip() {
     const state = getPipState();
     // ⚠ 버튼이 없어도 <body> 표시는 해야 한다 — 영상 칸을 접는 CSS 가 이것만 읽는다.
     document.body.dataset.videopip = state === 'on' ? 'on' : 'off';
     // 빈 자리의 글귀는 어디로 갔는지에 따라 다르다. 띄운 창과 PiP 는 되돌리는 방법이 서로 다르다.
     if (frameSlot && state === 'on') {
-      frameSlot.innerHTML = '영상은 <b>PiP 창</b>으로 빼 두었습니다 — <b>⧉ PiP 끄기</b> 로 되돌립니다';
+      frameSlot.innerHTML = '영상은 <b>PiP 창</b>으로 빼 두었습니다 — <b>PiP 끄기</b> 로 되돌립니다';
     } else if (frameSlot) {
       // ⚠ detachMode 는 syncDetached 가 **이 함수보다 먼저** 정해 둔 값이다(render 의 차례를 보라).
       frameSlot.innerHTML = detachMode === 'band'
-        ? '영상은 <b>안무표 바로 위</b>에 크게 떠 있습니다 — 위 <b>채우기</b> 줄의 <b>▶ 영상으로 채우기</b> 로 접습니다'
-        : '영상은 큰 창으로 띄워 두었습니다 — 창의 <b>⤡ 제자리로</b> 로 되돌립니다';
+        ? '영상은 <b>안무표 바로 위</b>에 크게 떠 있습니다 — 위 <b>채우기</b> 줄의 <b>영상으로 채우기</b> 로 접습니다'
+        : '영상은 큰 창으로 띄워 두었습니다 — 창의 <b>제자리로</b> 로 되돌립니다';
     }
     if (!pipBtn) return;
     pipBtn.hidden = state === 'unavailable';
     pipBtn.className = state === 'on' ? CLS.quickBtnActive : CLS.ghost;
-    pipBtn.textContent = state === 'on' ? '⧉ PiP 끄기' : '⧉ PiP';
+    iconLabel(pipBtn, 'pip', state === 'on' ? 'PiP 끄기' : 'PiP');
   }
 
   if (pipBtn) pipBtn.onclick = () => { onTogglePip(); };
 
-  // `▶ 영상으로 채우기`(#videoPanelBtn)의 누름은 여기서 걸지 않는다(RM-09) — `data-command="videoPanel"` 을
+  // `영상으로 채우기`(#videoPanelBtn)의 누름은 여기서 걸지 않는다(RM-09) — `data-command="videoPanel"` 을
   // input/controls 가 듣고 app/main 의 실행기가 패널을 여닫는다. 엄지 바의 같은 버튼도 같은 명령이다.
   // 2026-09-13 — 좁은 화면에서 처음 열 때 접던 것을 없앴다. 세로를 아끼려던 것인데,
-  // 접힌 패널은 헤더만 남아 `① 영상 고르기` 의 `📁 영상 파일 열기` 가 통째로 사라졌다 —
+  // 접힌 패널은 헤더만 남아 `① 영상 고르기` 의 `영상 파일 열기` 가 통째로 사라졌다 —
   // 폰에서는 "파일을 여는 버튼이 아예 없는 앱"이 됐다. 접기는 손으로 누르면 된다.
   if (closeBtn) closeBtn.onclick = () => render(commands.closePanel());
   if (collapseBtn) collapseBtn.onclick = () => render(commands.setCollapsed());
   if (followBtn) followBtn.onclick = () => render(commands.setFollow());
 
   // 파일 고르기. 버튼이 숨은 <input type=file> 을 대신 누른다 — 파일 입력은 스타일이 안 먹는다.
-  // `📁 영상 파일 열기` 의 누름은 `data-command="videoFile"` 이 듣는다(RM-09) — 실행기가 아래 반환 객체의 openFile 을 부른다.
+  // `영상 파일 열기` 의 누름은 `data-command="videoFile"` 이 듣는다(RM-09) — 실행기가 아래 반환 객체의 openFile 을 부른다.
   if (fileInput) {
     fileInput.onchange = () => {
       const file = fileInput.files && fileInput.files[0];
@@ -1648,6 +1678,7 @@ export function createVideoPanel(deps) {
    * ⚠ 두 시계는 값의 자릿수가 아예 다르다 — 재생/정지를 오가며 두드리면 `tapTempo` 의
    *   "간격이 너무 벌어졌으면 처음부터"(TAP_RESET_SEC) 규칙이 알아서 series 를 끊는다.
    */
+  // @complexity time=O(1) space=O(1) cc=3
   const tapClockSec = () => {
     const st = getPlayerState() || {};
     return st.play === 'playing' ? getCurrentSec() : performance.now() / 1000;
@@ -1657,7 +1688,7 @@ export function createVideoPanel(deps) {
   //   까닭은 "처음부터 보면서 받아 적겠다" 하나뿐이라, 그 두 번째 누름은 언제나 따라온다.
   // ⚠ 재생은 **사용자 제스처 콜스택 안**이라야 브라우저가 허락한다 — 클릭 핸들러에서 곧바로
   //   부르고 await 로 한 박자 늦추지 않는다(`스페이스` 의 onTogglePlay 와 같은 규약).
-  // ⚠ 받는 중이어도 그만두지 않는다. 그만두는 버튼은 `■ 그만` 이고, 한 버튼이 두 일을 하면
+  // ⚠ 받는 중이어도 그만두지 않는다. 그만두는 버튼은 `그만` 이고, 한 버튼이 두 일을 하면
   //   둘 다 예측이 안 된다.
   if (rewindBtn) rewindBtn.onclick = () => { onSeek(0, { play: true }); renderCapture(); };
   if (tapBtn) tapBtn.onclick = () => render(commands.tapTempo({ atSec: tapClockSec() }));
@@ -1730,12 +1761,13 @@ export function createVideoPanel(deps) {
     return { state: 'ready', sel, span, label: excerptLabel(range, mainBoard().cols, sel.names) };
   }
 
+  // @complexity time=O(n)? space=O(n)? cc=12
   function renderExport(board) {
     if (!exportBtn && !exportHelp) return;
     const plan = excerptPlan();
     if (exportBtn) {
       exportBtn.disabled = plan.state !== 'ready';
-      exportBtn.textContent = plan.state === 'busy' ? '🎞 잘라내는 중…' : '🎞 고른 대목 잘라 내보내기';
+      iconLabel(exportBtn, 'film', plan.state === 'busy' ? '잘라내는 중…' : '고른 대목 잘라 내보내기');
     }
     if (!exportHelp) return;
     // 평소(고른 블록 없음)에는 빈 줄이다(RM-19). 고른 뒤에는 — 준비됐으면 잘릴 초 구간, 아니면 왜 안 되는지.
@@ -1829,7 +1861,36 @@ export function createVideoPanel(deps) {
   // ⚠ 브라우저 창 크기가 바뀌면 포함 블록의 자리도 바뀐다 — 기준점을 버리고 다시 잰다.
   //   그리고 **다시 놓는다**: 1040px 을 넘나들면 받아 적기 창이 떴다 사라지고, 넓은 화면에서 적어 둔
   //   인라인 좌표가 폰 폭에 남아 있으면 오른쪽 위 작은 창이 엉뚱한 자리에 선다.
-  window.addEventListener('resize', () => { floatOriginCache = null; syncDetached(); });
+  // ⚠ 기준점은 resize 마다 곧바로 버리고, 놓기는 같은 resize 의 **다른 듣개(칸 크기 맞춤)가 다 돈 뒤**
+  //   한 틀에 한 번으로 미룬다(RM-66) — main.js 의 듣개 등록 차례에 기대지 않는다.
+  // ⚠ 놓인 자리를 재는 쪽은 놓은 **뒤에** 부른다(onSettled) — 조작 줄의 접힘(RM-63)이 옛 폭으로 재면
+  //   `⏮ 처음으로` 가 접히지 않고 잘린다(이 미루기를 RM-63 과 합쳤을 때 브라우저에서 잼).
+  settleOnResize(window, { now: () => { floatOriginCache = null; }, later: () => { syncDetached(); onSettled(); } });
+  watchFlowTrackSize();
+
+  /**
+   * 차례 줄의 크기가 바뀌면 길과 마디를 다시 그린다(RM-58). 창 크기가 바뀌어도 resize 리스너는 띠만 다시
+   * 놓고(syncDetached) 길은 그리지 않아서, 띠 폭이 1068→778 로 줄어도 길이 1068 에 묶여 ③ 마디가 띠 밖으로
+   * 나가 안 보였다(실측). 테마를 켜고 끄거나 띠가 처음 자리를 잡을 때도 같다 — 크기를 재서 다시 그린다.
+   *
+   * ⚠ **크기가 같으면 그리지 않는다.** 그리는 일이 다시 크기를 바꾸면 콜백이 끝없이 돈다 — 테마의 단추는
+   *   절대 배치라 띠 크기를 바꾸지 않지만, 마지막에 그린 크기와 견줘 한 번 더 막는다.
+   * ⚠ **길이 띠에 겹쳐 앉는 꼴(테마)일 때만** 다시 그린다. 기본 테마는 단추가 흐름 속에 서서 그린 좌표가
+   *   단추를 밀어낸다(RM-55 의 결함) — 여기서 그것을 더 자주 부르지 않는다. 기본 테마는 손대지 않는다.
+   * ⚠ 단추를 갈아 끼우지 않는다 — drawFlowTrack 은 좌표만 고친다(누르는 순간 사라지면 클릭이 떨어진다).
+   */
+  // @complexity time=O(n) space=O(n) cc=6
+  function watchFlowTrackSize() {
+    if (!flowSteps || typeof ResizeObserver !== 'function') return;
+    new ResizeObserver(() => {
+      if (detachMode !== 'band') return;
+      // CSS 의 `:root[data-theme] .flow-steps` 와 같은 조건 — 길이 띠에 겹쳐 앉는 것은 이때뿐이다.
+      if (!document.documentElement.hasAttribute('data-theme')) return;
+      const rect = flowSteps.getBoundingClientRect();
+      if (`${Math.round(rect.width)}x${Math.round(rect.height)}` === trackSize) return;
+      drawFlowTrack(stepEls().length);
+    }).observe(flowSteps);
+  }
   if (floatDockBtn && commands.setFloating) {
     floatDockBtn.onclick = (e) => { e.stopPropagation(); render(commands.setFloating({ floating: false })); };
   }
@@ -1919,6 +1980,7 @@ export function createVideoPanel(deps) {
    * @param {number} rows 늘린 뒤의 마디 수
    * @param {boolean} [capped] 상한에 걸려 거기까지만 늘렸는가
    */
+  // @complexity time=O(1) space=O(1) cc=5
   function noteGrew(rows, capped) {
     if (!captureHelp) return;
     // 평소 비어 있는 줄이라(RM-19) 적을 때 함께 보이게 한다. 다음 렌더가 도로 비운다.
@@ -1932,7 +1994,7 @@ export function createVideoPanel(deps) {
 
   // ⚠ 한 커맨드다. 처음 누르면 열고(그 시각이 1카운트), 그 뒤로는 경계를 찍는다 — 그 판정은
   //   usecases/captureCommands 안에 있고 화면은 그것을 흉내 내지 않는다.
-  // ⚠ `▮ 끊기` · `건너뛰기` · `■ 그만` 의 누름은 여기서 걸지 않는다(RM-09). 마크업의 `data-command` 를
+  // ⚠ `끊기` · `건너뛰기` · `그만` 의 누름은 여기서 걸지 않는다(RM-09). 마크업의 `data-command` 를
   //   input/controls 의 bindCommandButtons 가 듣고, app/main 의 실행기가 아래 반환 객체의 captureToggle ·
   //   captureSkip · stopCapture 를 부른다 — 단축키(`B`·`N`·`Esc`)와 같은 길 하나다. 여기서도 걸면 두 번 돈다.
   if (voiceBtn) {
@@ -1949,6 +2011,7 @@ export function createVideoPanel(deps) {
    *   반만 옮기면 표 끝이나 인트로 앞의 동작이 소리 없이 사라진다. 그 사실을 한 줄로 적는다.
    * @param {number} delta
    */
+  // @complexity time=O(1) space=O(1) cc=10
   function shiftAll(delta) {
     if (typeof commands.shiftAll !== 'function') return;
     const { moved, blocked, ...dirty } = commands.shiftAll({ delta }) || {};
@@ -2033,7 +2096,7 @@ export function createVideoPanel(deps) {
      * `스페이스` — 재생과 일시정지를 번갈아 한다. 패널이 닫혀 있으면 아무것도 하지 않는다
      * (닫힌 패널의 영상은 소리만 나는 유령이 된다).
      *
-     * ⚠ **`⧉ PiP` 로 빼 두었으면 패널이 닫혀 있어도 듣는다**(2026-09-20). 그때 영상은 브라우저
+     * ⚠ **`PiP` 로 빼 두었으면 패널이 닫혀 있어도 듣는다**(2026-09-20). 그때 영상은 브라우저
      *   바깥 창에 **보이고 있으므로** 유령이 아니다 — 보이는 것을 세우지 못하는 쪽이 이상하다.
      * ⚠ 그래도 **PiP 창에 포커스가 있으면 이 글쇠는 오지 않는다.** 그 창은 브라우저 바깥이라
      *   키 입력이 페이지에 아예 닿지 않는다(앱이 고칠 수 있는 자리가 아니다). 페이지를 한 번
@@ -2064,7 +2127,7 @@ export function createVideoPanel(deps) {
      */
     tapBpm: () => bpmFromTaps(panelState().taps || [], 1),
     /**
-     * 파일 고르는 창을 띄운다(`📁 영상 파일 열기` · 명령 팔레트가 같은 것을 부른다).
+     * 파일 고르는 창을 띄운다(`영상 파일 열기` · 명령 팔레트가 같은 것을 부른다).
      * ⚠ 브라우저는 사람의 누름(클릭 · 글쇠) 안에서만 이 창을 연다 — 그 이벤트 안에서 곧바로 불러야 한다.
      * @returns {boolean} 창을 띄웠는가
      */

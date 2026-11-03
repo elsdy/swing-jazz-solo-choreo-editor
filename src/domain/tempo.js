@@ -107,11 +107,14 @@ function snapCount(linear, gridCounts) {
  * @param {number} [gridCounts]
  * @returns {{ raw:number, snapped:number, offset:number }|null} 읽을 수 없으면 null
  */
+// @complexity time=O(p) space=O(p) cc=3
 export function boundaryCount(sec, tempo, gridCounts = 1) {
   // ⚠ 초를 **먼저** 본다. timeToCount 는 못 읽는 값을 0 으로 흘려보내므로, 여기서 안 막으면
   //   NaN 이 "카운트 0 에서 딱 맞게 눌렀다"는 표본이 되어 판정을 조용히 끈다.
-  if (!Number.isFinite(Number(sec))) return null;
-  const raw = timeToCount(Number(sec), tempo);
+  // ⚠ 수만 받는다(RM-60). `Number(null)`·`Number('')` 은 0 이라 `Number.isFinite(Number(sec))` 로 거르면
+  //   못 읽는 초가 「0초」로 통과해 재생 헤드 자르기가 카운트 0 에서 잘랐다.
+  if (typeof sec !== 'number' || !Number.isFinite(sec)) return null;
+  const raw = timeToCount(sec, tempo);
   if (!Number.isFinite(raw)) return null;
   const snapped = snapCount(raw, gridCounts);
   return { raw, snapped, offset: raw - snapped };

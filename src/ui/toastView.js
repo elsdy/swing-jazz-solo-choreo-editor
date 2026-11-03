@@ -11,6 +11,8 @@
 // ⚠ 같은 문구가 겹쳐 오면 새로 쌓지 않고 기존 것의 시간만 늘린다 — 같은 실패를 연달아 겪으면 화면이
 //   토스트로 덮인다.
 
+import { iconOnly } from './icon.js';
+
 /** 토스트가 떠 있는 시간(ms). 되돌리기 버튼이 있으면 손이 갈 시간을 더 준다. */
 export const TOAST_MS = 3200;
 export const TOAST_ACTION_MS = 6000;
@@ -59,6 +61,7 @@ export function createToastView(deps = {}) {
     el._timer = later(() => removeToast(el), ms);
   }
 
+  // @complexity time=O(n)? space=O(n)? cc=7
   function showToast(n) {
     const host = ensureStack();
     const ms = n.action ? TOAST_ACTION_MS : TOAST_MS;
@@ -87,8 +90,7 @@ export function createToastView(deps = {}) {
     const close = doc.createElement('button');
     close.type = 'button';
     close.className = 'toast-close';
-    close.textContent = '×';
-    close.title = '닫기';
+    iconOnly(close, 'x', '닫기', doc);
     close.addEventListener('click', () => removeToast(el));
     el.appendChild(close);
 

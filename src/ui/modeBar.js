@@ -3,8 +3,8 @@
 // 2026-09-21 에 ui/startCard.js(사이드바의 `어떻게 채울까` 카드)를 대신해 들어왔다. 카드가 하던
 // 일은 그대로이고 자리만 바뀌었다 — 사이드바 한 칸이 아니라 **화면을 가로지르는 한 줄**이다.
 //
-// 왜 옮겼나: 안무표를 채우는 입구 넷이 층이 다른 세 자리에 흩어져 있었다. `✨ 말로 채우기` 는
-// 앱바(앱 수준), `+ 빠른 배치` · `▶ 영상으로 채우기` · `🎵 프레이즈` 는 캔버스 바(이 안무표의
+// 왜 옮겼나: 안무표를 채우는 입구 넷이 층이 다른 세 자리에 흩어져 있었다. `말로 채우기` 는
+// 앱바(앱 수준), `빠른 배치` · `영상으로 채우기` · `프레이즈` 는 캔버스 바(이 안무표의
 // 표시 설정), 같은 셋이 사이드바 카드(넣을 것의 목록)에도 또 있었다. 같은 층의 지시어가 층을
 // 건너 흩어지면 "다음에 무엇을 누르나"가 화면에서 안 읽힌다. 이제 위에서 아래로
 // **앱 → 무엇으로 채울까 → 안무표 자체** 세 층이다.
@@ -29,12 +29,12 @@ export function entryStates(status) {
   const { server = false, llm = null } = status || {};
   const open = { blocked: false, reason: '' };
   let compose = open;
-  if (!server) compose = { blocked: true, reason: '✨ 말로 채우기 는 로컬 서버가 있어야 됩니다 — python3 server.py 로 열면 켜집니다.' };
-  else if (!llm || !llm.available) compose = { blocked: true, reason: '✨ 말로 채우기 는 LLM 키가 있어야 됩니다 — ⚙ 설정 의 「말로 채우기 — LLM」에서 넣습니다.' };
+  if (!server) compose = { blocked: true, reason: '말로 채우기 는 로컬 서버가 있어야 됩니다 — python3 server.py 로 열면 켜집니다.' };
+  else if (!llm || !llm.available) compose = { blocked: true, reason: '말로 채우기 는 LLM 키가 있어야 됩니다 — 설정 의 「말로 채우기 — LLM」에서 넣습니다.' };
   return { compose, video: open, quickPlace: open, manual: open };
 }
 
-/** 입구 이름 → 버튼 id. `✨ 말로 채우기` 는 composeView 가 슬롯에 붙이는 버튼이라 id 로만 찾는다. */
+/** 입구 이름 → 버튼 id. `말로 채우기` 는 composeView 가 슬롯에 붙이는 버튼이라 id 로만 찾는다. */
 const ENTRY_BUTTONS = Object.freeze({
   compose: 'composeOpenBtn', video: 'videoPanelBtn', quickPlace: 'quickPlaceBtn', manual: 'modeManualBtn'
 });

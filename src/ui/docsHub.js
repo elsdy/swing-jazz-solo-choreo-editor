@@ -8,6 +8,7 @@
 
 import { DOCS, DOC_GROUPS, DEFAULT_DOC_ID, docsByGroup, resolveDoc, idForFileName } from './docsRegistry.js';
 import { helpLinkFor } from './helpLinks.js';
+import { iconLabelHtml, iconOnly } from './icon.js';
 
 const STYLE_ID = 'docs-hub-style';
 const CSS = `
@@ -30,8 +31,10 @@ const CSS = `
   color: var(--muted); padding: var(--sp-1) var(--sp-2); text-transform: none; }
 /* 숨긴 갈래(개발)는 접힌 <details> 다 — 평소엔 제목 한 줄, 누르면 편다. 링크로 그 문서를 열면 스스로 펴진다(RM-26). */
 details.docs-group > summary.docs-group-label { cursor: pointer; list-style: none; }
-details.docs-group > summary.docs-group-label::before { content: '▸ '; }
-details.docs-group[open] > summary.docs-group-label::before { content: '▾ '; }
+details.docs-group > summary.docs-group-label::before { content: ''; display: inline-block; width: 0.9em; height: 0.9em;
+  margin-right: 0.3em; vertical-align: -0.1em; background-color: currentColor;
+  -webkit-mask: var(--icon-chevron-right, linear-gradient(transparent, transparent)) center / contain no-repeat; mask: var(--icon-chevron-right, linear-gradient(transparent, transparent)) center / contain no-repeat; }
+details.docs-group[open] > summary.docs-group-label::before { -webkit-mask-image: var(--icon-chevron-down); mask-image: var(--icon-chevron-down); }
 .docs-item { display: block; width: 100%; text-align: left; border: 0; cursor: pointer;
   background: transparent; color: var(--text); font-size: var(--fs-2); padding: 6px 8px;
   border-radius: var(--r-1); line-height: 1.35; }
@@ -112,16 +115,21 @@ function slugify(text) {
     .replace(/^-|-$/g, '');
 }
 
+// ⚠ 이스케이프는 맨 앞 한 번뿐이다(2026-11-03, RM-65). 아래에서 떼어 둔 코드 조각과 링크 주소는 이미
+//   이스케이프된 `s` 에서 나온 것이라 되돌려 놓을 때 다시 escapeHtml 하면 `&lt;` 가 글자로 보이고 href 의 `&` 가
+//   `&amp;amp;` 가 된다. 이미 이스케이프된 글에는 따옴표가 `&quot;` 로 남아 있어 속성도 깨지지 않는다.
+// @complexity time=O(n) space=O(n) cc=3
 function inline(md) {
   let s = escapeHtml(md);
   const codes = [];
   s = s.replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, text, href) => {
+    // 안전 검사는 이스케이프된 주소에 건다 — 넣을 때도 그 글 그대로 넣는다.
     const safe = /^(https?:|mailto:|#|[\w./-]+\.md(#|$)|[\w./-]+\.html(#|$))/i.test(href);
     if (!safe) return text;
     const ext = /^https?:/i.test(href);
     const attrs = ext ? ' target="_blank" rel="noopener noreferrer"' : '';
-    return `<a href="${escapeHtml(href)}" data-href="${escapeHtml(href)}"${attrs}>${text}</a>`;
+    return `<a href="${href}" data-href="${href}"${attrs}>${text}</a>`;
   });
   // ⚠ 취소선이 **굵게보다 먼저**다(2026-09-13). `~~` 안에 `**` 가 드는 일이 흔한데
   //   순서가 반대면 굵게 규칙이 먼저 먹어 물결표만 글자로 남는다. 이 저장소의 로드맵·PORTS 가
@@ -129,7 +137,7 @@ function inline(md) {
   s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-  s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${escapeHtml(codes[Number(i)])}</code>`);
+  s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[Number(i)]}</code>`);
   return s;
 }
 
@@ -298,6 +306,7 @@ export function buildToc(headings) {
  * 문서 허브를 만든다. 상단 진입점 버튼을 `container` 안에 넣고, 본문 오버레이는 body 에 붙인다.
  * @param {{ container: HTMLElement, doc?: Document, fetchImpl?: typeof fetch }} deps
  */
+// @complexity time=O(1) space=O(1) cc=5
 export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
   const doFetch = fetchImpl || ((...a) => fetch(...a));
 
@@ -324,7 +333,7 @@ export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
         <h2>문서</h2>
         <span class="docs-sub">저장소를 열지 않고 여기서 읽는다</span>
         <span class="docs-spacer"></span>
-        <button class="ghost" data-act="close" type="button">✕ 닫기</button>
+        <button class="ghost" data-act="close" type="button">${iconLabelHtml('x', '닫기')}</button>
       </div>
       <nav class="docs-side"></nav>
       <article class="docs-body" tabindex="-1"></article>
@@ -392,6 +401,7 @@ export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
   }
 
   // 목차만 다시 그린다 — 문서 목록까지 다시 그리면 스크롤 도중 옆단이 튄다
+  // @complexity time=O(t) space=O(t) cc=8
   function renderToc() {
     const wrap = doc.createElement('div');
     wrap.className = 'docs-toc';
@@ -402,7 +412,7 @@ export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
       twisty.className = 'docs-toc-twisty';
       twisty.type = 'button';
       twisty.dataset.twisty = node.id;
-      twisty.textContent = expanded.has(node.id) ? '▾' : '▸';
+      iconOnly(twisty, expanded.has(node.id) ? 'chevron-down' : 'chevron-right', expanded.has(node.id) ? '접기' : '펴기', doc);
       twisty.hidden = node.children.length === 0;
       const link = doc.createElement('button');
       link.className = 'docs-toc-link';

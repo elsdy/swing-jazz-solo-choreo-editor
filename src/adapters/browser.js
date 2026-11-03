@@ -18,7 +18,7 @@
  * ⚠ uid 의 식은 원문 그대로다. `slice(2, 10)` / `slice(-4)` 를 한 글자라도 바꾸면
  *   기존 프로젝트 파일과 id 모양이 달라진다(길이 12, 앞 8자 난수 + 뒤 4자 시각).
  * @see index.html:1696
- * @type {Env & { nowIso: () => string }}
+ * @type {Env & { nowIso: () => string, localDate: (at?: Date) => string }}
  */
 export const browserEnv = {
   uid() {
@@ -35,6 +35,17 @@ export const browserEnv = {
    */
   nowIso() {
     return new Date().toISOString();
+  },
+  /**
+   * 이 기계의 지역 날짜 `YYYY-MM-DD`. 사람에게 보이는 날짜(기본 파일 이름 · 인쇄의 「만든 날」)의 자리다(RM-62).
+   * ⚠ nowIso() 를 앞 열 글자로 자르면 UTC 날짜가 되어 한국 00:00~08:59 에는 어제가 된다 — 개발 원칙 D-22.
+   * ⚠ nowIso 와 같은 확장 멤버다. 결정적 테스트는 `localDate: () => '2026-11-03'` 처럼 고정값을 넘긴다.
+   * @param {Date} [at] 잴 시각(시험이 시간대를 바꿔 잴 때만 준다). 없으면 지금
+   */
+  // @complexity time=O(1) space=O(1) cc=1
+  localDate(at = new Date()) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
   }
 };
 

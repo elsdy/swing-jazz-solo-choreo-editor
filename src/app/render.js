@@ -24,6 +24,8 @@
 import { BOARD_IDS, BOARD_MAIN, expandRows, assertDirty } from '../usecases/store.js';
 import * as Grid from '../domain/grid.js';
 import { phraseMark } from '../domain/phrasing.js';
+import { normalizeParts, boardMarkOf, hiddenRows, foldSummary, pruneFolds } from '../domain/parts.js';
+import { str, fill } from '../domain/strings.js';
 
 /**
  * @typedef {import('../usecases/store.js').Dirty} Dirty
@@ -62,11 +64,44 @@ import { phraseMark } from '../domain/phrasing.js';
  *   기본값을 켜면 '덜 그리는' 회귀는 막지만 매 렌더가 배치 엘리먼트를 재생성해 동작이 달라진다.
  * @returns {(d: Dirty, opts?: { paranoid?: boolean }) => void}
  */
+// @complexity time=O(1) space=O(1) cc=1
 export function createRenderer(store, views, options = {}) {
   const { dev = false, paranoid: paranoidDefault = false } = options;
 
   /** dev 전용. 직전에 그린 시점의 행 지문 — assertDirtyCovers 가 다음 호출과 비교한다. */
   let lastSeen = null;
+
+  /**
+   * 메인 보드의 행 표시 둘(프레이즈 · 파트)을 입힌다. 파트는 정규화된 목록으로 한 번만 셈한다.
+   * 접힘은 store.session.partFolds 를 지금 파트에 맞춰(pruneFolds) 읽는다 — 되돌리기로 사라진 파트의 접힘은 무시된다.
+   */
+  // @complexity time=O(r·n + p) space=O(r) cc=3
+  function syncRowMarks() {
+    const view = views.board?.[BOARD_MAIN];
+    if (!view) return;
+    const board = store.board(BOARD_MAIN);
+    const parts = normalizeParts(store.parts, { rows: board.rows });
+    const marks = new Map();
+    const markOf = (row) => {
+      if (!marks.has(row)) marks.set(row, boardMarkOf(row, parts, r => phraseMark(r, store.phrasing)));
+      return marks.get(row);
+    };
+    view.syncPhrasing((row) => markOf(row).phrase);
+    if (!view.syncParts) return;
+    const folded = pruneFolds(store.session?.partFolds || new Set(), parts);
+    const byStart = new Map(parts.map(p => [p.startRow, p]));
+    const words = { untitled: str('block.untitled'), empty: str('part.emptySummary') };
+    view.syncParts((row) => markOf(row).part, {
+      hidden: hiddenRows(parts, folded),
+      folded,
+      summaryOf: (startRow) => foldSummary(byStart.get(startRow), board.placements, words),
+      // ⚠ 키는 글자 그대로 부른다 — strings 시험이 src 의 호출 글자를 긁어 안 불린 키를 잡는다
+      title: (m) => {
+        const vars = { name: m.name, from: m.startRow, to: m.endRow };
+        return folded.has(m.startRow) ? fill('part.label.titleFolded', vars) : fill('part.label.title', vars);
+      }
+    });
+  }
 
   return function apply(d, opts = {}) {
     if (!d) return;                       // 커맨드가 void 를 돌려줘도 안전하다
@@ -107,9 +142,9 @@ export function createRenderer(store, views, options = {}) {
     // ⚠ 보드가 조금이라도 다시 그려졌으면 함께 부른다. 골격 재생성(innerHTML='')이 dataset 을
     //   통째로 날리고, 그 재생성은 Dirty.skeleton 없이 boardView 의 자가치유로도 일어난다 —
     //   조건을 `d.phrasing` 하나로 좁히면 안무표 크기를 바꾼 뒤 색이 조용히 사라진다.
-    if (d.phrasing || d.boards?.[BOARD_MAIN]) {
-      views.board?.[BOARD_MAIN]?.syncPhrasing((row) => phraseMark(row, store.phrasing));
-    }
+    // 파트(RM-23)도 같은 자리다 — 파트가 있는 마디는 파트가 띠와 색을 정하고 프레이즈 표시는 빠진다(boardMarkOf).
+    //   두 표시를 한 번에 셈해 프레이즈 → 파트 차례로 입힌다(파트가 프레이즈 꼬리표의 title 을 덮는다).
+    if (d.phrasing || d.parts || d.boards?.[BOARD_MAIN]) syncRowMarks();
     if (d.phrasing) views.phrasing?.render();
 
     // ── ③ selection — 행 재렌더 없이 클래스만 ──────────────────────────────
@@ -147,7 +182,7 @@ export function createRenderer(store, views, options = {}) {
       if (!d.selection) views.selectionBar?.render();
     }
     // 엄지 바는 「지금 할 일」을 보이므로 영상 패널의 상태(열림·받는 중)를 따라간다(2026-09-20).
-    // ⚠ 보드가 바뀌어도 부른다 — `+ 빠른 배치` 의 켜짐이 그쪽을 본다.
+    // ⚠ 보드가 바뀌어도 부른다 — `빠른 배치` 의 켜짐이 그쪽을 본다.
     if (d.video || d.boards?.[BOARD_MAIN] || d.toolbar) views.thumb?.render();
     // 프로젝트 칸은 영상 목록(이름·날짜·지금 보는 것)을 비춘다 — 영상이 바뀌면 함께 다시 그린다.
     if (d.video) views.project?.render();

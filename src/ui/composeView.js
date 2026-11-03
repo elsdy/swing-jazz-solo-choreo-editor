@@ -1,16 +1,17 @@
-// src/ui/composeView.js — 상단 `✨ 말로 채우기` 버튼과 그 팝업 (ui 계층)
+// src/ui/composeView.js — 상단 `말로 채우기` 버튼과 그 팝업 (ui 계층)
 //
 // 신설 파일이다. 흐름은 세 단이고 각 단의 결과를 사용자가 고칠 수 있다:
-//   ① 말하거나(🎤, 브라우저 음성 인식) 대충 적는다
+//   ① 말하거나(`말하기`, 브라우저 음성 인식) 대충 적는다
 //   ② `프롬프트 다듬기` — LLM 이 마디·카운트·동작 이름을 명시한 설명으로 고쳐 준다(편집 가능)
 //   ③ `안무표 만들기` — LLM 이 스키마(JSON)로 만들고, 표로 미리 본 뒤 `안무표에 채우기`
 // LLM 호출은 주입받은 어댑터(adapters/llmServer)가 서버를 거쳐 한다. 여기서는 fetch 를 모른다.
 //
 // docsHub·settingsView 와 같은 규약 — 자기 DOM·CSS 를 만들고 index.html 은 건드리지 않는다.
-// ⚠ 음성 인식(webkitSpeechRecognition)은 크롬 계열에서만 있고, 없으면 🎤 버튼이 그 사실을 말한다.
+// ⚠ 음성 인식(webkitSpeechRecognition)은 크롬 계열에서만 있고, 없으면 `말하기` 버튼이 그 사실을 말한다.
 
 import { cellLabel } from '../domain/choreoPlan.js';
 import { str } from '../domain/strings.js';
+import { iconLabel, iconLabelHtml, iconHtml, setLabel } from './icon.js';
 
 const STYLE_ID = 'compose-view-style';
 const CSS = `
@@ -56,7 +57,7 @@ const NO_SPEECH_TEXT = '이 브라우저에는 음성 인식이 없습니다(크
 
 /**
  * @typedef {object} ComposeViewDeps
- * @property {HTMLElement} container `✨ 말로 채우기` 버튼을 붙일 곳(.top-actions)
+ * @property {HTMLElement} container `말로 채우기` 버튼을 붙일 곳(.top-actions)
  * @property {{
  *   getConfig: () => Promise<{provider:string, model:string, available:boolean}|null>,
  *   refine: (text: string, context: object) => Promise<{ok:true, prompt:string}|{ok:false, error:string}>,
@@ -78,6 +79,7 @@ const NO_SPEECH_TEXT = '이 브라우저에는 음성 인식이 없습니다(크
  * @param {ComposeViewDeps} deps
  * @returns {{ open(): void, close(): void }}
  */
+// @complexity time=O(1) space=O(1) cc=5
 export function createComposeView(deps) {
   const {
     container, llm, getContext, previewPlan, applyPlan, render,
@@ -96,7 +98,7 @@ export function createComposeView(deps) {
   openBtn.id = 'composeOpenBtn';
   openBtn.className = 'ghost accent';
   openBtn.type = 'button';
-  openBtn.textContent = '✨ 말로 채우기';
+  iconLabel(openBtn, 'sparkles', '말로 채우기', doc);
   openBtn.title = '말하거나 대충 적은 안무를 LLM 이 다듬어 안무표에 채웁니다';
   if (container) container.appendChild(openBtn);
 
@@ -109,17 +111,17 @@ export function createComposeView(deps) {
         <button class="help-q" type="button" data-help="compose" aria-label="말로 채우기 설명 보기" title="설명서의 이 절로">?</button>
         <span class="compose-model" data-role="model"></span>
         <span class="compose-spacer"></span>
-        <button class="ghost" data-act="close" type="button">✕ 닫기</button>
+        <button class="ghost" data-act="close" type="button">${iconLabelHtml('x', '닫기')}</button>
       </div>
 
       <section class="compose-step">
         <h3><span class="compose-badge">1</span>말하거나 적는다</h3>
         <textarea data-role="raw" placeholder="예: 첫 마디는 찰스턴 여덟 카운트, 그 다음 재즈 스퀘어, 그리고 셋째 마디 5카운트부터 킥볼체인지 두 번…"></textarea>
         <div class="compose-row">
-          <button class="ghost compose-mic" data-act="mic" type="button" title="브라우저 음성 인식으로 받아 적습니다">🎤 말하기</button>
+          <button class="ghost compose-mic" data-act="mic" type="button" title="브라우저 음성 인식으로 받아 적습니다">${iconLabelHtml('mic', '말하기')}</button>
           <button class="ghost" data-act="clear-raw" type="button">비우기</button>
           <span class="compose-grow"></span>
-          <button class="primary" data-act="refine" type="button">프롬프트 다듬기 →</button>
+          <button class="primary" data-act="refine" type="button"><span class="lbl">프롬프트 다듬기</span>${iconHtml('arrow-right')}</button>
         </div>
         <div class="compose-status" data-role="status1"></div>
       </section>
@@ -129,7 +131,7 @@ export function createComposeView(deps) {
         <textarea data-role="prompt" placeholder="1단계를 거치면 여기에 마디·카운트가 명시된 설명이 들어옵니다. 직접 적어도 됩니다."></textarea>
         <div class="compose-row">
           <span class="compose-grow"></span>
-          <button class="primary" data-act="compose" type="button">안무표 만들기 →</button>
+          <button class="primary" data-act="compose" type="button"><span class="lbl">안무표 만들기</span>${iconHtml('arrow-right')}</button>
         </div>
         <div class="compose-status" data-role="status2"></div>
       </section>
@@ -192,12 +194,14 @@ export function createComposeView(deps) {
   let baseText = '';
   let finalText = '';
 
+  // @complexity time=O(1) space=O(1) cc=4
   function stopMic() {
     if (recognizer) { try { recognizer.stop(); } catch { /* 이미 멈춤 */ } }
     recognizer = null;
-    if (micBtn) { micBtn.classList.remove('is-on'); micBtn.textContent = '🎤 말하기'; }
+    if (micBtn) { micBtn.classList.remove('is-on'); iconLabel(micBtn, 'mic', '말하기', doc); }
   }
 
+  // @complexity time=O(1) space=O(1) cc=5
   function startMic() {
     if (!SpeechCtor) { setStatus(status1, NO_SPEECH_TEXT, 'error'); return; }
     const rec = new SpeechCtor();
@@ -225,19 +229,20 @@ export function createComposeView(deps) {
     recognizer = rec;
     try { rec.start(); } catch (e) { setStatus(status1, `음성 인식을 시작하지 못했습니다: ${e && e.message}`, 'error'); stopMic(); return; }
     micBtn.classList.add('is-on');
-    micBtn.textContent = '⏹ 그만 듣기';
+    iconLabel(micBtn, 'square', '그만 듣기', doc);
     setStatus(status1, '듣고 있습니다 — 말이 끝나면 다시 눌러 멈추세요.', 'busy');
   }
 
   // ── 단계 ────────────────────────────────────────────────────────────────
 
+  // @complexity time=O(1) space=O(1) cc=4
   async function refreshModel() {
     const cfg = await llm.getConfig();
     if (!modelEl) return;
     if (!cfg) { modelEl.textContent = '서버 없음 — python3 server.py 로 열어야 됩니다'; return; }
     modelEl.textContent = cfg.available
       ? `${cfg.provider} · ${cfg.model}`
-      : `${cfg.provider} · ${cfg.model} — 키 없음(⚙ 설정)`;
+      : `${cfg.provider} · ${cfg.model} — 키 없음(설정)`;
   }
 
   async function refine() {
