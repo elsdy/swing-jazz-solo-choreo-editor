@@ -2466,7 +2466,7 @@
       {
         "id": "Q128",
         "title": "RM-28 — 마무리 탭이 묻는 판단 — …실행(프로세스 1 → 1) · 지우고 다시 깔기(안무표 · 영상이 남음). │ │ │ │ - 못 한 것: 자르기(h264_mf) — BtbN 의 LGPL ffmp",
-        "answer": null,
+        "answer": "지금 확인으로 충분하다 (2026-11-03)",
         "options": [
           {
             "label": "지금 확인으로 충분하다",
@@ -2476,7 +2476,12 @@
             "label": "설정을 켜고 다시 보라",
             "note": "탭이 말한 설정 · 조건을 갖추고 다시 확인한 뒤 끝으로 적는다"
           }
-        ]
+        ],
+        "basis": {
+          "by": "human",
+          "why": "사람이 10:05 본 트리 claude 의 물음에서 골랐고 claude 가 적었다 — 못 잰 둘(윈도우 자르기 · 첫 실행 경고 화면)은 RM-67 · RM-68 이 맡는다",
+          "at": "2026-11-03T10:11:52+09:00"
+        }
       }
     ]
   },
@@ -4823,7 +4828,7 @@
             "Q112"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "블록을 고른 채 한글을 바로 치면 첫 낱자가 조합 밖에서 맺혀 이름이 「ㅅㅡ윙」 · 「ㅎㅏㄴ」처럼 깨진다. 지금 코드에는 이미 「빈 입력을 열고 기본 동작을 막지 않는」 길(main.js 의 isImeKey)이 있지만, 실제 입력기에서는 그 길도 깨진다고 RM-51 이 쟀다. 그래서 이름 입력이 한글 낱자로 열렸을 때만, 입력이 맺힌 뒤 앞쪽의 흩어진 자모를 2벌식 규칙으로 다시 조합한다. RM-51 과 같은 결함이다(같은 자리 · 같은 까닭) — 이 항목에서 함께 고치고 RM-51 은 이 항목으로 닫는다.",
           "kind": "bug",
@@ -4860,7 +4865,9 @@
               "days": 14
             }
           ],
-          "plan": "docs/roadmap/plans/RM-50.md"
+          "plan": "docs/roadmap/plans/RM-50.md",
+          "branch": "rm-50-rejoin-hangul-jamo-in-type-to-name",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-51",
@@ -4910,7 +4917,7 @@
           "soft": [],
           "questions": [],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "server.py 는 ThreadingHTTPServer 를 기본 대기열 5 로 연다. 그래서 캐시 없이 처음 열 때 ES 모듈 요청 수십 개가 한꺼번에 오면 연결의 절반쯤이 끊기고 앱이 반쯤만 뜬다. 대기열을 128 로 늘린 서버 갈래를 하나 두어 그 몰림을 받아 내고, 같은 몰림을 실제 서버에 걸어 끊김이 0 인지 재는 회귀 시험을 둔다. 판의 다른 항목과 겹치지 않는다.",
           "kind": "bug",
@@ -4933,7 +4940,9 @@
             "docs/HISTORY.md",
             "CLAUDE.md"
           ],
-          "plan": "docs/roadmap/plans/RM-52.md"
+          "plan": "docs/roadmap/plans/RM-52.md",
+          "branch": "rm-52-server-listen-backlog-for-module-burst",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-53",
@@ -5103,7 +5112,7 @@
             "Q117"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "블록 몸통의 k번째 칸을 잡고 끌어 놓으면, 놓은 칸이 아니라 놓은 칸에서 k를 뺀 자리가 블록의 시작이 되게 고친다. 마우스(boardGesture 의 bodyMove · bodyUp)와 손가락 길게 누르기(touchDrag 의 moveGhost · finish)가 모두 hit.col 을 그대로 써서, 마디 중간을 잡고 곧게 옮겨도 블록이 밀리고 다음 마디로 넘쳐 둘로 갈린다. 손가락 묶음 끌기를 만드는 RM-48 과 touchDrag 를 함께 고치니, 먼저 병합되는 쪽이 오프셋을 그대로 물려줘야 한다.",
           "kind": "bug",
@@ -5140,7 +5149,9 @@
               "days": 14
             }
           ],
-          "plan": "docs/roadmap/plans/RM-57.md"
+          "plan": "docs/roadmap/plans/RM-57.md",
+          "branch": "rm-57-body-drag-keeps-grab-offset",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-58",
