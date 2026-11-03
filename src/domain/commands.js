@@ -23,7 +23,8 @@
  * @property {string[]} [alsoKeys] 화면에 적지 않고 함께 듣는 글쇠(관례가 둘인 조합). 고정 명령에만 쓴다
  * @property {boolean} fixed     글쇠를 바꿀 수 없는가
  * @property {boolean} whileTyping 글자를 치는 중(입력칸 · 글상자)에도 듣는가
- * @property {string} [button]   버튼에 쓰는 글자. 없으면 버튼이 없는 명령이다
+ * @property {string} [button]   버튼에 쓰는 글자. 없으면 버튼이 없는 명령이다. **그림 글자(이모지 · 기호)로 시작하지 않는다** — 그림은 icon
+ * @property {string} [icon]     버튼 글자 앞의 아이콘 — index.html 스프라이트의 이름(`#i-이름`, RM-18). 없으면 글자만
  * @property {string} [title]    버튼의 툴팁 몸말. 없으면 라벨. 지금 글쇠는 commandTitle 이 뒤에 붙인다
  */
 
@@ -55,7 +56,8 @@ export const COMMANDS = Object.freeze([
     hint: '동작이 바뀌는 자리마다 한 번. 앞 구간이 놓이고 그 자리에서 다음이 열린다',
     keys: ['B', 'K'],
     fixed: false,
-    button: '▮ 끊기',
+    button: '끊기',
+    icon: 'mark',
     title: '처음 누른 자리가 안무표의 1카운트가 되고, 그 뒤로는 동작이 바뀌는 자리마다 한 번씩 누릅니다',
   }),
   def({
@@ -73,7 +75,8 @@ export const COMMANDS = Object.freeze([
     hint: '영상 패널이 열려 있을 때 듣는다',
     keys: ['Space'],
     fixed: false,
-    button: '⏯',
+    button: '재생',
+    icon: 'play-pause',
   }),
   def({
     id: 'stop',
@@ -82,7 +85,8 @@ export const COMMANDS = Object.freeze([
     keys: ['Escape'],
     fixed: true,
     whileTyping: true,
-    button: '■ 그만',
+    button: '그만',
+    icon: 'square',
     title: '받아 적기를 끝냅니다. 열려 있던 마지막 구간은 버립니다',
   }),
   def({
@@ -255,13 +259,14 @@ export const COMMANDS = Object.freeze([
   }),
   // ── 글쇠 없이 버튼 · 팔레트로 부르는 명령 ──────────────────────────────────
   // 같은 일의 입구가 여럿인 것들이다. 입구마다 글자 · 툴팁을 따로 적다가 서로 달라졌다
-  // (`▶ 영상으로 채우기` 의 툴팁이 채우기 줄과 엄지 바에서 달랐다).
+  // (`영상으로 채우기` 의 툴팁이 채우기 줄과 엄지 바에서 달랐다).
   def({
     id: 'videoPanel',
     label: '영상으로 채우기',
     hint: '영상 패널을 열고 닫는다',
     title: '영상을 보며 동작이 바뀌는 자리를 찍어 안무표를 채웁니다',
-    button: '▶ 영상으로 채우기',
+    button: '영상으로 채우기',
+    icon: 'play',
     fixed: false,
   }),
   def({
@@ -269,7 +274,8 @@ export const COMMANDS = Object.freeze([
     label: '영상 파일 열기',
     hint: '내 컴퓨터의 영상 파일을 고른다',
     title: '내 컴퓨터의 영상 파일을 안무표 옆에 띄웁니다',
-    button: '📁 영상 파일 열기',
+    button: '영상 파일 열기',
+    icon: 'folder',
     fixed: false,
   }),
   def({
@@ -277,7 +283,8 @@ export const COMMANDS = Object.freeze([
     label: '빠른 배치',
     hint: '격자를 눌러 고르며 놓는다. 다시 누르면 끈다',
     title: '격자를 눌러 고르며 놓습니다',
-    button: '+ 빠른 배치',
+    button: '빠른 배치',
+    icon: 'plus',
     fixed: false,
   }),
   def({
@@ -307,7 +314,8 @@ export const COMMANDS = Object.freeze([
     label: '텍스트 시트 복사',
     hint: '마디 하나를 한 줄로 적은 글(8x3 · 1 Swing Out · 5 Kick …)을 클립보드에 담는다. 메신저 · 메모장에 붙인다',
     title: '마디 하나를 한 줄로 적은 글을 클립보드에 담습니다 — 메신저 · 메모장에 바로 붙일 수 있습니다',
-    button: '📋 텍스트 시트 복사',
+    button: '텍스트 시트 복사',
+    icon: 'clipboard',
     fixed: false,
   }),
   def({
@@ -315,7 +323,8 @@ export const COMMANDS = Object.freeze([
     label: '읽기 전용 HTML 내려받기',
     hint: '앱 없이 더블클릭으로 열리는 한 장짜리 HTML 파일로 받는다. 안무표 · 텍스트 시트 · 영상 마커가 들어 있다',
     title: '앱 없이 더블클릭으로 열리는 한 장짜리 HTML 파일로 받습니다',
-    button: '⬇ 읽기 전용 HTML',
+    button: '읽기 전용 HTML',
+    icon: 'download',
     fixed: false,
   }),
   def({
@@ -323,7 +332,8 @@ export const COMMANDS = Object.freeze([
     label: '인쇄 · PDF',
     hint: '편집 도구 · 동작 목록 · 영상을 빼고 안무표만 A4 에 맞춰 인쇄한다. 인쇄 창에서 PDF 로 저장할 수 있다',
     title: '안무표만 A4 에 맞춰 인쇄합니다. 인쇄 창에서 PDF 로 저장할 수 있습니다',
-    button: '🖨 인쇄 · PDF',
+    button: '인쇄 · PDF',
+    icon: 'printer',
     fixed: false,
   }),
   def({

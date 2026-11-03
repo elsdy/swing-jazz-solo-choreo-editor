@@ -12,8 +12,9 @@
 //   1. 마이그레이션은 검증하지 않는다. 시대/모양만 맞추고, 클램프·복구는 normalize.js 가 한다.
 //   2. 입력을 변형하지 않는다. up() 은 항상 새 객체를 돌려준다.
 //   3. 미래 스키마는 거부한다. 열고 다시 저장하는 순간 다운그레이드로 필드가 소멸하기 때문이다.
-//   4. 레코드를 날조하지 않는다. v1 파일은 versions/practiceLogs/media 가 **빈 배열**이지
+//   4. 레코드를 날조하지 않는다. v1 파일은 versions/practiceLogs/mediaRefs 가 **빈 배열**이지
 //      "버전 0" 이 자동 생성되지 않는다(createdAt 이 역사에 대해 거짓말을 하고, 왕복이 멱등을 잃는다).
+//      거꾸로 파일에 이미 있는 판본 · 기록은 빈 배열로 덮지 않는다(RM-29).
 
 import { SCHEMA_VERSION } from './schema.js';
 
@@ -68,14 +69,42 @@ export const MIGRATIONS = Object.freeze([
         // ⚠ 최상위 `media` 는 doc.media 와 **이름만 같고 타입이 다르다**(MediaRef[] 자리, 아직 아무도
         //   만들지 않는다). readProjectData 가 `{...value, ...value.doc}` 로 펼칠 때 doc 쪽이 이겨서
         //   우리가 읽고 싶은 블록이 나온다. 이름 충돌 정리는 v3 의 몫이다 — schema.js 의 ProjectFile 참조.
-        versions: [], practiceLogs: [], media: [],
+        // ⚠ 파일에 이미 판본 · 기록이 있으면(최상위 배열) **그대로 옮긴다**(RM-29). 전에는 늘 빈 배열로 덮어,
+        //   version 1 로 쓰인 판본이 이 단계를 지나며 조용히 사라질 길이 있었다. 모양 검사는 normalize 의 몫이다(원칙 1).
+        versions: listOr(raw.versions), practiceLogs: listOr(raw.practiceLogs), media: [],
         // 구버전 index.html(GitHub Pages 캐시 등)이 열어도 링크를 잃지 않도록 남기는 미러.
         // v3 에서 제거한다. 4필드뿐이라 비용이 거의 없다.
         youtubeUrl, youtubeTitle, clickupUrl, customLinks
       };
     }
+  }),
+  Object.freeze({
+    from: 2,
+    to: 3,
+    describe: '최상위 MediaRef 목록의 이름을 media 에서 mediaRefs 로 옮기고 versions/practiceLogs 를 배열로 맞춘다',
+    up(raw) {
+      const { media: topMedia, version: _version, ...rest } = raw;
+      const out = {
+        ...rest,
+        version: 3,
+        versions: listOr(raw.versions),
+        practiceLogs: listOr(raw.practiceLogs)
+      };
+      // ⚠ 최상위 `media` 가 **배열일 때만** MediaRef 목록이다(v1→v2 가 만든 빈 자리). 배열이 아니면 영상 목록 블록이다 —
+      //   최근 목록에는 `{...value, ...value.doc}` 로 펼친 v2 값이 담긴 적이 있어 거기서는 최상위 media 가 doc.media 의 사본이다.
+      //   그것을 버리면 doc 이 없는 값에서 영상 목록이 사라진다. 그러니 블록이면 그 자리에 그대로 둔다.
+      if (Array.isArray(topMedia)) out.mediaRefs = Array.isArray(raw.mediaRefs) ? raw.mediaRefs : topMedia;
+      else if (topMedia !== undefined) out.media = topMedia;
+      return out;
+    }
   })
 ]);
+
+/** 배열이면 그대로, 아니면 빈 배열. 마이그레이션은 모양만 맞춘다(원칙 1) — 원소는 normalize 가 본다. */
+// @complexity time=O(1) space=O(1) cc=2
+function listOr(value) {
+  return Array.isArray(value) ? value : [];
+}
 
 /**
  * 프로젝트 파일을 최신 스키마까지 끌어올린다.

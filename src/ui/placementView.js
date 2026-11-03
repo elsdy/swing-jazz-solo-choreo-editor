@@ -17,6 +17,7 @@
 
 import { CLS, DATA } from './domContract.js';
 import { escapeHtml } from './widgets.js';
+import { iconHtml } from './icon.js';
 import { str } from '../domain/strings.js';
 import { readCellH } from './cssVars.js';
 import { resolvePlacementColor } from '../domain/categories.js';
@@ -93,11 +94,11 @@ export function createPlacementEl(placement, visualSubRow, deps) {
   // 이름 없는 블록은 자리와 길이만 있다. 빈 칸으로 두면 "왜 아무것도 안 적혔지"가 되므로 `?` 를 세운다
   // (docs/EDITING_FLOWS.md 1단계). name 은 빈 문자열 그대로라 이름을 붙이면 이 분기가 저절로 풀린다.
   const shown = placement.pending ? '?' : escapeHtml(placement.name);
-  // `✎` 는 **고른 블록에만** 보인다(CSS). 자리를 차지하지 않는 절대 배치다 — 흐름에 끼우면
+  // 연필 단추(`동작 정하기`)는 **고른 블록에만** 보인다(CSS). 자리를 차지하지 않는 절대 배치다 — 흐름에 끼우면
   // 고르는 순간 라벨이 밀려서, 지우려고 더블클릭하는 손이 첫 클릭 뒤에 과녁을 잃는다.
   // ⚠ 고를 수 없는 보드(루틴 편집기)에는 아예 만들지 않는다 — 영영 안 보이는 DOM 을 두지 않는다.
   const nameBtn = policy?.allowsSelection
-    ? `<button class="${CLS.nameBtn}" type="button" title="동작 정하기">✎</button>`
+    ? `<button class="${CLS.nameBtn}" type="button" title="동작 정하기" aria-label="동작 정하기">${iconHtml('pencil')}</button>`
     : '';
   // 양쪽 가장자리 손잡이(RM-12) — 왼쪽은 시작점, 오른쪽은 길이. **장식일 뿐**이다: 누른 자리가 가장자리인지는
   // domain/gestureMath.resolveGrabZone 이 블록 폭으로 잰다(손잡이가 숨어 있어도 같다). 손잡이는 자리를 차지하지 않아

@@ -34,6 +34,9 @@ function fakeDom(layout = () => ({})) {
       setAttribute: (k, v) => { attrs[k] = String(v); },
       removeAttribute: (k) => { delete attrs[k]; },
       getAttribute: (k) => (k in attrs ? attrs[k] : null),
+      // 단추 안의 아이콘 · 글자 칸(ui/icon.iconLabel, RM-18)
+      appendChild(c) { this.children.push(c); return c; },
+      replaceChildren(...kids) { this.children = kids; },
       remove() {}
     };
     Object.defineProperty(el, 'clientWidth', { get: () => layout(el).clientWidth });
@@ -63,7 +66,7 @@ function setup(state, layout) {
 
 test('빠른 배치가 켜지면 quick 버튼이 quick-btn-active 를 입고 꺼지면 ghost 로 돌아간다', () => {
   const { view, quick, set, calls } = setup({ quickPlaceOn: false });
-  assert.ok(quick(), '영상이 닫힌 상태에 `+ 빠른 배치` 가 있다');
+  assert.ok(quick(), '영상이 닫힌 상태에 `빠른 배치` 가 있다');
   assert.equal(quick().className, CLS.ghost);
   set({ quickPlaceOn: true });
   view.render();
@@ -100,20 +103,29 @@ test('켜짐이 바뀌어도 quick 버튼은 같은 엘리먼트로 남는다', 
 });
 
 // ── RM-63 좁은 단추는 재서 넘칠 때만 짧은 꼴로 접는다 ─────────────────────────
+// 짧은 꼴은 처음에 `⏮` 글자였고, RM-18(아이콘 한 벌)과 합치며 **그 단추의 아이콘만** 남기는 꼴이 됐다 — 글자 칸을 걷는다.
 
-/** 글자 한 자에 14px — 1200px 창에서 잰 68px 칸에 `⏮ 처음으로`(7자, 98px)는 넘치고 `⏮`(1자)는 들어간다. */
+/** 단추의 글자 칸(span.lbl) 글자 — 없으면 ''. */
+const labelOf = (btn) => (btn.children.find(c => c.className === 'lbl') || { textContent: '' }).textContent;
+/** 단추의 아이콘 이름 — 없으면 ''. */
+const iconOf = (btn) => ((btn.children.find(c => c.getAttribute && c.getAttribute('class') === 'icon') || { dataset: {} }).dataset.icon || '');
+/** 글자 한 자 · 아이콘 하나에 14px — 1200px 창에서 잰 68px 칸에 [아이콘]+`처음으로`(5칸, 70px)는 넘치고 아이콘만(14px)은 들어간다. */
 const PX_PER_CHAR = 14;
-/** 칸 폭이 `width` 인 단추 — 글자 폭은 지금 textContent 로 센다(실물처럼 접으면 줄어든다). */
-const boxOf = (width) => (el) => ({ clientWidth: width(el), scrollWidth: [...el.textContent].length * PX_PER_CHAR });
+/** 칸 폭이 `width` 인 단추 — 내용 폭은 지금의 아이콘 · 글자 칸으로 센다(실물처럼 접으면 줄어든다). */
+const boxOf = (width) => (el) => ({
+  clientWidth: width(el),
+  scrollWidth: ((iconOf(el) ? 1 : 0) + [...labelOf(el)].length) * PX_PER_CHAR
+});
 const VIDEO_OPEN = { panelOpen: true, docked: true, canCapture: true };
 
-test('[RM-63 요구 1] 접힌 단추는 전체 이름을 aria-label 과 title 로 갖는다', () => {
+test('[RM-63 요구 1] 접힌 단추는 아이콘만 남고 전체 이름을 aria-label 과 title 로 갖는다', () => {
   const { act } = setup(VIDEO_OPEN, boxOf(() => 68));
   const rewind = act('rewind');
-  assert.ok(rewind, '영상이 열린 상태에 `⏮ 처음으로` 가 있다');
-  assert.equal(rewind.textContent, '⏮', '68px 칸에 넘치는 글자는 짧은 꼴로 접는다');
+  assert.ok(rewind, '영상이 열린 상태에 `처음으로` 가 있다');
+  assert.equal(labelOf(rewind), '', '68px 칸에 넘치는 글자는 걷는다');
+  assert.equal(iconOf(rewind), 'skip-back', '아이콘은 남는다 — 그것이 짧은 꼴이다');
   assert.ok(rewind.scrollWidth <= rewind.clientWidth, '접은 뒤에는 넘치지 않는다');
-  assert.equal(rewind.getAttribute('aria-label'), '⏮ 처음으로', '화면 읽기는 전체 이름을 읽는다');
+  assert.equal(rewind.getAttribute('aria-label'), '처음으로', '화면 읽기는 전체 이름을 읽는다');
   assert.ok(rewind.title, '툴팁이 비지 않았다');
   assert.match(rewind.title, /처음으로/, '툴팁에도 무엇인지가 남는다');
 });
@@ -121,12 +133,13 @@ test('[RM-63 요구 1] 접힌 단추는 전체 이름을 aria-label 과 title �
 test('[RM-63 요구 2] 넘치지 않으면 전체 글자를 그대로 둔다', () => {
   // 넉넉한 칸
   const wide = setup(VIDEO_OPEN, boxOf(() => 200));
-  assert.equal(wide.act('rewind').textContent, '⏮ 처음으로');
+  assert.equal(labelOf(wide.act('rewind')), '처음으로');
+  assert.equal(iconOf(wide.act('rewind')), 'skip-back');
   assert.equal(wide.act('rewind').getAttribute('aria-label'), null, '접지 않았으면 aria-label 을 달지 않는다 — 글자가 곧 이름이다');
   // 잴 수 없는 칸(숨은 줄 · 붙기 전) — 접기는 잰 결과로만 고른다
   for (const width of [0, undefined]) {
     const { act } = setup(VIDEO_OPEN, (el) => ({ clientWidth: width, scrollWidth: width === 0 ? 0 : undefined }));
-    assert.equal(act('rewind').textContent, '⏮ 처음으로', `폭이 ${width} 이면 접지 않는다`);
+    assert.equal(labelOf(act('rewind')), '처음으로', `폭이 ${width} 이면 접지 않는다`);
     assert.equal(act('rewind').getAttribute('aria-label'), null);
   }
 });
@@ -135,9 +148,9 @@ test('[RM-63 요구 3] 주 동작과 짧은 꼴 없는 단추는 넘쳐도 접�
   // 모든 단추가 넘친다
   const { act, bar } = setup(VIDEO_OPEN, boxOf(() => 10));
   assert.equal(act('cut').dataset.main, '1');
-  assert.equal(act('cut').textContent, 'capture', '주 동작은 글자를 지킨다 — 말줄임이 남더라도 접지 않는다');
-  assert.equal(act('play').textContent, 'play', '짧은 꼴이 없는 단추는 그대로다');
-  assert.equal(act('rewind').textContent, '⏮', '짧은 꼴이 있는 단추만 접힌다');
+  assert.equal(labelOf(act('cut')), 'capture', '주 동작은 글자를 지킨다 — 말줄임이 남더라도 접지 않는다');
+  assert.equal(labelOf(act('play')), 'play', '짧은 꼴이 없는 단추는 그대로다');
+  assert.equal(labelOf(act('rewind')), '', '짧은 꼴이 있는 단추만 접힌다');
   for (const b of bar.children.filter(b => b.dataset.act !== 'rewind')) {
     assert.equal(b.getAttribute('aria-label'), null, `${b.dataset.act} 에는 aria-label 을 달지 않는다`);
   }
@@ -147,14 +160,15 @@ test('[RM-63 요구 4] 자리가 생기면 다시 그릴 때 전체 글자로 �
   let width = 68;
   const { act, view } = setup(VIDEO_OPEN, boxOf(() => width));
   const rewind = act('rewind');
-  assert.equal(rewind.textContent, '⏮');
+  assert.equal(labelOf(rewind), '');
   width = 200; // 창을 넓혔거나 이웃 단추가 빠졌다
   view.render();
   assert.equal(act('rewind'), rewind, '같은 엘리먼트를 고쳐 쓴다 — 누르는 순간 갈아 끼우지 않는다');
-  assert.equal(rewind.textContent, '⏮ 처음으로');
+  assert.equal(labelOf(rewind), '처음으로');
   assert.equal(rewind.getAttribute('aria-label'), null);
   width = 68; // 다시 좁아지면 다시 접는다
   view.render();
-  assert.equal(rewind.textContent, '⏮');
-  assert.equal(rewind.getAttribute('aria-label'), '⏮ 처음으로');
+  assert.equal(labelOf(rewind), '');
+  assert.equal(iconOf(rewind), 'skip-back');
+  assert.equal(rewind.getAttribute('aria-label'), '처음으로');
 });
