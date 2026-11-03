@@ -476,6 +476,8 @@ Info.plist 의 값이 파일 이름과 달라 macOS 가 이름 표를 버렸다.
 링크되었으면(`otool -L`) · GPL 이면 거절한다. 서명 · 첫 실행 경고 · 다른 기계에서 켜기는 기계가 잴 수 없어 `packaging/README.md` 의
 손 점검표로 본다. 맥 앱의 보이는 이름은 `tests/unit/tutorialInstall.test.mjs` 가 이름 표(`ko.lproj`)와 Info.plist 쪽 값(파일 이름)을,
 튜토리얼이 끌라고 한 이름과 `app.json` 을 대조하고, 지은 앱의 Finder 이름은 손 점검표의 `osascript … displayed name` 으로 본다.
+손 점검을 돈 결과는 그날 `packaging/README.md` 의 「잰 것과 남은 것」에 판 · 기계 · 잰 방법(API 인지 화면인지)과 함께 옮긴다 —
+RM-28 마무리에서 LGPL ffmpeg 빌드 · 다른 맥 · 윈도우 설치 파일을 쟀는데 README 는 「돌려 보지 않은 대본」으로 남아 RM-68 로 고쳤다.
 
 **근거 버그.** [.dmg 재료의 링크를 따라가 문서 검사가 맥의 앱 폴더에서 죽음](BUG_REPORTS.md#dmg-재료의-링크를-따라가-문서-검사가-맥의-앱-폴더에서-죽음)(2026-11-03, RM-28).
 [앱 정보를 고쳐 넣은 .app 의 봉인이 깨짐](BUG_REPORTS.md#앱-정보를-고쳐-넣은-app-의-봉인이-깨짐)(2026-11-03, RM-28).
