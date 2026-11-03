@@ -39,6 +39,8 @@ import { iconLabel, iconOnly } from './icon.js';
  *   },
  *   openVideoPanel: () => void,
  *   logTake?: (clipId: string) => void,
+ *   hasPose?: (clip: object) => boolean,
+ *   comparePose?: (clipId: string) => void,
  *   confirmOnce: (btn: HTMLElement, label: string, run: () => void) => void,
  *   doc?: Document
  * }} options
@@ -47,7 +49,9 @@ import { iconLabel, iconOnly } from './icon.js';
 export function createProjectPanel(options) {
   const {
     elements = {}, getProjectName, setProjectName, getClips, byProgress, summarize, formatDate,
-    commands, openVideoPanel = () => {}, logTake = null, confirmOnce = (btn, label, run) => run(), doc = document
+    commands, openVideoPanel = () => {}, logTake = null, confirmOnce = (btn, label, run) => run(), doc = document,
+    // RM-30 — 이 영상의 자세 분석이 짝 파일로 남아 있나 · 그 줄에서 견주기로 들어가기. 서버가 없으면 늘 거짓이다.
+    hasPose = () => false, comparePose = null
   } = options;
   const byId = (id) => (id in elements ? elements[id] : doc.getElementById(id));
 
@@ -83,7 +87,7 @@ export function createProjectPanel(options) {
   }
 
   /** 목록의 한 줄. 접혀 있을 때는 날짜·이름·상태만 보이고, 펴면 날짜·메모를 고친다. */
-  // @complexity time=O(1) space=O(1) cc=12
+  // @complexity time=O(1) space=O(1) cc=15
   function clipRow(clip, isActive) {
     const row = doc.createElement('div');
     row.className = 'project-clip' + (isActive ? ' is-active' : '');
@@ -119,6 +123,23 @@ export function createProjectPanel(options) {
     meta.className = 'project-clip-meta';
     meta.appendChild(chip(clip.tempo && clip.tempo.bpm > 0 ? `박자 ${Math.round(clip.tempo.bpm)}` : '박자 —'));
     meta.appendChild(chip(`마커 ${(clip.markers || []).length}`));
+    // 자세 분석을 짝 파일로 남겨 둔 테이크(RM-30). 지금 보는 것이 아닌 줄에서는 그 자리에서 견주기로 들어간다.
+    const posed = hasPose(clip);
+    if (posed) {
+      const c = chip(str('pose.clip.chip'));
+      c.classList.add('is-pose');
+      c.title = str('pose.clip.chip.title');
+      meta.appendChild(c);
+    }
+    if (posed && !isActive && comparePose) {
+      const cmp = doc.createElement('button');
+      cmp.className = 'ghost project-clip-compare';
+      cmp.type = 'button';
+      cmp.textContent = str('pose.clip.compare');
+      cmp.title = str('pose.clip.compare.title');
+      cmp.onclick = () => comparePose(clip.id);
+      meta.appendChild(cmp);
+    }
     if (clip.note) {
       const note = doc.createElement('span');
       note.className = 'project-clip-note';

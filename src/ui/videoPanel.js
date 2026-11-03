@@ -2067,6 +2067,18 @@ export function createVideoPanel(deps) {
     render: renderPanel,
     renderStatus,
     /**
+     * 도구 하나를 연다(RM-30) — 왼쪽 영상 목록의 `견주기` 가 자세 분석 도구로 바로 들어가는 길이다.
+     * 나머지 도구를 닫는 일은 `toggle` 리스너가 한다(사람이 탭을 누른 것과 같은 길). 차례 기록(flow.note)에는 넣지 않는다 —
+     * 프로그램이 연 것은 사람의 차례가 아니다.
+     * @param {string} step 마크업의 `data-step`(step4 구간 자르기 · step5 마커 · step6 자세 분석)
+     */
+    // @complexity time=O(n) space=O(n) cc=3
+    openTool(step) {
+      const el = toolEls().find(t => t.dataset.step === step);
+      if (el && !el.open) el.open = true;
+      renderToolTabs();
+    },
+    /**
      * 영상이 지금 패널 밖 어디에 나가 있는가 — `'band'`(안무표 위 띠) · `'float'`(⤢ 크게) · `null`.
      * ⚠ 엄지 바가 "영상 밑에 붙은 상태인가"를 이것으로 판정한다. 값은 이 뷰의 render 가 정하고,
      *   app/render 는 **영상 패널을 엄지 바보다 먼저** 그린다(그래서 한 프레임 늦지 않는다).

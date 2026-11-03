@@ -361,6 +361,38 @@ def split_clip_path(path):
     return [p.strip() for p in str(path or '').split('/') if p.strip() and p.strip() not in ('.', '..')]
 
 
+# 자세 분석 짝 파일(RM-30, 2026-11-03) — 클립 폴더 안 숨은 폴더에 `<클립 파일>.json` 으로 둔다.
+# ⚠ domain/clips.js 의 POSE_DIR · posePathOf 와 같은 모양이다. 한쪽만 고치면 짝을 못 찾는다.
+POSE_DIR = '.pose'
+# 짝 파일 하나의 상한. 30초 × 12fps × 사람 둘 × 점 33개 × 두 좌표계가 반올림해 2~4MB 다 — 수 분짜리를 넉넉히 받되
+# 끝없이 받지는 않는다.
+POSE_MAX_BYTES = 64 * 1024 * 1024
+# 짝 파일 첫머리에서 클립 크기를 읽는다 — 목록이 짝마다 수 MB 를 통째로 읽지 않게, 서버가 이 키를 맨 앞에 쓴다.
+POSE_HEAD = re.compile(rb'^\{"clipBytes":\s*(\d+)')
+
+
+# @complexity time=O(n) space=O(n) cc=2
+def pose_path_of(rel_path):
+    """클립 보관 경로 → 짝 파일 경로. 'video-clip/p/take.mp4' → 'video-clip/p/.pose/take.mp4.json'. 잘못된 경로면 ''."""
+    parts = split_clip_path(rel_path)
+    if not parts:
+        return ''
+    file = parts.pop()
+    return '/'.join([*parts, POSE_DIR, f'{file}.json'])
+
+
+# @complexity time=O(1) space=O(1) cc=3
+def pose_clip_bytes(sidecar):
+    """짝 파일이 적어 둔 클립 크기. 첫머리만 읽는다. 읽을 수 없거나 꼴이 아니면 None."""
+    try:
+        with open(sidecar, 'rb') as f:
+            head = f.read(64)
+    except OSError:
+        return None
+    m = POSE_HEAD.match(head)
+    return int(m.group(1)) if m else None
+
+
 def clock_tag(sec):
     """초 → 파일 이름에 쓸 수 있는 시각 표기. 12.34 → '0m12.3s'. 콜론은 파일 이름에 못 쓰므로 m/s 로 적는다."""
     sec = max(0.0, float(sec))
@@ -1414,6 +1446,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._read_project(unquote(url.path[len('/api/projects/'):]))
         if url.path.startswith('/api/clips/'):
             return self._head_clip(unquote(url.path[len('/api/clips/'):]))
+        if url.path.startswith('/api/pose/'):
+            return self._read_pose(unquote(url.path[len('/api/pose/'):]))
         if url.path.startswith('/clips/'):
             return self._serve_clip(unquote(url.path[len('/clips/'):]))
         if self._hidden(url.path):
@@ -1457,6 +1491,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._put_project(parse_qs(url.query))
         if url.path == '/api/models/config':
             return self._put_models_config()
+        if url.path.startswith('/api/pose/'):
+            return self._put_pose(unquote(url.path[len('/api/pose/'):]))
         return self._error(HTTPStatus.NOT_FOUND, 'no such endpoint')
 
     def do_POST(self):
@@ -1960,11 +1996,75 @@ class Handler(SimpleHTTPRequestHandler):
             for entry in sorted(folder.iterdir()):
                 if entry.is_file() and not entry.name.startswith('.'):
                     st = entry.stat()
+                    # 자세 분석 짝 파일이 있고 그 짝이 지금 이 파일의 것인가(RM-30). 짝은 숨은 폴더라 목록에 끼지 않는다.
+                    sidecar = folder / POSE_DIR / f'{entry.name}.json'
                     items.append({
                         'path': f'{self.config.subdir}/{project}/{entry.name}',
-                        'name': entry.name, 'size': st.st_size, 'mtime': int(st.st_mtime)
+                        'name': entry.name, 'size': st.st_size, 'mtime': int(st.st_mtime),
+                        'pose': sidecar.is_file() and pose_clip_bytes(sidecar) == st.st_size
                     })
         return self._json(HTTPStatus.OK, {'project': project, 'clips': items})
+
+    # ── 자세 분석 짝 파일 (RM-30, 2026-11-03) ──
+    #
+    # 분석이 끝나면 원본 관절점을 클립 곁 숨은 폴더에 남긴다 — 다시 열면 분석하지 않고 되살린다.
+    # ⚠ 열쇠는 클립의 **보관 경로**다(클립 id 가 아니다). 짝 파일은 반드시 이 API 로만 읽고 쓴다 — 숨은 경로라
+    #   정적 서빙은 막혀 있다.
+    # ⚠ 짝 파일에는 쓸 때의 클립 크기를 적고, 읽을 때 지금 크기와 다르면 없는 것으로 친다. 같은 이름의 다른 영상
+    #   (지운 뒤 다시 올린 것 · 자르기가 같은 이름을 다시 지은 것)에 남의 관절이 붙지 않게 하는 것이다.
+    # ⚠ 지우는 길은 없다 — 「분석 지우기」는 화면에서만 지운다(2026-10-01 결정 Q37). 다시 분석하면 덮어쓴다.
+
+    # @complexity time=O(n) space=O(n) cc=5
+    def _pose_files(self, rel_path):
+        """클립 경로 → (클립 파일, 짝 파일). 루트 밖이거나 숨은 자리(짝 파일 자신)이거나 클립이 없으면 None."""
+        # ⚠ 숨은 조각을 거절한다 — 짝 파일 경로를 클립으로 주면 짝의 짝(`.pose/.pose/…`)이 생긴다.
+        if any(seg.startswith('.') for seg in split_clip_path(rel_path)):
+            return None
+        clip = self._clip_file(rel_path)
+        if not clip or not clip.is_file():
+            return None
+        return clip, clip.parent / POSE_DIR / f'{clip.name}.json'
+
+    # @complexity time=O(n) space=O(n) cc=4
+    def _read_pose(self, rel_path):
+        found = self._pose_files(rel_path)
+        if not found:
+            return self._error(HTTPStatus.NOT_FOUND, 'no such clip')
+        clip, sidecar = found
+        if not sidecar.is_file():
+            return self._error(HTTPStatus.NOT_FOUND, 'no pose record')
+        if pose_clip_bytes(sidecar) != clip.stat().st_size:
+            return self._error(HTTPStatus.NOT_FOUND, 'pose record is for another file', {'stale': True})
+        raw = sidecar.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    # @complexity time=O(n) space=O(n) cc=7
+    def _put_pose(self, rel_path):
+        found = self._pose_files(rel_path)
+        if not found:
+            return self._error(HTTPStatus.NOT_FOUND, 'no such clip')
+        clip, sidecar = found
+        length = int(self.headers.get('Content-Length') or 0)
+        if length > POSE_MAX_BYTES:
+            return self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, f'pose record over {POSE_MAX_BYTES} bytes')
+        data = self._read_json()
+        if not isinstance(data, dict) or not isinstance(data.get('frames'), list):
+            return self._error(HTTPStatus.BAD_REQUEST, 'need a json object with frames')
+        # 클립 크기를 **맨 앞 키로** 적는다 — 목록이 첫머리만 읽고 짝이 맞는지 안다(pose_clip_bytes).
+        data.pop('clipBytes', None)
+        record = {'clipBytes': clip.stat().st_size, **data}
+        raw = json.dumps(record, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        try:
+            sidecar.parent.mkdir(parents=True, exist_ok=True)
+            write_atomic(sidecar, raw)
+        except OSError as e:
+            return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f'write failed: {e}')
+        rel = str(sidecar.relative_to(self.config.root)).replace(os.path.sep, '/')
+        return self._json(HTTPStatus.OK, {'ok': True, 'path': rel, 'size': len(raw)})
 
     def _head_clip(self, rel_path):
         target = self._clip_file(rel_path)

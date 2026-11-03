@@ -285,7 +285,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `nullMediaPlayer.js` | 소스 없음을 정상 상태로 표현하는 재생기 |
 | `media/youtubePlayer.js` | YouTube IFrame API 를 `MediaPlayer` 계약으로 감싼다. **이 앱의 첫 외부 스크립트 의존**이라 실패를 예외가 아니라 상태로 다룬다 — 스크립트가 막히면 `getState().load === 'error'` 이고 한국어 문구는 뷰가 만든다. 생성만으로는 DOM 도 네트워크도 안 건드린다 |
 | `llmServer.js` | `server.py` 의 LLM 중계 클라이언트(`/api/llm/*`). 브라우저는 모델을 직접 부르지 않는다 — 키가 브라우저에 가면 안 되고 로컬 LLM 은 CORS 에 막힌다. 어떤 함수도 던지지 않는다 |
-| `clipServer.js` | `server.py` 의 클립 API 클라이언트. 서버가 있는지 `probe` 하고, 업로드(`PUT /api/clips`, 본문이 파일 바이트라 multipart 가 없다)·존재 확인·재생 URL(`/clips/<path>`)을 준다. 어떤 함수도 던지지 않는다 — 서버가 없으면 null 이고 `app/main` 이 브라우저 폴더 방식으로 떨어진다 |
+| `clipServer.js` | `server.py` 의 클립 API 클라이언트. 서버가 있는지 `probe` 하고, 업로드(`PUT /api/clips`, 본문이 파일 바이트라 multipart 가 없다)·존재 확인·재생 URL(`/clips/<path>`)과 자세 분석 짝 파일 읽고 쓰기(`savePose` · `loadPose`, RM-30)를 준다. 어떤 함수도 던지지 않는다 — 서버가 없으면 null 이고 `app/main` 이 브라우저 폴더 방식으로 떨어진다 |
 | `speechInput.js` | 마이크로 받아 적기(2026-09-22). 크롬의 Web Speech API 를 감싼다. **중간 결과가 처음 온 순간**을 「말이 시작된 시각」으로 함께 준다 — 말이 *끝난* 시각으로 붙이면 한 구간씩 밀린다. 조용하면 브라우저가 스스로 멈추므로 다시 켜고, 듣는 중인지를 늘 밖에 알린다. ⚠ 크롬은 음성을 **구글 서버로 보내** 인식한다(끌 수 없다) |
 | `pose/mediapipePose.js` | 받아 둔 MediaPipe 파일로 `PoseEstimator` 계약을 채운다. **번호를 이름으로 옮기는 표(`LANDMARK_NAMES`)가 여기 하나뿐**이라, 다른 모델로 갈아 끼울 때 고치는 것이 그 표다. `<video>` 를 탐색하거나 이미 뽑아 둔 프레임(`{images}`)을 받는다 — 뒤쪽은 탭이 안 보여 `<video>` 가 디코드되지 않는 자동화에서 쓴다 |
 | `modelServer.js` | 자세 분석 모델의 보관 위치(`server.py`). **받아 두고 위치를 아는 것까지**가 전부다 — 모델을 로드하지 않는다(그건 추정기 어댑터의 몫이고, 한 파일에 두면 설정 화면이 20MB 를 로드하게 된다) |
@@ -310,7 +310,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `sheetCommands.js` | 내보내기 셋 — 텍스트 시트 복사 · 읽기 전용 HTML 내려받기 · 인쇄(RM-21). 상태를 바꾸지 않고 알림만 돌려준다. 클립보드 · 내려받기 · 인쇄 창은 주입받은 `FileGateway` 가 한다 |
 | `docFields.js` | 필드 등록표의 store 쪽 한 줄씩 — 그 필드가 store 의 어디에 사는지(`library` · 보드 칸)와 바뀌면 무엇을 다시 그리나. `docView` · `writeDoc` · `docDirty` 를 되돌리기와 저장·열기가 같이 쓴다(2026-09-28) |
 | `linkCommands.js` | 링크바 상태 전이와 제목 조회 상태머신 |
-| `poseCommands.js` | 자세 분석의 화면 상태(2026-09-12). **관절점은 여기 들어오지 않는다** — 30초를 12fps 로 보면 숫자 수만 개라 undo 스냅샷이 통째로 불어난다. store 에는 요약(몇 장·몇 명·어느 궤적·앵커)만 있고 결과는 `app/main.js` 가 모듈 변수로 든다. undo 도 타지 않는다 — 분석은 안무가 아니라 영상을 들여다보는 일이다 |
+| `poseCommands.js` | 자세 분석의 화면 상태(2026-09-12). **관절점은 여기 들어오지 않는다** — 30초를 12fps 로 보면 숫자 수만 개라 undo 스냅샷이 통째로 불어난다. store 에는 요약(몇 장·몇 명·어느 궤적·앵커)만 있고 결과는 `app/main.js` 가 모듈 변수로 든다. undo 도 타지 않는다 — 분석은 안무가 아니라 영상을 들여다보는 일이다. 2026-11-03(RM-30)에 짝 파일에서 되살리기(`restoreAnalysis` — 끝난 분석과 같은 상태) · 남긴 상태(`setStored`) · 견줄 테이크(`setCompare`)가 붙었다. 원본 관절점은 여전히 store 밖이고, 가동 범위 표 · 견주기 표는 남기지 않고 `domain/rom.js` 로 열 때마다 다시 센다 |
 | `videoCommands.js` | 영상 패널 상태·두 점 앵커·탭 템포·소스 확정·`clearMedia`. **DOM 도 플레이어도 시계도 모른다** — 시각(초)은 전부 인자로 들어온다(`check-arch` 가 `performance` 를 막는다). 재생 위치·재생 상태는 여기에도 store 에도 없다 |
 | `planCommands.js` | 플랜 미리보기와 채우기. 새 배치 경로를 만들지 않고 `paletteCommands.createAndPlace`(빠른 동작 생성과 같은 길)로 하나씩 놓는다 — 겹침·스택·클램프가 손으로 놓을 때와 같아진다. 행이 모자라면 `setBoardRows` |
 | `phrasingCommands.js` | 곡 구조 바꾸기(프리셋·토글·직접 입력). Dirty 는 `{phrasing:true}` 하나 — 배치가 안 바뀌므로 행을 다시 그리지 않는다 |
@@ -443,6 +443,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | `PUT /api/clips?project=&name=` | 본문 = 파일 바이트. `<root>/<subdir>/<프로젝트>/<파일>` 로 저장(겹치면 ` (2)`) |
 | `GET /api/clips?project=` · `GET /api/clips/<path>` | 목록 · 존재 확인 |
 | `GET /clips/<path>` | 파일 스트리밍. `Range` 를 지원한다 — `<video>` 탐색에 필수다 |
+| `GET` · `PUT /api/pose/<클립 path>` | 자세 분석 짝 파일(2026-11-03, RM-30). `<subdir>/<프로젝트>/.pose/<파일>.json` 에 원본 관절점 · 앵커 · 잣대(모델 · 좌표계 · 화면비)를 쓰고 읽는다. 서버가 쓸 때 클립 크기(`clipBytes`)를 맨 앞에 찍고, 읽을 때 지금 크기와 다르면 `404 {stale:true}` — 같은 이름의 다른 영상에 옛 관절을 얹지 않는다. 클립이 없거나 경로에 숨은 조각(점으로 시작)이 있으면 404 다. 클립 목록(`GET /api/clips`)은 짝 파일을 빼고 영상마다 `pose` 표시만 단다. 자르기로 만든 새 클립에는 짝이 따라가지 않는다 |
 | `GET` · `PUT /api/llm/config` | LLM 제공자·모델·주소·키. 키 값은 절대 돌려주지 않는다(`hasKey` 만) |
 | `POST /api/llm/refine` · `POST /api/llm/compose` | 말로 적은 안무 → 다듬은 설명(평문) → 안무표 스키마(JSON). 제공자는 anthropic(Messages API, `output_config.format` 구조화 출력, 서버 측 폴백) · openai(chat completions, `response_format: json_schema`) · ollama(`/api/chat` 의 `format`). 서버가 스키마로 손 검증한다 |
 

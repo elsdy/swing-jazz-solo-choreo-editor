@@ -12,6 +12,8 @@
 // ⚠ 경계 ③ — **왜 안 되는지를 말한다.** 버튼을 그냥 잠그면 사용자는 고장으로 읽는다. 모델이 없는 것과
 //   유튜브라 안 되는 것은 할 일이 다르므로 문구가 달라야 한다(구간 자르기와 같은 규약).
 
+import { fill, str } from '../domain/strings.js';
+
 import { CLS } from './domContract.js';
 import { applyGuide, poseGuide } from './guideLines.js';
 import { iconLabel } from './icon.js';
@@ -38,10 +40,121 @@ export const POSE_TEXT = Object.freeze({
  *   addTrack: () => any, clearAnchors: () => any, setMesh: (args?:{on?:boolean}) => any,
  *   setLive: (args?:{live?:boolean}) => any 재생하며 실시간으로 볼 것인가(2026-09-13).
  *     ⚠ 루프를 돌리는 것은 app/main 이다 — 뷰는 상태만 뒤집는다
+ *   setCompare?: (args: {id: string}) => object   견줄 다른 테이크를 고른다(RM-30). 빈 id 면 견주지 않는다
  * }} commands
  * @property {() => void} [onChange] 고른 사람·앵커가 바뀌었다 — 호출부가 궤적을 다시 잇는다
+ * @property {(scope: string) => RomView|null} [getRom] 가동 범위 표(RM-30). 끝난 분석이 없으면 null.
+ *   계산은 app/main 이 domain/rom 으로 한다 — 뷰는 받은 줄을 그리기만 한다
+ * @property {() => CompareView|null} [getCompare] 테이크 견주기(RM-30). 견줄 수 없는 상태면 null
  * @property {Record<string, HTMLElement|null>} [elements] 테스트용 주입
  */
+
+/**
+ * @typedef {Object} RomRow
+ * @property {string} key
+ * @property {string} label
+ * @property {number|null} range
+ * @property {number|null} min
+ * @property {number|null} max
+ * @property {number} coverage 0..1
+ * @property {boolean} trusted 거짓이면 흐리게 그린다 — 충분히 보지 못한 관절이다
+ */
+
+/**
+ * @typedef {Object} RomView
+ * @property {Array<{id:string, label:string}>} scopes 고를 수 있는 구간(전체 · 마커 · 마디)
+ * @property {string} scope 지금 그린 구간(고른 것이 사라졌으면 전체로 떨어진 값)
+ * @property {RomRow[]} rows
+ * @property {number} bpm 마디를 나눈 박자. 0 이면 박자가 없어 마디가 없다
+ */
+
+/**
+ * @typedef {Object} CompareView
+ * @property {Array<{id:string, label:string}>} candidates 짝 파일이 있는 다른 테이크
+ * @property {string} selectedId
+ * @property {'idle'|'loading'|'ok'|'missing'|'rejected'|'need-self'} status
+ * @property {string} reason status 가 rejected 일 때 domain/rom.compare 의 reason
+ * @property {string} before 전 테이크 이름
+ * @property {string} after  후 테이크 이름
+ * @property {Array<{label:string, marker:boolean, items:Array<{key:string, label:string, before:number|null, after:number|null, delta:number|null, trusted:boolean}>}>} sections
+ */
+
+/** 각도 한 칸. 모르면 — 다(0° 와 「모른다」를 같은 글자로 쓰지 않는다). */
+function deg(v) {
+  return v === null || v === undefined || !Number.isFinite(v) ? '—' : `${Math.round(v)}°`;
+}
+
+/** 차이 한 칸. 늘었으면 +, 줄었으면 −(빼기 기호), 같으면 0°. */
+function signedDeg(v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  const n = Math.round(v);
+  return n > 0 ? `+${n}°` : n < 0 ? `−${-n}°` : '0°';
+}
+
+/** 비교를 거절한 까닭 → 안내. 키를 글자로 적어 부른다(문자열 표 시험이 부르는 자리를 센다). */
+const REJECT_TEXT = Object.freeze({
+  'space-mismatch': () => str('pose.compare.spaceMismatch'),
+  'model-mismatch': () => str('pose.compare.modelMismatch'),
+  'aspect-mismatch': () => str('pose.compare.aspectMismatch')
+});
+
+/** 짝 파일과의 관계 → 한 줄. 모르면 빈 글자. */
+const STORED_TEXT = Object.freeze({
+  saving: () => str('pose.stored.saving'),
+  saved: () => str('pose.stored.saved'),
+  restored: () => str('pose.stored.restored'),
+  failed: () => str('pose.stored.failed')
+});
+
+/**
+ * `<select>` 의 고를 것을 맞춘다. 목록이 그대로면 다시 만들지 않는다 — 렌더마다 갈아 끼우면 펼친 목록이 닫히고
+ * 키보드로 고르던 자리가 날아간다.
+ * @param {HTMLSelectElement} sel
+ * @param {Array<{id:string, label:string}>} options
+ * @param {string} value
+ */
+// @complexity time=O(n) space=O(n) cc=4
+function syncSelect(sel, options, value) {
+  const sig = JSON.stringify(options.map(o => [o.id, o.label]));
+  if (sel.dataset.sig !== sig) {
+    sel.textContent = '';
+    for (const o of options) {
+      const opt = document.createElement('option');
+      opt.value = o.id;
+      opt.textContent = o.label;
+      sel.appendChild(opt);
+    }
+    sel.dataset.sig = sig;
+  }
+  if (sel.value !== value) sel.value = value;
+}
+
+/** 표 하나. head 는 칸 이름, rows 는 [칸 글자들, 흐리게 할까, 줄 툴팁]. */
+// @complexity time=O(r·c) space=O(r·c) cc=4
+function fillTable(table, head, rows) {
+  table.textContent = '';
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const h of head) {
+    const th = document.createElement('th');
+    th.textContent = h;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  const tbody = document.createElement('tbody');
+  for (const [cells, dim, title] of rows) {
+    const tr = document.createElement('tr');
+    if (dim) tr.className = 'is-untrusted';
+    if (title) tr.title = title;
+    for (const c of cells) {
+      const td = document.createElement('td');
+      td.textContent = c;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.append(thead, tbody);
+}
 
 /**
  * 자세 분석 구획을 묶는다.
@@ -52,6 +165,8 @@ export function createPoseView(deps) {
   const {
     store, render, getReadiness, onRun, commands,
     onChange = () => {},
+    getRom = () => null,
+    getCompare = () => null,
     elements = {}
   } = deps;
 
@@ -67,12 +182,27 @@ export function createPoseView(deps) {
   const addBtn = byId('videoPoseAddBtn');
   const pickClearBtn = byId('videoPosePickClearBtn');
   const help = byId('videoPoseHelp');
+  // 가동 범위 표 · 테이크 견주기(RM-30)
+  const romBox = byId('videoPoseRom');
+  const scopeSel = byId('videoPoseScope');
+  const storedEl = byId('videoPoseStored');
+  const romTable = byId('videoPoseRomTable');
+  const romNote = byId('videoPoseRomNote');
+  const compareSel = byId('videoPoseCompare');
+  const compareBody = byId('videoPoseCompareBody');
+
+  // 툴팁의 주인은 문자열 표다 — 마크업에도 같은 글자가 있지만(처음 그릴 때) 표가 이긴다.
+  if (scopeSel) scopeSel.title = str('pose.rom.scope.title');
+  if (compareSel) compareSel.title = str('pose.compare.title');
+
+  /** 고른 구간. 화면의 선택이라 store 에 두지 않는다 — 다시 분석하거나 영상을 바꾸면 고른 것이 없어져 전체로 떨어진다. */
+  let scope = 'all';
 
   /** 휘발성 상태. usecases/poseCommands.DEFAULT_POSE 와 같은 기본값을 쓴다(ui 는 usecases 를 import 하지 않는다). */
   const state = () => store.get().session.pose || {
     state: 'idle', done: 0, total: 0, error: '', frames: 0, maxSubjects: 0,
     trackIds: [], activeId: '', anchors: [], ambiguous: 0, lost: 0, showMesh: true,
-    live: false, liveFps: 0, delegate: ''
+    live: false, liveFps: 0, delegate: '', stored: '', compareId: ''
   };
 
   /** 초를 `m:ss` 로. 구간 안내에만 쓴다. */
@@ -164,6 +294,74 @@ export function createPoseView(deps) {
       }
       applyGuide(help, poseGuide({ state: p.state, error: p.error, live: !!p.live, why, text }), CLS.isError);
     }
+
+    renderRom(p);
+  }
+
+  /**
+   * 가동 범위 표와 테이크 견주기(RM-30). 끝난 분석이 있을 때만 보인다.
+   * ⚠ 못 본 관절은 빼지 않고 **흐리게** 둔다 — 빼면 「무릎이 없다」와 「무릎을 못 봤다」가 같은 화면이 된다.
+   */
+  // @complexity time=O(r) space=O(r) cc=12
+  function renderRom(p) {
+    if (!romBox) return;
+    const view = p.state === 'done' ? getRom(scope) : null;
+    romBox.hidden = !view;
+    if (!view) return;
+    scope = view.scope;
+    if (scopeSel) syncSelect(scopeSel, view.scopes, view.scope);
+    if (storedEl) storedEl.textContent = STORED_TEXT[p.stored] ? STORED_TEXT[p.stored]() : '';
+    if (romTable) {
+      fillTable(romTable,
+        [str('pose.rom.col.joint'), str('pose.rom.col.range'), str('pose.rom.col.minmax'), str('pose.rom.col.coverage')],
+        view.rows.map(r => [
+          [r.label, deg(r.range), r.range === null ? '—' : `${deg(r.min)}~${deg(r.max)}`, `${Math.round(r.coverage * 100)}%`],
+          !r.trusted,
+          r.trusted ? '' : fill('pose.rom.untrusted', { pct: Math.round(r.coverage * 100) })
+        ]));
+    }
+    if (romNote) romNote.textContent = view.bpm > 0 ? fill('pose.rom.tempo', { bpm: Math.round(view.bpm) }) : str('pose.rom.noTempo');
+    renderCompare();
+  }
+
+  // @complexity time=O(s·k) space=O(s·k) cc=10
+  function renderCompare() {
+    const c = getCompare();
+    if (compareSel) {
+      const options = [{ id: '', label: str('pose.compare.none') }, ...(c ? c.candidates : [])];
+      syncSelect(compareSel, options, c ? c.selectedId : '');
+      compareSel.disabled = !c || c.candidates.length === 0;
+    }
+    if (!compareBody) return;
+    compareBody.textContent = '';
+    if (!c) return;
+    const say = (text, cls = 'helper') => {
+      const el = document.createElement('div');
+      el.className = cls;
+      el.textContent = text;
+      compareBody.appendChild(el);
+    };
+    if (c.candidates.length === 0) return say(str('pose.compare.empty'));
+    if (!c.selectedId || c.status === 'idle') return;
+    if (c.status === 'loading') return say(str('pose.compare.loading'));
+    if (c.status === 'missing') return say(str('pose.compare.missing'), `helper ${CLS.isError}`);
+    if (c.status === 'need-self') return say(str('pose.compare.needSelf'));
+    if (c.status === 'rejected') {
+      return say(REJECT_TEXT[c.reason] ? REJECT_TEXT[c.reason]() : c.reason, `helper ${CLS.isError}`);
+    }
+    say(fill('pose.compare.head', { before: c.before, after: c.after }), 'pose-compare-head');
+    for (const sec of c.sections) {
+      const title = document.createElement('div');
+      title.className = 'pose-compare-section';
+      title.textContent = sec.marker ? fill('pose.rom.marker', { label: sec.label }) : str('pose.rom.all');
+      const table = document.createElement('table');
+      table.className = 'pose-rom-table';
+      fillTable(table,
+        [str('pose.rom.col.joint'), str('pose.compare.col.before'), str('pose.compare.col.after'), str('pose.compare.col.delta')],
+        sec.items.map(i => [[i.label, deg(i.before), deg(i.after), signedDeg(i.delta)], !i.trusted, '']));
+      compareBody.append(title, table);
+    }
+    if (!c.sections.some(sec => sec.marker)) say(str('pose.compare.noMarkers'));
   }
 
   if (runBtn) runBtn.onclick = () => { if (getReadiness() === 'ready') onRun(); };
@@ -172,6 +370,8 @@ export function createPoseView(deps) {
   if (clearBtn) clearBtn.onclick = () => { render(commands.clearAnalysis()); onChange(); };
   if (addBtn) addBtn.onclick = () => { render(commands.addTrack()); onChange(); };
   if (pickClearBtn) pickClearBtn.onclick = () => { render(commands.clearAnchors()); onChange(); };
+  if (scopeSel) scopeSel.onchange = () => { scope = scopeSel.value || 'all'; renderPose(); };
+  if (compareSel && commands.setCompare) compareSel.onchange = () => { render(commands.setCompare({ id: compareSel.value })); };
 
   return { render: renderPose };
 }

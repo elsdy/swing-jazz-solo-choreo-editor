@@ -1059,6 +1059,9 @@
     .project-clip-del { width: 100%; font-size: var(--fs-1); }
     /* RM-29 — 판본 · 연습 기록. 영상 줄의 꼴(.project-clip)을 그대로 빌려 쓴다. */
     .project-clip-take { padding: 1px 7px; font-size: var(--fs-1); min-height: 22px; }
+    /* 자세 분석을 짝 파일로 남겨 둔 테이크(RM-30) — 칩은 강조색 테두리로 가르고, 견주기 단추는 기록 단추와 같은 꼴이다. */
+    .project-chip.is-pose { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.4); }
+    .project-clip-compare { padding: 1px 7px; font-size: var(--fs-1); min-height: 22px; }
     .project-sub { display: grid; gap: var(--sp-1); margin-top: var(--sp-1); }
     .project-sub-head { display: flex; align-items: center; gap: 6px; }
     .project-sub-title { flex: 1 1 auto; font-size: var(--fs-1); font-weight: 800; color: var(--muted); }
@@ -2056,6 +2059,19 @@
       background: rgba(var(--muted-rgb), 0.18);
     }
     .video-progress > span { display: block; height: 100%; background: rgba(var(--accent-rgb), 0.85); width: 0; }
+    /* ── 가동 범위 표 · 테이크 견주기 (RM-30) ──
+       ⚠ `[hidden]` 짝(U-12) — `.pose-rom` 에 display 를 주므로 숨김이 이기게 따로 둔다. */
+    .pose-rom { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(var(--accent-rgb), 0.16); }
+    .pose-rom[hidden] { display: none; }
+    .pose-compare { display: grid; gap: var(--sp-1); }
+    .pose-rom-table { width: 100%; border-collapse: collapse; font-size: var(--fs-1); }
+    .pose-rom-table th { text-align: left; font-weight: 700; color: var(--muted); padding: 2px var(--sp-1); }
+    .pose-rom-table td { padding: 2px var(--sp-1); border-top: 1px solid rgba(var(--muted-rgb), 0.18); font-variant-numeric: tabular-nums; }
+    .pose-rom-table td:not(:first-child), .pose-rom-table th:not(:first-child) { text-align: right; }
+    /* 충분히 보지 못한 관절 — 빼지 않고 흐리게 둔다(믿지 말라는 표시). 까닭은 줄의 툴팁이 말한다. */
+    .pose-rom-table tr.is-untrusted td { opacity: 0.45; }
+    .pose-compare-head { font-weight: 800; font-size: var(--fs-1); }
+    .pose-compare-section { font-size: var(--fs-1); color: var(--muted); font-weight: 700; padding-top: var(--sp-1); }
     /* ── 영상 패널의 단계 묶음 (2026-09-12 · RM-20 으로 2026-11-02 에 둘로 가름) ──
        버튼 서른한 개가 한 화면에 평평하게 있던 것을 **하는 순서**로 묶었다. 지금은 차례(①영상 → ②박자 → ③받아 적기)와
        도구(구간 자르기 · 마커 · 자세 분석 — 아래 `.video-tools`)가 갈려 있다.
@@ -4363,6 +4379,22 @@
                 <button id="videoPosePickClearBtn" class="ghost" type="button">고른 것 지우기</button>
               </div>
               <div class="helper" id="videoPoseHelp"></div>
+              <!-- 가동 범위 표와 테이크 견주기(RM-30, 2026-11-03). 끝난 분석이 있을 때만 보인다 — 글자는 ui/poseView 가
+                   domain/strings 의 표에서 채운다. 원본 관절점은 클립 곁 짝 파일(`.pose/<파일>.json`)에 남는다. -->
+              <div class="pose-rom" id="videoPoseRom" hidden>
+                <div class="video-field">
+                  <span class="video-label" data-label="pose.rom">가동 범위</span>
+                  <select id="videoPoseScope" title="어느 구간의 가동 범위를 볼지 고릅니다. 마디는 이 영상의 박자로 나눕니다" aria-label="가동 범위를 볼 구간"></select>
+                </div>
+                <div class="helper" id="videoPoseStored"></div>
+                <table class="pose-rom-table" id="videoPoseRomTable"></table>
+                <div class="helper" id="videoPoseRomNote"></div>
+                <div class="video-field">
+                  <span class="video-label" data-label="pose.compare">견줄 테이크</span>
+                  <select id="videoPoseCompare" title="자세 분석을 남겨 둔 다른 테이크와 관절마다 가동 범위를 견줍니다" aria-label="견줄 테이크"></select>
+                </div>
+                <div class="pose-compare" id="videoPoseCompareBody"></div>
+              </div>
             </div>
               </div>
             </details>

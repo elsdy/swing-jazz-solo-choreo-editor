@@ -47,6 +47,8 @@ export const DEFAULT_RULES = Object.freeze({
 /**
  * @typedef {Object} RomSummary
  * @property {'world'|'screen'} space 각도를 잰 좌표계. 다르면 비교할 수 없다
+ * @property {string} model  잰 모델(`mediapipe/full`). 모르면 빈 문자열. 둘 다 알고 다르면 비교할 수 없다(RM-30)
+ * @property {number} aspect 잰 영상의 폭/높이. 모르면 0. 둘 다 알고 다르면 비교할 수 없다(RM-30)
  * @property {number} fromSec
  * @property {number} toSec
  * @property {number} frames 구간에 든 프레임 수(사람을 놓친 프레임도 센다 — coverage 의 분모다)
@@ -81,10 +83,25 @@ export function framesIn(frames, range = {}) {
 }
 
 /**
+ * 프레임들이 뜬 영상의 폭/높이. 처음 보이는 사람의 것을 쓴다 — 한 영상 안에서는 바뀌지 않는다. 모르면 0.
+ * @param {import('./pose.js').PoseFrame[]} list
+ * @returns {number}
+ */
+// @complexity time=O(n) space=O(1) cc=4
+function aspectOf(list) {
+  for (const f of list) {
+    const a = f.subjects[0] ? num(f.subjects[0].aspect, NaN) : NaN;
+    if (Number.isFinite(a) && a > 0) return a;
+  }
+  return 0;
+}
+
+/**
  * 한 구간의 가동 범위 요약. 이 파일의 본체다.
  *
+ * `model` · `aspect` 는 비교를 거절할 근거로 요약에 따라다닌다(RM-30). aspect 를 안 주면 프레임에서 읽는다.
  * @param {import('./pose.js').PoseFrame[]} frames 한 사람만 남긴 프레임 배열
- * @param {{fromSec?:number, toSec?:number, rules?:Partial<RomRules>}} [options]
+ * @param {{fromSec?:number, toSec?:number, rules?:Partial<RomRules>, model?:string, aspect?:number}} [options]
  * @returns {RomSummary}
  */
 export function summarize(frames, options = {}) {
@@ -123,8 +140,11 @@ export function summarize(frames, options = {}) {
       coverage: denom ? n / denom : 0
     };
   }
+  const aspect = num(options.aspect, NaN);
   return {
     space,
+    model: options.model == null ? '' : String(options.model),
+    aspect: Number.isFinite(aspect) && aspect > 0 ? aspect : aspectOf(list),
     fromSec: num(options.fromSec, list.length ? list[0].sec : 0),
     toSec: num(options.toSec, list.length ? list[list.length - 1].sec : 0),
     frames: denom,
@@ -151,7 +171,7 @@ export function summarizeByCount(frames, countOf, options = {}) {
   }
   return [...buckets.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([count, fs]) => ({ count, summary: summarize(fs, { rules: options.rules }) }));
+    .map(([count, fs]) => ({ count, summary: summarize(fs, { rules: options.rules, model: options.model, aspect: options.aspect }) }));
 }
 
 /**
@@ -222,10 +242,21 @@ export function findings(summary, rules = {}) {
   return out;
 }
 
+/** 화면 비율이 다른 영상인가. 2% 안쪽은 같은 것으로 친다(1920x1080 과 1920x1088 인코딩 여백). 모르면(0) 대조하지 않는다. */
+const ASPECT_TOLERANCE = 0.02;
+
+// @complexity time=O(1) space=O(1) cc=4
+function aspectDiffers(a, b) {
+  const x = num(a, 0);
+  const y = num(b, 0);
+  if (!(x > 0) || !(y > 0)) return false;
+  return Math.abs(x - y) / Math.max(x, y) > ASPECT_TOLERANCE;
+}
+
 /**
  * 두 기록을 견준다 — 같은 동작의 지난 테이크와 오늘 테이크다. 이것이 "좋아지고 있는가" 의 답이다.
  *
- * ⚠ 좌표계가 다르면 **거절한다**(`ok:false`). 커버리지가 낮은 관절도 결과에 들어가지만 `trusted:false` 라,
+ * ⚠ 좌표계가 다르면 **거절한다**(`ok:false`). 모델 · 화면 비율도 둘 다 알고 다르면 거절한다(RM-30). 커버리지가 낮은 관절도 결과에 들어가지만 `trusted:false` 라,
  *   화면이 흐리게 두거나 뺄 수 있다.
  * @param {RomSummary} before
  * @param {RomSummary} after
@@ -236,6 +267,9 @@ export function compare(before, after, rules = {}) {
   const r = { ...DEFAULT_RULES, ...rules };
   if (!before || !after) return { ok: false, reason: 'missing' };
   if (before.space !== after.space) return { ok: false, reason: 'space-mismatch' };
+  // 모델 · 화면 비율은 **둘 다 알 때만** 대조한다 — 옛 요약(이 필드가 없던 것)끼리는 그대로 견준다(RM-30).
+  if (before.model && after.model && before.model !== after.model) return { ok: false, reason: 'model-mismatch' };
+  if (aspectDiffers(before.aspect, after.aspect)) return { ok: false, reason: 'aspect-mismatch' };
   const items = MEASURE_KEYS.map(key => {
     const b = before.measures[key] || {};
     const a = after.measures[key] || {};
@@ -251,4 +285,99 @@ export function compare(before, after, rules = {}) {
     };
   });
   return { ok: true, items };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 요약 표와 테이크 비교 (RM-30, 2026-11-03)
+//
+// 짝 파일에 남긴 원본에서 그때그때 만든다 — 요약은 어디에도 저장하지 않는다(2026-10-01 결정 Q36).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 요약 표의 줄. 관절마다 가동 범위 · 최소 · 최대 · 커버리지와 「믿을 만한가」를 낸다.
+ * ⚠ 못 본 관절(커버리지가 눈금 미만)도 **빼지 않는다** — `trusted:false` 로 두어 화면이 흐리게 그린다.
+ *   빼면 「무릎이 없다」와 「무릎을 못 봤다」가 같은 화면이 된다.
+ * @param {RomSummary} summary
+ * @param {Partial<RomRules>} [rules]
+ * @returns {Array<{key:string, label:string, range:number|null, min:number|null, max:number|null, coverage:number, trusted:boolean}>}
+ */
+// @complexity time=O(k) space=O(k) cc=3
+export function summaryRows(summary, rules = {}) {
+  const r = { ...DEFAULT_RULES, ...rules };
+  const measures = (summary && summary.measures) || {};
+  return MEASURE_KEYS.map(key => {
+    const m = measures[key] || { min: null, max: null, range: null, coverage: 0 };
+    return {
+      key, label: measureLabel(key),
+      range: m.range, min: m.min, max: m.max,
+      coverage: m.coverage || 0,
+      trusted: (m.coverage || 0) >= r.minCoverage && m.range !== null
+    };
+  });
+}
+
+/** 마커 이름표를 짝지을 열쇠로 — 앞뒤 공백을 떼고 대소문자를 접는다. 빈 이름표는 짝짓지 않는다. */
+function labelKey(label) {
+  return String(label == null ? '' : label).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * 두 테이크의 마커를 **이름표로** 짝짓는다(2026-10-01 결정 Q35). 박자가 조금 어긋나도 사람이 찍은 구간이라
+ * 엉뚱한 동작끼리 붙지 않는다. 한 테이크에 같은 이름이 여럿이면 **나온 차례대로** 짝짓는다(첫째는 첫째와).
+ * 이름표가 빈 마커와 짝이 없는 마커는 빠진다.
+ * @param {Array<{label?:string, inSec:number, outSec:number}>} before 영상 시각 순이 아니어도 된다
+ * @param {Array<{label?:string, inSec:number, outSec:number}>} after
+ * @returns {Array<{label:string, before:{inSec:number, outSec:number}, after:{inSec:number, outSec:number}}>} before 의 시각 순
+ */
+// @complexity time=O(n log n + m log m) space=O(n + m) cc=8
+export function pairMarkersByLabel(before, after) {
+  const byTime = (list) => (Array.isArray(list) ? list : [])
+    .filter(m => m && labelKey(m.label) && Number.isFinite(m.inSec) && Number.isFinite(m.outSec) && m.outSec > m.inSec)
+    .slice().sort((a, b) => a.inSec - b.inSec);
+  const queues = new Map();
+  for (const m of byTime(after)) {
+    const k = labelKey(m.label);
+    if (!queues.has(k)) queues.set(k, []);
+    queues.get(k).push(m);
+  }
+  const out = [];
+  for (const m of byTime(before)) {
+    const q = queues.get(labelKey(m.label));
+    if (!q || !q.length) continue;
+    const other = q.shift();
+    out.push({
+      label: String(m.label).trim(),
+      before: { inSec: m.inSec, outSec: m.outSec },
+      after: { inSec: other.inSec, outSec: other.outSec }
+    });
+  }
+  return out;
+}
+
+/**
+ * 두 테이크를 견준다 — 분석 구간 전체 한 줄, 그리고 이름표가 같은 마커마다 한 줄(2026-10-01 결정 Q35).
+ * 마커가 없는 테이크는 전체만 견준다. 모델 · 좌표계 · 화면 비율이 다르면 **통째로 거절한다**(`ok:false`) —
+ * 전체에서 거절할 이유는 마커 구간에서도 같다.
+ *
+ * @param {{frames: import('./pose.js').PoseFrame[], model?:string, aspect?:number, markers?:Array<{label?:string, inSec:number, outSec:number}>}} before
+ * @param {{frames: import('./pose.js').PoseFrame[], model?:string, aspect?:number, markers?:Array<{label?:string, inSec:number, outSec:number}>}} after
+ * @param {Partial<RomRules>} [rules]
+ * @returns {{ok:boolean, reason?:string, sections?:Array<{label:string, marker:boolean, items:ReturnType<typeof compare>['items']}>}}
+ */
+// @complexity time=O((p+1)·(n+m)) space=O(n+m) cc=4
+export function compareTakes(before, after, rules = {}) {
+  if (!before || !after) return { ok: false, reason: 'missing' };
+  const sum = (take, range = {}) => summarize(take.frames, { ...range, rules, model: take.model, aspect: take.aspect });
+  const whole = compare(sum(before), sum(after), rules);
+  if (!whole.ok) return { ok: false, reason: whole.reason };
+  const sections = [{ label: '', marker: false, items: whole.items }];
+  for (const pair of pairMarkersByLabel(before.markers, after.markers)) {
+    const res = compare(
+      sum(before, { fromSec: pair.before.inSec, toSec: pair.before.outSec }),
+      sum(after, { fromSec: pair.after.inSec, toSec: pair.after.outSec }),
+      rules
+    );
+    if (res.ok) sections.push({ label: pair.label, marker: true, items: res.items });
+  }
+  return { ok: true, sections };
 }
