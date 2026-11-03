@@ -11,6 +11,7 @@ import {
   resolveDragCount, resolveResizeCount, isDoubleTap, exceedsThreshold,
   resolveHitCell, dragPreviewCount, resizeHitKind, rectCellRange, MARQUEE_THRESHOLD_PX, resizeBlocked,
   EDGE_GRAB_PX, BODY_DRAG_THRESHOLD_PX, resolveGrabZone, grabEdgeWidth, resolveTrimStart,
+  grabOffset, grabbedStart,
 } from '../../src/domain/gestureMath.js';
 import { readFileSync } from 'node:fs';
 
@@ -184,4 +185,38 @@ test('시작점 트리밍: 포인터 밑 칸이 새 시작이고 끝 칸은 그�
   // 잴 트랙이 없으면 이동거리 ÷ 칸 폭을 반올림해 시작에 더한다
   assert.deepEqual(resolveTrimStart(trim, { kind: 'step', clientX: 100 - 58 * 2, stepWidth: 58 }, BOARD, -8), { start: 9, count: 5 });
   assert.deepEqual(resolveTrimStart(trim, { kind: 'step', clientX: 100 + 58 * 9, stepWidth: 58 }, BOARD, -8), { start: 13, count: 1 });
+});
+
+// ── 몸통 끌기의 잡은 칸 (RM-57) ───────────────────────────────────────────────────────────
+
+test('[RM-57 요구 3] 잡은 칸 오프셋: 블록 시작에서 선형으로 재고, 둘째 행 조각을 잡아도 맞고, 0번 칸이면 0', () => {
+  // 블록 r3 [5..7] + r4 [0..4] (8카운트) — 선형 시작 21
+  const start = 3 * 8 - 8 + 5;
+  assert.equal(grabOffset({ row: 3, col: 5 }, start, 8), 0, '0번 칸을 잡으면 0');
+  assert.equal(grabOffset({ row: 3, col: 7 }, start, 8), 2);
+  assert.equal(grabOffset({ row: 4, col: 1 }, start, 8), 4, '둘째 행 조각도 블록 시작에서 선형으로 센다');
+  assert.equal(grabOffset({ row: 0, col: 3 }, -8, 8), 3, '메인 보드의 인트로 행(음수 구간)에서도 같다');
+  // 잴 수 없으면(칸이 null · 블록이 없음) 0 — 지금처럼 놓은 칸이 시작이다
+  assert.equal(grabOffset({ row: 3, col: null }, start, 8), 0);
+  assert.equal(grabOffset({ row: 3, col: 6 }, null, 8), 0);
+  assert.equal(grabOffset(null, start, 8), 0);
+  // 블록 앞을 누른 것으로 재어져도(조각 사이 측정 어긋남) 음수로 가지 않는다
+  assert.equal(grabOffset({ row: 3, col: 2 }, start, 8), 0);
+
+  // 놓은 칸 − 오프셋 → 행 · 칸
+  assert.deepEqual(grabbedStart({ row: 4, col: 6 }, 2, BOARD), { row: 4, startIndex: 4 });
+  assert.deepEqual(grabbedStart({ row: 4, col: 1 }, 4, BOARD), { row: 3, startIndex: 5 }, '앞 행 끝으로 넘어간다(Q117 가)');
+  assert.deepEqual(grabbedStart({ row: 6, col: 0 }, 0, BOARD), { row: 6, startIndex: 0 }, '0 이면 놓은 칸 그대로');
+  assert.deepEqual(grabbedStart({ row: 5, col: 3 }, undefined, BOARD), { row: 5, startIndex: 3 }, '오프셋이 없어도 그대로');
+});
+
+test('[RM-57 요구 4] 놓을 시작이 보드 첫 칸보다 앞이면 첫 칸으로 자른다', () => {
+  // 인트로 행이 없는 보드(루틴) — 첫 칸은 (1, 0)
+  assert.deepEqual(grabbedStart({ row: 1, col: 0 }, 3, BOARD), { row: 1, startIndex: 0 });
+  assert.deepEqual(grabbedStart({ row: 1, col: 2 }, 3, BOARD), { row: 1, startIndex: 0 });
+  assert.deepEqual(grabbedStart({ row: 1, col: 5 }, 3, BOARD), { row: 1, startIndex: 2 }, '첫 칸 뒤면 자르지 않는다');
+  // 인트로 행이 있는 보드(메인) — 첫 칸은 (0, 0)이라 1행 앞쪽은 인트로 행으로 넘어간다
+  const MAIN = { ...BOARD, hasIntroRow: true };
+  assert.deepEqual(grabbedStart({ row: 0, col: 0 }, 3, MAIN), { row: 0, startIndex: 0 });
+  assert.deepEqual(grabbedStart({ row: 1, col: 1 }, 3, MAIN), { row: 0, startIndex: 6 });
 });

@@ -10,7 +10,8 @@
 //   quickTouch  빠른 배치 모드의 손가락 끌기          { x, y, track, row, startIndex, count, isDrag, clientX?, clientY? }
 //   tap         더블탭 판정의 지난 탭                 { time, groupId }
 //   marquee     빈 칸에서 시작한 네모 고르기(RM-14)   { row, startIndex, track, x, y, rect|null }  — rect 가 생기면 끌기가 됐다
-//   body        블록 몸통을 누른 마우스(RM-12)        { groupId, x, y, copy, bundle, dragging }    — 임계를 넘으면 dragging
+//   body        블록 몸통을 누른 마우스(RM-12)        { groupId, x, y, grab, copy, bundle, dragging } — 임계를 넘으면 dragging
+//               grab 은 누른 칸이 블록 시작에서 몇째 칸인가(RM-57) — 놓을 시작은 포인터 밑 칸 − grab 이다
 //
 // ⚠ track 은 DOM 요소지만 여기서는 **열어 보지 않는** 꼬리표다. 칸을 재야 할 때는 env 의 측정 함수에 되넘긴다.
 //   측정(getBoundingClientRect·elementFromPoint)은 원본이 부르던 그 자리·그 순서에서만 불린다 —
@@ -40,7 +41,7 @@
 
 import {
   resolveDragCount, isDoubleTap, exceedsThreshold, rectCellRange,
-  QUICK_DRAG_THRESHOLD_PX, MARQUEE_THRESHOLD_PX, BODY_DRAG_THRESHOLD_PX,
+  QUICK_DRAG_THRESHOLD_PX, MARQUEE_THRESHOLD_PX, BODY_DRAG_THRESHOLD_PX, grabbedStart,
 } from './gestureMath.js';
 
 /**
@@ -438,9 +439,10 @@ export function placementTap(state, ev) {
  *                                 짚고 굴리면 화면 넘기기, 떼면 click(팝업), 길게 누르면 옮기기(입력 계층의 longPress).
  * ⚠ Alt(복사)는 **누른 순간**에 한 번 읽는다 — 원본 dragstart(2480)의 copyMode 와 같다. 끌다가 눌러도 복사가 아니다.
  * ⚠ bundle 은 호출부가 정한다(고른 블록이고 고른 것이 둘 이상이면 그 묶음). 복사면 묶음을 쓰지 않는다 — 지금처럼 그 블록 하나다.
+ * ⚠ grab(잡은 칸, RM-57)도 호출부가 누를 때 잰다(gestureMath.grabOffset) — 도메인은 DOM 을 모르므로 값으로 받는다. 없으면 0.
  * @param {object} state
  * @param {{x:number, y:number, groupId:string, zone:'left'|'body'|'right', routineGuarded:boolean, altKey:boolean,
- *          pointerType:string, bundle?:string[]|null}} ev
+ *          pointerType:string, bundle?:string[]|null, grab?:number}} ev
  */
 // @complexity time=O(1) space=O(1) cc=5
 export function placementDown(state, ev) {
@@ -452,13 +454,13 @@ export function placementDown(state, ev) {
   }
   if (pointerKind(ev.pointerType) === 'touch') return { state: { ...state, body: null }, effects: [] };
   const copy = !!ev.altKey;
-  const body = { groupId: ev.groupId, x: ev.x, y: ev.y, copy, bundle: copy ? null : (ev.bundle || null), dragging: false };
+  const body = { groupId: ev.groupId, x: ev.x, y: ev.y, grab: ev.grab || 0, copy, bundle: copy ? null : (ev.bundle || null), dragging: false };
   return { state: { ...state, body }, effects: [{ kind: 'preventDefault' }] };
 }
 
 /**
  * 몸통을 누른 마우스의 pointermove(RM-12). 임계(BODY_DRAG_THRESHOLD_PX)를 넘기 전에는 아무 일도 없다 — 떼면 클릭이다.
- * 넘는 순간 옮기기가 시작되고(beginMove), 그 뒤로는 포인터 밑 칸에 놓일 자리를 그린다. 보드 밖이면 프리뷰를 지운다.
+ * 넘는 순간 옮기기가 시작되고(beginMove), 그 뒤로는 놓일 자리(포인터 밑 칸 − 잡은 칸, RM-57)를 그린다. 보드 밖이면 프리뷰를 지운다.
  * 한 번 끌기가 되면 되돌아오지 않는다.
  * @param {object} state
  * @param {{x:number, y:number}} ev
@@ -471,14 +473,15 @@ export function bodyMove(state, ev, env) {
   if (!b.dragging && !exceedsThreshold(ev.x - b.x, ev.y - b.y, BODY_DRAG_THRESHOLD_PX)) return same(state);
   const effects = b.dragging ? [] : [{ kind: 'beginMove', groupId: b.groupId, copy: b.copy, bundle: b.bundle }];
   const hit = env.hitAt(ev.x, ev.y);
-  effects.push(hit.inBoard ? { kind: 'movePreview', row: hit.row, startIndex: hit.col } : { kind: 'clearPreview' });
+  effects.push(hit.inBoard ? { kind: 'movePreview', ...grabbedStart(hit, b.grab, env.board) } : { kind: 'clearPreview' });
   return { state: { ...state, body: { ...b, dragging: true } }, effects };
 }
 
 /**
  * 몸통을 누른 마우스의 pointerup(RM-12 — document 에서 듣는다, 보드 밖에서 떼도 온다).
  * 끌기가 아니었으면 아무 할 일 없이 끝난다 — 뒤따르는 click 이 고르기(그냥 · Ctrl · Shift)나 루틴 팝업을 한다.
- * 끌기였으면 끝내고(endMove), 보드 안에서 뗐을 때만 옮기거나 복사하고 커밋한다. 묶음은 호출부가 거리를 재어 옮기고,
+ * 끌기였으면 끝내고(endMove), 보드 안에서 뗐을 때만 미리보기와 같은 자리(포인터 밑 칸 − 잡은 칸, RM-57)로 옮기거나 복사하고
+ * 커밋한다. 묶음은 호출부가 거리를 재어 옮기고,
  * 옮겼을 때만 커밋한다(RM-14 와 같다). 마지막으로 뒤따르는 합성 click 을 한 번 삼킨다 — 놓은 블록의 선택이 뒤집히거나
  * 루틴 팝업이 뜨지 않게.
  * @param {object} state
@@ -494,7 +497,7 @@ export function bodyUp(state, ev, env) {
   const effects = [{ kind: 'endMove' }];
   const hit = env.hitAt(ev.x, ev.y);
   if (hit.inBoard) {
-    const at = { groupId: b.groupId, row: hit.row, startIndex: hit.col };
+    const at = { groupId: b.groupId, ...grabbedStart(hit, b.grab, env.board) };
     if (b.copy) effects.push({ kind: 'copy', ...at }, { kind: 'commit' });
     else if (b.bundle) effects.push({ kind: 'moveBundle', ...at, bundle: b.bundle });
     else effects.push({ kind: 'move', ...at }, { kind: 'commit' });

@@ -6,13 +6,16 @@
 //
 // ⚠ 원본 3881 의 `ctx === mainCtx ? saveHistory() : saveHistoryRe()` 는
 //    boardId 에 묶인 commands.commitHistory() 하나로 대칭화된다.
+// ⚠ 잡은 칸(RM-57): 길게 누른 칸이 블록 시작에서 몇째 칸인지(grab)를 start 에서 재어 세션에 담고, 미리보기(moveGhost)와
+//    놓기(finish)가 포인터 밑 칸에서 그만큼 뺀 자리를 쓴다(gestureMath.grabbedStart) — 마우스 몸통 끌기와 같은 규칙이다.
 // ⚠ unmarkDraggingGroups 가 이 흐름에서 **세 번** 불린다 —
 //    시작(3876) · movePlacementGroup 안(3665, 커맨드의 deps.unmarkDragging) · ctx.drag=null 뒤(3885).
 //    줄이지 마라. 마지막 renderRows(allRows)(3889)도 그대로 남긴다.
 
 import { CLS } from '../ui/domContract.js';
 import { getGroup, groupCount } from '../domain/placements.js';
-import { dragPreviewCount } from '../domain/gestureMath.js';
+import { dragPreviewCount, grabOffset, grabbedStart } from '../domain/gestureMath.js';
+import { groupSpan } from '../domain/selection.js';
 import { resolvePlacementColor } from '../domain/categories.js';
 
 /**
@@ -62,10 +65,13 @@ export function createPlacementTouchDrag(deps) {
    * @param {number} x
    * @param {number} y
    */
+  // @complexity time=O(p) space=O(p) cc=2
   function start(groupId, x, y) {
     const group = getGroup(board().placements, groupId);
     if (!group.length) return;
-    dragSession.begin('placement-move', { groupId, isTouchDragging: true, lastX: x, lastY: y }, { boards: [boardId] });
+    // RM-57 — 고스트를 띄우기 전에 누른 칸을 잰다. 블록 요소는 그 행의 조각만 덮으므로 선형 위치 − 블록 시작으로 센다.
+    const grab = grabOffset(hitAt(x, y), groupSpan(board(), groupId)?.start ?? null, board().cols);
+    dragSession.begin('placement-move', { groupId, isTouchDragging: true, lastX: x, lastY: y, grab }, { boards: [boardId] });
     overlays.markDraggingGroup(boardId, groupId);
     // 고스트 색은 **끌고 있는 블록과 같은 색**이어야 한다. 원본은 루틴일 때 고정 '#6366f1' 을
     // 썼는데, 그때는 안무표의 루틴 블록도 전부 같은 남보라라 우연히 맞았다. 2026-09-07 에
@@ -87,15 +93,18 @@ export function createPlacementTouchDrag(deps) {
    * @param {number} x
    * @param {number} y
    */
+  // @complexity time=O(p) space=O(1) cc=3
   function moveGhost(x, y) {
-    if (!dragSession.current(boardId)) return;
+    const drag = dragSession.current(boardId);
+    if (!drag) return;
     dragSession.update({ lastX: x, lastY: y });   // 3857-3858
     overlays.movePlacementGhost(x, y);
     overlays.clearTrackHighlights(boardId);
     const hit = hitAt(x, y);
     if (hit.inBoard) {
       hit.track.classList.add(CLS.dropHover);
-      updatePreviewFromDrag(hit.row, hit.col);
+      const at = grabbedStart(hit, drag.grab, board());   // RM-57 — 놓일 자리와 같은 시작(미리보기 = 결과)
+      updatePreviewFromDrag(at.row, at.startIndex);
     } else {
       overlays.clearPreview(boardId);
     }
@@ -105,6 +114,7 @@ export function createPlacementTouchDrag(deps) {
    * 터치 이동 종료. 원본 finishTouchPlacementMove(3871-3890).
    * @param {boolean} [cancelled=false] touchcancel 이면 true — 이동을 적용하지 않는다.
    */
+  // @complexity time=O(p) space=O(1) cc=4
   function finish(cancelled = false) {
     const drag = dragSession.current(boardId);
     overlays.clearTrackHighlights(boardId);
@@ -114,10 +124,11 @@ export function createPlacementTouchDrag(deps) {
     if (!cancelled && drag) {
       const hit = hitAt(drag.lastX, drag.lastY);
       if (hit.inBoard) {
+        const at = grabbedStart(hit, drag.grab, board());   // RM-57 — 잡은 칸만큼 앞이 블록의 시작
         apply(commands.moveGroup({
           groupId: drag.groupId,
-          targetRow: hit.row,
-          targetStartIndex: hit.col
+          targetRow: at.row,
+          targetStartIndex: at.startIndex
         }));
         apply(commands.commitHistory());   // 3881 `ctx === mainCtx ? saveHistory() : saveHistoryRe()`
       }

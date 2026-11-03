@@ -538,3 +538,58 @@ test('행 라벨 우클릭·길게 누르기: 몸통 행이면 그 행 번호로
     assert.deepEqual(G.rowLabelPress(s, { row, x: 0, y: 0 }, e).effects, [], `row=${row} — 브라우저 메뉴를 막지도 않는다`);
   }
 });
+
+// ── 몸통 끌기의 잡은 칸 (RM-57) ─────────────────────────────────────────────────────────────
+// 블록 몸통의 k번째 칸을 잡고 끌면 놓은 칸이 아니라 놓은 칸 − k 가 블록의 시작이다. 잡은 칸(grab)은 입력 계층이
+// 누를 때 재어(gestureMath.grabOffset) placementDown 의 ev.grab 으로 넘긴다. 옛 왼쪽 이동 손잡이는 늘 0번 칸을 잡아
+// 이 셈이 없어도 드러나지 않았다.
+
+test('[RM-57 요구 0] 몸통 끌기: 잡은 칸 오프셋만큼 뺀 자리로 옮기고 · 복사하고 · 묶음을 옮긴다', () => {
+  const E = env();
+  const grabbed = (extra) => run([
+    [G.placementDown, down('body', { grab: 2, ...extra })],
+    [G.bodyMove, at(4, 6)],
+    [G.bodyUp, at(4, 6)],
+  ], E);
+  const move = grabbed({});
+  assert.deepEqual(move.effects.find(fx => fx.kind === 'move'), { kind: 'move', groupId: 'g1', row: 4, startIndex: 4 });
+  const copy = grabbed({ altKey: true });
+  assert.deepEqual(copy.effects.find(fx => fx.kind === 'copy'), { kind: 'copy', groupId: 'g1', row: 4, startIndex: 4 });
+  const bundle = grabbed({ bundle: ['g1', 'g2'] });
+  assert.deepEqual(bundle.effects.find(fx => fx.kind === 'moveBundle'),
+    { kind: 'moveBundle', groupId: 'g1', row: 4, startIndex: 4, bundle: ['g1', 'g2'] });
+  // 놓은 칸보다 잡은 칸이 크면 앞 행 끝으로 넘어간다(Q117 가 — 선형으로 뺀다)
+  const wrap = run([[G.placementDown, down('body', { grab: 3 })], [G.bodyMove, at(4, 1)], [G.bodyUp, at(4, 1)]], E);
+  assert.deepEqual(wrap.effects.find(fx => fx.kind === 'move'), { kind: 'move', groupId: 'g1', row: 3, startIndex: 6 });
+  // 0번 칸을 잡으면(grab 이 없거나 0) 지금과 같다 — 놓은 칸이 시작이다
+  for (const grab of [0, undefined]) {
+    const r = run([[G.placementDown, down('body', { grab })], [G.bodyMove, at(4, 6)], [G.bodyUp, at(4, 6)]], E);
+    assert.deepEqual(r.effects.find(fx => fx.kind === 'move'), { kind: 'move', groupId: 'g1', row: 4, startIndex: 6 }, `grab=${grab}`);
+  }
+});
+
+test('[RM-57 요구 1] 몸통 끌기: 미리보기도 잡은 칸만큼 앞에 그린다', () => {
+  const E = env();
+  let s = G.placementDown(G.initialGestureState(), down('body', { grab: 2 })).state;
+  for (const [row, col] of [[3, 5], [4, 6], [5, 1]]) {
+    const m = G.bodyMove(s, at(row, col), E); s = m.state;
+    const preview = m.effects.find(fx => fx.kind === 'movePreview');
+    const up = G.bodyUp(s, at(row, col), E);
+    const move = up.effects.find(fx => fx.kind === 'move');
+    assert.deepEqual({ row: preview.row, startIndex: preview.startIndex }, { row: move.row, startIndex: move.startIndex },
+      `(${row}, ${col}) — 미리보기 = 결과`);
+  }
+  const m = G.bodyMove(G.placementDown(G.initialGestureState(), down('body', { grab: 2 })).state, at(3, 5), E);
+  assert.deepEqual(m.effects.find(fx => fx.kind === 'movePreview'), { kind: 'movePreview', row: 3, startIndex: 3 });
+});
+
+test('[RM-57 요구 5] 몸통 3번째 칸을 잡고 위 행으로 곧게 옮기면 시작 칸이 그대로다', () => {
+  // 행 3 칸 0 에서 시작하는 8카운트 블록을 칸 2(3번째 칸)에서 잡아 바로 위 빈 행(2)의 같은 칸에 놓는다
+  const r = run([
+    [G.placementDown, { ...down('body'), ...at(3, 2), grab: 2 }],
+    [G.bodyMove, at(2, 2)],
+    [G.bodyUp, at(2, 2)],
+  ], env());
+  assert.deepEqual(r.effects.find(fx => fx.kind === 'move'), { kind: 'move', groupId: 'g1', row: 2, startIndex: 0 },
+    '고치기 전에는 놓은 칸(2)이 시작이 되어 블록이 다음 마디로 넘쳤다');
+});
