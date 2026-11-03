@@ -2039,6 +2039,10 @@ class AppServer(ThreadingHTTPServer):
     """⚠ 윈도우의 SO_REUSEADDR 는 「이미 쓰이는 포트에도 묶기」다 — 파이썬 기본값(allow_reuse_address)대로 두면
     두 번째 서버가 첫째의 포트를 조용히 가로채 충돌을 알릴 길이 없다. 윈도우에서는 끄고 독점 묶기를 청한다."""
     allow_reuse_address = os.name != 'nt'
+    # ⚠ 연결 대기열(2026-11-03, RM-52). 파이썬 기본값 5 로는 캐시 없는 첫 열기에서 ES 모듈 수십 개가 한꺼번에
+    #   몰릴 때 절반쯤이 커널에서 끊겨(ECONNRESET) 앱이 판 없이 반쯤 뜬다. 128 은 macOS kern.ipc.somaxconn 의
+    #   기본값이라 그 위로 줘도 커널이 잘라 낸다. 이 값은 listen() 에 한 번만 쓰이니 생성 뒤에 덮어쓰지 말고 여기 둔다.
+    request_queue_size = 128
 
     # @complexity time=O(1) space=O(1) cc=3
     def server_bind(self):

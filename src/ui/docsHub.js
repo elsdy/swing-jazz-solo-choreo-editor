@@ -8,6 +8,7 @@
 
 import { DOCS, DOC_GROUPS, DEFAULT_DOC_ID, docsByGroup, resolveDoc, idForFileName } from './docsRegistry.js';
 import { helpLinkFor } from './helpLinks.js';
+import { iconLabelHtml, iconOnly } from './icon.js';
 
 const STYLE_ID = 'docs-hub-style';
 const CSS = `
@@ -30,8 +31,10 @@ const CSS = `
   color: var(--muted); padding: var(--sp-1) var(--sp-2); text-transform: none; }
 /* 숨긴 갈래(개발)는 접힌 <details> 다 — 평소엔 제목 한 줄, 누르면 편다. 링크로 그 문서를 열면 스스로 펴진다(RM-26). */
 details.docs-group > summary.docs-group-label { cursor: pointer; list-style: none; }
-details.docs-group > summary.docs-group-label::before { content: '▸ '; }
-details.docs-group[open] > summary.docs-group-label::before { content: '▾ '; }
+details.docs-group > summary.docs-group-label::before { content: ''; display: inline-block; width: 0.9em; height: 0.9em;
+  margin-right: 0.3em; vertical-align: -0.1em; background-color: currentColor;
+  -webkit-mask: var(--icon-chevron-right, linear-gradient(transparent, transparent)) center / contain no-repeat; mask: var(--icon-chevron-right, linear-gradient(transparent, transparent)) center / contain no-repeat; }
+details.docs-group[open] > summary.docs-group-label::before { -webkit-mask-image: var(--icon-chevron-down); mask-image: var(--icon-chevron-down); }
 .docs-item { display: block; width: 100%; text-align: left; border: 0; cursor: pointer;
   background: transparent; color: var(--text); font-size: var(--fs-2); padding: 6px 8px;
   border-radius: var(--r-1); line-height: 1.35; }
@@ -303,6 +306,7 @@ export function buildToc(headings) {
  * 문서 허브를 만든다. 상단 진입점 버튼을 `container` 안에 넣고, 본문 오버레이는 body 에 붙인다.
  * @param {{ container: HTMLElement, doc?: Document, fetchImpl?: typeof fetch }} deps
  */
+// @complexity time=O(1) space=O(1) cc=5
 export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
   const doFetch = fetchImpl || ((...a) => fetch(...a));
 
@@ -329,7 +333,7 @@ export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
         <h2>문서</h2>
         <span class="docs-sub">저장소를 열지 않고 여기서 읽는다</span>
         <span class="docs-spacer"></span>
-        <button class="ghost" data-act="close" type="button">✕ 닫기</button>
+        <button class="ghost" data-act="close" type="button">${iconLabelHtml('x', '닫기')}</button>
       </div>
       <nav class="docs-side"></nav>
       <article class="docs-body" tabindex="-1"></article>
@@ -397,6 +401,7 @@ export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
   }
 
   // 목차만 다시 그린다 — 문서 목록까지 다시 그리면 스크롤 도중 옆단이 튄다
+  // @complexity time=O(t) space=O(t) cc=8
   function renderToc() {
     const wrap = doc.createElement('div');
     wrap.className = 'docs-toc';
@@ -407,7 +412,7 @@ export function createDocsHub({ container, doc = document, fetchImpl } = {}) {
       twisty.className = 'docs-toc-twisty';
       twisty.type = 'button';
       twisty.dataset.twisty = node.id;
-      twisty.textContent = expanded.has(node.id) ? '▾' : '▸';
+      iconOnly(twisty, expanded.has(node.id) ? 'chevron-down' : 'chevron-right', expanded.has(node.id) ? '접기' : '펴기', doc);
       twisty.hidden = node.children.length === 0;
       const link = doc.createElement('button');
       link.className = 'docs-toc-link';

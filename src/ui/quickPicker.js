@@ -34,6 +34,7 @@
 
 import { CLS } from './domContract.js';
 import { makeInlineStarBtn } from './widgets.js';
+import { iconLabel, iconOnly } from './icon.js';
 import { positionPopup, qDivider, qLabel, bindOutsideClose } from './popup.js';
 import { categoryNames, categoryColor, deriveKey } from '../domain/categories.js';
 import { matchMoves, suggestMoves } from '../domain/moveMatch.js';
@@ -239,6 +240,7 @@ export function createQuickPicker(deps, options = {}) {
    * @param {number} clientY
    * @param {number} count
    */
+  // @complexity time=O(1) space=O(1) cc=3
   function showMoveScreen(popup, row, cellIndex, clientX, clientY, count) {
     popup.innerHTML = '';
 
@@ -257,7 +259,7 @@ export function createQuickPicker(deps, options = {}) {
     const closeBtn = document.createElement('button');
     closeBtn.className = CLS.iconBtn;
     closeBtn.type = 'button';
-    closeBtn.textContent = '×';
+    iconOnly(closeBtn, 'x', '닫기');
     closeBtn.addEventListener('click', close);   // ⚠ 감싸지 마라 — close 위 주석 참조(1852)
     header.appendChild(closeBtn);
     popup.appendChild(header);
@@ -402,6 +404,7 @@ export function createQuickPicker(deps, options = {}) {
    * @param {number} cellIndex
    * @param {number} count
    */
+  // @complexity time=O(1) space=O(1) cc=2
   function showCategoryScreen(popup, moveName, row, cellIndex, count) {
     popup.innerHTML = '';
 
@@ -410,7 +413,7 @@ export function createQuickPicker(deps, options = {}) {
     const backBtn = document.createElement('button');
     backBtn.type = 'button';
     backBtn.className = CLS.iconBtn;
-    backBtn.textContent = '←';
+    iconOnly(backBtn, 'arrow-left', '뒤로');
     backBtn.addEventListener('click', () => {
       // ⚠ 되돌아갈 때는 지금 팝업의 좌상단을 새 앵커로 쓴다(2067-2068).
       const rect = popup.getBoundingClientRect();
@@ -421,7 +424,7 @@ export function createQuickPicker(deps, options = {}) {
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = CLS.iconBtn;
-    closeBtn.textContent = '×';
+    iconOnly(closeBtn, 'x', '닫기');
     closeBtn.addEventListener('click', close);   // ⚠ 감싸지 마라(2076)
     header.appendChild(closeBtn);
     popup.appendChild(header);
@@ -453,7 +456,7 @@ export function createQuickPicker(deps, options = {}) {
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
     confirmBtn.className = 'primary special';
-    confirmBtn.textContent = '✦ 추가 & 배치';
+    iconLabel(confirmBtn, 'sparkle', '추가 & 배치');
     confirmBtn.style.flex = '1';
     newCatForm.append(catColorInput, confirmBtn);
     popup.appendChild(newCatForm);

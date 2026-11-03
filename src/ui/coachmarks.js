@@ -28,7 +28,7 @@ export const COACHMARKS = Object.freeze([
     id: 'fill',
     target: 'modeBar',
     title: '① 채우기 줄',
-    text: '안무표를 채우는 길이 여기 모여 있습니다. 처음이면 격자 안의 예제 열기 로 결과물부터 보고, 영상을 보며 받아 적으려면 ▶ 영상으로 채우기 를 누릅니다.',
+    text: '안무표를 채우는 길이 여기 모여 있습니다. 처음이면 격자 안의 예제 열기 로 결과물부터 보고, 영상을 보며 받아 적으려면 영상으로 채우기 를 누릅니다.',
     // 되살린 안무표가 이미 있으면 「무엇으로 채울까」는 지난 이야기다 — ② 부터 낸다.
     when: (ctx) => !ctx.hasPlacements
   }),
@@ -182,7 +182,7 @@ export function createCoachmarks({ flow, doc = document, byId = (id) => doc.getE
     const bw = box.offsetWidth || 280;
     const bh = box.offsetHeight || 120;
     const vw = win.innerWidth, vh = win.innerHeight;
-    // 크기가 있어도 화면 밖이면 안 보이는 것이다 — 폰에서 닫힌 `≡ 동작` 시트 속 검색칸이 그렇다(말풍선이 화면 밖에 떴다).
+    // 크기가 있어도 화면 밖이면 안 보이는 것이다 — 폰에서 닫힌 `동작` 시트 속 검색칸이 그렇다(말풍선이 화면 밖에 떴다).
     const visible = r && r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < vh;
     if (!visible) {
       box.style.left = `${Math.max(16, (vw - bw) / 2)}px`;

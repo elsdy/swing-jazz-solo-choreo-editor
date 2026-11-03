@@ -12,6 +12,7 @@
 
 import { COMMANDS, commandById } from '../domain/commands.js';
 import { HOTKEY_ACTIONS, eventKey, keysLabel } from '../domain/hotkeys.js';
+import { iconLabel } from './icon.js';
 
 /**
  * 검색어에 맞는 명령. 라벨 · 버튼 글자 · 설명 · id 에 **들어 있으면** 맞는다(띄어쓰기 · 대소문자 무시).
@@ -171,6 +172,7 @@ export function createCommandPalette(deps) {
   }
 
   // ── 단축키 일람 ────────────────────────────────────────────────────────────
+  // @complexity time=O(n)? space=O(n)? cc=3
   function openSheet() {
     const box = mount('shortcut-sheet', '단축키 일람');
     box.tabIndex = -1;
@@ -181,7 +183,7 @@ export function createCommandPalette(deps) {
     const closeBtn = doc.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'ghost';
-    closeBtn.textContent = '✕ 닫기';
+    iconLabel(closeBtn, 'x', '닫기', doc);
     closeBtn.onclick = close;
     head.append(title, closeBtn);
 

@@ -21,11 +21,11 @@ python3 server.py
 ## 고치기 전에 돌리는 것
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 693개 (도메인·어댑터·유스케이스·뷰 626 + 원칙 검사기 자기 시험 21 + 문서 검사 자기 시험 21(라벨 대조 · 도움말 `?` 앵커 · 문서 갈래 · 시험 수 한 자리) + 계층 검사 자기 시험 3 + server.py 실물 22, ffmpeg 이 있으면 실제로 한 번 자른다)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 729개 (도메인·어댑터·유스케이스·뷰 658 + 원칙 검사기 자기 시험 23 + 문서 검사 자기 시험 21(라벨 대조 · 도움말 `?` 앵커 · 문서 갈래 · 시험 수 한 자리) + 계층 검사 자기 시험 3 + server.py 실물 24, ffmpeg 이 있으면 실제로 한 번 자른다)
 node tests/run.mjs                # 격자 알고리즘 골든 173개
 node tools/check-arch.mjs         # 계층 방향과 순수성, src/ · server.py 가 packaging/ 를 모르는지
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 튜토리얼·기능 설명서가 인용한 라벨이 화면에 있는지, 도움말 `?` 가 가리키는 절이 있는지, 시험 수가 이 자리 밖(README · ARCHITECTURE)에 끼지 않았는지
-node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 열(U-10 · U-11 · U-12 · D-5 · D-22 · R-6 · R-10 · D-14 · U-15 · U-16)
+node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 열둘(U-10 · U-11 · U-12 · D-5 · D-22 · R-6 · R-10 · R-12 · D-14 · U-15 · U-16 · U-19)
 ```
 
 다섯 다 의존성이 0이고 몇 초 안에 끝난다(서버 테스트는 `python3` 을 띄운다). 고친 뒤에도 돌린다.
