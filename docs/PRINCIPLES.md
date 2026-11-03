@@ -565,6 +565,7 @@ usecases 는 `Date` 를 쓰지 못하므로 `env.localDate()`(`adapters/browser.
 - [U-20 · 입력기를 거치는 길은 실제 입력기로 잰다 — 조합 중의 값은 건드리지 않는다](#u-20)
 - [U-21 · 인쇄는 화면에서 잰 px 를 물려받지 않는다 — 종이 단위로 다시 정한다](#u-21)
 - [U-22 · 인쇄의 쪽 나눔은 블록 흐름에 맡긴다 — 격자 항목의 쪽 나눔은 엔진마다 다르다](#u-22)
+- [U-23 · 화면 폭으로 접는 규칙은 `@media screen` 으로 묶는다 — Chrome 은 종이 폭으로 `max-width` 를 잰다](#u-23)
 
 <a id="u-1"></a>
 ### U-1 · 툴팁·팝오버는 body 포털로 빼고 전역 DOM 참조는 렌더마다 유효성을 검사한다
@@ -825,3 +826,14 @@ usecases 는 `Date` 를 쓰지 못하므로 `env.localDate()`(`adapters/browser.
 **어떻게 확인할까.** `node --test tests/unit/countSheet.test.mjs` — `[RM-46 요구 0]` · `[RM-46 요구 1]` 시험이 인쇄 블록에서 `.board` 가 블록으로 흐르는지, 행이 `break-inside: avoid` 인지, 행 사이 margin 과 코러스 · 파트 첫 행의 겹친 margin 이 격자 때의 틈 · 숨과 같은지 잰다. 실제 쪽 나눔은 엔진이 정하므로, 인쇄 블록의 흐름(display · margin · 높이)을 바꾸면 긴 표(40마디)를 Chrome printToPDF 와 WebKit 인쇄 작업(WKWebView · NSPrintOperation) 둘로 넓은 판 · 폰 폭에서 찍어, 쪽마다 담긴 행 이름을 PDF 글자에서 모아 두 쪽에 걸친 행이 0 인지 센다.
 
 **근거 버그.** 2026-11-03(`rm-46-safari-print-row-break-block-flow`, 로드맵 RM-46). 상세는 [버그 기록](BUG_REPORTS.md#safari-로-인쇄하면-쪽-끝에-행이-반쪽만-걸림).
+
+<a id="u-23"></a>
+### U-23 · 화면 폭으로 접는 규칙은 `@media screen` 으로 묶는다 — Chrome 은 종이 폭으로 `max-width` 를 잰다
+
+**원칙.** 좁은 화면에서 무엇을 접거나 숨기는 규칙(`@media (max-width: …)` 안의 `display: none` · 폭 0 같은 것)이 종이에 먹으면 안 되면, 그 규칙을 `@media screen { … }` 으로 묶는다. 인쇄에서 무엇을 숨길지는 `@media print` 블록 한 자리가 정한다. 종이에 놓이는 크기도 화면에서 잰 값(특히 **숨긴 채 잰 값** — 숨긴 요소는 폭이 0 이라 하한값이 된다)이 아니라 종이 단위로 정한다(U-21).
+
+**왜.** 2026-11-03 RM-47 에서 같은 안무표를 Chrome 으로 찍으면 비고 열이 빠지고 Safari 로 찍으면 나왔다. Chrome 은 인쇄할 때 미디어 폭을 종이 쪽 너비(A4 · 여백 10mm 면 약 718px)로 재서 1040px · 720px 아래 블록이 모두 종이에 먹고, Safari 는 화면 폭으로 잰다. 개발은 넓은 창에서 하므로 「좁은 화면 규칙」이 종이에 먹는다는 생각을 하기 어렵다. 고친 뒤에는 접힌 채 잰 비고 폭(60px)이 종이에 가서 쪽이 세 배가 됐다.
+
+**어떻게 확인할까.** `node --test tests/unit/countSheet.test.mjs` — `[RM-47 요구 0]` · `[RM-47 요구 1]` 시험이 `<style>` 을 괄호 짝으로 걸어(`cssRulesWithMedia`) 비고 접기 규칙을 감싼 `@media` 에 `screen` 이 있는지, 인쇄 비고 폭이 화면 값과 상관없이 종이의 25% 인지 잰다. 좁은 화면 블록에 접기 · 숨김 규칙을 새로 더하면, 종이에도 먹어야 하는 것인지 정하고 아니면 `@media screen` 안에 둔다 — 실물은 Chrome printToPDF 를 넓은 창(1280)과 폰 폭(390)에서 찍어 화면에 보이던 것이 종이에도 있는지 본다. 1040px 아래 블록의 다른 규칙(손가락 크기 · 시트 사이드바)도 Chrome 인쇄에 먹지만, 인쇄 블록이 그 요소를 숨기거나 크기를 다시 정해 지금 종이에는 드러나지 않는다.
+
+**근거 버그.** 2026-11-03(`rm-47-print-note-column-consistent`, 로드맵 RM-47). 상세는 [버그 기록](BUG_REPORTS.md#chrome-으로-인쇄하면-비고-열이-빠지고-safari-는-찍음).

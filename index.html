@@ -2260,10 +2260,14 @@
       body[data-notes="on"] #notesToggleBtn,
       body[data-sheet="on"] #sidebarSheetBtn { background: rgba(var(--accent-rgb), 0.16); color: var(--accent); }
       /* ⚠ `--noteW` 는 ui/cssVars 가 렌더마다 인라인으로 쓴다 — 그것을 덮지 않고, 격자가 읽는
-         `--noteCol`(ui/boardView 가 `var(--noteCol, var(--noteW))` 로 읽는다)을 0 으로 둔다. */
-      body[data-notes="off"] .board-wrap { --noteCol: 0px; }
-      body[data-notes="off"] .note-header,
-      body[data-notes="off"] .note-cell { display: none; }
+         `--noteCol`(ui/boardView 가 `var(--noteCol, var(--noteW))` 로 읽는다)을 0 으로 둔다.
+         ⚠ 접기는 화면 전용이다(RM-47) — Chrome 은 인쇄할 때 이 블록의 max-width 를 종이 쪽 너비(A4 ≈ 718px)로 재서, 묶지
+         않으면 넓은 화면(토글이 없어 늘 off)에서 인쇄해도 비고 열이 접혔다. Safari 는 화면 폭으로 재서 찍었다. 종이에는 늘 나온다. */
+      @media screen {
+        body[data-notes="off"] .board-wrap { --noteCol: 0px; }
+        body[data-notes="off"] .note-header,
+        body[data-notes="off"] .note-cell { display: none; }
+      }
 
       /* ── 손가락 크기 ──
          이 폭은 대개 터치다. 재 보니 `안무표 크기` 의 −/+ 가 16x13px, 카드의 ★·✕ 가 20x20px,
@@ -3699,7 +3703,8 @@
     /* ── 인쇄 (2026-11-02, RM-21) ──
        종이에는 안무표만 간다. 앱바 · 채우기 줄 · 동작 목록 · 영상 · 엄지 바 · 편집 버튼을 숨기고, 화면용 고정 높이 ·
        스크롤 · 어두운 배경을 걷어 격자가 A4 너비에 맞춰 여러 장으로 흐르게 한다. 행 중간에서 쪽이 넘어가지 않는다.
-       흑백 인쇄에서 루틴 색이 사라지므로 루틴 블록은 테두리(이중선)로도 가른다 — 글자의 `▶` 는 뷰가 붙인다. */
+       흑백 인쇄에서 루틴 색이 사라지므로 루틴 블록은 테두리(이중선)로도 가른다 — 글자의 `▶` 는 뷰가 붙인다.
+       비고 열은 화면의 📝 토글과 상관없이 늘 나온다(RM-47) — 접는 규칙은 1040px 아래 블록에서 @media screen 으로 묶여 있다. */
     /* 원칙-예외(U-16): 종이는 테마를 따르지 않는 흰 바탕 · 검은 글자이고, JS 가 요소에 직접 적은 높이 · 색까지 이겨야 해서 !important 를 쓴다 */
     @media print {
       html, body { background: #fff !important; color: #111 !important; height: auto !important; overflow: visible !important; }
@@ -3728,12 +3733,13 @@
          종이는 A4 · 여백 10mm 로 못박고(그래서 Chrome · Safari 가 같은 190mm 를 쓴다 — vw 는 Safari 가 화면 폭으로 잰다),
          칸 너비는 그 폭에서 행 라벨 · 비고 · 틈 둘을 빼고 칸 수(--cols, ui/boardView 가 적는다)로 나눠 다시 정한다.
          html 의 인라인 값은 건드리지 않고 .board 에서 상속만 끊는다 — 인쇄 창을 닫으면 화면 칸이 그대로다.
-         비고 열은 종이의 25% 안으로 줄이고, 긴 비고는 줄을 바꾼다. */
+         비고 열은 종이의 25% 로 두고, 긴 비고는 줄을 바꾼다 — 화면에서 잰 --noteW 를 쓰지 않는다(RM-47): 좁은 화면은 비고가
+         접힌 채 재서 하한값 60px 라, 그 폭으로 찍으면 비고가 한 낱말씩 끊겨 12마디 표가 2쪽에서 6쪽이 됐다. */
       @page { size: A4; margin: 10mm; }
       .board-wrap {
         --printW: 190mm; /* A4 210mm − 여백 10mm × 2 — 위 @page 와 짝이다 */
         --printGap: 4px;
-        --printNoteW: min(var(--noteCol, var(--noteW)), calc(var(--printW) * 0.25));
+        --printNoteW: min(var(--noteCol, calc(var(--printW) * 0.25)), calc(var(--printW) * 0.25));
       }
       .board-wrap .board {
         --noteCol: var(--printNoteW);
