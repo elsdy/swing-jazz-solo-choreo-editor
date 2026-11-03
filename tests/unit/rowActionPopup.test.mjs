@@ -104,7 +104,7 @@ test('블록 팝업: 「여기서 자르기」는 재생 헤드가 있으면 바
       mergeWithNeighbor: (g) => { called.push(['merge', g]); return { boards: { main: { rows: [1] } } }; },
     },
   });
-  // 글자 칸(span.lbl)의 글자. 아이콘은 따로 본다 — 라벨은 그림 글자로 시작하지 않는다(RM-18, 개발 원칙 U-18)
+  // 글자 칸(span.lbl)의 글자. 아이콘은 따로 본다 — 라벨은 그림 글자로 시작하지 않는다(RM-18, 개발 원칙 U-19)
   const labelsOf = () => dom.buttons(popup.current()).map(b => labelOf(b));
   const iconsOf = () => dom.buttons(popup.current()).map(b => (b.children[0] && b.children[0].dataset.icon) || '');
 

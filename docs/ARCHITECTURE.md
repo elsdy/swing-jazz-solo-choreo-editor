@@ -17,12 +17,14 @@ python3 server.py
 고치기 전과 후에 이 다섯을 돌린다. 다섯 다 의존성이 0이고 몇 초 안에 끝난다.
 
 ```
-node tests/run.mjs                     # 격자 알고리즘 골든 150개
-node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스 단위 66개
+node tests/run.mjs                     # 격자 알고리즘 골든
+node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스·뷰 단위 시험, 검사기 자기 시험, server.py 실물
 node tools/check-arch.mjs              # 계층 방향과 순수성
-node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지
-node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 열(U-10 · U-11 · U-12 · D-5 · R-6 · R-10 · D-14 · U-15 · U-16 · U-18)
+node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지, 시험 수가 개발 지침 밖에 끼지 않았는지
+node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 열하나(U-10 · U-11 · U-12 · D-5 · D-22 · R-6 · R-10 · D-14 · U-15 · U-16 · U-19)
 ```
+
+몇 개씩인지는 [개발 지침](../CLAUDE.md#고치기-전에-돌리는-것) 한 자리에만 적는다 — 이 블록에 다시 적으면 `node tools/check-docs.mjs` 가 붉어진다(RM-64).
 
 둘의 역할이 다르다. 골든은 **격자 알고리즘의 현재 동작**을 기록한 것이라 undo·링크·영상처럼 격자 밖의 일은 지켜 주지 못한다. 그쪽 안전망이 단위 테스트다.
 
@@ -337,7 +339,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `practiceBar.js` | 영상 패널의 연습 조작 줄(2026-10-01, RM-22) — `▶ 재생` · 배속 · `🔁 반복` · `⇋ 미러` · `🔔 카운트 소리` · 마디 반복. 재생기 · 소리 장치는 `app/main` 이 감싸 넘긴 함수로만 닿는다. 미러는 `#videoFrame` 의 `data-mirror` 속성 하나다 |
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
 | `composeView.js` | 상단 `✨ 말로 채우기` 팝업. 음성 인식(webkitSpeechRecognition) → 다듬기 → 스키마 → 미리보기 → 채우기의 세 단. LLM 은 주입받은 어댑터로, 배치는 주입받은 유스케이스로 |
-| `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 절을 갈래(`data-cat`)로 묶어 옆단에서 고르고, 제목 옆 검색칸이 절의 글자와 `data-keywords` 를 함께 훑는다. **절의 `hidden` 을 정하는 자리는 `applyFilter` 하나다** — 쓸 수 있는가(`data-available`)와 갈래·검색에 걸리는가가 곱해진다 |
+| `settingsView.js` | 상단 `설정` 과 설정 팝업. 절을 갈래(`data-cat`)로 묶어 옆단에서 고르고, 제목 옆 검색칸이 절의 글자와 `data-keywords` 를 함께 훑는다. **절의 `hidden` 을 정하는 자리는 `applyFilter` 하나다** — 쓸 수 있는가(`data-available`)와 갈래·검색에 걸리는가가 곱해진다 |
 | `phrasingView.js` | 도구 모음의 `🎵 프레이즈` 버튼과 팝업. 숫자를 받는 창이고, 칠하는 것은 `boardView.syncPhrasing` 이다 |
 | `meshView.js` | 몸 메시를 캔버스에 그린다(2026-09-12). 가림은 화가 알고리즘 한 줄로 푼다 — 면을 먼 것부터 칠하면 가까운 면이 덮는다. 이 한 줄이 three.js 를 안 들이는 이유다. 영상 위에 겹칠 때는 `xScale` 로 가로 눌림을 다시 적용한다 |
 | `poseOverlay.js` | 영상 위에 관절·몸을 겹쳐 그린다(2026-09-12, 채널 B). `playhead.js` 와 같은 규약이다 — rAF 루프가 자기 캔버스에만 그리고 store 는 게터로만 읽는다. **프레임이 아니라 영상이 그려진 칸**에 맞춘다(레터박스), 측정은 `invalidate()` 뒤 한 번뿐이다 |
@@ -407,7 +409,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 격자 규칙(카운트 분할·클램프)을 바꾼다 | `src/domain/grid.js` | 골든 재생성. `grid-*` 20개가 먼저 깨진다 |
 | 겹침·쌓기 규칙을 바꾼다 | `src/domain/lanes.js` | `repack-*` `clear-*` 갱신. 네 조작(놓기·이동·복사·리사이즈)이 같은 규칙을 쓰므로 `boardOps` 의 네 정책 상수를 나란히 고친다 |
 | 놓기·이동·복사·리사이즈 동작을 바꾼다 | `src/domain/boardOps.js` 의 `*_POLICY` 상수 | 해당 골든 갱신. 반환값의 `renderRows` 와 `changedRows` 를 혼동하지 말 것 |
-| 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 그림은 [아이콘 한 벌](ICONS.md)에서(라벨 앞에 이모지를 붙이지 않는다 — U-18). 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
+| 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 그림은 [아이콘 한 벌](ICONS.md)에서(라벨 앞에 이모지를 붙이지 않는다 — U-19). 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
 | 명령(글쇠 · 버튼 · 명령 찾기로 부르는 일)을 더한다 | `src/domain/commands.js` 한 줄 + `src/app/main.js` 의 `COMMAND_RUNNERS` 한 줄 + 버튼이면 마크업에 `data-command="<id>"` | 마크업 글자는 등록부의 `button` 과 같게, `title` 은 적지 않는다(시험이 본다). 셋이 어긋나면 원칙 검사 D-14 가 붉어진다 |
 | 명령이 아닌 화면 글자(팝업 줄 · 툴팁 · 플레이스홀더 · 안내 문장)를 바꾸거나 더한다 | `src/domain/strings.js` 의 `LABELS` 한 줄 + 부르는 자리의 `str` · `fill` | 마크업에 글자가 남은 정적 단추는 `data-label` · `data-title` 키를 달고 글자를 표와 같게 둔다(시험이 본다). 낱말은 [용어집](GLOSSARY.md)을 따르고, 바꿨으면 [기능 설명서](FEATURES.md) · [튜토리얼](TUTORIAL.md)을 같은 커밋에서 |
 | 화면이 안 다시 그려진다 | 그 조작의 커맨드가 돌려주는 `Dirty` | `dev: true` 로 `assertDirtyCovers` 를 켜 본다 |

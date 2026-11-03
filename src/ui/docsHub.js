@@ -115,16 +115,21 @@ function slugify(text) {
     .replace(/^-|-$/g, '');
 }
 
+// ⚠ 이스케이프는 맨 앞 한 번뿐이다(2026-11-03, RM-65). 아래에서 떼어 둔 코드 조각과 링크 주소는 이미
+//   이스케이프된 `s` 에서 나온 것이라 되돌려 놓을 때 다시 escapeHtml 하면 `&lt;` 가 글자로 보이고 href 의 `&` 가
+//   `&amp;amp;` 가 된다. 이미 이스케이프된 글에는 따옴표가 `&quot;` 로 남아 있어 속성도 깨지지 않는다.
+// @complexity time=O(n) space=O(n) cc=3
 function inline(md) {
   let s = escapeHtml(md);
   const codes = [];
   s = s.replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, text, href) => {
+    // 안전 검사는 이스케이프된 주소에 건다 — 넣을 때도 그 글 그대로 넣는다.
     const safe = /^(https?:|mailto:|#|[\w./-]+\.md(#|$)|[\w./-]+\.html(#|$))/i.test(href);
     if (!safe) return text;
     const ext = /^https?:/i.test(href);
     const attrs = ext ? ' target="_blank" rel="noopener noreferrer"' : '';
-    return `<a href="${escapeHtml(href)}" data-href="${escapeHtml(href)}"${attrs}>${text}</a>`;
+    return `<a href="${href}" data-href="${href}"${attrs}>${text}</a>`;
   });
   // ⚠ 취소선이 **굵게보다 먼저**다(2026-09-13). `~~` 안에 `**` 가 드는 일이 흔한데
   //   순서가 반대면 굵게 규칙이 먼저 먹어 물결표만 글자로 남는다. 이 저장소의 로드맵·PORTS 가
@@ -132,7 +137,7 @@ function inline(md) {
   s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-  s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${escapeHtml(codes[Number(i)])}</code>`);
+  s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[Number(i)]}</code>`);
   return s;
 }
 

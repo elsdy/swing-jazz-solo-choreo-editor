@@ -2461,6 +2461,8 @@ views.video = createVideoPanel({
   getExportError: () => exportError,
   onExportExcerpt: exportExcerpt,
   // ⚠ 매 렌더 불린다(패널이 열린 채 URL 만 바뀌는 경로가 있다). 아래 셋은 전부 멱등이다.
+  // 창 크기가 바뀌어 띠를 다시 놓은 뒤 — 조작 줄의 접힘(RM-63)을 그 폭으로 다시 고른다(RM-66).
+  onSettled: () => { views.thumb?.render(); },
   onSync: (shown) => {
     if (shown) {
       tryLibraryQuietly();
@@ -2968,6 +2970,9 @@ views.thumb = createThumbBar({
   // 글자 · 툴팁은 등록부의 것이다(RM-09). 툴팁에 지금 글쇠가 실린다.
   face: (id) => commandFace(id, keysNow)
 });
+// 창 폭이 바뀌면 줄의 칸 폭도 바뀐다 — 다시 그려 좁은 칸의 접힘(`처음으로` → 아이콘만)을 다시 고른다(RM-63).
+// ⚠ resize 를 여기서 따로 듣지 않는다 — 영상 패널이 띠를 놓은 **뒤에** 부르는 onSettled 에 걸었다(RM-66).
+//   띠 놓기는 다음 틀로 미뤄지므로, 여기서 들으면 조작 줄의 옛 폭을 재서 접지 않고 잘린다.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 24. 작업 중인 문서 — 새로고침해도 이어진다 (2026-09-20)

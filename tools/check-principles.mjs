@@ -391,7 +391,7 @@ export function commandRunnerTable(mainText) {
 
 /** @typedef {{ file: string, line: number, principle: string, what: string, fix: string }} Violation */
 
-// ── U-18 라벨 앞의 그림 글자 ─────────────────────────────────────────────────
+// ── U-19 라벨 앞의 그림 글자 ─────────────────────────────────────────────────
 /**
  * 단추 라벨 앞에 붙던 그림 글자 — 이모지 · 딩뱃 · 화살표 · 수학 기호(≡ ⊕) · 도형 · 기술 기호(⏯ ⏮) · 곱셈표 · 「+ 」. 뒤에 빈칸이 와야 라벨 앞붙이다.
  * ①②③ 단계 번호는 이 범위 밖이고, ⚠ 경고 문장은 단추 라벨 자리가 아니라서 아래 자리 판정이 걸러 낸다.
@@ -404,7 +404,7 @@ const LABEL_SLOT_RE = /(?:\.textContent|\.innerText)\s*=[^,;{}]*$|(?:^|[\s{,])(?
 const buttonText = (inner) => inner.replace(/<svg\b[\s\S]*?<\/svg>/g, '').replace(/<[^>]*>/g, '').replace(/\$\{[^}]*\}/g, '').trim();
 
 /**
- * U-18 이 보는 자리 셋: ① index.html 의 `<button>` 글자 ② JS 문자열 속 `<button …>` 마크업 ③ 단추 라벨 자리에 대입하는 JS 문자열.
+ * U-19 이 보는 자리 셋: ① index.html 의 `<button>` 글자 ② JS 문자열 속 `<button …>` 마크업 ③ 단추 라벨 자리에 대입하는 JS 문자열.
  * @param {Record<string, string>} files
  * @returns {{ file: string, line: number, snippet: string }[]}
  */
@@ -561,12 +561,31 @@ export const RULES = [
   },
   {
     principle: 'D-5',
-    what: '`Number(x) || 기본값` — 0 이 들어오면 기본값으로 덮인다',
-    fix: '`x != null ? Number(x) : 기본값` 으로 바꾸거나, 0 이 뜻 없는 자리면 그 줄에 `// 원칙-예외(D-5): 이유` 를 단다',
+    what: '`Number(x) || 기본값` — 0 이 들어오면 기본값으로 덮인다 · `Number.isFinite(Number(x))` — null · 빈 글이 0 으로 바뀌어 수로 통과한다',
+    fix: "`x != null ? Number(x) : 기본값` 으로, 수 거르기는 `typeof x === 'number' && Number.isFinite(x)` 로 바꾸거나, 검사기가 잘못 읽은 자리면 그 줄에 `// 원칙-예외(D-5): 이유` 를 단다",
+    // @complexity time=O(F·L^2)? space=O(L) cc=13
     scan(files) {
       const out = [];
+      const push = (f, at) => {
+        const line = lineAt(files[f], at);
+        if (!excused(files[f], line, 'D-5')) out.push({ file: f, line, snippet: files[f].split('\n')[line - 1].trim() });
+      };
       for (const f of jsFiles(files)) {
         const code = blankJs(files[f]);
+        // ② `(Number.)isFinite(Number(x))` — 괄호 안이 `Number(…)` 하나로 닫히는 꼴만 잡는다(RM-60).
+        //    `Number(a) + b` 처럼 Number 가 식의 일부면 넘긴다 — 거기까지 잡으면 경보가 잦아진다.
+        for (const m of code.matchAll(/(?<![\w$.])(?:Number\.)?isFinite\(/g)) {
+          const open = m.index + m[0].length - 1;
+          const close = matchBrace(code, open);
+          if (close < 0) continue;
+          const inner = code.slice(open + 1, close);
+          const lead = inner.length - inner.trimStart().length;
+          if (!inner.startsWith('Number(', lead)) continue;
+          const innerClose = matchBrace(code, open + 1 + lead + 'Number'.length);
+          if (innerClose < 0 || code.slice(innerClose + 1, close).trim() !== '') continue;
+          push(f, m.index);
+        }
+        // ① `Number(x) || 기본값` — 0 이 기본값으로 덮인다
         for (const m of code.matchAll(/Number\(/g)) {
           const close = matchBrace(code, m.index + 'Number'.length);
           if (close < 0) continue;
@@ -577,8 +596,24 @@ export const RULES = [
           // 하한이 1 이상인 clamp 안이면 0 은 애초에 그 도메인 밖이다
           const before = code.slice(code.lastIndexOf('\n', m.index) + 1, m.index);
           if (/Math\.max\(\s*[1-9]\d*\s*,\s*(?:Math\.(?:floor|round|trunc)\()?\s*$/.test(before)) continue;
+          push(f, m.index);
+        }
+      }
+      return out;
+    },
+  },
+  {
+    principle: 'D-22',
+    what: '`…Iso().slice(0, 10)` · `toISOString().slice(0, 10)` — UTC 시각을 잘라 날짜로 쓴다(한국 00:00~08:59 에는 어제)',
+    fix: '사람에게 보이는 날짜는 지역 날짜로 — usecases 는 `env.localDate()`, adapters 는 `getFullYear · getMonth · getDate`. UTC 날짜가 정말 맞는 자리면 그 줄에 `// 원칙-예외(D-22): 이유` 를 단다',
+    // @complexity time=O(n) space=O(n) cc=4
+    scan(files) {
+      const out = [];
+      for (const f of jsFiles(files)) {
+        const code = blankJs(files[f]); // 주석 · 문자열 속은 지운다 — 템플릿의 `${…}` 안은 코드라 남는다
+        for (const m of code.matchAll(/(?:Iso\([^()]*\)|toISOString\(\))\s*\.slice\(\s*0\s*,\s*10\s*\)/g)) {
           const line = lineAt(files[f], m.index);
-          if (excused(files[f], line, 'D-5')) continue;
+          if (excused(files[f], line, 'D-22')) continue;
           out.push({ file: f, line, snippet: files[f].split('\n')[line - 1].trim() });
         }
       }
@@ -765,12 +800,12 @@ export const RULES = [
     },
   },
   {
-    principle: 'U-18',
+    principle: 'U-19',
     what: '단추 라벨이 이모지 · 기호 글자로 시작한다 — OS 마다 모양 · 크기가 다르고 글자색 · 테마를 따르지 않는다',
     fix: '그림은 스프라이트 한 벌에서 — ui/icon 의 iconLabel(el, 이름, 글자) · 마크업은 <svg class="icon"><use href="#i-이름"></use></svg><span class="lbl">글자</span>. 명령의 그림은 등록부의 icon 열',
     // @complexity time=O(n) space=O(n) cc=2
     scan(files) {
-      return pictoLabels(files).filter(v => !excused(files[v.file] || '', v.line, 'U-18'));
+      return pictoLabels(files).filter(v => !excused(files[v.file] || '', v.line, 'U-19'));
     },
   },
 ];

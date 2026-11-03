@@ -27,7 +27,7 @@ const FAVORITE_QUICK = '즐겨찾기 (빠른 배치에 표시)';
 export const LABELS = Object.freeze({
   // ── 안무표 블록 팝업 (ui/placementActionPopup) ───────────────────────────
   'block.untitled': '이름 없는 블록',
-  // 아래 단추 글자는 그림 글자 없이 적는다 — 그림은 부르는 자리가 iconLabel 로 붙인다(RM-18, 개발 원칙 U-18)
+  // 아래 단추 글자는 그림 글자 없이 적는다 — 그림은 부르는 자리가 iconLabel 로 붙인다(RM-18, 개발 원칙 U-19)
   'block.pick': '동작 정하기',
   'block.select': '선택하기',
   'block.deselect': '선택 풀기',
@@ -121,6 +121,11 @@ export const LABELS = Object.freeze({
   'part.emptySummary': '빈 파트',
   'part.label.title': '{name} 파트 ({from}~{to}마디) — 누르면 접고, 우클릭 · 길게 누르면 고칩니다',
   'part.label.titleFolded': '{name} 파트가 접혀 있습니다({from}~{to}마디) — 누르면 폅니다',
+
+  // ── 엄지 바 · 영상 띠 조작 줄 (ui/thumbBar) ──────────────────────────────
+  // `.short` 는 칸이 좁아 글자가 넘칠 때 접는 짧은 꼴이다(RM-63) — 접히면 전체 글자가 aria-label 로 남는다.
+  'thumb.rewind': '처음으로', // 좁으면 아이콘(skip-back)만 남는다(RM-63 · RM-18)
+  'thumb.rewind.title': '영상을 맨 처음으로 되감고 바로 재생한다',
 
   // ── 여러 자리가 같이 쓰는 것 ──────────────────────────────────────────────
   'favorite.quickPlace.title': FAVORITE_QUICK,
