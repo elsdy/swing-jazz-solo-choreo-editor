@@ -91,3 +91,15 @@ test('[RM-66] 되돌리기를 부르면 resize 를 더 듣지 않고 걸린 틀�
   win.flush();
   assert.equal(placed, 0);
 });
+
+test('[RM-66 × RM-63] 조작 줄 다시 그리기는 띠를 놓은 뒤(onSettled)에 걸리고, main.js 가 resize 를 따로 듣지 않는다', async () => {
+  // 띠 놓기를 다음 틀로 미루자, main.js 가 따로 들은 resize 의 thumb.render 가 놓기 **앞에** 돌아 옛 폭으로
+  // 접힘을 골랐다 — 한 번 줄이면 `⏮ 처음으로` 가 접히지 않고 잘렸다(브라우저: 칸 68px 에 글자 77px).
+  const { readFile } = await import('node:fs/promises');
+  const main = await readFile(new URL('../../src/app/main.js', import.meta.url), 'utf8');
+  const panel = await readFile(new URL('../../src/ui/videoPanel.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(main, /addEventListener\(\s*'resize'[^)]*\)\s*=>\s*\{\s*views\.thumb\?\.render\(\)/,
+    'main.js 의 resize 듣개가 조작 줄을 그리면 띠보다 먼저 돈다');
+  assert.match(main, /onSettled:\s*\(\)\s*=>\s*\{\s*views\.thumb\?\.render\(\);?\s*\}/, '띠를 놓은 뒤에 다시 그린다');
+  assert.match(panel, /later:\s*\(\)\s*=>\s*\{\s*syncDetached\(\);\s*onSettled\(\);\s*\}/, '놓기 다음에 onSettled');
+});

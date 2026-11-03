@@ -171,6 +171,9 @@ export function formatRange(from, to, cols) {
  *   받아 적기를 열 때 안무표를 영상 길이만큼 늘리는 데 쓴다 — 재생기는 어댑터라 여기서 만지지 않는다
  * @property {() => void} [onTogglePlay] `P`. 재생과 일시정지를 번갈아 한다 — 재생기는 어댑터라
  *   여기서 만지지 않는다. 키 입력은 사용자 제스처라 needsUserGesture 재생기에서도 통한다
+ * @property {() => void} [onSettled] 창 크기가 바뀐 뒤 띠·띄운 창을 **다시 놓은 다음에** 불린다(RM-66).
+ *   놓인 자리를 재는 쪽(조작 줄의 접힘 — RM-63)은 resize 를 따로 듣지 말고 여기에 건다 — 놓기가 다음 틀로
+ *   미뤄졌으므로, 따로 들으면 옛 폭을 잰다.
  * @property {(shown: boolean) => void} [onSync] 렌더가 끝날 때마다 "패널이 실제로 화면에 있는가"로 불린다.
  *   호출부는 이것으로 재생기를 준비하거나 멈춘다 — **멱등이어야 한다**(매 렌더 불린다).
  *   ⚠ 값이 바뀔 때만 부르면 안 된다: 패널이 열린 채로 URL 만 바뀌는 경로(링크바 change)가
@@ -272,6 +275,7 @@ export function createVideoPanel(deps) {
     getExportError = () => '',
     onExportExcerpt = () => {},
     onSync = () => {},
+    onSettled = () => {},
     commands,
     elements = {}
   } = deps;
@@ -1831,7 +1835,9 @@ export function createVideoPanel(deps) {
   //   인라인 좌표가 폰 폭에 남아 있으면 오른쪽 위 작은 창이 엉뚱한 자리에 선다.
   // ⚠ 기준점은 resize 마다 곧바로 버리고, 놓기는 같은 resize 의 **다른 듣개(칸 크기 맞춤)가 다 돈 뒤**
   //   한 틀에 한 번으로 미룬다(RM-66) — main.js 의 듣개 등록 차례에 기대지 않는다.
-  settleOnResize(window, { now: () => { floatOriginCache = null; }, later: syncDetached });
+  // ⚠ 놓인 자리를 재는 쪽은 놓은 **뒤에** 부른다(onSettled) — 조작 줄의 접힘(RM-63)이 옛 폭으로 재면
+  //   `⏮ 처음으로` 가 접히지 않고 잘린다(이 미루기를 RM-63 과 합쳤을 때 브라우저에서 잼).
+  settleOnResize(window, { now: () => { floatOriginCache = null; }, later: () => { syncDetached(); onSettled(); } });
   watchFlowTrackSize();
 
   /**
