@@ -15,6 +15,7 @@
 //  ③ **삭제의 '마지막 하나' 가드는 confirmOnce 밖에 있다**(원본 3012). 마지막 카테고리는
 //     2단계 확인 없이 즉시 alert 로 막힌다 — 순서를 바꾸면 '정말요?' 를 한 번 보고 나서 막힌다.
 
+import { iconLabel, iconOnly } from './icon.js';
 import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
 import { categoryNames, categoryColor } from '../domain/categories.js';
 import { str } from '../domain/strings.js';
@@ -147,15 +148,14 @@ export function createCategoryView(deps) {
       const del = document.createElement('button');
       del.className = 'icon-btn';
       del.type = 'button';
-      del.textContent = str('icon.delete');
-      del.title = str('category.delete.title');                      // 글자는 문자열 표(RM-10)
+      iconOnly(del, 'x', str('category.delete.title'));             // 글자는 문자열 표(RM-10), 그림은 스프라이트(RM-18)
       del.addEventListener('click', () => {
         // ⚠ 가드가 confirmOnce **밖**이다(3012). 마지막 하나는 '정말요?' 없이 즉시 막힌다.
         if (categoryNames(store.categories).length <= 1) {
           render({ notify: { kind: 'toast', message: '카테고리는 최소 1개 이상 있어야 합니다.' } });
           return;
         }
-        confirmOnce(del, str('icon.delete'), () => {
+        confirmOnce(del, str('category.delete.title'), () => {
           render(commands.removeCategory(name));
           render(commit(MAIN));
         });

@@ -122,6 +122,7 @@ export function createClockPlayer(options = {}) {
   }
 
   /** 시계 얼굴. 영상 칸이 검은 채로 비어 있으면 고장으로 보이므로 「영상 없이」 와 지금 시각을 적는다. */
+  // @complexity time=O(1) space=O(1) cc=11
   function renderFace() {
     if (!container || !doc || typeof doc.createElement !== 'function') return;
     if (!face) {
@@ -129,7 +130,7 @@ export function createClockPlayer(options = {}) {
       face.className = 'video-clock';
       const title = doc.createElement('div');
       title.className = 'video-clock-title';
-      title.textContent = '♪ 영상 없이 박자로 재생';
+      title.textContent = '영상 없이 박자로 재생'; // 앞의 음표 아이콘은 스타일시트(.video-clock-title::before)가 그린다 — 어댑터는 ui 도우미를 쓸 수 없다(RM-18)
       const time = doc.createElement('div');
       time.className = 'video-clock-time';
       face.appendChild(title);

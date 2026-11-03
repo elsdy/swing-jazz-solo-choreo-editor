@@ -335,6 +335,7 @@ export function bindHotkeys(deps) {
   };
 
   /** 지금 글자를 치고 있는가. 홑글쇠 단축키는 여기서 막힌다. */
+  // @complexity time=O(n)? space=O(n)? cc=4
   const typing = (target) => {
     const el = target;
     if (!el || !el.tagName) return false;
@@ -362,7 +363,7 @@ export function bindHotkeys(deps) {
     // 단추 · 링크에 포커스가 있을 때의 Enter 는 그 요소의 것이다(누름) — 이름 입력으로 가로채지 않는다.
     if (cmd.id === 'nameBlock' && buttonOwnsEnter(e.target, pressed)) return;
     // ⚠ **결과와 무관하게 먼저 막는다.** `Space` 는 포커스가 버튼에 있으면 그 버튼을 다시
-    //   누르고(`▮ 끊기` 를 손으로 누른 직후가 그렇다) 페이지를 한 화면 내린다.
+    //   누르고(`끊기` 를 손으로 누른 직후가 그렇다) 페이지를 한 화면 내린다.
     //   명령이 아무 일도 안 했더라도 그 둘은 일어나면 안 된다.
     if (pressed === 'Space') e.preventDefault();
     if (runCommand(cmd.id, { board: activeBoardId(), source: 'key' })) e.preventDefault();

@@ -21,7 +21,7 @@ node tests/run.mjs                     # 격자 알고리즘 골든
 node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스·뷰 단위 시험, 검사기 자기 시험, server.py 실물
 node tools/check-arch.mjs              # 계층 방향과 순수성
 node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지, 시험 수가 개발 지침 밖에 끼지 않았는지
-node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 열(U-10 · U-11 · U-12 · D-5 · D-22 · R-6 · R-10 · D-14 · U-15 · U-16)
+node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 열둘(U-10 · U-11 · U-12 · D-5 · D-22 · R-6 · R-10 · R-12 · D-14 · U-15 · U-16 · U-19)
 ```
 
 몇 개씩인지는 [개발 지침](../CLAUDE.md#고치기-전에-돌리는-것) 한 자리에만 적는다 — 이 블록에 다시 적으면 `node tools/check-docs.mjs` 가 붉어진다(RM-64).
@@ -251,6 +251,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `stepTodos.js` | 작업 차례 단계마다의 할 일 목록(2026-09-21). 아무 일도 안 한 경로는 **들어온 객체를 그대로** 돌려준다 — 호출부가 참조 비교 한 번으로 "바뀐 것 없음"을 안다 |
 | `flowStats.js` | 「어떤 버튼 다음에 어떤 버튼」 세기(2026-09-21). 같은 id 연속은 세지 않는다. **이 표로 화면을 움직이지 않는다** — 판정은 2026-10-05 로 미뤘다([로드맵](ROADMAP.md)) |
 | `practice.js` | 마디 반복 연습기의 규칙(2026-10-01, RM-22). 마디 · 고른 블록 → 카운트 구간(`rowsToCountRange` · `placementsToCountRange`), 그것을 지금 박자로 초 구간에(`countRangeToSpan` — 박자가 없으면 null), 배속 목록(`PRACTICE_RATES` — 유튜브와 파일이 둘 다 받는 값만), 카운트 소리의 예약 계획(`planClicks` — 표본 하나로 다음 0.35초 안의 카운트를 정하고, 되감기 · 탐색 · 배속 바꿈이면 버리라고 하고, 반복 구간의 끝에서 자른다) |
+| `pendingQueue.js` | `?` 정리함의 줄(2026-11-03, RM-24). 이름 없는 그룹을 **첫 조각의 표 위 차례**(행 → 칸)로 세워 자리(`8x3·1`) · 길이 · 카운트 구간을 주고, 길이와 마디 안 시작 칸이 같은 것을 「아까 그것」 무리로 묶는다(`pendingRepeatGroups` · `repeatsOf`). 반복 구간의 앞뒤 한 카운트 여유(`paddedRange`)도 여기다 — 앞 여유는 0 아래로 내려가지 않는다 |
 | `flowTrack.js` | 작업 차례 줄의 스플라인·리본 기하(2026-09-21). 그리는 일은 `ui/videoPanel` 이 한다 |
 | `themes.js` | 테마 목록과 정규화(2026-09-21). 기본 테마는 속성을 아예 안 붙인다 |
 | `supportMatrix.js` | 지원 매트릭스(2026-11-02, RM-27). 기능 × 필요한 조건 × 알려진 OS · 브라우저 결과(`○` · `△` · `✕`)의 **주인 표**(`FEATURES` · `CONDITIONS` · `ENVIRONMENTS`)와, 탐지 결과를 표에 맞춰 「안 되는 것」 목록 · 까닭 · 토스트 문구 · 환경 지문 · 알릴지 판정을 내는 순수 함수. 설정의 `이 환경` 절과 `docs/SUPPORT.md` 가 이 표를 읽고, 문서 표는 시험이 칸마다 대조한다 |
@@ -261,6 +262,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `project/normalize.js` | 불러온 데이터의 정규화·클리핑 |
 | `project/merge.js` | `부분 불러오기` 의 전 알고리즘 |
 | `project/migrations.js` | 저장 포맷 마이그레이션 |
+| `project/versions.js` | 판본과 연습 기록의 값 규칙(2026-11-03, RM-29). 판본은 안무 본문을 **값으로 복제**한 전체 스냅샷(`versionDocOf` — 영상 · 링크는 빼고, `schema.VERSION_SKIP_FIELDS`)이고, 목록의 요약(`마디 · 블록` 수)은 저장하지 않고 본문에서 다시 만든다(`versionSummaries`). 연습 기록은 구간(`CountRef` 쌍) · 속도 · 깨끗/시도 · 별점을 접어 고르고 날짜 차례로 둔다. 「지금 안무표가 판본에 남았나」를 재는 서명(`stableJson`)도 여기 있다. 시계를 모른다 — 날짜는 인자로 온다 |
 | `project/snapshot.js` | undo 스냅샷과 문서 복제. `snapshotMain` `snapshotRoutine` `applySnapshot` `toLinkBundle`. 링크만 값 복제다 — 스냅샷이 store 와 `customLinks` 배열을 공유하면 안 된다 |
 
 ### `src/ports/` — 계약
@@ -303,6 +305,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `categoryCommands.js` | 카테고리 추가·색 미리보기/확정·이름 변경·삭제 |
 | `routineCommands.js` | 루틴 CRUD 와 편집기 세션(`openEditor` `syncFromEditor` `setRoutineSize`) |
 | `projectCommands.js` | 저장·불러오기·`부분 불러오기`·최근 목록 |
+| `versionCommands.js` | 판본 뜨기 · 열기 · 이름과 메모 · 삭제, 연습 기록 초안 · 적기 · 삭제(RM-29). 판본 열기는 `projectCommands.openDocBody` 로 전체 불러오기와 같은 길을 타고, 선택을 비우고, 주입받은 `resetHistory` 로 되돌리기의 바닥을 그 판으로 둔다. 「남았나」는 두 쪽을 **같은 정규화에 통과시킨 뒤** 견준다(`keptSignature` — 개발 원칙 D-17). 판본 · 기록은 되돌리기 스냅샷 밖이다 |
 | `sheetCommands.js` | 내보내기 셋 — 텍스트 시트 복사 · 읽기 전용 HTML 내려받기 · 인쇄(RM-21). 상태를 바꾸지 않고 알림만 돌려준다. 클립보드 · 내려받기 · 인쇄 창은 주입받은 `FileGateway` 가 한다 |
 | `docFields.js` | 필드 등록표의 store 쪽 한 줄씩 — 그 필드가 store 의 어디에 사는지(`library` · 보드 칸)와 바뀌면 무엇을 다시 그리나. `docView` · `writeDoc` · `docDirty` 를 되돌리기와 저장·열기가 같이 쓴다(2026-09-28) |
 | `linkCommands.js` | 링크바 상태 전이와 제목 조회 상태머신 |
@@ -312,6 +315,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `phrasingCommands.js` | 곡 구조 바꾸기(프리셋·토글·직접 입력). Dirty 는 `{phrasing:true}` 하나 — 배치가 안 바뀌므로 행을 다시 그리지 않는다 |
 | `captureCommands.js` | 받아 적기(영상 → 안무표). 경계를 **두 카운트 격자**에 붙이고(`domain/tempo`), 자리가 모자라면 마디를 늘리고, 격자에서 벗어난 거리를 표본으로 모은다. 붙일 이름은 `session.video.voiceHeard` 를 읽어 온다 — `voiceNameCommands` 와 서로 import 하지 않고 **그 키 하나가 둘 사이의 계약**이다 |
 | `voiceNameCommands.js` | 마이크로 말한 이름을 **그때 열려 있던 구간**에 붙인다(2026-09-22). 확신이 서면 그 자리에서 정식 표기로(공짜), 아니면 들은 대로 붙여 놓고 LLM 줄에 세운다. LLM 이 고쳐 끼울 때 **사람이 이미 손댄 블록은 건드리지 않는다** |
+| `pendingTrayCommands.js` | `?` 정리함(2026-11-03, RM-24). 열 때 지금의 마디 반복을 `session.video.tray` 에 기억하고, 줄을 고르면 선택을 그 블록 하나로 옮기며 박자가 있으면 그 대목을 `videoCommands.setPracticeRange` 로 되풀이한다(In/Out 은 건드리지 않는다). 이름 붙이기는 무리 전체에 — 목록에 있으면 `captureCommands.nameGroupTo`, 없으면 `paletteCommands.createAndSetGroupMove` 로 갈래와 함께 목록에 넣는다. 히스토리 커밋은 호출부가 한 번. 닫으면 기억한 반복으로 되돌린다. 들은 말을 고른 `?` 에 붙이는 것은 `voiceNameCommands.hearForTray` 다 — 받아 적는 중이면 물러선다 |
 | `stepTodoCommands.js` | 작업 차례 단계별 할 일. `domain/stepTodos` 의 참조 비교로 "바뀐 것 없음"을 가린다 |
 | `historyCommands.js` | undo/redo 스택 1벌 × 보드 2개. 메인 스냅샷은 등록표의 10필드, 루틴은 3필드. 뽑기 · 되돌리기 · 다시 그리기는 `docFields` 를 돈다. **유스케이스 중 유일하게 어댑터를 주입받는다** — `createHistory(store, { storage })` 의 `saveLinks` 로 복원한 링크를 localStorage 에 되쓴다 |
 
@@ -337,9 +341,12 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `routineActionPopup.js` | 메인 보드 루틴 블록의 편집/삭제 팝업 |
 | `overlays.js` | 보드 위 비영속 DOM 전부(프리뷰·고스트·툴팁) |
 | `practiceBar.js` | 영상 패널의 연습 조작 줄(2026-10-01, RM-22) — `▶ 재생` · 배속 · `🔁 반복` · `⇋ 미러` · `🔔 카운트 소리` · 마디 반복. 재생기 · 소리 장치는 `app/main` 이 감싸 넘긴 함수로만 닿는다. 미러는 `#videoFrame` 의 `data-mirror` 속성 하나다 |
+| `pendingTray.js` | `?` 정리함의 목록 화면(2026-11-03, RM-24) — 영상 패널 ③ 안. 줄을 고르면 그 줄 위에 `inlinePrompt.askName` 을 연다. 명령은 `app/main` 이 묶어 넘긴다. 줄은 **서명이 바뀔 때만** 다시 만든다 — askName 은 가리키던 단추가 떨어지면 닫히므로, 줄과 무관한 렌더(LLM 이 늦게 고쳐 끼우기)가 적던 이름을 날리면 안 된다 |
 | `videoPanel.js` | 영상 패널 뷰(채널 A). store 를 **읽기만** 하고 커맨드는 주입받는다. 재생기 오류 코드 5종을 한국어 문구로 바꾸는 것이 이 파일의 몫이다 — 어댑터는 문구를 만들지 않는다 |
+| `versionListView.js` | 사이드바 프로젝트 칸의 `판본` 목록(RM-29). 요약만 받아 그리고, `이 판 열기` 는 지금 것이 남지 않았으면 `confirmOnce` 로 묻는다. 날짜는 주입받은 `formatDate` 가 지역 날로 바꾼다 — 시계를 아는 것은 app 이다(개발 원칙 D-22) |
+| `practiceLogView.js` | 프로젝트 칸의 `연습 기록` 목록과 적는 칸(RM-29). 초안은 이 뷰가 들고 있다가 `기록 적기` 에서만 커맨드를 부른다. 구간 글자는 `domain/project/versions.parseScope` 로 읽고, 못 읽으면 칸 아래에 한 줄을 띄운다 |
 | `composeView.js` | 상단 `✨ 말로 채우기` 팝업. 음성 인식(webkitSpeechRecognition) → 다듬기 → 스키마 → 미리보기 → 채우기의 세 단. LLM 은 주입받은 어댑터로, 배치는 주입받은 유스케이스로 |
-| `settingsView.js` | 상단 `⚙ 설정` 과 설정 팝업. 절을 갈래(`data-cat`)로 묶어 옆단에서 고르고, 제목 옆 검색칸이 절의 글자와 `data-keywords` 를 함께 훑는다. **절의 `hidden` 을 정하는 자리는 `applyFilter` 하나다** — 쓸 수 있는가(`data-available`)와 갈래·검색에 걸리는가가 곱해진다 |
+| `settingsView.js` | 상단 `설정` 과 설정 팝업. 절을 갈래(`data-cat`)로 묶어 옆단에서 고르고, 제목 옆 검색칸이 절의 글자와 `data-keywords` 를 함께 훑는다. **절의 `hidden` 을 정하는 자리는 `applyFilter` 하나다** — 쓸 수 있는가(`data-available`)와 갈래·검색에 걸리는가가 곱해진다 |
 | `phrasingView.js` | 도구 모음의 `🎵 프레이즈` 버튼과 팝업. 숫자를 받는 창이고, 칠하는 것은 `boardView.syncPhrasing` 이다 |
 | `meshView.js` | 몸 메시를 캔버스에 그린다(2026-09-12). 가림은 화가 알고리즘 한 줄로 푼다 — 면을 먼 것부터 칠하면 가까운 면이 덮는다. 이 한 줄이 three.js 를 안 들이는 이유다. 영상 위에 겹칠 때는 `xScale` 로 가로 눌림을 다시 적용한다 |
 | `poseOverlay.js` | 영상 위에 관절·몸을 겹쳐 그린다(2026-09-12, 채널 B). `playhead.js` 와 같은 규약이다 — rAF 루프가 자기 캔버스에만 그리고 store 는 게터로만 읽는다. **프레임이 아니라 영상이 그려진 칸**에 맞춘다(레터박스), 측정은 `invalidate()` 뒤 한 번뿐이다 |
@@ -351,6 +358,7 @@ countToTime(count, tempo) = tempo.anchorSec + (count - tempo.anchorCount) * seco
 | `commandButtons.js` | `data-command` 버튼의 툴팁을 등록부에서 단다 — 지금 글쇠가 괄호로 붙는다. 엄지 바처럼 JS 로 버튼을 그리는 뷰는 `commandFace` 로 글자 · 툴팁을 받는다(RM-09) |
 | `commandPalette.js` | `Ctrl+K` 명령 찾기와 `?` 단축키 일람(RM-09). 등록부를 읽기만 하고 실행은 주입받는다. 열 때 요소를 만들고 닫을 때 없앤다 |
 | `widgets.js` | `escapeHtml` `confirmOnce` `makeInlineStarBtn` |
+| `icon.js` | 아이콘 한 벌(`index.html` 의 SVG 스프라이트)을 단추에 붙인다 — `iconLabel`(아이콘 + 글자 칸, 몇 번 불러도 같다) · `setLabel`(글자 칸만) · `iconOnly`(이름 없으면 던진다) · `installIconMasks`(스타일시트 `::before` 용 `--icon-이름` 마스크). 쓰는 법은 [아이콘 한 벌](ICONS.md)(RM-18) |
 | `docsRegistry.js` | 앱에서 읽을 문서 목록의 유일한 주인 |
 | `docsHub.js` | 앱 안에서 문서를 읽는 화면과 마크다운 렌더러 |
 
@@ -408,7 +416,7 @@ DEV 쪽에도 두 겹이 더 있다. `createRenderer(store, views, { dev: true }
 | 격자 규칙(카운트 분할·클램프)을 바꾼다 | `src/domain/grid.js` | 골든 재생성. `grid-*` 20개가 먼저 깨진다 |
 | 겹침·쌓기 규칙을 바꾼다 | `src/domain/lanes.js` | `repack-*` `clear-*` 갱신. 네 조작(놓기·이동·복사·리사이즈)이 같은 규칙을 쓰므로 `boardOps` 의 네 정책 상수를 나란히 고친다 |
 | 놓기·이동·복사·리사이즈 동작을 바꾼다 | `src/domain/boardOps.js` 의 `*_POLICY` 상수 | 해당 골든 갱신. 반환값의 `renderRows` 와 `changedRows` 를 혼동하지 말 것 |
-| 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
+| 버튼 하나를 추가한다 | `index.html` 마크업 + `src/ui/*View.js` + `src/input/controls.js` | 셀렉터는 `src/ui/domContract.js` 에. 그림은 [아이콘 한 벌](ICONS.md)에서(라벨 앞에 이모지를 붙이지 않는다 — U-19). 라벨을 바꿨으면 [기능 설명서](FEATURES.md)와 [튜토리얼](TUTORIAL.md) |
 | 명령(글쇠 · 버튼 · 명령 찾기로 부르는 일)을 더한다 | `src/domain/commands.js` 한 줄 + `src/app/main.js` 의 `COMMAND_RUNNERS` 한 줄 + 버튼이면 마크업에 `data-command="<id>"` | 마크업 글자는 등록부의 `button` 과 같게, `title` 은 적지 않는다(시험이 본다). 셋이 어긋나면 원칙 검사 D-14 가 붉어진다 |
 | 명령이 아닌 화면 글자(팝업 줄 · 툴팁 · 플레이스홀더 · 안내 문장)를 바꾸거나 더한다 | `src/domain/strings.js` 의 `LABELS` 한 줄 + 부르는 자리의 `str` · `fill` | 마크업에 글자가 남은 정적 단추는 `data-label` · `data-title` 키를 달고 글자를 표와 같게 둔다(시험이 본다). 낱말은 [용어집](GLOSSARY.md)을 따르고, 바꿨으면 [기능 설명서](FEATURES.md) · [튜토리얼](TUTORIAL.md)을 같은 커밋에서 |
 | 화면이 안 다시 그려진다 | 그 조작의 커맨드가 돌려주는 `Dirty` | `dev: true` 로 `assertDirtyCovers` 를 켜 본다 |

@@ -1,4 +1,4 @@
-// src/ui/phrasingView.js — 안무표 도구 모음의 `🎵 프레이즈` 버튼과 그 팝업 (ui 계층)
+// src/ui/phrasingView.js — 안무표 도구 모음의 `프레이즈` 버튼과 그 팝업 (ui 계층)
 //
 // 신설 파일이다(2026-09-13). 곡 구조(프레이즈 길이 · 코러스당 프레이즈 수 · 시작 마디)를 정하는 자리다.
 // 칠하는 것은 ui/boardView.syncPhrasing 이고, 여기는 **숫자를 받는 창**이다.
@@ -10,6 +10,7 @@
 
 import { CLS } from './domContract.js';
 import { positionPopup } from './popup.js';
+import { iconLabel } from './icon.js';
 
 const STYLE_ID = 'phrasing-view-style';
 const CSS = `
@@ -40,7 +41,7 @@ const CSS = `
 
 /**
  * @typedef {object} PhrasingViewDeps
- * @property {HTMLElement} container `🎵 프레이즈` 버튼을 붙일 곳(안무표 도구 모음의 `.top-actions`)
+ * @property {HTMLElement} container `프레이즈` 버튼을 붙일 곳(안무표 도구 모음의 `.top-actions`)
  * @property {() => import('../domain/phrasing.js').Phrasing} getPhrasing 지금 구조(언제나 네 필드가 찬 값)
  * @property {() => number} getRows 메인 보드의 마지막 마디 번호(board.rows)
  * @property {() => string} getPresetId 지금 숫자와 같은 프리셋의 id. 없으면 `''`
@@ -61,6 +62,7 @@ const CSS = `
  * @param {PhrasingViewDeps} deps
  * @returns {{ render(): void, open(): void, close(): void }}
  */
+// @complexity time=O(n)? space=O(n)? cc=5
 export function createPhrasingView(deps) {
   const {
     container, getPhrasing, getRows, getPresetId, summarize, presets, palettes,
@@ -78,7 +80,7 @@ export function createPhrasingView(deps) {
   openBtn.id = 'phrasingBtn';
   openBtn.className = CLS.ghost;
   openBtn.type = 'button';
-  openBtn.textContent = '🎵 프레이즈';
+  iconLabel(openBtn, 'music', '프레이즈', doc);
   openBtn.title = '프레이즈와 코러스를 색으로 구분해 보여 줍니다';
   if (container) container.appendChild(openBtn);
 
