@@ -274,7 +274,8 @@ function printRevivesHidden(html) {
   for (const r of rules.slice(hiddenIdx + 1)) {
     if (!/display:\s*block/.test(r.body)) continue;
     for (const cls of classesOf(r.sel)) {
-      const owners = [...html.matchAll(new RegExp(`class="([^"]*\\b${cls}\\b[^"]*)"`, 'g'))].map(m => m[1].split(/\s+/));
+      // 클래스 낱말이 꼭 그것인 요소만 — 정규식의 \b 는 `-` 를 경계로 봐서 `board` 가 `board-empty` 에도 걸렸다(RM-46)
+      const owners = [...html.matchAll(new RegExp(`class="([^"]*\\b${cls}\\b[^"]*)"`, 'g'))].map(m => m[1].split(/\s+/)).filter(list => list.includes(cls));
       if (owners.some(list => list.some(c => hidden.has(c)))) revived.push(cls);
     }
   }
@@ -500,4 +501,62 @@ test('print: 보드가 칸 수를 --cols 로 내놓는다 [RM-45 요구 3]', asy
     const sum = printGridPx(html, headerTemplate, cols, SCREENS[2]);
     assert.ok(Math.abs(sum - 190 * PX_PER_MM) < 0.01, `${cols}칸: 격자 합 ${sum.toFixed(2)}px 가 종이 폭과 같다`);
   }
+});
+
+// ── RM-46: Safari 인쇄에서 행 중간에 쪽이 넘어갔다 ──────────────────────────────────────────────
+// .board 가 격자(display:grid)면 WebKit 은 격자 항목(.board-row)의 break-inside: avoid 를 따르지 않는다 — 40마디 표를
+// WebKit 인쇄 작업(WKWebView · NSPrintOperation)으로 찍으면 넓은 판 · 폰 폭 모두 쪽마다 끝 행이 둘로 갈렸다(Chrome 은 지켰다).
+// 쪽 나눔 자체는 인쇄 엔진이 정해 node 로 잴 수 없으므로, 아래 시험은 고친 규칙(블록 흐름 · 행 사이 margin)이 인쇄 블록에 있는지 본다.
+
+/** 블록 흐름에서 위아래로 맞닿은 두 margin 은 겹친다 — 큰 쪽 하나만 남는다(둘 다 0 이상일 때). */
+// @complexity time=O(1) space=O(1) cc=1
+const collapsed = (bottom, top) => Math.max(bottom, top);
+
+/** 화면 규칙 `.board { … }`(인쇄 블록 밖, 들여쓰기 4칸)의 선언. */
+// @complexity time=O(n) space=O(n) cc=1
+const screenBoardDecls = (html) => declsOf((html.match(/\n {4}\.board \{([^}]*)\}/) || [])[1] || '');
+
+test('print: [RM-46 요구 0] 인쇄에서 .board 는 블록으로 흐르고 행은 쪽 중간에서 끊기지 않는다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const boardRule = printRules(html).find(r => r.sel === '.board');
+  assert.ok(boardRule, '인쇄 블록에 .board 규칙이 있다');
+  assert.match(boardRule.body, /display:\s*block\s*!important/, '.board 가 인쇄에서 블록으로 흐른다(화면의 display:grid 를 이긴다)');
+  const rows = printDecls(html, '.board-header, .board-row');
+  assert.equal(rows['break-inside'], 'avoid', '머리 줄 · 행은 쪽 중간에서 끊기지 않는다');
+  assert.equal(rows['page-break-inside'], 'avoid', '옛 이름도 함께 둔다');
+  // 고치기 전 꼴(display:block 이 없어 격자로 남는다)을 넣으면 붉어진다 — 검사가 실제로 그 결함을 잡는지
+  const before = html.replace(/(\n {6}\.board \{ )display: block !important; /, '$1');
+  assert.notEqual(before, html);
+  assert.doesNotMatch(printRules(before).find(r => r.sel === '.board').body, /display:\s*block/);
+});
+
+test('print: [RM-46 요구 1] 블록으로 흐른 행 사이 간격을 margin 으로 둔다', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  // @complexity time=O(n) space=O(n) cc=1
+  const spacing = (src) => {
+    const env = { ...screenBoardDecls(src), ...printDecls(src, '.board-wrap') };
+    const px = (v) => (v == null ? 0 : cssPx(v, env));
+    const rows = printDecls(src, '.board-header, .board-row');
+    const start = printDecls(src, '.board-row[data-chorus-start], .board-row[data-part-start]');
+    const gridGap = px(rows.gap);
+    return {
+      gridGap,
+      plain: px(rows['margin-bottom']),
+      // 격자였을 때: 틈 + 화면의 숨(margin-top: var(--sectionGap)) / 블록일 때: 앞 행의 margin-bottom 과 이 행의 margin-top 이 겹친다
+      gridStart: gridGap + px(env['--sectionGap']),
+      blockStart: collapsed(px(rows['margin-bottom']), px(start['margin-top'] ?? env['--sectionGap'])),
+    };
+  };
+  const now = spacing(html);
+  assert.equal(now.gridGap, 4, '행 사이 틈은 --printGap(4px)이다');
+  assert.equal(now.plain, now.gridGap, '보통 행 사이: margin-bottom 이 격자 때의 틈과 같다');
+  assert.equal(now.blockStart, now.gridStart, `코러스 · 파트가 바뀌는 행 위: 겹친 margin(${now.blockStart}px)이 격자 때의 틈 + 숨(${now.gridStart}px)과 같다`);
+  assert.doesNotMatch(printRules(html).find(r => r.sel === '.board').body, /\bgap:/, '블록이 된 .board 에는 쓰이지 않는 gap 을 두지 않는다');
+  // 고치기 전 꼴 둘 — margin-bottom 이 없으면 행이 붙고, 숨을 보태지 않으면 겹쳐서 4px 가 사라진다
+  const noMargin = html.replace(/ margin-bottom: var\(--printGap\) !important;/, '');
+  assert.notEqual(noMargin, html);
+  assert.equal(spacing(noMargin).plain, 0);
+  const noStart = html.replace(/\n {6}\.board-row\[data-chorus-start\], \.board-row\[data-part-start\] \{[^}]*\}/, '');
+  assert.notEqual(noStart, html);
+  assert.notEqual(spacing(noStart).blockStart, spacing(noStart).gridStart);
 });
