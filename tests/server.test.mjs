@@ -1022,3 +1022,40 @@ test('server.py: /admin 은 로컬호스트에서만 열리고, 밖에서는 까
     assert.equal(usage.root, s.root);
   } finally { await s.stop(); }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 연결 대기열(2026-11-03, RM-52)
+//
+// 캐시 없이 처음 열면 브라우저가 ES 모듈 수십 개를 한꺼번에 청한다. 서버가 파이썬 기본 대기열(5)로
+// listen 하면 그 몰림의 절반쯤이 커널에서 끊겨(ECONNRESET) 앱이 판 없이 반쯤 뜬다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('server.py: 연결 대기열은 기본 5 가 아니라 128 이다 [RM-52 요구 0]', { skip: !hasPython && 'python3 없음' }, () => {
+  // main 이 서버를 세우는 길(bind_server)이 쓰는 갈래의 값을 잰다 — 생성 뒤에 덮어쓰면 listen() 에 닿지 않는다.
+  const size = Number(askPython('server.AppServer.request_queue_size'));
+  assert.ok(size >= 128, `대기열이 ${size} 다 — 모듈 몰림에 연결이 끊긴다`);
+});
+
+test('server.py: 모듈 100개를 한꺼번에 받아도 연결이 끊기지 않는다 [RM-52 요구 1]', { skip: !hasPython && 'python3 없음' }, async () => {
+  // src/ 의 .js 를 100개 고른다(캐시 없는 첫 열기의 몰림). 동시 수는 macOS 커널 상한(somaxconn 128)을 넘기지 않는다.
+  const mods = readdirSync(path.join(REPO, 'src'), { recursive: true })
+    .filter((f) => f.endsWith('.js')).map((f) => '/src/' + f.split(path.sep).join('/'));
+  const paths = Array.from({ length: 100 }, (_, i) => mods[i % mods.length]);
+  const s = await startServer();
+  try {
+    const u = new URL(s.base);
+    // ⚠ agent: false — 요청마다 새 연결을 연다. 연결 풀이 몰림을 줄여 주면 고치기 전에도 붉지 않는다.
+    const one = (p) => new Promise((resolve) => {
+      const req = http.request({ host: u.hostname, port: u.port, path: p, method: 'GET', agent: false }, (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode));
+        res.on('error', (e) => resolve(e.code || String(e)));
+      });
+      req.on('error', (e) => resolve(e.code || String(e)));
+      req.end();
+    });
+    const results = await Promise.all(paths.map(one));
+    const bad = results.filter((r) => r !== 200);
+    assert.equal(bad.length, 0, `100개 중 ${bad.length}개가 200 이 아니다: ${[...new Set(bad)].join(', ')}`);
+  } finally { await s.stop(); }
+});
