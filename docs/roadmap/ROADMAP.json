@@ -2984,8 +2984,8 @@
             "Q116"
           ],
           "defaults": [],
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 90,
           "what": "손가락 전이 표(transitionsFor 의 touch 갈래)에 RM-14 의 네모 고르기를 더한다. 빈 칸을 길게 눌러 시작하고, 고른 블록을 길게 눌러 끌면 묶음 전체가 RM-13 planNudge 규칙(하나라도 못 가면 다 멈춤)으로 함께 옮겨진다. 그러면 폰에서도 여러 블록을 한 번에 고르고 옮길 수 있다. 몸통 끌기의 잡은 칸 문제(RM-57)와 같은 함수(bundleDelta · 길게 누르기 갈래)를 만지니 병합 때 겹침을 본다.",
           "kind": "feature",
           "seat": "code",
@@ -3006,7 +3006,34 @@
           "slug": "touch-marquee-select-and-bundle-drag",
           "plan": "docs/roadmap/plans/RM-48.md",
           "branch": "rm-48-touch-marquee-select-and-bundle-drag",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "wrapup": [
+            {
+              "text": "폰(iOS · 안드로이드)에서 손으로 확인: 빈 칸 0.4초 길게 눌러 끌면 네모가 그려지며 화면이 안 넘어가는지, 짚자마자 굴리면 화면이 넘어가는지, 길게 누를 때 iOS 돋보기 · 글자 고르기가 안 뜨는지 — 합성 터치로는 잴 수 없었다",
+              "state": "approved",
+              "human": true,
+              "verify": {
+                "by": "verifier",
+                "result": "unable",
+                "evidence": [
+                  "이 확인 줄은 실제 iOS·안드로이드 폰의 손가락 입력(0.4초 길게 누르기 시계, 짚자마자 굴리기의 화면 넘김, iOS 돋보기·글자 고르기)을 눈으로 보는 일이다.",
+                  "이 자리는 headless 브라우저뿐이라 합성 터치로는 길게 누르기와 pointercancel, 브라우저 스크롤이 얽히는 일을 잴 수 없다. 줄에도 그렇게 적혀 있다."
+                ],
+                "why": "실제 폰이 없고 합성 터치로는 잴 수 없어서, 이 자리에서는 해 볼 수 없고 사람이 폰으로 직접 봐야 한다.",
+                "at": "2026-11-03T21:46:52+09:00"
+              },
+              "basis": {
+                "by": "frugal",
+                "why": "확인자가 근거를 만들지 못했다 — 실제 폰이 없고 합성 터치로는 잴 수 없어서, 이 자리에서는 해 볼 수 없고 사람이 폰으로 직접 봐야 한다.",
+                "lens": [
+                  "범위",
+                  "비용"
+                ],
+                "at": "2026-11-03T21:47:11+09:00"
+              }
+            }
+          ],
+          "mergedAt": "2026-11-03"
         }
       ]
     },
@@ -4372,8 +4399,8 @@
           ],
           "defaults": [],
           "what": "분석이 끝나면 원본 관절점을 클립 곁 짝 파일로 서버에 남긴다. 다시 열면 분석하지 않고 되살리며, 두 테이크의 가동 범위 요약을 관절마다 전 → 후 · 차이로 견준다. 이 항목은 영상을 바꾸면 결과가 사라져 이미 만든 비교 계산(rom.compare)을 부를 자리가 없는 문제를 푼다. RM-29(연습 기록 줄의 잰 값 한 칸)와 RM-22(카운트 구간 문법)와 겹치되, 짝 파일 · 요약 표 · 클립끼리 비교는 둘 없이 먼저 선다.",
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 91,
           "files": [
             "server.py",
             "src/domain/clips.js",
@@ -4400,7 +4427,14 @@
           ],
           "plan": "docs/roadmap/plans/RM-30.md",
           "branch": "rm-30-rom-compare-rm",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "wrapup": [
+            {
+              "text": "server.py 를 다시 띄운다 — /api/pose/* 가 새로 생겨, 이미 켜 둔 서버(루프백 8000 · Tailscale 100.86.195.60:8000 둘 다)는 다시 켜야 자세 분석 짝 파일을 남기고 되살린다",
+              "state": "approved"
+            }
+          ],
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-31",
@@ -4728,8 +4762,8 @@
             "Q107"
           ],
           "defaults": [],
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 87,
           "what": "인쇄할 때 칸 너비가 화면에서 잰 --cellW(px)를 그대로 따라가서, 좁은 화면에서는 격자가 A4의 45~60%만 쓰고 2560 화면에서는 7·8카운트가 종이 밖으로 잘린다. 인쇄에서는 칸 너비를 화면 폭과 상관없이 종이 너비(@page A4 여백을 뺀 폭)에서 행 라벨 · 비고 · 틈을 빼고 칸 수로 나눈 값으로 다시 정해, RM-21 요구 1(A4 너비에 맞춘다)을 되살린다. RM-46(Safari 행 잘림)·RM-47(비고 열 불일치)과 같은 @media print 블록을 고치지만, 서로의 코드를 부르지는 않는다.",
           "kind": "bug",
           "seat": "code",
@@ -4765,9 +4799,10 @@
           "wrapup": [
             {
               "text": "넓은 화면 · Safari 에서 예제를 열고 인쇄 · PDF 미리보기로 격자가 A4 너비를 채우고 7·8카운트가 잘리지 않는지 본다(정적 파일만 바뀜 — 새로고침이면 된다)",
-              "state": "approved"
+              "state": "done"
             }
-          ]
+          ],
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-46",
@@ -4777,8 +4812,8 @@
           "soft": [],
           "questions": [],
           "defaults": [],
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 89,
           "what": "인쇄할 때 .board 를 격자(display:grid)가 아닌 블록으로 흘려서, WebKit 도 행(.board-row) 중간에서 쪽을 넘기지 않게 한다. RM-21 요구 1의 「행 중간에서 쪽이 넘어가지 않는다」가 Chrome 에서만 지켜지고 Safari 에서는 깨지기 때문이며, 같은 @media print 블록을 고치는 RM-44 · RM-45 · RM-47 과 손댈 자리가 겹친다(함수 호출 관계는 없다).",
           "kind": "bug",
           "seat": "code",
@@ -4810,7 +4845,15 @@
           ],
           "plan": "docs/roadmap/plans/RM-46.md",
           "branch": "rm-46-safari-print-row-break-block-flow",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "wrapup": [
+            {
+              "text": "Safari 앱의 인쇄 미리보기(파일 메뉴 → 인쇄 · PDF)로 40마디쯤 되는 긴 표를 넘겨 쪽 끝에 반쪽 행이 없는지 본다 — 병합 전 재기는 WebKit 인쇄 작업(WKWebView)이었고 Safari 미리보기 창 자체는 아니었다",
+              "state": "approved",
+              "human": true
+            }
+          ],
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-47",
@@ -4822,7 +4865,7 @@
             "Q113"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "Chrome 은 인쇄 쪽 너비(약 717px)를 좁은 화면으로 읽는다. 그래서 index.html 의 좁은 화면 규칙(body[data-notes=off] 의 비고 숨김)에 걸려 인쇄에서 비고 열이 빠지고, Safari 는 같은 안무표에서 비고 열을 찍는다. 비고 숨김 규칙을 화면 전용(@media screen)으로 묶어 인쇄에서는 두 브라우저 모두 비고 열을 늘 찍게 맞춘다. RM-21 계획서 요구 ①(「격자 · 동작 이름, 비고만 남은 채」)과 기능 설명서 512줄(「격자와 비고만 흰 종이에」)이 이미 비고를 넣는다고 적고 있어서다. 같은 @media print 근처를 고치는 RM-44 · RM-45 · RM-46 과는 줄이 겹치기만 하고 서로 부르는 것은 없다. 비고 폭(--noteW)을 렌더마다 재는",
           "kind": "bug",
@@ -4854,7 +4897,9 @@
               "days": 14
             }
           ],
-          "plan": "docs/roadmap/plans/RM-47.md"
+          "plan": "docs/roadmap/plans/RM-47.md",
+          "branch": "rm-47-print-note-column-consistent",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-49",
@@ -5640,8 +5685,8 @@
             "Q132"
           ],
           "defaults": [],
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 88,
           "what": "RM-28 마무리(2026-11-03)에 LGPL ffmpeg 7.1.1 을 지어 실은 .dmg 를 이 맥과 mac-mini(macOS 27.2)에서 쟀고, 윈도우 setup.exe 의 깔기 · 켜기 · 저장 · 다시 깔기도 API 로 쟀다. 그런데 packaging/README.md 의 「아직 재지 못한 것」과 ffmpeg 대본 설명, ROADMAP.md 의 RM-28 줄은 아직 그 전 모습이라 잰 것과 남은 것(윈도우 자르기 h264_mf · 두 OS 의 첫 실행 경고 화면)으로 다시 쓴다. 판의 RM-67(튜토리얼 맥 첫 실행 안내)과 같은 사실(맥 첫 실행은 「그래도 열기」)을 다루므로 README 의 서명 절은 RM-67 과 말을 맞춘다.",
           "kind": "bug",
           "seat": "code",
@@ -5660,7 +5705,8 @@
           ],
           "plan": "docs/roadmap/plans/RM-68.md",
           "branch": "rm-68-packaging-readme-unmeasured-list-stale",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-69",
@@ -5708,6 +5754,54 @@
             "why": "앱의 인쇄 CSS(index.html @media print) 숨김 목록 누락 — 실제 Chrome printToPDF 결과에 보인다"
           },
           "slug": "print-hides-resize-divider"
+        },
+        {
+          "id": "RM-71",
+          "name": "문서 라벨 대조: 단위 시험은 strings 표를 안 보고 CLI 는 본다",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "stage": null,
+          "pr": null,
+          "what": "tests/unit/checkDocs.test.mjs 의 「지금 두 문서의 라벨 인용이 모두 화면에 있다」는 checkDocLabels 를 strings.js LABELS 표 없이 불러, 라벨을 src/domain/strings.js 로 옮기면(예: '{n}개 함께') node tools/check-docs.mjs 는 초록인데 단위 시험만 「화면 어디에도 없다」로 붉다. RM-48 에서 '2개 함께' 를 strings 표로 옮기다 겪었고, 라벨을 코드 한 자리 템플릿으로 두어 피했다. 두 길이 같은 표를 보게 맞춰야 한다(CLAUDE.md 는 새 글자를 표에 두라고 한다).",
+          "kind": "bug",
+          "seat": "rules",
+          "addedAt": "2026-11-03T12:23:46Z",
+          "found": {
+            "by": "claude",
+            "kind": "bug",
+            "in": "RM-48",
+            "at": "2026-11-03T12:23:46Z",
+            "side": "feature",
+            "why": "이 저장소의 문서 검사 시험 코드 탓 — RM-48 에서 같은 트리로 CLI 초록 · 단위 시험 붉음을 재었다"
+          },
+          "slug": "check-docs-unit-test-ignores-strings-table"
+        },
+        {
+          "id": "RM-72",
+          "name": "/clips/ 가 숨은 파일(.pose 짝 파일 · .history)도 내준다",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "stage": null,
+          "pr": null,
+          "what": "server.py 의 /clips/<path> 정적 내주기가 점으로 시작하는 경로 조각을 거르지 않아 GET /clips/video-clip/<프로젝트>/.pose/<파일>.json 이 200 이다(RM-30 브라우저 시험 중 curl 로 잼). 짝 파일은 /api/pose/* 로만 읽도록 정했고 RM-30 에서 /api/pose 쪽은 숨은 조각을 거절하게 고쳤지만, /clips/ 경로는 이 항목 밖이라 손대지 않았다. 숨은 조각을 404 로 거르면 된다.",
+          "kind": "bug",
+          "seat": "code",
+          "addedAt": "2026-11-03T12:39:51Z",
+          "found": {
+            "by": "claude",
+            "kind": "bug",
+            "in": "RM-30",
+            "at": "2026-11-03T12:39:51Z",
+            "side": "feature",
+            "why": "이 저장소 server.py 의 경로 거르기 빈틈"
+          },
+          "slug": "clips-route-serves-hidden-files"
         }
       ]
     }
@@ -6244,6 +6338,37 @@
       ],
       "reportedAt": "2026-11-03",
       "fixedBy": "RM-70"
+    },
+    {
+      "id": "BUG-39",
+      "title": "문서 라벨 대조: 단위 시험은 strings 표를 안 보고 CLI 는 본다",
+      "symptom": "tests/unit/checkDocs.test.mjs 의 「지금 두 문서의 라벨 인용이 모두 화면에 있다」는 checkDocLabels 를 strings.js LABELS 표 없이 불러, 라벨을 src/domain/strings.js 로 옮기면(예: '{n}개 함께') node tools/check-docs.mjs 는 초록인데 단위 시험만 「화면 어디에도 없다」로 붉다. RM-48 에서 '2개 함께' 를 strings 표로 옮기다 겪었고, 라벨을 코드 한 자리 템플릿으로 두어 피했다. 두 길이 같은 표를 보게 맞춰야 한다(CLAUDE.md 는 새 글자를 표에 두라고 한다).",
+      "elements": [
+        {
+          "name": "문서 라벨 대조: 단위 시험은 strings 표를 안 보고 CLI 는 본다"
+        }
+      ],
+      "reportedAt": "2026-11-03",
+      "fixedBy": "RM-71"
+    },
+    {
+      "id": "BUG-40",
+      "title": "/clips/ 가 숨은 파일(.pose 짝 파일 · .history)도 내준다",
+      "symptom": "server.py 의 /clips/<path> 정적 내주기가 점으로 시작하는 경로 조각을 거르지 않아 GET /clips/video-clip/<프로젝트>/.pose/<파일>.json 이 200 이다(RM-30 브라우저 시험 중 curl 로 잼). 짝 파일은 /api/pose/* 로만 읽도록 정했고 RM-30 에서 /api/pose 쪽은 숨은 조각을 거절하게 고쳤지만, /clips/ 경로는 이 항목 밖이라 손대지 않았다. 숨은 조각을 404 로 거르면 된다.",
+      "elements": [
+        {
+          "name": "server.py",
+          "where": "server.py"
+        }
+      ],
+      "reportedAt": "2026-11-03",
+      "fixedBy": "RM-72",
+      "bisect": {
+        "state": "running",
+        "main": "8032ef3b08404ca07cdbdb8af8b43d2031db92d1",
+        "at": "2026-11-03T12:40:01Z",
+        "cmd": "curl http://127.0.0.1:8031/clips/video-clip/rm30/.pose/take-a.mp4.json → 200"
+      }
     }
   ],
   "shared": [
