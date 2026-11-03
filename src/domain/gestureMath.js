@@ -4,7 +4,7 @@
 // 리사이즈 카운트 3단 폴백(3785-3801), 더블탭 300ms(2523·2540), 이동 임계 8px/12px(2726·3241)을 모았다.
 // elementFromPoint · getBoundingClientRect · 현재 시각 조회는 여기 들어오지 않는다 — 호출부(input/*)의 몫이다.
 
-import { calcCrossRowCount, totalCellsFrom, clamp, cellIndexFromRatio, linearOf } from './grid.js';
+import { calcCrossRowCount, totalCellsFrom, clamp, cellIndexFromRatio, linearOf, cellOf, firstRowIndex } from './grid.js';
 import { groupCount } from './placements.js';
 
 /** 더블탭 판정 간격(ms). @see index.html:2523 */
@@ -254,4 +254,35 @@ export function resolveTrimStart(trim, hit, board, firstLinear) {
 // @complexity time=O(1) space=O(1) cc=2
 export function resizeBlocked({ isRoutine, allowsRoutineBlocks }) {
   return !!isRoutine && !!allowsRoutineBlocks;
+}
+
+/**
+ * 블록 몸통의 몇째 칸을 잡았나 — 블록 시작에서 누른 칸까지의 선형 칸 수(RM-57).
+ * 여러 행에 걸친 블록의 둘째 조각을 잡아도 맞도록 블록 요소의 rect 가 아니라 **누른 칸의 선형 위치 − 블록 시작**으로 잰다
+ * (요소는 그 행의 조각만 덮는다). 잴 수 없으면(칸이 null · 블록이 없음) 0 — 놓은 칸이 그대로 시작이 된다. 음수로 가지 않는다.
+ * @param {{row:number|null, col:number|null}|null} pressed  누른 자리의 행 · 칸(input/hitTest 가 잰 것)
+ * @param {number|null} groupStart  블록 시작의 선형 카운트(selection.groupSpan 의 start)
+ * @param {number} cols
+ * @returns {number}
+ */
+// @complexity time=O(1) space=O(1) cc=4
+export function grabOffset(pressed, groupStart, cols) {
+  if (!pressed || pressed.row == null || pressed.col == null || groupStart == null) return 0;
+  return Math.max(0, linearOf(pressed.row, pressed.col, cols) - groupStart);
+}
+
+/**
+ * 몸통을 잡고 끌어 놓을 블록의 시작 — 포인터 밑 칸에서 잡은 칸(grabOffset)만큼 앞이다(RM-57). 미리보기와 놓기가 이 함수 하나로
+ * 시작을 정한다(미리보기 = 결과). 선형으로 빼서 놓은 행의 0번 칸보다 앞이면 앞 행 끝으로 넘어가고(Q117 가 — 어느 칸을 잡든 곧게
+ * 옮기면 시작이 지켜진다), 보드 첫 칸(인트로 행이 있으면 (0, 0), 없으면 (1, 0))보다 앞이면 첫 칸으로 자른다.
+ * @param {{row:number, col:number}} hit   포인터 밑 칸
+ * @param {number} [grab=0]
+ * @param {{cols:number, hasIntroRow?:boolean}} board
+ * @returns {{row:number, startIndex:number}}
+ */
+// @complexity time=O(1) space=O(1) cc=1
+export function grabbedStart(hit, grab, board) {
+  const first = linearOf(firstRowIndex(board), 0, board.cols);
+  const { row, index } = cellOf(Math.max(first, linearOf(hit.row, hit.col, board.cols) - (grab || 0)), board.cols);
+  return { row, startIndex: index };
 }

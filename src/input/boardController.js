@@ -25,7 +25,7 @@
 //      import 하는 것은 domContract(같은 rank 3 의 유일한 예외)와 domain 순수 함수뿐이다.
 
 import { SEL, CLS, DATA } from '../ui/domContract.js';
-import { dragPreviewCount, resizeBlocked, resolveGrabZone, BODY_LONG_PRESS_MS, LONGPRESS_MOVE_THRESHOLD_PX } from '../domain/gestureMath.js';
+import { dragPreviewCount, resizeBlocked, resolveGrabZone, grabOffset, BODY_LONG_PRESS_MS, LONGPRESS_MOVE_THRESHOLD_PX } from '../domain/gestureMath.js';
 import * as gesture from '../domain/boardGesture.js';
 import { groupCount } from '../domain/placements.js';
 import { linearOf } from '../domain/grid.js';
@@ -157,6 +157,17 @@ export function createBoardController(deps) {
   function bundleDelta(drag, row, startIndex) {
     const span = groupSpan(board(), drag.groupId);
     return span ? linearOf(row, startIndex, board().cols) - span.start : null;
+  }
+
+  /**
+   * 누른 자리가 블록 시작에서 몇째 칸인가(RM-57) — 몸통을 잡고 끌면 놓을 시작은 포인터 밑 칸에서 이만큼 앞이다.
+   * 블록 요소의 rect 는 그 행의 조각만 덮으므로 누른 칸의 선형 위치 − 블록 시작(groupSpan)으로 잰다.
+   * @returns {number}
+   */
+  // @complexity time=O(p) space=O(p) cc=1
+  function grabAt(groupId, clientX, clientY) {
+    const span = groupSpan(board(), groupId);
+    return grabOffset(hitAt(clientX, clientY), span ? span.start : null, board().cols);
   }
 
   /**
@@ -510,6 +521,8 @@ export function createBoardController(deps) {
       step(gesture.placementDown, e, {
         x: e.clientX, y: e.clientY, groupId, zone, routineGuarded, altKey: !!e.altKey, pointerType: e.pointerType,
         bundle: bundleOf(groupId),
+        // RM-57 — 몸통을 누른 마우스만 잰다(가장자리는 트리밍, 손가락은 길게 누를 때 touchDrag.start 가 잰다)
+        grab: (zone === 'body' || routineGuarded) && !isFinger(e) ? grabAt(groupId, e.clientX, e.clientY) : 0,
       });
       if (pointerSession.isActive(boardId)) return;   // 트리밍이 시작됐다 — 그리기 전이에 넘기지 않는다
       // 두 번 탭(손가락) — 블록 동작 팝업이 있는 보드에서는 닫는다(2026-09-21): 첫 탭이 연 팝업 **위로** 둘째 탭이 떨어진다.

@@ -58,6 +58,7 @@ import { createBoardView, syncTouchDraw } from '../ui/boardView.js';
 import { touchDrawArmed } from '../domain/boardGesture.js';
 import { createOverlays, ensureOverlaySingletons } from '../ui/overlays.js';
 import { createPaletteView } from '../ui/paletteView.js';
+import { installIconMasks } from '../ui/icon.js';
 import { createCategoryView } from '../ui/categoryView.js';
 import { createQuickPicker, ROUTINE_OPTIONS } from '../ui/quickPicker.js';
 import { createToolbarView } from '../ui/toolbarView.js';
@@ -88,6 +89,7 @@ import { createTrashView } from '../ui/trashView.js';
 import { createHistoryView } from '../ui/historyView.js';
 import { createSpeechInput } from '../adapters/speechInput.js';
 import * as VoiceCmd from '../usecases/voiceNameCommands.js';
+import * as TrayCmd from '../usecases/pendingTrayCommands.js';
 import { createFileMenu } from '../ui/fileMenu.js';
 import { commandFace, syncCommandTitles } from '../ui/commandButtons.js';
 import { createCommandPalette } from '../ui/commandPalette.js';
@@ -105,6 +107,10 @@ import { detectCapabilities } from '../adapters/capabilities.js';
 import { fingerprintOf, shouldNotify, unsupportedFeatures, unsupportedMessage } from '../domain/supportMatrix.js';
 import { themeAttr, normalizeTheme } from '../domain/themes.js';
 import { createProjectPanel } from '../ui/projectPanel.js';
+import { createVersionListView } from '../ui/versionListView.js';
+import { createPracticeLogView } from '../ui/practiceLogView.js';
+import * as VersionCmd from '../usecases/versionCommands.js';
+import { versionSummaries } from '../domain/project/versions.js';
 import { clipsByProgress, clipsSummary, formatTakenAt } from '../domain/project/media.js';
 import * as PlanCmd from '../usecases/planCommands.js';
 import * as SheetCmd from '../usecases/sheetCommands.js';
@@ -118,6 +124,7 @@ import { createOnceHints, createHintBubble } from '../ui/onceHint.js';
 import { loadOnceHints, saveOnceHints } from '../adapters/localStore.js';
 import { createNoticeRouter } from './noticeRouter.js';
 import { createPracticeBar } from '../ui/practiceBar.js';
+import { createPendingTray } from '../ui/pendingTray.js';
 import { createPoseView } from '../ui/poseView.js';
 import { createPoseOverlay } from '../ui/poseOverlay.js';
 import { createMediapipePose } from '../adapters/pose/mediapipePose.js';
@@ -371,7 +378,9 @@ const projectDeps = {
   files: browserFileIO,
   storage,
   setProjectFileName,
-  commitHistory
+  commitHistory,
+  // RM-29 — 판본 열기는 연 판을 되돌리기의 바닥으로 삼는다(versionCommands.openVersion)
+  resetHistory: (boardId) => History.reset(hist, boardId)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1247,9 +1256,12 @@ function runCommand(id, ctx = {}) {
 // Tab 이면 표 위 차례의 다음 `?` 로 선택을 옮겨 다시 연다. 추천은 domain/moveMatch.suggestMoves(동작 고르기 창과 같은 규칙).
 // ⚠ 메인 보드만이다 — 고르기는 메인 보드에만 있다. 루틴 편집기가 열려 있으면 거짓을 돌려줘 글쇠의 기본 동작을 막지 않는다.
 // ⚠ 한글 자모 · IME 글쇠(`Process`)로 열릴 때는 **빈 입력**으로 열고 기본 동작을 막지 않는다 — 첫 자모를 값으로 옮기면
-//   다음 글쇠가 그 자모와 합쳐지지 않아 「ㅈ아」처럼 깨진다. 막지 않으면 브라우저가 그 글쇠를 방금 포커스한 입력에서 조합한다.
+//   글자가 두 번 들어간다. 그런데 막지 않아도 **조합은 이어지지 않는다**(RM-50 · RM-51 이 실제 macOS 2벌식으로 쟀다):
+//   body 에서 시작한 글쇠는 입력기가 조합 없이 맺어, 「스윙」이 「ㅅㅡ윙」, 「한」이 「ㅎㅏㄴ」으로 흩어져 들어간다.
+//   조합은 입력기의 일이라 앱이 고칠 수 없다 — 그래서 askName 에 jamoRejoin 을 켜, 맺힌 뒤 흩어진 자모를
+//   2벌식 규칙(domain/hangul.joinJamo)으로 다시 묶는다. 만든 글쇠 이벤트 시험은 이 길을 못 잡는다 — 실기로 잰다(PRINCIPLES).
 
-/** 한글 자모 · IME 글쇠인가 — 첫 자를 값으로 옮기지 않고 빈 입력에서 조합을 잇는다. */
+/** 한글 자모 · IME 글쇠인가 — 첫 자를 값으로 옮기지 않고 빈 입력으로 열고, 맺힌 뒤 자모를 다시 묶는다. */
 const isImeKey = (ch) => ch === 'Process' || /[\u3131-\u318e\u1100-\u11ff\ua960-\ua97f\ud7b0-\ud7ff]/.test(ch);
 
 /** 메인 보드에서 지금 고른 그룹 — 보드 위에 있는 것만, 루틴 블록은 뺀다(루틴 이름은 루틴 목록이 주인). */
@@ -1296,7 +1308,7 @@ function openNaming(ctx = {}) {
     const pending = chosen.filter(gid => placements.some(p => p.groupId === gid && isPending(p)));
     if (!pending.length) { render({ notify: notice('status', '고른 블록은 모두 이름이 있습니다.') }); return true; }
     const title = pending.length > 1 ? `고른 블록 ${pending.length}개의 이름` : '이 블록의 이름';
-    askName({ anchor: ctx.anchor || blockElOf(pending[0]), title, value: first, suggest }).then(({ value, via }) => {
+    askName({ anchor: ctx.anchor || blockElOf(pending[0]), title, value: first, suggest, jamoRejoin: ime }).then(({ value, via }) => {
       const { named, ...dirty } = CaptureCmd.nameSelected(store, { label: value }) || {};
       render(dirty);
       after(named, via, lastByOrder(pending));
@@ -1311,7 +1323,8 @@ function openNaming(ctx = {}) {
     title: '이 블록의 이름',
     value: first || (isPending(head) ? '' : head.name),
     selectAll: !first,                                       // 이름 있는 블록은 통째로 골라 갈아 끼운다
-    suggest
+    suggest,
+    jamoRejoin: ime                                          // 한글 낱자로 열었을 때만 흩어진 자모를 다시 묶는다(RM-50)
   }).then(({ value, via }) => {
     const { named, ...dirty } = CaptureCmd.nameGroupTo(store, { boardId: BOARD_MAIN, groupId: gid, label: value }) || {};
     render(dirty);
@@ -1594,6 +1607,7 @@ function mediaSourceKey(source) {
 }
 
 /** 지금 소스에 맞는 재생기를 준비한다. 멱등이며, 바뀐 것이 없으면 아무 일도 하지 않는다. */
+// @complexity time=O(n)? space=O(n)? cc=10
 function ensurePlayer() {
   const source = currentMediaSource();
   const kind = source ? pickPlayerKind(source) : (wantsClockPlayer() ? 'clock' : 'null');
@@ -1610,7 +1624,7 @@ function ensurePlayer() {
     //   그래서 **`data-keep` 이 붙은 것만 남기고** 나머지를 걷는다. YT 는 host <div> 를 <iframe> 으로
     //   갈아치우므로 "우리가 만든 host" 를 기억해 두는 것으로는 부족하다.
     // ⚠ 2026-09-20 에 표식 방식으로 바꿨다. 그전에는 캔버스 하나만 이름으로 비교해서, 재생기를 처음
-    //   만드는 순간 `⤡ 제자리로` 손잡이(#videoFloatBar)가 조용히 사라졌다 — 띄워 놓고 되돌릴 길이
+    //   만드는 순간 `제자리로` 손잡이(#videoFloatBar)가 조용히 사라졌다 — 띄워 놓고 되돌릴 길이
     //   없어지는 버그였고, 화면에는 "버튼이 원래 없는 것"처럼 보여 드러나지 않았다.
     for (const child of [...videoFrameEl.children]) {
       if (!child.dataset.keep) child.remove();
@@ -1952,12 +1966,15 @@ const clipServerReady = clipServer.probe().then((cfg) => {
  * ⚠ 어느 테마인지의 주인은 domain/themes 이고, 여기는 담고 바르기만 한다.
  * @param {string} id
  */
+// @complexity time=O(1) space=O(1) cc=2
 function applyTheme(id) {
   const attr = themeAttr(id);
   if (attr) document.documentElement.dataset.theme = attr;
   else delete document.documentElement.dataset.theme;
 }
 applyTheme(loadTheme());
+// 스타일시트의 `::before` · `::after` 가 쓰는 아이콘 마스크(`--icon-이름`)를 스프라이트에서 만든다(RM-18). 그리기 전에 한 번.
+installIconMasks(document);
 
 /**
  * 어떤 버튼 다음에 어떤 버튼을 눌렀나(2026-09-21). 표는 domain/flowStats 가 세고 어댑터가 담는다 —
@@ -2391,6 +2408,8 @@ const voiceInput = (() => {
     onUtterance: (u) => {
       // 중간 결과는 흘려보낸다 — 쓰는 것은 확정된 한마디와 그것이 **시작된** 시각뿐이다.
       if (!u.final) return;
+      // `?` 정리함이 열려 있으면 들은 말은 고른 `?` 의 이름이다(RM-24). 받아 적는 중이면 hearForTray 가 마다해 아래 길로 간다.
+      if (views.pendingTray?.isOpen() && views.pendingTray.hear(u.text)) return;
       render(VoiceCmd.hearUtterance(store, { text: u.text, atSec: u.startedAt }));
     },
     onState: () => { views.video?.syncVoice(); views.thumb?.render(); views.status?.render(); }
@@ -2481,8 +2500,12 @@ views.video = createVideoPanel({
     poseOverlay.invalidate();
   },
   commands: {
-    togglePanel: () => VideoCmd.togglePanel(store),
-    closePanel: () => VideoCmd.closePanel(store),
+    // 패널을 닫으면 `?` 정리함도 닫는다 — 열어 둔 채 숨으면 마디 반복이 정리함의 것으로 남는다(RM-24).
+    togglePanel: () => mergeDirty(closeTrayIfOpen(), VideoCmd.togglePanel(store)),
+    closePanel: () => mergeDirty(closeTrayIfOpen(), VideoCmd.closePanel(store)),
+    pendingCount: () => CaptureCmd.pendingCount(store),
+    trayOpen: () => TrayCmd.trayState(store).open,
+    openTray: () => { views.pendingTray?.open(); return NONE; },
     setCollapsed: (args) => VideoCmd.setCollapsed(store, args),
     // 큰 창으로 띄우기(2026-09-13). 자리·폭은 끌기를 **놓는 순간** 한 번만 들어온다.
     setFloating: (args) => VideoCmd.setFloating(store, args),
@@ -2585,6 +2608,52 @@ views.practice = createPracticeBar({
   }
 });
 
+// `?` 정리함(RM-24 · 2026-11-03) — 받아 적기로 쌓인 이름 없는 블록을 영상 패널 ③ 안의 목록으로 몰아 붙인다.
+// 줄을 고르면 그 블록의 대목(앞뒤 한 카운트 여유)을 마디 반복으로 되풀이하고, 닫으면 열 때의 반복으로 되돌린다.
+// 영상을 옮기는 일 · 마이크 · LLM 줄은 어댑터에 닿으므로 여기서 감싸 넘긴다(뷰는 명령도 어댑터도 모른다).
+views.pendingTray = createPendingTray({
+  render,
+  commitHistory: () => render(commitHistory(BOARD_MAIN)),
+  suggest: (q) => suggestMoves(store.get().library, q, store.get().favorites.moveNames),
+  notify: (text) => render({ notify: notice('status', text) }),
+  onPicked: (groupId, info) => {
+    const el = blockElOf(groupId);
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (!info.looped) return;
+    const span = VideoCmd.loopSpan(store);
+    if (!span) return;
+    resetClicks();
+    seekVideoTo(span.startSec, { play: true });
+  },
+  onClosed: () => voiceInput.stop(),
+  onHeard: (info) => {
+    for (const gid of info.groupIds || []) voiceInput.notePlaced({ needsLlm: info.needsLlm, voiceGroupId: gid, heard: info.heard });
+  },
+  commands: {
+    state: () => TrayCmd.trayState(store),
+    queue: () => TrayCmd.trayQueue(store),
+    tempoReady: () => VideoCmd.isTempoReady(store),
+    categories: () => Object.entries(store.get().categories || {}).map(([key, c]) => ({ key, label: (c && c.label) || key })),
+    selectedPending: () => {
+      const pending = new Set(TrayCmd.trayQueue(store).map(r => r.groupId));
+      return BoardCmd.selectedOn(store, BOARD_MAIN).find(gid => pending.has(gid)) || null;
+    },
+    open: () => TrayCmd.openTray(store),
+    close: () => TrayCmd.closeTray(store),
+    pick: (args) => TrayCmd.pickPending(store, args),
+    name: (args) => TrayCmd.namePending(store, args, { ids: browserEnv }),
+    hear: (args) => VoiceCmd.hearForTray(store, args),
+    setCategory: (args) => TrayCmd.setTrayCategory(store, args)
+  }
+});
+
+/** 영상 패널을 닫기 전에 정리함부터 닫는다 — 마디 반복을 열 때로 되돌리고 마이크를 끈다. */
+// @complexity time=O(1) space=O(1) cc=2
+function closeTrayIfOpen() {
+  if (views.pendingTray && views.pendingTray.isOpen()) views.pendingTray.close();
+  return NONE;
+}
+
 /**
  * 배치 시작 카운트로 영상을 옮기고 그 자리에서 재생한다.
  *
@@ -2597,6 +2666,7 @@ views.practice = createPracticeBar({
  * ⚠ play() 는 **클릭 콜스택 안에서** 불러야 한다(capabilities.needsUserGesture) — await 뒤로
  *   미루면 브라우저가 차단한다. 그래서 seek 을 기다리지 않고 곧바로 부른다.
  */
+// @complexity time=O(1) space=O(1) cc=3
 function seekToSpanStart(startSec) {
   const tempo = VideoCmd.mediaState(store).tempo;
   const tolerance = player.capabilities.seekToleranceSec;
@@ -2738,7 +2808,7 @@ views.settings = createSettingsView({
   // 「안내 다시 보기」(RM-26). 코치마크는 아래 채우기 줄 뒤에 만들어지므로 부를 때 찾는다.
   coach: { replay: () => coach?.replay() },
   // 폴더를 새로 지정했으면 지금 소스가 보관 경로를 가진 경우 곧바로 읽어 본다.
-  // LLM 키를 넣거나 뺐으면 `✨ 말로 채우기` 의 막힘도 다시 잰다(RM-26).
+  // LLM 키를 넣거나 뺐으면 `말로 채우기` 의 막힘도 다시 잰다(RM-26).
   onChange: () => { libraryAutoTriedFor = ''; serverClipOk = ''; views.video?.render(); syncEntryStates(); }
 });
 
@@ -2748,7 +2818,7 @@ views.settings = createSettingsView({
 
 const composeView = createComposeView({
   // ⚠ 앱바가 아니라 **채우기 줄**이다(2026-09-21). 말로 채우기는 앱 수준 조작이 아니라
-  //   안무표를 채우는 네 길 중 하나다 — `▶ 영상으로 채우기` 와 같은 줄에 있어야 한다.
+  //   안무표를 채우는 네 길 중 하나다 — `영상으로 채우기` 와 같은 줄에 있어야 한다.
   container: byId('modeComposeSlot'),
   llm: llmServer,
   getContext: () => {
@@ -2803,8 +2873,8 @@ openLinksIfAny(undefined);
 // ─────────────────────────────────────────────────────────────────────────────
 // 21. 채우기 줄 — 앱바 아래 한 줄과 빈 안무표 안내 (2026-09-21)
 //
-// ⚠ 줄 위의 버튼은 **전부 이미 있던 것**이다. `✨ 말로 채우기`(19절)와 `🎵 프레이즈`(20절)는
-//   위에서 이 줄의 슬롯에 붙었고, `▶ 영상으로 채우기`·`+ 빠른 배치` 는 마크업이 이 줄로 옮겨
+// ⚠ 줄 위의 버튼은 **전부 이미 있던 것**이다. `말로 채우기`(19절)와 `프레이즈`(20절)는
+//   위에서 이 줄의 슬롯에 붙었고, `영상으로 채우기`·`빠른 배치` 는 마크업이 이 줄로 옮겨
 //   왔다(id 가 그대로라 배선은 한 줄도 바뀌지 않는다). 이 뷰가 쥔 것은 `✋ 직접 놓기` 뿐이다.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2881,7 +2951,7 @@ async function syncEntryStates() {
 }
 
 // 기준 박자 배지 — 오른쪽 위 고정석(2026-09-22). 누르면 박자를 정하는 자리로 보낸다.
-// ⚠ 새 커맨드를 만들지 않는다. `▶ 영상으로 채우기` 와 같은 진입점이다.
+// ⚠ 새 커맨드를 만들지 않는다. `영상으로 채우기` 와 같은 진입점이다.
 views.bpm = createBpmBadge({
   store,
   onOpenTempo: () => {
@@ -2920,6 +2990,68 @@ views.project = createProjectPanel({
     remove: (id) => { render(withUndoToast(VideoCmd.removeClip(store, { id }), '영상을 목록에서 뺐습니다.')); }
   },
   openVideoPanel: () => render(VideoCmd.openPanel(store)),
+  // RM-29 — 그 영상과 찍은 날을 채운 연습 기록 초안을 연다(store 에는 `기록 적기` 를 눌러야 쌓인다)
+  logTake: (clipId) => views.practiceLog?.openDraft(VersionCmd.logDraft(projectDeps, { today: localToday(), clipId })),
+  confirmOnce
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 22-1. 판본과 연습 기록 — 프로젝트 칸 아래 (RM-29 · 2026-11-03)
+//
+// ⚠ 판본 · 기록은 되돌리기를 타지 않는다 — 그래서 commitHistory 를 부르지 않는다. 판본 **열기**만 안무표를 바꾸므로
+//   openVersion 이 전체 불러오기와 같은 길로 한 단계를 쌓는다.
+// ⚠ 「오늘」은 사람의 날(지역 날짜)이다 — 도메인은 시계를 모르므로 여기서 잰다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 지역 날짜 `YYYY-MM-DD`(연습한 날). toISOString 은 UTC 라 새벽에 하루가 밀린다. */
+// @complexity time=O(1) space=O(1) cc=1
+function localToday() {
+  return localDateOf(new Date());
+}
+
+/** Date → 지역 날짜 `YYYY-MM-DD`. */
+// @complexity time=O(1) space=O(1) cc=1
+function localDateOf(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** 판본의 뜬 시각(UTC ISO) → 지역 날짜. ⚠ `slice(0, 10)` 은 UTC 날이라 한국의 아침 9시 전에 뜬 판본이 어제로 보였다. */
+// @complexity time=O(1) space=O(1) cc=2
+function localDateOfIso(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : localDateOf(d);
+}
+
+const formatDay = (at) => formatTakenAt(at, new Date().getFullYear());
+
+views.versions = createVersionListView({
+  getVersions: () => versionSummaries(store.versions),
+  getBase: () => store.get().versionBase,
+  isKept: () => VersionCmd.currentIsKept(projectDeps),
+  formatDate: (createdAt) => formatDay(localDateOfIso(createdAt)),
+  commands: {
+    snapshot: () => render(VersionCmd.snapshotVersion(projectDeps)),
+    open: (id) => render(VersionCmd.openVersion(projectDeps, { id })),
+    edit: (id, patch) => render(VersionCmd.editVersionMeta(projectDeps, { id, ...patch })),
+    remove: (id) => render(VersionCmd.deleteVersion(projectDeps, { id }))
+  },
+  confirmOnce
+});
+
+views.practiceLog = createPracticeLogView({
+  getLogs: () => store.practiceLogs,
+  getContext: () => ({
+    cols: store.board(BOARD_MAIN).cols,
+    versions: versionSummaries(store.versions),
+    clips: VideoCmd.clipList(store).clips
+  }),
+  formatDate: formatDay,
+  commands: {
+    draft: () => VersionCmd.logDraft(projectDeps, { today: localToday() }),
+    save: (log) => render(VersionCmd.saveLog(projectDeps, log)),
+    remove: (id) => render(VersionCmd.deleteLog(projectDeps, { id }))
+  },
   confirmOnce
 });
 
@@ -2964,7 +3096,7 @@ views.thumb = createThumbBar({
   // 글자 · 툴팁은 등록부의 것이다(RM-09). 툴팁에 지금 글쇠가 실린다.
   face: (id) => commandFace(id, keysNow)
 });
-// 창 폭이 바뀌면 줄의 칸 폭도 바뀐다 — 다시 그려 좁은 칸의 접힘(⏮ 처음으로 → ⏮)을 다시 고른다(RM-63).
+// 창 폭이 바뀌면 줄의 칸 폭도 바뀐다 — 다시 그려 좁은 칸의 접힘(`처음으로` → 아이콘만)을 다시 고른다(RM-63).
 // ⚠ resize 를 여기서 따로 듣지 않는다 — 영상 패널이 띠를 놓은 **뒤에** 부르는 onSettled 에 걸었다(RM-66).
 //   띠 놓기는 다음 틀로 미뤄지므로, 여기서 들으면 조작 줄의 옛 폭을 재서 접지 않고 잘린다.
 
@@ -3040,6 +3172,8 @@ function firstScreenReady() {
 // ⚠ `beforeunload` 가 아니라 `visibilitychange` 다. 모바일 브라우저는 탭을 접을 때
 //   beforeunload 를 부르지 않고 그대로 죽이는 일이 있다.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') draftSaver.flush();
+  if (document.visibilityState !== 'hidden') return;
+  draftSaver.flush();
+  if (views.pendingTray?.isOpen()) voiceInput.stop();       // 정리함의 마이크는 탭을 숨기면 끈다(RM-24)
 });
 window.addEventListener('pagehide', () => { draftSaver.flush(); });

@@ -11,6 +11,7 @@
 
 import { CLS } from './domContract.js';
 import { applyGuide, practiceGuide } from './guideLines.js';
+import { iconLabel } from './icon.js';
 import { rowIndices } from '../domain/grid.js';
 import { isTempoUsable } from '../domain/tempo.js';
 import { countRangeLabel, normalizeCountRange, placementsToCountRange, rowsToCountRange } from '../domain/practice.js';
@@ -115,10 +116,11 @@ export function createPracticeBar(deps) {
     return placementsToCountRange(board().placements, store.selection || [], board().cols);
   }
 
+  // @complexity time=O(1) space=O(1) cc=5
   function renderPlay() {
     if (!playBtn) return;
     const playing = (getPlayerState() || {}).play === 'playing';
-    playBtn.textContent = playing ? '❚❚ 멈춤' : '▶ 재생';
+    iconLabel(playBtn, playing ? 'pause' : 'play', playing ? '멈춤' : '재생');
     playBtn.disabled = !hasPlayer();
   }
 
@@ -140,6 +142,7 @@ export function createPracticeBar(deps) {
     rateSel.value = String(rates.includes(p.rate) ? p.rate : 1);
   }
 
+  // @complexity time=O(n)? space=O(n)? cc=24
   function renderAll() {
     const p = panel();
     const b = board();
@@ -178,7 +181,7 @@ export function createPracticeBar(deps) {
     if (ready && practice) {
       const where = countRangeLabel(practice, b.cols);
       text = span
-        ? `${where} · ${clock(span.startSec)} ~ ${clock(span.endSec)}` + (p.loop ? ' — 반복 중' : ' — `🔁 반복` 을 켜면 끝에서 처음으로 되감습니다')
+        ? `${where} · ${clock(span.startSec)} ~ ${clock(span.endSec)}` + (p.loop ? ' — 반복 중' : ' — `반복` 을 켜면 끝에서 처음으로 되감습니다')
         : `${where} — 박자가 맞지 않아 반복할 수 없습니다.`;
     } else if (ready && span && p.loop) {
       text = `In ${clock(span.startSec)} ~ Out ${clock(span.endSec)} 을 반복합니다(도구 「구간 잡고 잘라내기」 의 In/Out).`;

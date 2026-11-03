@@ -9,8 +9,10 @@
 //   adapters/browser.browserDialogs.confirm 으로 바꾸지 마라 — 오늘 window.confirm 호출은 0곳이고,
 //   확인 UX 는 버튼 라벨을 2초간 '정말요?' 로 바꾸는 방식이다(모달이 뜨지 않는다).
 //
-// ⚠ 이 파일은 아무것도 import 하지 않는다. ui 계층이므로 타이머·DOM 을 써도 된다
+// ⚠ import 는 같은 계층의 ui/icon.js 하나뿐이다(RM-18 — 즐겨찾기 별의 아이콘). ui 계층이므로 타이머·DOM 을 써도 된다
 //   (tools/check-arch.mjs 의 순수성 검사는 domain/ports/usecases 에만 걸린다).
+
+import { iconLabel } from './icon.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 이스케이프
@@ -44,6 +46,7 @@ export function escapeHtml(str) {
  * @param {unknown} value
  * @returns {string}
  */
+// @complexity time=O(1) space=O(1) cc=3
 export function cssEscape(value) {
   const text = String(value);
   return (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') ? CSS.escape(text) : text;
@@ -73,23 +76,36 @@ export function cssEscape(value) {
  *
  * @see index.html:1700
  * @param {HTMLElement & { _confirmTimer?: ReturnType<typeof setTimeout> }} btn 라벨을 바꿀 버튼 자신
- * @param {string} label 되돌릴 원래 라벨 ('×' · '삭제' · '전체 초기화')
+ * ⚠ 아이콘이 든 단추(RM-18 — `svg.icon` + `span.lbl`, 아이콘만 있는 지우기 단추)는 **안의 노드를 그대로 되돌린다** —
+ *   `textContent = label` 로 되돌리면 아이콘이 지워지고 글자만 남는다. 글자뿐인 단추는 전처럼 label 로 되돌린다.
+ *
+ * @see index.html:1700
+ * @param {HTMLElement & { _confirmTimer?: ReturnType<typeof setTimeout>, _confirmKids?: Node[] }} btn 라벨을 바꿀 버튼 자신
+ * @param {string} label 되돌릴 원래 라벨 ('삭제' · '전체 초기화' · 아이콘만 있는 단추는 그 이름)
  * @param {() => void} fn 2차 클릭에서 실행할 일
  * @returns {void}
  */
+// @complexity time=O(c) space=O(c) cc=5
 export function confirmOnce(btn, label, fn) {
+  const restore = () => {
+    const kids = btn._confirmKids;
+    delete btn._confirmKids;
+    if (kids && kids.some(n => n.nodeType === 1) && typeof btn.replaceChildren === 'function') btn.replaceChildren(...kids);
+    else btn.textContent = label;
+  };
   if (btn.dataset.pendingConfirm === '1') {
     clearTimeout(btn._confirmTimer);
     delete btn.dataset.pendingConfirm;
-    btn.textContent = label;
+    restore();
     fn();
     return;
   }
   btn.dataset.pendingConfirm = '1';
+  btn._confirmKids = btn.childNodes ? Array.from(btn.childNodes) : undefined;
   btn.textContent = '정말요?';
   btn._confirmTimer = setTimeout(() => {
     delete btn.dataset.pendingConfirm;
-    btn.textContent = label;
+    restore();
   }, 2000);
 }
 
@@ -119,12 +135,14 @@ export function confirmOnce(btn, label, fn) {
  * @param {{ title?: string|null, stopPropagation?: boolean, toggleClass?: boolean }} [options]
  * @returns {HTMLButtonElement}
  */
+// @complexity time=O(1) space=O(1) cc=4
 export function makeInlineStarBtn(isActive, onToggle, options = {}) {
   const { title = null, stopPropagation = true, toggleClass = true } = options;
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'star-btn' + (isActive() ? ' active' : '');
-  btn.textContent = '★';
+  iconLabel(btn, 'star');                  // 「★」 글자였다(~2026-11-03, RM-18) — 이름은 title · aria-label 이 말한다
+  btn.setAttribute('aria-label', title || '즐겨찾기');
   if (title != null) btn.title = title;
   btn.addEventListener('click', (e) => {
     if (stopPropagation) e.stopPropagation();

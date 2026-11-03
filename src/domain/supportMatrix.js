@@ -2,7 +2,7 @@
 //
 // 이 앱은 어떤 브라우저로 여느냐 · 로컬 서버(server.py)를 켰느냐에 따라 되는 기능이 다르다. 그 차이가
 // 코드 주석과 기능 설명서 여기저기에 흩어져 있어 「고장인가, 이 환경에서 원래 안 되는가」를 가를 수 없었다
-// (RM-27). 여기 표 하나가 **주인**이다 — `⚙ 설정` 의 「이 환경」 절, 켤 때의 토스트, 문서 `docs/SUPPORT.md`
+// (RM-27). 여기 표 하나가 **주인**이다 — `설정` 의 「이 환경」 절, 켤 때의 토스트, 문서 `docs/SUPPORT.md`
 // 가 모두 이 표를 읽는다(문서 표는 시험 `tests/unit/supportMatrix.test.mjs` 가 칸마다 대조한다).
 //
 // ⚠ 실제 판정은 **탐지**(adapters/capabilities.js)가 한다. 아래 OS · 브라우저 칸은 「알려진 결과」일 뿐이고
@@ -24,7 +24,7 @@ const SYMBOL_SET = new Set(Object.values(SYMBOLS));
 export const CONDITIONS = Object.freeze([
   Object.freeze({ id: 'server', label: '서버', short: '서버 없음', missing: '로컬 서버(python3 server.py) 없이 정적으로 열었다' }),
   Object.freeze({ id: 'ffmpeg', label: 'ffmpeg', short: 'ffmpeg 없음', missing: '서버에 ffmpeg 이 없다' }),
-  Object.freeze({ id: 'model', label: '모델 파일', short: '모델 파일 없음', missing: '자세 분석 모델을 아직 받아 두지 않았다(⚙ 설정 → 자세 분석 모델)' }),
+  Object.freeze({ id: 'model', label: '모델 파일', short: '모델 파일 없음', missing: '자세 분석 모델을 아직 받아 두지 않았다(설정 → 자세 분석 모델)' }),
   Object.freeze({ id: 'folder', label: '폴더 고르기', short: '폴더 고르기 없음', missing: '이 브라우저에는 폴더 고르기(showDirectoryPicker + IndexedDB)가 없다 — 크롬 · 엣지에서만 된다' }),
   Object.freeze({ id: 'speech', label: '음성 인식', short: '음성 인식 없음', missing: '이 브라우저에는 음성 인식(Web Speech)이 없다 — 크롬 계열 · 사파리에서 된다' }),
   // ⚠ late: 켤 때는 모르고 모델을 띄운 뒤에야 아는 조건 — 환경 지문에 넣지 않는다
@@ -179,7 +179,7 @@ export function unsupportedMessage(list) {
   const names = list.slice(0, TOAST_NAMES).map(l => l.label).join(' · ');
   const more = list.length > TOAST_NAMES ? ` 등 ${list.length}가지` : '';
   const why = [...new Set(list.flatMap(l => l.missing))].map(id => CONDITION_BY_ID.get(id).short).join(' · ');
-  return `이 환경에서는 ${names}${more}가 안 됩니다(${why}). 까닭은 ⚙ 설정 → 이 환경 에 있습니다.`;
+  return `이 환경에서는 ${names}${more}가 안 됩니다(${why}). 까닭은 설정 → 이 환경 에 있습니다.`;
 }
 
 const LATE_IDS = new Set(CONDITIONS.filter(c => c.late).map(c => c.id));

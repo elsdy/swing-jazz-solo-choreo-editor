@@ -37,6 +37,7 @@
 //   ⚠ scheduleTitleFetch 의 착지(resolveYoutubeTitle)에도 걸지 마라 — 사용자의 조작이 아니다.
 //   값이 그대로인 change 는 히스토리 스택이 JSON 문자열 비교로 걸러 내므로 스택이 늘지 않는다.
 
+import { iconLabel, iconOnly } from './icon.js';
 import { CLS, SEL } from './domContract.js';
 import { normalizeYoutubeUrl } from '../domain/links.js';
 import { str } from '../domain/strings.js';
@@ -116,12 +117,12 @@ export function createLinksBarView(deps) {
    * @param {() => string} getUrl 클릭 시점에 열 URL을 돌려준다(값을 캡처하지 않는다)
    * @returns {HTMLButtonElement}
    */
+  // @complexity time=O(1) space=O(1) cc=1
   function makeOpenBtn(getUrl) {
     const openBtn = document.createElement('button');
     openBtn.className = CLS.ghost + ' ' + CLS.linkOpenBtn;
     openBtn.type = 'button';
-    openBtn.title = str('link.open.title');
-    openBtn.textContent = '↗';
+    iconOnly(openBtn, 'external', str('link.open.title'));           // 「↗」 글자였다(~2026-11-03, RM-18)
     openBtn.addEventListener('click', () => {
       const u = getUrl();
       if (u) window.open(u, '_blank', 'noopener');
@@ -178,6 +179,7 @@ export function createLinksBarView(deps) {
   }
 
   /** 커스텀 링크 행 전부(원본 renderCustomLinks 5166-5205). */
+  // @complexity time=O(n)? space=O(n)? cc=3
   function renderCustomLinks(links) {
     const state = links || store.links;
     const container = byId('customLinksContainer');                  // 5167
@@ -189,7 +191,7 @@ export function createLinksBarView(deps) {
 
       const badge = document.createElement('span');
       badge.className = CLS.linkBadge + ' ' + CLS.badgeCustom;       // 5175
-      badge.textContent = '🔗';
+      iconLabel(badge, 'link');                                      // 「🔗」 글자였다(RM-18)
       row.appendChild(badge);
 
       const labelInput = document.createElement('input');
@@ -223,8 +225,7 @@ export function createLinksBarView(deps) {
       const delBtn = document.createElement('button');
       delBtn.className = CLS.linkDelBtn;                             // 5198
       delBtn.type = 'button';
-      delBtn.title = str('link.delete.title');                       // 글자는 문자열 표(RM-10)
-      delBtn.textContent = str('icon.delete');
+      iconOnly(delBtn, 'x', str('link.delete.title'));               // 글자는 문자열 표(RM-10), 그림은 스프라이트(RM-18)
       // ⚠ confirmOnce 가 없다(원본 5199-5202). 한 번 누르면 바로 지워진다.
       delBtn.addEventListener('click', () => {
         commands.removeCustomLink(link.id);
