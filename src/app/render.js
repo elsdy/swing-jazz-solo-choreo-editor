@@ -64,6 +64,7 @@ import { str, fill } from '../domain/strings.js';
  *   기본값을 켜면 '덜 그리는' 회귀는 막지만 매 렌더가 배치 엘리먼트를 재생성해 동작이 달라진다.
  * @returns {(d: Dirty, opts?: { paranoid?: boolean }) => void}
  */
+// @complexity time=O(1) space=O(1) cc=1
 export function createRenderer(store, views, options = {}) {
   const { dev = false, paranoid: paranoidDefault = false } = options;
 
@@ -180,7 +181,7 @@ export function createRenderer(store, views, options = {}) {
       if (!d.selection) views.selectionBar?.render();
     }
     // 엄지 바는 「지금 할 일」을 보이므로 영상 패널의 상태(열림·받는 중)를 따라간다(2026-09-20).
-    // ⚠ 보드가 바뀌어도 부른다 — `+ 빠른 배치` 의 켜짐이 그쪽을 본다.
+    // ⚠ 보드가 바뀌어도 부른다 — `빠른 배치` 의 켜짐이 그쪽을 본다.
     if (d.video || d.boards?.[BOARD_MAIN] || d.toolbar) views.thumb?.render();
     // 프로젝트 칸은 영상 목록(이름·날짜·지금 보는 것)을 비춘다 — 영상이 바뀌면 함께 다시 그린다.
     if (d.video) views.project?.render();

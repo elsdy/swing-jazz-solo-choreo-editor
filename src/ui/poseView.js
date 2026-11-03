@@ -14,12 +14,13 @@
 
 import { CLS } from './domContract.js';
 import { applyGuide, poseGuide } from './guideLines.js';
+import { iconLabel } from './icon.js';
 
 /** 분석이 안 되는 이유 → 안내. 어댑터·서버는 사실만 주고 문구는 여기서 만든다. */
 export const POSE_TEXT = Object.freeze({
   'no-server': '로컬 서버(server.py)가 없어 자세 분석을 할 수 없습니다. `python3 server.py` 로 열면 됩니다.',
-  'no-model': '자세 분석 모델을 아직 받지 않았습니다. `⚙ 설정` 의 `자세 분석 모델` 에서 내려받으세요.',
-  'not-file': '자세 분석은 영상 **파일**에만 됩니다. 유튜브는 재생 화면의 픽셀을 읽을 수 없습니다 — `📁 영상 파일 열기` 로 받아 온 파일이어야 합니다.',
+  'no-model': '자세 분석 모델을 아직 받지 않았습니다. `설정` 의 `자세 분석 모델` 에서 내려받으세요.',
+  'not-file': '자세 분석은 영상 **파일**에만 됩니다. 유튜브는 재생 화면의 픽셀을 읽을 수 없습니다 — `영상 파일 열기` 로 받아 온 파일이어야 합니다.',
   'not-loaded': '영상이 아직 실리지 않았습니다. 영상이 뜬 뒤에 누르세요.',
   'busy': '분석하는 중입니다. 구간이 길면 수십 초가 걸립니다 — 끝나면 영상 위에 관절이 겹쳐 그려집니다.',
   'ready': 'In~Out 을 찍어 두었으면 그 구간만, 아니면 영상 전체를 봅니다. 길수록 오래 걸리니 구간을 좁히는 편이 낫습니다.'
@@ -31,7 +32,7 @@ export const POSE_TEXT = Object.freeze({
  * @property {(dirty: any) => void} render presenter 의 apply
  * @property {() => 'ready'|'busy'|'no-server'|'no-model'|'not-file'|'not-loaded'} getReadiness
  *   지금 분석할 수 있는가, 없으면 왜인가
- * @property {() => void} onRun `🧍 자세 분석`. 어댑터를 아는 자리(app/main)가 실제로 돌린다
+ * @property {() => void} onRun `자세 분석`. 어댑터를 아는 자리(app/main)가 실제로 돌린다
  * @property {{
  *   clearAnalysis: () => any, setActiveTrack: (args:{id:string}) => any,
  *   addTrack: () => any, clearAnchors: () => any, setMesh: (args?:{on?:boolean}) => any,
@@ -86,18 +87,20 @@ export function createPoseView(deps) {
    * 실시간으로 도는 동안의 안내. **잰 값을 그대로 적는다** — "빠릅니다" 가 아니라 몇 fps 인지.
    * CPU 로 섰으면 그 사실을 감추지 않는다(실측 5.6fps 라 눈에 띄게 끊긴다).
    */
+  // @complexity time=O(n)? space=O(n)? cc=4
   function liveText(p) {
     const bits = ['재생하면 그 프레임의 관절을 그 자리에서 찾아 그립니다'];
     if (p.liveFps > 0) bits.push(`지금 초당 ${p.liveFps}장`);
     if (p.delegate === 'CPU') {
-      bits.push('이 기기는 **CPU** 로 돌고 있어 끊깁니다 — 구간을 미리 `🧍 자세 분석` 하는 편이 낫습니다');
+      bits.push('이 기기는 **CPU** 로 돌고 있어 끊깁니다 — 구간을 미리 `자세 분석` 하는 편이 낫습니다');
     } else if (p.delegate === 'GPU') {
       bits.push('GPU 로 돕니다');
     }
-    bits.push('가동 범위·가속도 요약은 여전히 `🧍 자세 분석` 이 필요합니다(한 장으로는 범위를 못 잽니다)');
+    bits.push('가동 범위·가속도 요약은 여전히 `자세 분석` 이 필요합니다(한 장으로는 범위를 못 잽니다)');
     return bits.join(' · ') + '.';
   }
 
+  // @complexity time=O(n)? space=O(n)? cc=33
   function renderPose() {
     const p = state();
     const why = getReadiness();
@@ -107,11 +110,11 @@ export function createPoseView(deps) {
     if (liveBtn) {
       liveBtn.disabled = why !== 'ready' || running;
       liveBtn.className = p.live ? CLS.quickBtnActive : CLS.ghost;
-      liveBtn.textContent = p.live ? '■ 따라 그리기 끄기' : '▶ 따라 그리기';
+      iconLabel(liveBtn, p.live ? 'square' : 'play', p.live ? '따라 그리기 끄기' : '따라 그리기');
     }
     if (runBtn) {
       runBtn.disabled = why !== 'ready';
-      runBtn.textContent = running ? '🧍 분석하는 중…' : (p.state === 'done' ? '🧍 다시 분석' : '🧍 자세 분석');
+      iconLabel(runBtn, 'person', running ? '분석하는 중…' : (p.state === 'done' ? '다시 분석' : '자세 분석'));
     }
     if (meshBtn) {
       meshBtn.className = p.showMesh ? CLS.quickBtnActive : CLS.ghost;

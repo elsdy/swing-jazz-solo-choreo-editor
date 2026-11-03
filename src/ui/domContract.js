@@ -86,7 +86,7 @@ export const CLS = Object.freeze({
   quickPopupDivider: 'quick-popup-divider',
   kbActive: 'kb-active',              // 1878 · 2134 — 키보드 커서
   newAction: 'new-action',            // ⚠ CSS(947)에만 있고 JS 에서 붙이는 곳이 0곳이다 — 죽은 클래스
-  quickBtnActive: 'quick-btn-active', // 1683 · 4842 — '+ 빠른 배치' 토글 버튼
+  quickBtnActive: 'quick-btn-active', // 1683 · 4842 — `빠른 배치` 토글 버튼
 
   // ── 루틴 ──
   routineCard: 'routine-card',

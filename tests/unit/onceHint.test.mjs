@@ -45,7 +45,8 @@ test('처음 한 번 안내: 본 단계는 다시 뜨지 않고 다시 보기로
 });
 
 test('걷어 낸 사이드바 문장 셋은 처음 한 번 안내에 원문 그대로 산다', () => {
-  assert.equal(ONCE_HINTS.routine, '루틴을 드래그해서 안무표에 배치하거나, ✏ 버튼으로 편집하세요.');
+  // 「✏」 글자는 RM-18 에 아이콘으로 갔다 — 문장은 같은 말을 「연필 버튼」으로 한다(`새 루틴` 단추의 툴팁과 같은 글)
+  assert.equal(ONCE_HINTS.routine, '루틴을 드래그해서 안무표에 배치하거나, 연필 버튼으로 편집하세요.');
   assert.match(ONCE_HINTS.category, /^동작 카테고리는 팔레트에서 바로 수정되고/);
   assert.match(ONCE_HINTS.file, /^내보낸 파일에는 안무표 크기/);
   for (const key of ['step1', 'step2', 'step3', 'step4', 'step5', 'step6', 'practice']) {

@@ -7,11 +7,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRowActionPopup, ROW_MENU } from '../../src/ui/rowActionPopup.js';
 import { createPlacementActionPopup } from '../../src/ui/placementActionPopup.js';
+import { labelOf } from '../../src/ui/icon.js';
 
 /** 아주 작은 가짜 DOM — appendChild · 클릭 · 지우기 · querySelectorAll('button') 만 있다. */
 function fakeDom() {
   const make = (tag) => {
+    const attrs = {};
     const el = {
+      setAttribute(k, v) { attrs[k] = String(v); }, getAttribute(k) { return k in attrs ? attrs[k] : null; },
       tag, children: [], listeners: {}, dataset: {}, style: {}, className: '', textContent: '', disabled: false, parent: null,
       appendChild(c) { c.parent = el; el.children.push(c); return c; },
       remove() { if (el.parent) el.parent.children = el.parent.children.filter(c => c !== el); el.parent = null; },
@@ -101,10 +104,13 @@ test('블록 팝업: 「여기서 자르기」는 재생 헤드가 있으면 바
       mergeWithNeighbor: (g) => { called.push(['merge', g]); return { boards: { main: { rows: [1] } } }; },
     },
   });
-  const labelsOf = () => dom.buttons(popup.current()).map(b => b.textContent);
+  // 글자 칸(span.lbl)의 글자. 아이콘은 따로 본다 — 라벨은 그림 글자로 시작하지 않는다(RM-18, 개발 원칙 U-19)
+  const labelsOf = () => dom.buttons(popup.current()).map(b => labelOf(b));
+  const iconsOf = () => dom.buttons(popup.current()).map(b => (b.children[0] && b.children[0].dataset.icon) || '');
 
   popup.open({ groupId: 'a', name: '스윙아웃' }, 10, 10, 4);
-  assert.deepEqual(labelsOf(), ['✎ 동작 정하기', '☐ 선택하기', '⧉ 뒤에 복사', '✂ 여기서 자르기', '⊕ 옆과 합치기', '× 지우기']);
+  assert.deepEqual(labelsOf(), ['동작 정하기', '선택하기', '뒤에 복사', '여기서 자르기', '옆과 합치기', '지우기']);
+  assert.deepEqual(iconsOf(), ['pencil', 'square', 'copy', 'scissors', 'merge', 'x'], '아이콘은 스프라이트에서 — 글자 앞 기호가 아니다');
 
   // 재생 헤드가 이 블록 밖(null) → 팝업이 닫히지 않고 2..4 단추로 바뀐다(RM-11 의 「⧉ 뒤에 복사」가 앞에 있어 자르기는 넷째 줄)
   dom.buttons(popup.current())[3].click();
@@ -132,9 +138,9 @@ test('블록 팝업: 「여기서 자르기」는 재생 헤드가 있으면 바
   // 짝이 없으면 합치기 줄이 없고, 1카운트 블록은 자르기 줄이 없다
   partner = null;
   popup.open({ groupId: 'a' }, 10, 10, 4);
-  assert.deepEqual(labelsOf(), ['✎ 동작 정하기', '☐ 선택하기', '⧉ 뒤에 복사', '✂ 여기서 자르기', '× 지우기']);
+  assert.deepEqual(labelsOf(), ['동작 정하기', '선택하기', '뒤에 복사', '여기서 자르기', '지우기']);
   popup.open({ groupId: 'a' }, 10, 10, 1);
-  assert.deepEqual(labelsOf(), ['✎ 동작 정하기', '☐ 선택하기', '⧉ 뒤에 복사', '× 지우기']);
+  assert.deepEqual(labelsOf(), ['동작 정하기', '선택하기', '뒤에 복사', '지우기']);
   popup.close();
 });
 

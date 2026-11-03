@@ -14,15 +14,21 @@ import { commandFace, syncCommandTitles } from '../../src/ui/commandButtons.js';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HTML = readFileSync(join(ROOT, 'index.html'), 'utf8');
 
-/** 마크업에서 `data-command` 를 단 버튼 — id · 보드 · 안쪽 글자 · title 속성. */
+/**
+ * 마크업에서 `data-command` 를 단 버튼 — id · 보드 · 글자 · 아이콘 · title 속성.
+ * 글자는 글자 칸(`span.lbl`)의 것이고, 아이콘은 `<use href="#i-이름">` 의 이름이다(RM-18). 글자 칸이 없는 옛 꼴이면 안쪽 글자 전부.
+ */
 function commandButtons(html) {
   const out = [];
-  for (const m of html.matchAll(/<button\b([^>]*\bdata-command="([\w-]+)"[^>]*)>([^<]*)<\/button>/g)) {
+  for (const m of html.matchAll(/<button\b([^>]*\bdata-command="([\w-]+)"[^>]*)>([\s\S]*?)<\/button>/g)) {
+    const inner = m[3];
+    const lbl = inner.match(/<span class="lbl">([^<]*)<\/span>/);
     out.push({
       attrs: m[1],
       id: m[2],
       board: (m[1].match(/data-board="(\w+)"/) || [])[1] || 'main',
-      text: m[3].trim(),
+      text: (lbl ? lbl[1] : inner.replace(/<[^>]*>/g, '')).trim(),
+      icon: (inner.match(/<use href="#i-([\w-]+)"/) || [])[1] || '',
       title: (m[1].match(/\btitle="([^"]*)"/) || [])[1],
     });
   }
@@ -36,6 +42,8 @@ test('마크업의 data-command 버튼 — 등록부에 있고, 글자가 등록
     const cmd = commandById(b.id);
     assert.ok(cmd, `data-command="${b.id}" 가 등록부에 없다`);
     if (cmd.button) assert.equal(b.text, cmd.button, `${b.id} 버튼 글자가 등록부와 다르다`);
+    // 아이콘도 등록부의 `icon` 열이 주인이다(RM-18) — 엄지 바 · 선택 바가 JS 로 그리는 같은 명령과 같은 그림이어야 한다.
+    assert.equal(b.icon, cmd.icon || '', `${b.id} 버튼 아이콘이 등록부의 icon 과 다르다`);
     // 툴팁은 syncCommandTitles 가 등록부에서 단다. 마크업에 적으면 글쇠를 바꾼 사람에게 거짓말이 된다.
     assert.equal(b.title, undefined, `${b.id} 버튼에 title 을 손으로 적었다 — 등록부의 title 로 옮긴다`);
     assert.ok(['main', 'routine'].includes(b.board), `${b.id} 의 data-board="${b.board}"`);
@@ -71,7 +79,7 @@ test('commandFace — 엄지 바가 쓰는 글자 · 툴팁이 영상 패널의 
     assert.equal(face.label, cmd.button, id);
     assert.ok(face.title.startsWith(cmd.title || cmd.label), id);
   }
-  assert.deepEqual(commandFace('없는명령'), { label: '없는명령', title: '' });
+  assert.deepEqual(commandFace('없는명령'), { label: '없는명령', title: '', icon: '' });
 });
 
 test('개명해도 명령 id 는 그대로 — undo · redo · saveProject', () => {
