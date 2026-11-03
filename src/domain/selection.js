@@ -9,6 +9,7 @@
 
 import { linearOf } from './grid.js';
 import { getGroup, groupCount, groupsOf } from './placements.js';
+import { planNudge } from './keyboardEdit.js';
 
 /**
  * @typedef {Object} CellRect  행 · 칸 범위(양끝 포함). gestureMath.rectCellRange 가 만든다.
@@ -111,6 +112,30 @@ export function selectionAfterClick(board, current, groupId, mode) {
 export function presentOnly(board, ids) {
   const present = new Set(board.placements.map(p => p.groupId));
   return [...ids].filter(id => present.has(id));
+}
+
+/**
+ * 묶음 끌기(RM-14 · 손가락은 RM-48)의 거리와 놓일 자리 — 끄는 블록의 시작에서 놓을 칸까지의 선형 카운트 차이(delta)만큼
+ * 묶음 전체를 옮기는 계획이다. 옮기기 자체는 화살표와 같은 planNudge 규칙(하나라도 못 가면 아무것도 안 옮김)을 따른다.
+ * 마우스 몸통 끌기(input/boardController)와 손가락 끌기(input/touchDrag)가 같은 셈을 쓰도록 여기 한 자리에 둔다 —
+ * 두 input 모듈은 서로 import 하지 않는다.
+ * @param {{cols:number, placements:object[]}} board
+ * @param {string} groupId  끄는 블록
+ * @param {Iterable<string>} bundle  함께 갈 그룹들(끄는 블록 포함)
+ * @param {number} row  놓을 시작 행(잡은 칸을 뺀 자리, RM-57)
+ * @param {number} startIndex
+ * @returns {{delta:number, steps:{groupId:string, row:number, startIndex:number, count:number}[]|null, label:string|null}|null}
+ *          끄는 블록이 사라졌으면 null, 하나라도 못 가면 steps 가 null. label 은 미리보기 첫 조각에 적는 「N개 함께」
+ */
+// @complexity time=O(k·p) space=O(k+p) cc=3
+export function bundleDragPlan(board, groupId, bundle, row, startIndex) {
+  const span = groupSpan(board, groupId);
+  if (!span) return null;
+  const delta = linearOf(row, startIndex, board.cols) - span.start;
+  const plan = planNudge(board, presentOnly(board, bundle), delta);
+  if (!plan) return { delta, steps: null, label: null };
+  const steps = plan.map(s => ({ ...s, count: groupCount(board.placements, s.groupId) }));
+  return { delta, steps, label: `${steps.length}개 함께` };
 }
 
 /**

@@ -28,9 +28,7 @@ import { SEL, CLS, DATA } from '../ui/domContract.js';
 import { dragPreviewCount, resizeBlocked, resolveGrabZone, grabOffset, BODY_LONG_PRESS_MS, LONGPRESS_MOVE_THRESHOLD_PX } from '../domain/gestureMath.js';
 import * as gesture from '../domain/boardGesture.js';
 import { groupCount } from '../domain/placements.js';
-import { linearOf } from '../domain/grid.js';
-import { planNudge } from '../domain/keyboardEdit.js';
-import { groupSpan, presentOnly } from '../domain/selection.js';
+import { groupSpan, presentOnly, bundleDragPlan } from '../domain/selection.js';
 
 /**
  * 보드 하나에 위임 리스너를 건다.
@@ -150,16 +148,6 @@ export function createBoardController(deps) {
   }
 
   /**
-   * 끄는 블록의 시작에서 놓을 칸까지의 거리(선형 카운트). 블록이 사라졌으면 null.
-   * @returns {number|null}
-   */
-  // @complexity time=O(p) space=O(1) cc=2
-  function bundleDelta(drag, row, startIndex) {
-    const span = groupSpan(board(), drag.groupId);
-    return span ? linearOf(row, startIndex, board().cols) - span.start : null;
-  }
-
-  /**
    * 누른 자리가 블록 시작에서 몇째 칸인가(RM-57) — 몸통을 잡고 끌면 놓을 시작은 포인터 밑 칸에서 이만큼 앞이다.
    * 블록 요소의 rect 는 그 행의 조각만 덮으므로 누른 칸의 선형 위치 − 블록 시작(groupSpan)으로 잰다.
    * @returns {number}
@@ -174,15 +162,12 @@ export function createBoardController(deps) {
    * 묶음이 놓일 자리를 블록마다 프리뷰로 그린다 — 미리보기 = 결과. 하나라도 못 가면(놓아도 안 옮겨지면) 프리뷰를 지운다.
    * @returns {void}
    */
-  // @complexity time=O(k·p) space=O(k) cc=3
+  // 거리 · 놓일 자리의 셈은 domain/selection.bundleDragPlan 한 자리다 — 손가락 끌기(input/touchDrag)도 같은 것을 부른다(RM-48).
+  // @complexity time=O(k·p) space=O(k) cc=2
   function updateBundlePreview(drag, row, startIndex) {
-    const delta = bundleDelta(drag, row, startIndex);
-    const plan = delta === null ? null : planNudge(board(), presentOnly(board(), drag.bundle), delta);
-    if (!plan) { overlays.clearPreview(boardId); return; }
-    const placements = board().placements;
-    overlays.updateBundlePreview(boardId,
-      plan.map(step => ({ row: step.row, startIndex: step.startIndex, count: groupCount(placements, step.groupId) })),
-      `${plan.length}개 함께`);
+    const plan = bundleDragPlan(board(), drag.groupId, drag.bundle, row, startIndex);
+    if (!plan?.steps) { overlays.clearPreview(boardId); return; }
+    overlays.updateBundlePreview(boardId, plan.steps, plan.label);
   }
 
   // ── 그리기·빠른 배치·더블탭의 상태 (RM-08) ──────────────────────────────────
@@ -242,7 +227,7 @@ export function createBoardController(deps) {
         case 'endMove': endPlacementMove(); break;
         case 'move': apply(commands.moveGroup({ groupId: fx.groupId, targetRow: fx.row, targetStartIndex: fx.startIndex })); break;
         case 'copy': apply(commands.copyGroup({ groupId: fx.groupId, targetRow: fx.row, targetStartIndex: fx.startIndex })); break;
-        case 'moveBundle': moveBundle(fx.groupId, fx.row, fx.startIndex); break;
+        case 'moveBundle': moveBundle(fx.groupId, fx.row, fx.startIndex, fx.bundle); break;
         case 'swallowClick': swallowClick = true; break;
         case 'openGroupPicker': quickPicker?.openForGroup(fx.groupId, fx.clientX, fx.clientY); break;
         case 'openPicker': quickPicker.open(fx.row, fx.startIndex, fx.clientX, fx.clientY, fx.count); break;
@@ -284,8 +269,8 @@ export function createBoardController(deps) {
    * @param {string} groupId  끈 블록
    */
   // @complexity time=O(k·p) space=O(k) cc=3
-  function moveBundle(groupId, row, startIndex) {
-    const delta = bundleDelta({ groupId }, row, startIndex);
+  function moveBundle(groupId, row, startIndex, bundle) {
+    const delta = bundleDragPlan(board(), groupId, bundle, row, startIndex)?.delta;
     const dirty = delta ? commands.moveSelection({ delta }) : null;
     if (dirty) apply(dirty);
     if (dirty?.boards) commit();
