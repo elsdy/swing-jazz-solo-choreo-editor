@@ -17,7 +17,7 @@ import { createStore, BOARD_MAIN } from '../../src/usecases/store.js';
 import { createAndPlace } from '../../src/usecases/paletteCommands.js';
 import { counterEnv } from '../../src/ports/env.js';
 import * as Sheet from '../../src/usecases/sheetCommands.js';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const seg = (groupId, row, startIndex, length, extra = {}) =>
   ({ id: `${groupId}-${row}-${startIndex}`, groupId, name: groupId, category: 'step', row, startIndex, length, subRow: 0, ...extra });
@@ -325,4 +325,179 @@ test('print: 인쇄 블록이 안내 대상 강조([data-coach]) 애니메이션
   // coachmarks.js 의 <style> 이 index.html 의 인쇄 규칙보다 뒤에 들어오므로 !important 가 있어야 이긴다
   assert.match(rule.body, /animation:\s*none\s*!important/);
   assert.match(rule.body, /box-shadow:\s*none\s*!important/);
+});
+
+// ── RM-45: 인쇄 격자 너비가 화면 칸 너비를 따랐다 ────────────────────────────────────────────────
+// 칸 너비 --cellW 는 JS(ui/layout)가 그때 화면 폭으로 재어 html 에 적은 px 라, 인쇄에서도 그 값을 물려받았다 —
+// 폰 폭 390(37px)에서는 격자가 종이의 절반 남짓만 쓰고, 2560(168px)에서는 7·8카운트가 종이 밖으로 나갔다
+// (headless Chrome 의 인쇄 매체로 재현: 칸 오른끝 348 · 1436px, 종이 718px). 아래 시험은 인쇄 블록의 식을
+// 화면 값 몇 벌로 **셈해** 격자 합이 늘 종이 폭인지 본다. 이름은 계획서(docs/roadmap/plans/RM-45.md)의 표와 같다.
+
+const PX_PER_MM = 96 / 25.4;
+const VAR_RE = /var\(\s*(--[\w-]+)\s*(?:,|\))/;
+
+/** 선언 몸통을 { 속성: 값 } 으로 — 주석과 !important 는 걷는다. 괄호 안의 `;` 는 없다고 본다(인쇄 블록이 그렇다). */
+// @complexity time=O(n) space=O(n) cc=2
+function declsOf(body) {
+  const out = {};
+  for (const d of body.replace(/\/\*[\s\S]*?\*\//g, '').split(';')) {
+    const i = d.indexOf(':');
+    if (i > 0) out[d.slice(0, i).trim()] = d.slice(i + 1).replace(/!\s*important/, '').trim();
+  }
+  return out;
+}
+
+/** 값 안의 var() 를 env 로 바꾼다 — 물러섬(var(--a, 물러섬))과 겹친 var() 를 안쪽부터 푼다. */
+// @complexity time=O(n^2) space=O(n) cc=6
+function substVars(value, env) {
+  let s = value;
+  for (let guard = 0; guard < 50; guard++) {
+    const at = s.search(VAR_RE);
+    if (at < 0) return s;
+    let depth = 0, end = at + 3, comma = -1;
+    for (; end < s.length; end++) {
+      if (s[end] === '(') depth++;
+      else if (s[end] === ')') { depth--; if (depth === 0) break; }
+      else if (s[end] === ',' && depth === 1 && comma < 0) comma = end;
+    }
+    const name = s.slice(at + 4, comma < 0 ? end : comma).trim();
+    const fallback = comma < 0 ? null : s.slice(comma + 1, end).trim();
+    const got = env[name] != null ? env[name] : fallback;
+    if (got == null) throw new Error(`${name} 가 정해지지 않았다`);
+    s = s.slice(0, at) + got + s.slice(end + 1);
+  }
+  throw new Error('var() 를 다 풀지 못했다');
+}
+
+/** CSS 길이 식(calc · min · max · px · mm · 맨 수)을 px 로 셈한다. */
+// @complexity time=O(n) space=O(n) cc=2
+function cssPx(value, env) {
+  const js = substVars(value, env)
+    .replace(/\bcalc\(/g, '(').replace(/\bmin\(/g, 'Math.min(').replace(/\bmax\(/g, 'Math.max(')
+    .replace(/(\d*\.?\d+)mm\b/g, (_, n) => `(${n}*${PX_PER_MM})`).replace(/(\d*\.?\d+)px\b/g, '($1)');
+  if (/[^\d\s.+\-*/(),Mathinmax]/.test(js)) throw new Error(`셈할 수 없는 글자: ${js}`);
+  return Function(`return (${js});`)();
+}
+
+/** 인쇄 블록에서 셀렉터가 꼭 그것인 규칙의 선언. */
+// @complexity time=O(n) space=O(n) cc=1
+const printDecls = (html, sel) => Object.assign({}, ...printRules(html).filter(r => r.sel === sel).map(r => declsOf(r.body)));
+
+/** @page 의 종이 폭(mm) — A4 · 여백 하나짜리만 읽는다. */
+// @complexity time=O(1) space=O(1) cc=2
+function pageContentMm(html) {
+  const page = printDecls(html, '@page');
+  const sheet = { A4: 210, A5: 148, A3: 297 }[page.size];
+  const margin = parseFloat(page.margin);
+  return sheet && Number.isFinite(margin) ? sheet - 2 * margin : null;
+}
+
+/** createBoardView 로 cols 칸 보드를 가짜 DOM 에 세우고, 보드에 적힌 변수 · 머리 줄의 격자 틀을 돌려준다. */
+// @complexity time=O(r*c) space=O(r*c) cc=1
+async function buildBoard(cols) {
+  const make = () => {
+    const props = {};
+    const el = {
+      className: '', textContent: '', innerHTML: '', dataset: {}, children: [],
+      style: { setProperty(k, v) { props[k] = String(v); }, getPropertyValue: (k) => props[k] ?? '' },
+      append(...kids) { el.children.push(...kids); }, appendChild(c) { el.children.push(c); return c; },
+    };
+    return el;
+  };
+  const had = 'document' in globalThis;
+  globalThis.document = { createElement: make };
+  try {
+    const { createBoardView } = await import('../../src/ui/boardView.js');
+    const el = make();
+    createBoardView({ el, boardId: 'main' }).rebuild({ rows: 2, cols, hasIntroRow: false });
+    return { cols: el.style.getPropertyValue('--cols'), headerTemplate: el.children[0].style.gridTemplateColumns };
+  } finally {
+    if (!had) delete globalThis.document;
+  }
+}
+
+/** 화면 값 env(html · .board-wrap 인라인)로 인쇄의 머리 줄 격자 합(px)을 셈한다 — 행 라벨 + 칸 × cols + 비고 + 틈 둘. */
+// @complexity time=O(n) space=O(n) cc=2
+function printGridPx(html, headerTemplate, cols, screen) {
+  const wrapDecl = printDecls(html, '.board-wrap');
+  const boardDecl = printDecls(html, '.board-wrap .board');
+  const wrap = { ...screen };
+  for (const [k, v] of Object.entries(wrapDecl)) if (k.startsWith('--')) wrap[k] = v;
+  const board = { ...wrap, '--cols': String(cols) };
+  for (const [k, v] of Object.entries(boardDecl)) if (k.startsWith('--')) board[k] = `${cssPx(v, { ...wrap, '--cols': String(cols) })}px`;
+  // 머리 줄의 세 칸 — boardView 가 적은 틀을 최상위 빈칸에서 자른다
+  const parts = []; let depth = 0, cur = '';
+  for (const ch of headerTemplate) {
+    if (ch === '(') depth++; else if (ch === ')') depth--;
+    if (ch === ' ' && depth === 0) { if (cur) parts.push(cur); cur = ''; } else cur += ch;
+  }
+  if (cur) parts.push(cur);
+  const gap = cssPx(printDecls(html, '.board-header, .board-row').gap, board);
+  return parts.reduce((sum, p) => sum + cssPx(p, board), 0) + gap * (parts.length - 1);
+}
+
+const SCREENS = [
+  { name: '폰 390', '--cellW': '37px', '--rowLabelW': '48px', '--noteW': '0px', '--noteCol': '0px' },
+  { name: '1280', '--cellW': '76px', '--rowLabelW': '88px', '--noteW': '120px' },
+  { name: '2560', '--cellW': '168px', '--rowLabelW': '88px', '--noteW': '280px' },
+];
+
+test('print: 인쇄 블록이 칸 너비를 종이 너비 · 칸 수로 다시 정한다 [RM-45 요구 0]', async () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const paperMm = pageContentMm(html);
+  assert.equal(paperMm, 190, '@page 가 A4 · 여백 10mm 로 못박혀 있다');
+  assert.equal(cssPx(printDecls(html, '.board-wrap')['--printW'], {}), 190 * PX_PER_MM, '칸 너비 식의 종이 폭이 @page 와 짝이다');
+  const { headerTemplate } = await buildBoard(8);
+  const sums = SCREENS.map(s => printGridPx(html, headerTemplate, 8, s));
+  for (const [i, sum] of sums.entries()) assert.ok(Math.abs(sum - paperMm * PX_PER_MM) < 0.01, `${SCREENS[i].name}: 격자 합 ${sum.toFixed(2)}px 가 종이 폭 ${(paperMm * PX_PER_MM).toFixed(2)}px 와 같다`);
+  // 고치기 전 꼴(칸 너비 식이 없어 화면 --cellW 를 물려받는다)을 넣으면 화면마다 합이 달라 붉어진다
+  const before = html.replace(/\n\s*--cellW: calc\(\(var\(--printW\)[^;]*;/, '');
+  assert.notEqual(before, html);
+  const beforeSums = SCREENS.map(s => printGridPx(before, headerTemplate, 8, s));
+  assert.ok(beforeSums.some(sum => Math.abs(sum - paperMm * PX_PER_MM) > 1), `고치기 전에는 종이 폭과 다르다: ${beforeSums.map(Math.round)}`);
+});
+
+test('print: 넓은 화면 칸 너비여도 인쇄 격자 합이 종이 폭을 넘지 않는다 [RM-45 요구 1]', async () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const paperPx = 190 * PX_PER_MM;
+  const { headerTemplate } = await buildBoard(8);
+  const wide = { '--cellW': '168px', '--rowLabelW': '88px', '--noteW': '280px' };
+  for (const screen of [wide, { ...wide, '--noteCol': '0px' }]) {
+    const sum = printGridPx(html, headerTemplate, 8, screen);
+    assert.ok(sum <= paperPx + 0.01, `격자 합 ${sum.toFixed(1)}px ≤ 종이 ${paperPx.toFixed(1)}px (비고 ${screen['--noteCol'] ? '숨김' : '있음'})`);
+  }
+  // 비고 열은 종이의 25% 안으로 준다 — 화면의 280px(≈74mm) 비고가 칸을 누르지 않는다
+  const wrap = { ...wide, ...Object.fromEntries(Object.entries(printDecls(html, '.board-wrap')).filter(([k]) => k.startsWith('--'))) };
+  assert.ok(cssPx(wrap['--printNoteW'], wrap) <= paperPx * 0.25 + 0.01, '인쇄 비고 폭은 종이의 25% 이하');
+  assert.equal(cssPx(wrap['--printNoteW'], { ...wrap, '--noteCol': '0px' }), 0, '비고를 숨긴 표는 비고 폭이 0');
+  assert.match(printDecls(html, '.note-cell')['white-space'] || '', /normal/, '줄어든 비고 칸에서 긴 비고는 줄을 바꾼다');
+});
+
+test('print: 인쇄 칸 너비는 .board-wrap 에서만 덮고 :root 인라인 --cellW 를 건드리지 않는다 [RM-45 요구 2]', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const setters = printRules(html).filter(r => '--cellW' in declsOf(r.body));
+  assert.ok(setters.length > 0, '인쇄 블록에 --cellW 를 다시 정하는 규칙이 있다');
+  for (const r of setters) {
+    for (const sel of r.sel.split(',').map(s => s.trim())) {
+      assert.match(sel, /^\.board-wrap\b/, `${sel}: 격자 감싸개 안에서만 덮는다`);
+      assert.doesNotMatch(sel, /:root|\bhtml\b|\bbody\b/, `${sel}: 화면 값을 쥔 html 을 덮지 않는다`);
+    }
+    assert.doesNotMatch(r.body, /--cellW[^;]*!\s*important/, '!important 로 인라인 값과 다투지 않는다');
+  }
+  // 인쇄 앞뒤에서 화면 칸 너비를 다시 쓰지 않는다 — 인쇄 창을 닫으면 화면이 그대로다
+  const dir = new URL('../../src/', import.meta.url);
+  const files = readdirSync(dir, { recursive: true }).filter(f => f.endsWith('.js'));
+  const hits = files.filter(f => /\b(?:before|after)print\b/.test(readFileSync(new URL(f, dir), 'utf8')));
+  for (const f of hits) assert.doesNotMatch(readFileSync(new URL(f, dir), 'utf8'), /setGridVars|setProperty\(\s*['"]--cellW/, `${f}: 인쇄 앞뒤에 --cellW 를 쓰지 않는다`);
+});
+
+test('print: 보드가 칸 수를 --cols 로 내놓는다 [RM-45 요구 3]', async () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  assert.match(printDecls(html, '.board-wrap .board')['--cellW'], /var\(--cols\b/, '인쇄 식이 칸 수를 var(--cols) 로 읽는다');
+  for (const cols of [6, 8, 12]) {
+    const { cols: written, headerTemplate } = await buildBoard(cols);
+    assert.equal(written, String(cols), `${cols}칸 보드가 --cols 를 적는다`);
+    const sum = printGridPx(html, headerTemplate, cols, SCREENS[2]);
+    assert.ok(Math.abs(sum - 190 * PX_PER_MM) < 0.01, `${cols}칸: 격자 합 ${sum.toFixed(2)}px 가 종이 폭과 같다`);
+  }
 });
