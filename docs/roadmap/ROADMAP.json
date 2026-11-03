@@ -2984,7 +2984,7 @@
             "Q116"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "손가락 전이 표(transitionsFor 의 touch 갈래)에 RM-14 의 네모 고르기를 더한다. 빈 칸을 길게 눌러 시작하고, 고른 블록을 길게 눌러 끌면 묶음 전체가 RM-13 planNudge 규칙(하나라도 못 가면 다 멈춤)으로 함께 옮겨진다. 그러면 폰에서도 여러 블록을 한 번에 고르고 옮길 수 있다. 몸통 끌기의 잡은 칸 문제(RM-57)와 같은 함수(bundleDelta · 길게 누르기 갈래)를 만지니 병합 때 겹침을 본다.",
           "kind": "feature",
@@ -3004,7 +3004,9 @@
             "docs/HISTORY.md"
           ],
           "slug": "touch-marquee-select-and-bundle-drag",
-          "plan": "docs/roadmap/plans/RM-48.md"
+          "plan": "docs/roadmap/plans/RM-48.md",
+          "branch": "rm-48-touch-marquee-select-and-bundle-drag",
+          "startedAt": "2026-11-03"
         }
       ]
     },
@@ -4370,7 +4372,7 @@
           ],
           "defaults": [],
           "what": "분석이 끝나면 원본 관절점을 클립 곁 짝 파일로 서버에 남긴다. 다시 열면 분석하지 않고 되살리며, 두 테이크의 가동 범위 요약을 관절마다 전 → 후 · 차이로 견준다. 이 항목은 영상을 바꾸면 결과가 사라져 이미 만든 비교 계산(rom.compare)을 부를 자리가 없는 문제를 푼다. RM-29(연습 기록 줄의 잰 값 한 칸)와 RM-22(카운트 구간 문법)와 겹치되, 짝 파일 · 요약 표 · 클립끼리 비교는 둘 없이 먼저 선다.",
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "files": [
             "server.py",
@@ -4396,7 +4398,9 @@
             "docs/HISTORY.md",
             "CLAUDE.md"
           ],
-          "plan": "docs/roadmap/plans/RM-30.md"
+          "plan": "docs/roadmap/plans/RM-30.md",
+          "branch": "rm-30-rom-compare-rm",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-31",
@@ -4757,7 +4761,13 @@
           ],
           "plan": "docs/roadmap/plans/RM-45.md",
           "branch": "rm-45-print-grid-fits-a4-width",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "wrapup": [
+            {
+              "text": "넓은 화면 · Safari 에서 예제를 열고 인쇄 · PDF 미리보기로 격자가 A4 너비를 채우고 7·8카운트가 잘리지 않는지 본다(정적 파일만 바뀜 — 새로고침이면 된다)",
+              "state": "approved"
+            }
+          ]
         },
         {
           "id": "RM-46",
@@ -4767,7 +4777,7 @@
           "soft": [],
           "questions": [],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "인쇄할 때 .board 를 격자(display:grid)가 아닌 블록으로 흘려서, WebKit 도 행(.board-row) 중간에서 쪽을 넘기지 않게 한다. RM-21 요구 1의 「행 중간에서 쪽이 넘어가지 않는다」가 Chrome 에서만 지켜지고 Safari 에서는 깨지기 때문이며, 같은 @media print 블록을 고치는 RM-44 · RM-45 · RM-47 과 손댈 자리가 겹친다(함수 호출 관계는 없다).",
           "kind": "bug",
@@ -4798,7 +4808,9 @@
               "days": 14
             }
           ],
-          "plan": "docs/roadmap/plans/RM-46.md"
+          "plan": "docs/roadmap/plans/RM-46.md",
+          "branch": "rm-46-safari-print-row-break-block-flow",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-47",
@@ -5223,7 +5235,7 @@
           "wrapup": [
             {
               "text": "폰에서 블록 몸통 가운데를 0.4초 길게 눌러 위 행으로 곧게 옮겨, 시작 칸이 그대로인지 본다(손가락 길은 가짜 deps 시험으로만 쟀다)",
-              "state": "approved"
+              "state": "done"
             }
           ],
           "mergedAt": "2026-11-03"
@@ -5585,8 +5597,8 @@
             "Q130"
           ],
           "defaults": [],
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 86,
           "what": "튜토리얼 「설치형 앱으로 켠다」의 맥 줄을 고친다. 지금은 .dmg 안에서 `안무 편집기` 를 끌라고 하는데 Finder 에는 「SwingChoreo」로 보이고, 첫 길로 내세운 「오른쪽 단추 → 열기」는 macOS 15 부터 서명 안 된 앱에서 막혔다. 그래서 시스템 설정 → 개인정보 보호 및 보안의 「그래도 열기」를 첫 길로 올리고, 앱 이름은 화면에 보이는 것과 맞춘다. 같은 경고 안내가 packaging/README.md 에도 있어 판의 RM-68(포장 README 의 아직 재지 못한 것 갱신)과 그 파일이 겹친다.",
           "kind": "bug",
           "seat": "code",
@@ -5614,7 +5626,8 @@
               "state": "approved",
               "human": true
             }
-          ]
+          ],
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-68",
@@ -5627,7 +5640,7 @@
             "Q132"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "RM-28 마무리(2026-11-03)에 LGPL ffmpeg 7.1.1 을 지어 실은 .dmg 를 이 맥과 mac-mini(macOS 27.2)에서 쟀고, 윈도우 setup.exe 의 깔기 · 켜기 · 저장 · 다시 깔기도 API 로 쟀다. 그런데 packaging/README.md 의 「아직 재지 못한 것」과 ffmpeg 대본 설명, ROADMAP.md 의 RM-28 줄은 아직 그 전 모습이라 잰 것과 남은 것(윈도우 자르기 h264_mf · 두 OS 의 첫 실행 경고 화면)으로 다시 쓴다. 판의 RM-67(튜토리얼 맥 첫 실행 안내)과 같은 사실(맥 첫 실행은 「그래도 열기」)을 다루므로 README 의 서명 절은 RM-67 과 말을 맞춘다.",
           "kind": "bug",
@@ -5645,7 +5658,9 @@
             "packaging/README.md",
             "docs/ROADMAP.md"
           ],
-          "plan": "docs/roadmap/plans/RM-68.md"
+          "plan": "docs/roadmap/plans/RM-68.md",
+          "branch": "rm-68-packaging-readme-unmeasured-list-stale",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-69",
@@ -5669,6 +5684,30 @@
             "why": "RM-18 마무리의 폰 폭(390px) 브라우저 확인에서 봄"
           },
           "slug": "phone-video-frame-covers-practice-row"
+        },
+        {
+          "id": "RM-70",
+          "name": "인쇄에 영상 띠 크기 손잡이(.resize-divider)가 찍힌다",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "stage": null,
+          "pr": null,
+          "what": "RM-45 인쇄 확인 중 찾음: headless Chrome printToPDF 로 찍으면 격자 바로 밑에 회색 막대(48×4px)가 나온다. .resize-divider 가 index.html @media print 의 숨김 목록에 없어 ::before 손잡이가 종이에 찍힌다(고치기 전 · 뒤 PDF 모두). 숨김 목록에 .resize-divider 를 더하면 된다.",
+          "kind": "bug",
+          "seat": "code",
+          "addedAt": "2026-11-03T07:27:22Z",
+          "found": {
+            "by": "claude",
+            "kind": "bug",
+            "in": "RM-45",
+            "at": "2026-11-03T07:27:22Z",
+            "side": "feature",
+            "why": "앱의 인쇄 CSS(index.html @media print) 숨김 목록 누락 — 실제 Chrome printToPDF 결과에 보인다"
+          },
+          "slug": "print-hides-resize-divider"
         }
       ]
     }
@@ -6193,6 +6232,18 @@
       ],
       "reportedAt": "2026-11-03",
       "fixedBy": "RM-69"
+    },
+    {
+      "id": "BUG-38",
+      "title": "인쇄에 영상 띠 크기 손잡이(.resize-divider)가 찍힌다",
+      "symptom": "RM-45 인쇄 확인 중 찾음: headless Chrome printToPDF 로 찍으면 격자 바로 밑에 회색 막대(48×4px)가 나온다. .resize-divider 가 index.html @media print 의 숨김 목록에 없어 ::before 손잡이가 종이에 찍힌다(고치기 전 · 뒤 PDF 모두). 숨김 목록에 .resize-divider 를 더하면 된다.",
+      "elements": [
+        {
+          "name": "인쇄에 영상 띠 크기 손잡이(.resize-divider)가 찍힌다"
+        }
+      ],
+      "reportedAt": "2026-11-03",
+      "fixedBy": "RM-70"
     }
   ],
   "shared": [
