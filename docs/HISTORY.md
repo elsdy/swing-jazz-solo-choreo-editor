@@ -4,7 +4,7 @@
 
 ## 2026-11-03 — 설치형 앱 짓는 안내가 잰 것과 남은 것을 가른다
 
-병합 전 — `rm-68-packaging-readme-unmeasured-list-stale`
+PR #88 (`rm-68-packaging-readme-unmeasured-list-stale`)
 
 - **바뀐 것(문서).** `packaging/README.md` 의 「아직 재지 못한 것」이 RM-28 마무리 전 모습이라, 이미 잰 LGPL ffmpeg 빌드 · 다른 맥 · 윈도우 설치 파일을 아직 안 한 일로 적고 있었다. 이제 「잰 것과 남은 것」 절이 판 · 기계 · 결과를 적는다 — LGPL ffmpeg 7.1.1(링크는 `/System` · `/usr/lib` 뿐, `h264_videotoolbox`)을 실은 `.dmg` 로 이 맥과 mac-mini(macOS 27.2)에서 자르기 HTTP 201, 윈도우 설치 파일(파이썬 3.13.17 · Inno Setup 6.7.3)로 깔기 · 켜기 · 저장 · 다시 깔기. API 로 잰 것은 화면을 본 것이 아니라고 밝혔다.
 - 남은 손 점검: 윈도우 자르기(`h264_mf`) · 두 OS 의 첫 실행 경고 화면 · 윈도우 「켜져 있음」 창 · 인텔 맥 · 한국어 없는 맥의 Finder 이름. [로드맵](ROADMAP.md)의 RM-28 줄도 같은 사실로 고쳤다.
