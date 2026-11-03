@@ -78,7 +78,7 @@ import { mediaSourceFromUrl, pickPlayer, pickPlayerKind, toMediaSource } from '.
 import { createFilePlayer, FILE_CAPABILITIES } from '../../src/adapters/media/filePlayer.js';
 import { createClipLibrary } from '../../src/adapters/clipLibrary.js';
 import { createProjectServer } from '../../src/adapters/projectServer.js';
-import { safeSegment, projectDirName, clipDirParts, joinClipPath, splitClipPath, numberedName, findStoredClip } from '../../src/domain/clips.js';
+import { safeSegment, projectDirName, clipDirParts, joinClipPath, splitClipPath, numberedName, findStoredClip, posePathOf, POSE_DIR } from '../../src/domain/clips.js';
 import { DEFAULT_CLIP_SUBDIR, CLIP_UNFILED_DIR } from '../../src/ports/clips.js';
 import { nameKey, matchMove, normalizePlan, cellLabel } from '../../src/domain/choreoPlan.js';
 import * as PlanCmd from '../../src/usecases/planCommands.js';
@@ -2795,14 +2795,16 @@ import {
 } from '../../src/domain/pose.js';
 import {
   assertPoseEstimator, isPoseEstimator, POSE_ESTIMATOR_MEMBERS,
-  normalizePosePoint, normalizePoseFrame, normalizePoseFrames
+  normalizePosePoint, normalizePoseFrame, normalizePoseFrames,
+  makePoseRecord, normalizePoseRecord, POSE_RECORD_FORMAT
 } from '../../src/ports/pose.js';
 import {
   subjectCounts, isSinglePerson, autoAnchors, pickSubjectAt, buildTracks, framesOfTrack,
   trackIdOf, MAX_JUMP, COAST_FRAMES
 } from '../../src/domain/poseTracks.js';
 import {
-  summarize, summarizeByCount, seriesOf, symmetry, findings, compare, framesIn, DEFAULT_RULES
+  summarize, summarizeByCount, seriesOf, symmetry, findings, compare, framesIn, DEFAULT_RULES,
+  summaryRows, pairMarkersByLabel, compareTakes
 } from '../../src/domain/rom.js';
 
 /** 점 하나. [x, y, z, score] → PosePoint. */
@@ -3132,6 +3134,121 @@ test('rom: 좌표계가 다른 두 기록은 비교를 거절한다', () => {
   const right = res.items.find(i => i.key === 'rightElbow');
   assert.equal(right.delta, null);
   assert.equal(right.trusted, false);
+
+  // 모델 · 화면 비율도 잣대다(RM-30) — 다른 모델로 잰 · 가로와 세로로 찍은 두 기록은 없던 변화를 만든다.
+  const frames = [{ sec: 0, subjects: [armSubject(60)] }, { sec: 1, subjects: [armSubject(120)] }];
+  const full = summarize(frames, { model: 'mediapipe/full', aspect: 16 / 9 });
+  assert.deepEqual(compare(full, summarize(frames, { model: 'mediapipe/heavy', aspect: 16 / 9 })), { ok: false, reason: 'model-mismatch' });
+  assert.deepEqual(compare(full, summarize(frames, { model: 'mediapipe/full', aspect: 9 / 16 })), { ok: false, reason: 'aspect-mismatch' });
+  assert.equal(compare(full, summarize(frames, { model: 'mediapipe/full', aspect: 16 / 9 })).ok, true);
+  assert.equal(compare(full, worldRun).ok, true, '모델 · 비율을 모르는 옛 요약과는 그대로 견준다');
+});
+
+// ── 자세 분석 짝 파일 · 요약 표 · 테이크 견주기 (RM-30) ─────────────────────────
+
+test('clips: 자세 짝 파일은 클립 곁 숨은 폴더에 있고 server.py 와 같은 모양이다', () => {
+  assert.equal(POSE_DIR, '.pose');
+  assert.equal(posePathOf('video-clip/내 안무/take 1.mp4'), 'video-clip/내 안무/.pose/take 1.mp4.json');
+  assert.equal(posePathOf('/video-clip//p/../a.mov'), 'video-clip/p/.pose/a.mov.json', '조각은 splitClipPath 로 거른다');
+  assert.equal(posePathOf(''), '');
+  assert.equal(posePathOf(null), '');
+  // 두 번 적힌 규칙 — 한쪽만 고치면 짝을 못 찾는다.
+  const py = readFileSync(new URL('../../server.py', import.meta.url), 'utf8');
+  assert.match(py, /^POSE_DIR = '\.pose'$/m);
+  assert.match(py, /f'\{clip\.name\}\.json'/);
+});
+
+test('ports/pose: 짝 파일 기록은 소수를 줄여 남기고, 되읽으면 같은 궤적과 앵커가 선다', () => {
+  // 두 사람이 엇갈려 걷는 6프레임. 앵커는 프레임 시각과 소수 끝자리만 다르다(줄이면 같아진다).
+  const frames = [0, 1, 2, 3, 4, 5].map(i => ({
+    sec: i / 12 + 1e-7,
+    subjects: [personAt(0.2 + i * 0.01, 0.5), personAt(0.8 - i * 0.01, 0.5)]
+  }));
+  const anchors = [{ sec: frames[2].sec, subject: 1, id: 'p2' }, { sec: frames[0].sec, subject: 0, id: 'p1' }];
+  const rec = makePoseRecord({ model: 'mediapipe/full', space: 'world', aspect: 16 / 9, fps: 12, fromSec: 0, toSec: 0.5, anchors, activeId: 'p2', frames });
+  assert.equal(rec.format, POSE_RECORD_FORMAT);
+  assert.equal(rec.aspect, 1.7778);
+  assert.equal(rec.frames[1].sec, 0.0833, '시각은 소수 넷째 자리까지');
+  assert.equal(rec.anchors[0].sec, 0, '앵커도 프레임과 같은 자리로 줄인다 — 아니면 한 장 뒤에 붙는다');
+  assert.equal(rec.frames[0].subjects[0].world, null);
+
+  const back = normalizePoseRecord(JSON.parse(JSON.stringify({ clipBytes: 99, ...rec })));
+  assert.ok(back);
+  assert.deepEqual([back.model, back.space, back.aspect, back.fps, back.fromSec, back.toSec, back.activeId],
+    ['mediapipe/full', 'world', 1.7778, 12, 0, 0.5, 'p2']);
+  assert.equal(back.frames.length, 6);
+  const before = buildTracks(frames, anchors);
+  const after = buildTracks(back.frames, back.anchors);
+  assert.deepEqual([...after.ids].sort(), [...before.ids].sort(), '앵커는 시각 순으로 세워 남기므로 id 차례만 다를 수 있다');
+  assert.deepEqual(after.byFrame, before.byFrame, '되살린 궤적이 처음 분석한 궤적과 같다');
+
+  // 모르는 판 · 프레임이 없는 기록 · 쓰레기는 없는 것으로 친다(다시 분석하게 둔다).
+  assert.equal(normalizePoseRecord({ ...rec, format: 99 }), null);
+  assert.equal(normalizePoseRecord({ ...rec, frames: [] }), null);
+  assert.equal(normalizePoseRecord('x'), null);
+  assert.equal(normalizePoseRecord([rec]), null);
+  const loose = normalizePoseRecord({ format: 1, frames: rec.frames, aspect: -1, space: 'weird', anchors: [{ sec: 'a' }, { sec: 1, subject: 0, id: 'p1' }] });
+  assert.equal(loose.aspect, 1);
+  assert.equal(loose.space, 'screen');
+  assert.deepEqual(loose.anchors, [{ sec: 1, subject: 0, id: 'p1' }]);
+});
+
+test('rom: 요약 표 줄은 관절마다 범위 · 최소~최대 · 커버리지이고 못 본 관절도 빼지 않고 믿지 않는다', () => {
+  const s = summarize([
+    { sec: 0, subjects: [armSubject(60)] }, { sec: 1, subjects: [armSubject(120)] },
+    { sec: 2, subjects: [armSubject(90)] }, { sec: 3, subjects: [] }
+  ], { model: 'mediapipe/full', aspect: 0.5625 });
+  assert.equal(s.model, 'mediapipe/full');
+  assert.equal(s.aspect, 0.5625);
+  const rows = summaryRows(s);
+  assert.equal(rows.length, MEASURE_KEYS.length, '못 본 관절도 줄이 있다');
+  const elbow = rows.find(r => r.key === 'leftElbow');
+  assert.deepEqual([Math.round(elbow.range), Math.round(elbow.min), Math.round(elbow.max)], [60, 60, 120]);
+  assert.equal(elbow.coverage, 0.75);
+  assert.equal(elbow.trusted, true);
+  assert.equal(elbow.label, measureLabel('leftElbow'));
+  const right = rows.find(r => r.key === 'rightElbow');
+  assert.equal(right.range, null);
+  assert.equal(right.trusted, false, '한 번도 못 잰 관절은 믿지 않는다');
+  assert.equal(summaryRows(s, { minCoverage: 0.9 }).find(r => r.key === 'leftElbow').trusted, false, '눈금은 밖에서 갈아 끼운다');
+  assert.equal(summaryRows(null).every(r => r.range === null && !r.trusted), true);
+});
+
+test('rom: 두 테이크는 마커 이름으로 짝짓고, 마커가 없으면 구간 전체만 견주며 잣대가 다르면 거절한다', () => {
+  // 지난 테이크: 0~2초 「턴」에서 팔이 60~120°, 2~4초 「킥」에서 90°만. 오늘 테이크는 마커 시각이 다르다.
+  const take = (turn, kick) => [
+    { sec: 0, subjects: [armSubject(turn[0])] }, { sec: 1, subjects: [armSubject(turn[1])] },
+    { sec: 2, subjects: [armSubject(kick[0])] }, { sec: 3, subjects: [armSubject(kick[1])] },
+    { sec: 4, subjects: [armSubject(kick[1])] }, { sec: 5, subjects: [armSubject(kick[1])] }
+  ];
+  const before = { frames: take([60, 120], [90, 90]), model: 'mediapipe/full', aspect: 1.7778,
+    markers: [{ label: '킥', inSec: 2, outSec: 4 }, { label: ' 턴 ', inSec: 0, outSec: 2 }, { label: '', inSec: 4, outSec: 6 }] };
+  const after = { frames: take([40, 160], [80, 100]).map(f => ({ ...f, sec: f.sec })), model: 'mediapipe/full', aspect: 1.7778,
+    markers: [{ label: '턴', inSec: 0, outSec: 2 }, { label: 'KICK', inSec: 2, outSec: 4 }, { label: '킥', inSec: 2, outSec: 6 }] };
+
+  const pairs = pairMarkersByLabel(before.markers, after.markers);
+  assert.deepEqual(pairs.map(p => p.label), ['턴', '킥'], '이름이 같은 것끼리, 지난 테이크의 시각 순 — 빈 이름표는 빠진다');
+  assert.deepEqual(pairs[1].after, { inSec: 2, outSec: 6 });
+  assert.deepEqual(pairMarkersByLabel([{ label: 'A', inSec: 0, outSec: 1 }, { label: 'a', inSec: 2, outSec: 3 }], [{ label: 'a', inSec: 5, outSec: 6 }]).length, 1,
+    '같은 이름이 여럿이면 나온 차례대로 하나씩');
+
+  const res = compareTakes(before, after);
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.sections.map(s => [s.label, s.marker]), [['', false], ['턴', true], ['킥', true]]);
+  const elbowOf = (sec) => sec.items.find(i => i.key === 'leftElbow');
+  assert.equal(Math.round(elbowOf(res.sections[1]).delta), 60, '턴: 60° → 120°');
+  assert.equal(Math.round(elbowOf(res.sections[2]).before), 0);
+  assert.equal(Math.round(elbowOf(res.sections[2]).after), 20, '킥: 0° → 20°');
+
+  // 마커가 없으면 전체 한 줄만.
+  const plain = compareTakes({ ...before, markers: [] }, { ...after, markers: undefined });
+  assert.deepEqual(plain.sections.map(s => s.marker), [false]);
+  // 모델 · 화면 비율이 다르면 거절한다(둘 다 알 때만).
+  assert.deepEqual(compareTakes(before, { ...after, model: 'mediapipe/lite' }), { ok: false, reason: 'model-mismatch' });
+  assert.deepEqual(compareTakes(before, { ...after, aspect: 0.5625 }), { ok: false, reason: 'aspect-mismatch' });
+  assert.equal(compareTakes(before, { ...after, model: '' }).ok, true, '모델을 모르는 옛 기록은 그대로 견준다');
+  assert.equal(compareTakes(before, { ...after, aspect: 1.79 }).ok, true, '화면 비율은 눈금 안의 차를 견딘다');
+  assert.deepEqual(compareTakes(null, after), { ok: false, reason: 'missing' });
 });
 
 import { createModelServer } from '../../src/adapters/modelServer.js';
@@ -3405,6 +3522,81 @@ test('poseCommands: 분석 상태는 휘발성이고 undo 스냅샷에 관절점
   assert.ok(text.length < 400, `요약이 ${text.length}자나 된다 — 결과를 통째로 넣은 것 아닌가`);
   // media(안무)는 건드리지 않는다 — 분석은 undo 를 타지 않는다.
   assert.equal(isEmptyMedia(store.get().media), true);
+});
+
+test('poseCommands: 짝 파일에서 되살린 분석은 끝난 분석과 같고, 견줄 테이크는 자기 자신을 고르지 않는다', () => {
+  const store = createStore();
+  const d = PoseCmd.restoreAnalysis(store, {
+    frames: 360, maxSubjects: 2, trackIds: ['p1', 'p2'], activeId: 'p2',
+    anchors: [{ sec: 0, subject: 0, id: 'p1' }, { sec: 1, subject: 1, id: 'p2' }, { sec: 'x', subject: 0, id: 'p3' }],
+    ambiguous: 1, lost: 0, fromSec: 2, toSec: 32
+  });
+  assert.deepEqual(d, { video: true });
+  const p = PoseCmd.poseState(store);
+  assert.deepEqual([p.state, p.frames, p.activeId, p.stored, p.fromSec, p.toSec], ['done', 360, 'p2', 'restored', 2, 32]);
+  assert.deepEqual(p.anchors.map(a => a.id), ['p1', 'p2'], '모양이 틀린 앵커는 버린다');
+  assert.equal(PoseCmd.hasOverlay(store), true, '되살리면 곧바로 오버레이가 선다 — 다시 분석하지 않는다');
+  const lone = createStore();
+  PoseCmd.restoreAnalysis(lone, { trackIds: ['p1'], activeId: 'p9' });
+  assert.equal(PoseCmd.poseState(lone).activeId, 'p1', '남긴 궤적이 이제 없으면 첫 궤적을 본다');
+
+  // 짝 파일과의 관계 — 모르는 값은 무시한다.
+  assert.deepEqual(PoseCmd.setStored(store, { stored: 'saved' }), { video: true });
+  assert.equal(PoseCmd.poseState(store).stored, 'saved');
+  assert.equal(PoseCmd.setStored(store, { stored: 'weird' }), NONE);
+  assert.deepEqual(PoseCmd.POSE_STORED, ['', 'saving', 'saved', 'restored', 'failed']);
+
+  // 견줄 테이크 — 자기 자신은 고르지 않는다(모든 차이가 0 이라 「나아지지 않았다」로 읽힌다).
+  assert.equal(PoseCmd.setCompare(store, { id: 'file:a.mp4', self: 'file:a.mp4' }), NONE);
+  assert.deepEqual(PoseCmd.setCompare(store, { id: 'file:b.mp4', self: 'file:a.mp4' }), { video: true });
+  assert.equal(PoseCmd.poseState(store).compareId, 'file:b.mp4');
+
+  // 관절점은 여전히 store 밖이다 — 되살린 상태도 요약 몇 줄뿐이다.
+  const text = JSON.stringify(store.get().session.pose);
+  for (const banned of ['leftShoulder', 'points', 'world', 'frames":[']) assert.ok(!text.includes(banned), `${banned} 가 store 에 들어왔다`);
+  assert.ok(text.length < 400, `요약이 ${text.length}자나 된다`);
+
+  // 「분석 지우기」는 화면의 결과와 견줄 테이크를 함께 지운다(짝 파일은 app/main 이 건드리지 않는다 — Q37).
+  PoseCmd.clearAnalysis(store);
+  assert.deepEqual([PoseCmd.poseState(store).state, PoseCmd.poseState(store).stored, PoseCmd.poseState(store).compareId], ['idle', '', '']);
+  // 새로 분석을 시작하면 짝 파일 표시는 모름으로 돌아간다.
+  PoseCmd.setStored(store, { stored: 'failed' });
+  PoseCmd.startAnalysis(store, { fromSec: 0, toSec: 1 });
+  assert.equal(PoseCmd.poseState(store).stored, '');
+});
+
+test('clipServer: 자세 짝 파일 savePose · loadPose 는 던지지 않고, 없는 짝은 null 이다', async () => {
+  const calls = [];
+  const saved = new Map();
+  const fake = async (url, init = {}) => {
+    calls.push({ url, init });
+    const m = /\/api\/pose\/(.+)$/.exec(url);
+    if (!m) return { ok: false, status: 404, json: async () => ({}) };
+    const key = decodeURIComponent(m[1]);
+    if (init.method === 'PUT') {
+      if (key.includes('nope')) return { ok: false, status: 404, json: async () => ({ ok: false, error: 'no such clip' }) };
+      saved.set(key, JSON.parse(init.body));
+      return { ok: true, status: 200, json: async () => ({ ok: true, path: 'video-clip/p/.pose/a b.mp4.json', size: 123 }) };
+    }
+    if (!saved.has(key)) return { ok: false, status: 404, json: async () => ({ ok: false, error: 'no pose record' }) };
+    return { ok: true, status: 200, json: async () => ({ clipBytes: 9, ...saved.get(key) }) };
+  };
+  const api = createClipServer({ fetchImpl: fake });
+  assert.equal(await api.loadPose('video-clip/p/a b.mp4'), null, '없는 짝은 null');
+  const rec = { format: 1, frames: [{ sec: 0, subjects: [] }] };
+  assert.deepEqual(await api.savePose('video-clip/p/a b.mp4', rec), { ok: true, path: 'video-clip/p/.pose/a b.mp4.json', size: 123 });
+  assert.equal(calls[1].init.method, 'PUT');
+  assert.ok(calls[1].url.endsWith('/api/pose/video-clip/p/a%20b.mp4'), '경로 조각마다 인코딩한다');
+  assert.deepEqual(await api.loadPose('video-clip/p/a b.mp4'), { clipBytes: 9, ...rec });
+  assert.deepEqual(await api.savePose('video-clip/p/nope.mp4', rec), { ok: false, error: 'no such clip' });
+  assert.equal((await api.savePose('', rec)).ok, false);
+  assert.equal(await api.loadPose(''), null);
+  const down = createClipServer({ fetchImpl: async () => { throw new Error('down'); } });
+  assert.deepEqual(await down.savePose('video-clip/p/a.mp4', rec), { ok: false, error: 'down' });
+  assert.equal(await down.loadPose('video-clip/p/a.mp4'), null);
+  // frames 가 없는 몸은 짝 파일이 아니다.
+  const odd = createClipServer({ fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ hello: 1 }) }) });
+  assert.equal(await odd.loadPose('video-clip/p/a.mp4'), null);
 });
 
 test('poseCommands: 실패와 지우기, 그리고 메시 토글', () => {

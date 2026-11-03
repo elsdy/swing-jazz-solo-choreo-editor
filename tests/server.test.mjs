@@ -388,6 +388,114 @@ test('server.py: ffmpeg 이 있으면 In~Out 을 다시 인코딩한 MP4 가 같
   }
 });
 
+// ── 자세 분석 짝 파일 (RM-30) ────────────────────────────────────────────────
+
+/** 짝 파일에 쓸 작은 기록 하나. 내용은 서버가 보지 않는다 — frames 배열이 있는지만 본다. */
+const POSE_RECORD = { format: 1, model: 'mediapipe/full', space: 'world', aspect: 1.7778, fps: 12, fromSec: 0, toSec: 1,
+  anchors: [{ sec: 0.5, subject: 0, id: 'p1' }], activeId: 'p1',
+  frames: [{ sec: 0, subjects: [{ points: { nose: { x: 0.5, y: 0.2, z: 0, score: 0.9 } }, world: null, score: 0.9, aspect: 1.7778 }] }] };
+
+const putPose = (base, clipPath, body) => fetch(`${base}/api/pose/${clipPath.split('/').map(encodeURIComponent).join('/')}`, {
+  method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body)
+});
+const getPose = (base, clipPath) => fetch(`${base}/api/pose/${clipPath.split('/').map(encodeURIComponent).join('/')}`);
+
+test('server.py: 자세 짝 파일은 클립 곁 숨은 자리에 쓰이고 읽히며 루트 밖 경로는 거절한다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const { posePathOf } = await import('../src/domain/clips.js');
+  const s = await startServer();
+  try {
+    const bytes = new Uint8Array(1000).map((_, i) => i % 251);
+    const up = await (await fetch(`${s.base}/api/clips?project=${encodeURIComponent('내 안무')}&name=take.mp4`, { method: 'PUT', body: bytes })).json();
+    assert.equal(up.path, 'video-clip/내 안무/take.mp4');
+
+    // 아직 없다 — 404 이고, 클립이 없는 경로도 404 다.
+    assert.equal((await getPose(s.base, up.path)).status, 404);
+    assert.equal((await getPose(s.base, 'video-clip/내 안무/nope.mp4')).status, 404);
+    assert.equal((await putPose(s.base, 'video-clip/내 안무/nope.mp4', POSE_RECORD)).status, 404, '클립이 없으면 짝도 없다');
+
+    // 쓴다 — 자리는 domain/clips.posePathOf 와 같은 모양(두 번 적힌 규칙이 어긋나지 않는다).
+    const put = await putPose(s.base, up.path, POSE_RECORD);
+    assert.equal(put.status, 200);
+    const res = await put.json();
+    assert.equal(res.ok, true);
+    assert.equal(res.path, posePathOf(up.path));
+    assert.equal(res.path, 'video-clip/내 안무/.pose/take.mp4.json');
+    const onDisk = readFileSync(path.join(s.root, ...res.path.split('/')));
+    assert.equal(res.size, onDisk.length);
+
+    // 읽으면 쓴 그 바이트가 그대로 온다. 맨 앞 키는 서버가 적은 클립 크기다.
+    const got = await getPose(s.base, up.path);
+    assert.equal(got.status, 200);
+    const raw = Buffer.from(await got.arrayBuffer());
+    assert.ok(raw.equals(onDisk), 'GET 은 짝 파일의 바이트를 그대로 돌려준다');
+    const back = JSON.parse(raw.toString('utf8'));
+    assert.deepEqual(Object.keys(back)[0], 'clipBytes');
+    assert.equal(back.clipBytes, 1000);
+    assert.deepEqual({ ...back, clipBytes: undefined }, { ...POSE_RECORD, clipBytes: undefined });
+
+    // 같은 클립에 다시 쓰면 덮어쓴다(다시 분석 · 앵커 고침).
+    assert.equal((await putPose(s.base, up.path, { ...POSE_RECORD, activeId: 'p2' })).status, 200);
+    assert.equal((await (await getPose(s.base, up.path)).json()).activeId, 'p2');
+
+    // 모양이 틀린 몸은 거절한다.
+    assert.equal((await putPose(s.base, up.path, { frames: 'x' })).status, 400);
+    assert.equal((await putPose(s.base, up.path, '[1,2]')).status, 400);
+    assert.equal((await putPose(s.base, up.path, 'not json')).status, 400);
+
+    // 루트 밖 · 숨은 자리는 거절한다. 경로를 그대로 보내야 하므로 http.request 다.
+    assert.equal(await rawStatus(s.base, '/api/pose/../server.py'), 404);
+    assert.equal(await rawStatus(s.base, '/api/pose/%2E%2E/%2E%2E/etc/passwd'), 404);
+    assert.equal(await rawStatus(s.base, '/api/pose/video-clip/x/../../../server.py'), 404);
+    assert.equal((await putPose(s.base, res.path, POSE_RECORD)).status, 404, '짝 파일을 클립으로 주면 짝의 짝을 만들지 않는다');
+    assert.ok(!existsSync(path.join(s.root, 'video-clip', '내 안무', '.pose', '.pose')));
+
+    // 같은 이름에 다른 영상이 들어서면(크기가 다르면) 옛 짝은 없는 것으로 친다.
+    writeFileSync(path.join(s.root, 'video-clip', '내 안무', 'take.mp4'), new Uint8Array(1200));
+    const stale = await getPose(s.base, up.path);
+    assert.equal(stale.status, 404);
+    assert.equal((await stale.json()).stale, true);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('server.py: 클립 목록에 짝 파일이 끼지 않고 자르기로 만든 클립에는 짝이 따라오지 않는다', { skip: !hasPython && 'python3 없음' }, async () => {
+  const s = await startServer();
+  try {
+    // ffmpeg 이 있으면 진짜 영상을 써서 자르기까지 잰다. 없으면 목록 부분만 잰다.
+    let bytes = new Uint8Array(1000).map((_, i) => i % 251);
+    if (hasFfmpeg) {
+      const gen = spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=duration=3:size=64x64:rate=10',
+        '-pix_fmt', 'yuv420p', path.join(s.root, 'src.mp4')]);
+      assert.equal(gen.status, 0, String(gen.stderr));
+      bytes = readFileSync(path.join(s.root, 'src.mp4'));
+    }
+    const up = await (await fetch(`${s.base}/api/clips?project=p&name=take.mp4`, { method: 'PUT', body: bytes })).json();
+    const other = await (await fetch(`${s.base}/api/clips?project=p&name=other.mp4`, { method: 'PUT', body: new Uint8Array(10) })).json();
+    assert.equal((await putPose(s.base, up.path, POSE_RECORD)).status, 200);
+
+    // 목록에는 영상 둘뿐이다 — 숨은 폴더의 짝 파일은 끼지 않고, 짝이 있는 영상에만 pose 가 선다.
+    const list = await (await fetch(`${s.base}/api/clips?project=p`)).json();
+    assert.deepEqual(list.clips.map(c => c.name), ['other.mp4', 'take.mp4']);
+    assert.deepEqual(list.clips.map(c => c.pose), [false, true]);
+    assert.ok(!list.clips.some(c => c.path.includes('.pose')));
+    assert.equal(other.path, 'video-clip/p/other.mp4');
+
+    if (!hasFfmpeg) return;
+    const res = await fetch(`${s.base}/api/clips/trim`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: up.path, inSec: 0.5, outSec: 2 }) });
+    const cut = await res.json();
+    assert.equal(res.status, 201, JSON.stringify(cut));
+    assert.equal((await getPose(s.base, cut.path)).status, 404, '잘라 낸 새 클립에는 옛 짝이 따라오지 않는다');
+    assert.equal((await getPose(s.base, up.path)).status, 200, '원본의 짝은 그대로다');
+    const after = await (await fetch(`${s.base}/api/clips?project=p`)).json();
+    assert.equal(after.clips.find(c => c.path === cut.path).pose, false);
+    assert.deepEqual(readdirSync(path.join(s.root, 'video-clip', 'p', '.pose')), ['take.mp4.json']);
+  } finally {
+    await s.stop();
+  }
+});
+
 test('server.py: 자세 분석 모델의 보관 위치를 설정으로 바꾸고 상태를 알려 준다', { skip: !hasPython && 'python3 없음' }, async () => {
   const s = await startServer();
   try {

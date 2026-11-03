@@ -36,3 +36,17 @@ export const CLIP_UNFILED_DIR = '_미지정';
  *   폴더 기준 상대 경로('/' 구분)다 — 이것이 프로젝트 파일에 저장된다
  * @property {(path: string) => Promise<File|null>} openClip path 의 파일. 없거나 권한이 없으면 null
  */
+
+/**
+ * 자세 분석 짝 파일을 남기고 읽는 자리(RM-30, 2026-11-03). **서버 모드에만 있다** — 분석 자체가 서버 경로에서만
+ * 되므로(모델을 서버가 내준다) 브라우저 폴더 방식에는 짝 파일이 없다.
+ *
+ * 열쇠는 클립의 **보관 경로**(`<subdir>/<프로젝트>/<파일>`)다. 짝 파일은 그 곁 숨은 폴더
+ * `<subdir>/<프로젝트>/.pose/<파일>.json` 에 놓인다(domain/clips.posePathOf — server.py 와 같은 규칙).
+ * ⚠ 던지지 않는다. 쓰기 실패는 `{ok:false, error}`, 읽기 실패 · 없음은 null 이다 — 저장이 안 돼도 분석 결과는
+ *   화면에 그대로 있어야 한다.
+ * ⚠ 지우는 멤버가 없다 — 「분석 지우기」는 화면에서만 지운다(2026-10-01 결정 Q37). 다시 분석하면 덮어쓴다.
+ * @typedef {Object} PoseRecordStore
+ * @property {(clipPath: string, record: object) => Promise<{ok:true, path:string, size:number}|{ok:false, error:string}>} savePose
+ * @property {(clipPath: string) => Promise<object|null>} loadPose 짝 파일의 내용 그대로(정규화는 ports/pose.normalizePoseRecord 가 한다)
+ */

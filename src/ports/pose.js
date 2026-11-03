@@ -212,3 +212,138 @@ export function normalizePoseFrames(raw) {
   }
   return [...bySec.values()].sort((a, b) => a.sec - b.sec);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 짝 파일 기록 — PoseRecord (RM-30, 2026-11-03)
+//
+// 분석이 끝나면 원본 관절점을 클립 곁 짝 파일(`<클립 폴더>/.pose/<클립 파일>.json`)로 서버에 남긴다.
+// 다시 열면 분석하지 않고 이 기록을 읽어 오버레이 · 궤적 · 앵커를 되살린다.
+//
+// ⚠ 비교에 필요한 것을 **함께** 싣는다 — 모델(`model`), 좌표계(`space`), 화면 비율(`aspect`). 모델이 바뀌거나
+//   세로 영상과 가로 영상을 견주면 같은 자세도 몇 도씩 다르게 나온다. 다르면 비교를 거절하려면(domain/rom.compare)
+//   저장된 값에도 그 셋이 있어야 한다.
+// ⚠ 요약(가동 범위 표)은 싣지 않는다 — 원본에서 언제든 다시 만든다(2026-10-01 결정 Q36). 템포를 고쳐도 다시 만들 수 있다.
+// ⚠ 이 기록은 store · 안무 파일 · 되돌리기 스냅샷 어디에도 들어가지 않는다(usecases/poseCommands 경계 ①).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 짝 파일 포맷 판. 꼴을 바꾸면 올린다 — 모르는 판은 normalizePoseRecord 가 null 로 거절한다. */
+export const POSE_RECORD_FORMAT = 1;
+
+/**
+ * @typedef {Object} PoseRecordAnchor
+ * @property {number} sec
+ * @property {number} subject
+ * @property {string} id
+ */
+
+/**
+ * @typedef {Object} PoseRecord
+ * @property {number} format    POSE_RECORD_FORMAT
+ * @property {string} model     추정기 id(`mediapipe/full`). 다른 모델로 잰 두 기록은 견주지 않는다
+ * @property {'world'|'screen'} space 각도를 잰 좌표계
+ * @property {number} aspect    영상의 폭/높이. 모르면 1
+ * @property {number} fps       초당 몇 장을 봤나
+ * @property {number} fromSec   분석 구간 시작
+ * @property {number} toSec     분석 구간 끝(배타적)
+ * @property {PoseRecordAnchor[]} anchors 「이 시각의 이 사람이 이 궤적이다」
+ * @property {string} activeId  기록할 때 보던 궤적
+ * @property {PoseFrame[]} frames
+ */
+
+/** 소수 자리를 줄인다 — 짝 파일이 수 MB 라 자리 하나가 곧 크기다. 정규 좌표 1e-5 는 4K 화면의 0.04px 이다. */
+function round(value, digits) {
+  const k = 10 ** digits;
+  return Math.round(value * k) / k;
+}
+
+/** 점 사전 하나를 저장할 꼴로 줄인다. 없는 점(null)은 키째 뺀다 — 되읽을 때 없는 점은 어차피 null 이다. */
+// @complexity time=O(n) space=O(n) cc=4
+function compactPoints(points, digits) {
+  if (!points || typeof points !== 'object') return null;
+  const out = {};
+  for (const key of Object.keys(points)) {
+    const p = points[key];
+    if (!p) continue;
+    out[key] = { x: round(p.x, digits), y: round(p.y, digits), z: round(p.z, digits), score: round(p.score, 3) };
+  }
+  return out;
+}
+
+/** 앵커 배열을 정규화한다. 시각이 유한하고 사람 번호가 0 이상 정수이며 id 가 있는 것만. */
+// @complexity time=O(n log n) space=O(n) cc=5
+function normalizeAnchors(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const a of raw) {
+    if (!a || typeof a !== 'object') continue;
+    const sec = num(a.sec, NaN);
+    const subject = num(a.subject, NaN);
+    const id = a.id == null ? '' : String(a.id);
+    if (!Number.isFinite(sec) || !Number.isInteger(subject) || subject < 0 || !id) continue;
+    out.push({ sec, subject, id });
+  }
+  return out.sort((x, y) => x.sec - y.sec || (x.id < y.id ? -1 : 1));
+}
+
+/**
+ * 분석 결과 → 짝 파일에 쓸 기록. 좌표는 소수 다섯 자리(world 는 미터라 네 자리 = 0.1mm)로 줄인다.
+ * @param {{model?:string, space?:string, aspect?:number, fps?:number, fromSec?:number, toSec?:number,
+ *          anchors?:unknown, activeId?:string, frames?:PoseFrame[]}} args
+ * @returns {PoseRecord}
+ */
+// @complexity time=O(n) space=O(n) cc=6
+export function makePoseRecord(args = {}) {
+  const frames = (Array.isArray(args.frames) ? args.frames : []).map(f => ({
+    sec: round(f.sec, 4),
+    subjects: (f.subjects || []).map(s => ({
+      points: compactPoints(s.points, 5),
+      world: s.world ? compactPoints(s.world, 4) : null,
+      score: round(s.score, 3),
+      aspect: round(s.aspect, 4)
+    }))
+  }));
+  const aspect = num(args.aspect, NaN);
+  return {
+    format: POSE_RECORD_FORMAT,
+    model: String(args.model || ''),
+    space: args.space === 'world' ? 'world' : 'screen',
+    aspect: Number.isFinite(aspect) && aspect > 0 ? round(aspect, 4) : 1,
+    fps: Math.max(0, num(args.fps, 0)),
+    fromSec: num(args.fromSec, 0),
+    toSec: num(args.toSec, 0),
+    // ⚠ 앵커 시각도 프레임과 같은 자리로 줄인다 — 궤적은 「앵커 시각 이상인 첫 프레임」에서 시작하므로(poseTracks),
+    //   프레임만 줄이면 내림된 프레임을 건너뛰어 한 장 뒤에 앵커가 붙는다.
+    anchors: normalizeAnchors(args.anchors).map(a => ({ ...a, sec: round(a.sec, 4) })),
+    activeId: String(args.activeId || ''),
+    frames
+  };
+}
+
+/**
+ * 짝 파일에서 읽은 것을 정규화한다. 모르는 판 · 프레임이 한 장도 없는 기록은 **null**(= 없는 것으로 친다).
+ * 프레임은 normalizePoseFrames 가 쓰레기를 흡수하고 시각 순으로 세운다 — 손으로 고친 파일도 견딘다.
+ * @param {unknown} raw
+ * @returns {PoseRecord|null}
+ */
+// @complexity time=O(n log n) space=O(n) cc=7
+export function normalizePoseRecord(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (num(raw.format, NaN) !== POSE_RECORD_FORMAT) return null;
+  const frames = normalizePoseFrames(raw.frames);
+  if (!frames.length) return null;
+  const aspect = num(raw.aspect, NaN);
+  const fromSec = num(raw.fromSec, frames[0].sec);
+  const toSec = num(raw.toSec, frames[frames.length - 1].sec);
+  return {
+    format: POSE_RECORD_FORMAT,
+    model: raw.model == null ? '' : String(raw.model),
+    space: raw.space === 'world' ? 'world' : 'screen',
+    aspect: Number.isFinite(aspect) && aspect > 0 ? aspect : 1,
+    fps: Math.max(0, num(raw.fps, 0)),
+    fromSec,
+    toSec: toSec > fromSec ? toSec : fromSec,
+    anchors: normalizeAnchors(raw.anchors),
+    activeId: raw.activeId == null ? '' : String(raw.activeId),
+    frames
+  };
+}

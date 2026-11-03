@@ -27,7 +27,9 @@ function defaultFetch() {
  *   upload: (file: Blob & {name?: string}, projectName: string, fileName?: string) => Promise<{path:string, url:string}|null>,
  *   exists: (path: string) => Promise<boolean>,
  *   urlFor: (path: string) => string,
- *   list: (projectName: string) => Promise<{path:string, name:string, size:number}[]>
+ *   list: (projectName: string) => Promise<{path:string, name:string, size:number, pose?:boolean}[]>,
+ *   savePose: (clipPath: string, record: object) => Promise<{ok:true, path:string, size:number}|{ok:false, error:string}>,
+ *   loadPose: (clipPath: string) => Promise<object|null>
  * }}
  */
 export function createClipServer(options = {}) {
@@ -115,9 +117,38 @@ export function createClipServer(options = {}) {
       return `${base}/clips/${encodePath(path)}`;
     },
 
+    /** 목록의 줄마다 `pose`(자세 분석 짝 파일이 있고 그 파일의 것인가 — RM-30)가 실린다. */
     async list(projectName) {
       const data = await json('GET', `/api/clips?project=${encodeURIComponent(projectName || '')}`);
       return data && Array.isArray(data.clips) ? data.clips : [];
+    },
+
+    /**
+     * 자세 분석 기록을 클립 곁 짝 파일로 남긴다(RM-30 · ports/clips.PoseRecordStore). 같은 클립이면 덮어쓴다.
+     * 수 MB 라 분석 끝에 한 번, 앵커 고침은 묶어서 부른다(호출부의 몫).
+     */
+    // @complexity time=O(n) space=O(n) cc=12
+    async savePose(clipPath, record) {
+      if (!doFetch) return { ok: false, error: 'no fetch' };
+      if (!clipPath) return { ok: false, error: 'no clip path' };
+      try {
+        const res = await doFetch(`${base}/api/pose/${encodePath(clipPath)}`, {
+          method: 'PUT', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record)
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data && data.ok === true) return { ok: true, path: String(data.path || ''), size: typeof data.size === 'number' && Number.isFinite(data.size) ? data.size : 0 };
+        return { ok: false, error: (data && data.error) || `HTTP ${res.status}` };
+      } catch (e) {
+        return { ok: false, error: String(e && e.message ? e.message : e) };
+      }
+    },
+
+    /** 짝 파일의 내용. 없거나(404) 다른 파일의 것이면(stale) null. */
+    // @complexity time=O(n) space=O(n) cc=5
+    async loadPose(clipPath) {
+      if (!clipPath) return null;
+      const data = await json('GET', `/api/pose/${encodePath(clipPath)}`);
+      return data && typeof data === 'object' && Array.isArray(data.frames) ? data : null;
     }
   };
 }

@@ -40,8 +40,16 @@ export const DEFAULT_POSE = Object.freeze({
   // 실시간으로 실제로 몇 장을 보고 있나. 사람이 "왜 뚝뚝 끊기지" 를 물을 자리에 숫자로 답한다.
   liveFps: 0,
   // 어느 연산 장치로 섰는가('GPU' | 'CPU' | ''). CPU 면 실측 5.6fps 라 끊긴다 — 감추지 않는다.
-  delegate: ''
+  delegate: '',
+  // 짝 파일(RM-30)과의 관계 — '' 모름 · 'saving' 쓰는 중 · 'saved' 남김 · 'restored' 짝 파일에서 되살림 · 'failed' 못 남김.
+  // ⚠ 관절점이 아니라 그 사실 하나만 여기 둔다(경계 ①).
+  stored: '',
+  // 견주는 다른 테이크의 클립 id(RM-30). 비어 있으면 견주지 않는다. 그 테이크의 관절점은 app/main 이 들고 있다.
+  compareId: ''
 });
+
+/** stored 가 가질 수 있는 값. */
+export const POSE_STORED = Object.freeze(['', 'saving', 'saved', 'restored', 'failed']);
 
 /**
  * 자세 분석의 화면 상태. 없는 키는 기본값으로 채운다.
@@ -83,7 +91,7 @@ export function startAnalysis(store, args = {}) {
   return patch(store, {
     state: 'running', done: 0, total: 0, error: '',
     frames: 0, maxSubjects: 0, trackIds: [], activeId: '',
-    ambiguous: 0, lost: 0, fromSec, toSec
+    ambiguous: 0, lost: 0, fromSec, toSec, stored: ''
   });
 }
 
@@ -119,6 +127,64 @@ export function finishAnalysis(store, args = {}) {
     lost: Number.isFinite(args.lost) ? args.lost : 0,
     error: ''
   });
+}
+
+/**
+ * 짝 파일에서 되살렸다(RM-30) — 분석하지 않고 끝난 상태로 간다. 앵커와 보던 궤적도 기록의 것으로 돌린다.
+ * ⚠ 보기 방식(메시 · 실시간)은 그대로 둔다 — 그것은 기록이 아니라 지금 화면의 설정이다.
+ * @param {object} store
+ * @param {{frames?:number, maxSubjects?:number, trackIds?:string[], activeId?:string, anchors?:Array<{sec:number, subject:number, id:string}>,
+ *          ambiguous?:number, lost?:number, fromSec?:number, toSec?:number}} args
+ * @returns {import('./store.js').Dirty}
+ */
+// @complexity time=O(n) space=O(n) cc=9
+export function restoreAnalysis(store, args = {}) {
+  const trackIds = Array.isArray(args.trackIds) ? args.trackIds.map(String) : [];
+  const wanted = String(args.activeId || '');
+  const anchors = Array.isArray(args.anchors)
+    ? args.anchors.filter(a => a && Number.isFinite(a.sec) && Number.isInteger(a.subject) && a.id)
+      .map(a => ({ sec: a.sec, subject: a.subject, id: String(a.id) }))
+    : [];
+  return patch(store, {
+    state: 'done', done: 0, total: 0, error: '',
+    frames: Number.isFinite(args.frames) ? args.frames : 0,
+    maxSubjects: Number.isFinite(args.maxSubjects) ? args.maxSubjects : 0,
+    trackIds,
+    activeId: trackIds.includes(wanted) ? wanted : (trackIds[0] || ''),
+    anchors,
+    ambiguous: Number.isFinite(args.ambiguous) ? args.ambiguous : 0,
+    lost: Number.isFinite(args.lost) ? args.lost : 0,
+    fromSec: Number.isFinite(args.fromSec) ? args.fromSec : 0,
+    toSec: Number.isFinite(args.toSec) ? args.toSec : 0,
+    stored: 'restored'
+  });
+}
+
+/**
+ * 짝 파일과의 관계를 적는다(RM-30). 모르는 값은 무시한다.
+ * @param {object} store
+ * @param {{stored?: string}} args
+ * @returns {import('./store.js').Dirty}
+ */
+// @complexity time=O(1) space=O(1) cc=3
+export function setStored(store, args = {}) {
+  const stored = String(args.stored == null ? '' : args.stored);
+  if (!POSE_STORED.includes(stored)) return NONE;
+  return patch(store, { stored });
+}
+
+/**
+ * 견줄 다른 테이크를 고른다(RM-30). 빈 id 면 견주기를 끈다. 지금 보는 테이크와 같은 id 는 고르지 않는다 —
+ * 자기 자신과 견주면 모든 차이가 0 이라 「나아지지 않았다」로 읽힌다.
+ * @param {object} store
+ * @param {{id?: string, self?: string}} args self 는 지금 보는 클립 id
+ * @returns {import('./store.js').Dirty}
+ */
+// @complexity time=O(1) space=O(1) cc=5
+export function setCompare(store, args = {}) {
+  const id = String(args.id || '');
+  if (id && id === String(args.self || '')) return NONE;
+  return patch(store, { compareId: id });
 }
 
 /**

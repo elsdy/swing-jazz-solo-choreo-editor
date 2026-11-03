@@ -37,8 +37,8 @@ import * as PoseCmd from '../usecases/poseCommands.js';
 
 import * as Grid from '../domain/grid.js';
 import { normalizeLinks } from '../domain/links.js';
-import { countToTime, groupToSpan, secondsPerCount } from '../domain/tempo.js';
-import { EMPTY_CLICK_PLAN, planClicks, ratesFor } from '../domain/practice.js';
+import { countToTime, groupToSpan, isTempoUsable, secondsPerCount, timeToCount } from '../domain/tempo.js';
+import { EMPTY_CLICK_PLAN, countRangeLabel, planClicks, ratesFor } from '../domain/practice.js';
 
 import { STORAGE_KEYS } from '../ports/storage.js';
 import { projectTime } from '../ports/media.js';
@@ -71,7 +71,7 @@ import { createRoutineActionPopup } from '../ui/routineActionPopup.js';
 import { createPlacementActionPopup } from '../ui/placementActionPopup.js';
 import { createRowActionPopup } from '../ui/rowActionPopup.js';
 import { createPartView } from '../ui/partView.js';
-import { str } from '../domain/strings.js';
+import { fill, str } from '../domain/strings.js';
 import { createDocsHub } from '../ui/docsHub.js';
 import { createSettingsView } from '../ui/settingsView.js';
 import { createPhrasingView } from '../ui/phrasingView.js';
@@ -117,7 +117,7 @@ import * as SheetCmd from '../usecases/sheetCommands.js';
 import * as PhrasingCmd from '../usecases/phrasingCommands.js';
 import { PHRASING_PRESETS, PHRASE_COLORS, CHORUS_COLORS, phrasingSummary } from '../domain/phrasing.js';
 import { loadClipSetting, saveClipSetting } from '../adapters/localStore.js';
-import { clipDirParts, findStoredClip } from '../domain/clips.js';
+import { clipDirParts, findStoredClip, splitClipPath } from '../domain/clips.js';
 import { createVideoPanel, formatClock } from '../ui/videoPanel.js';
 import { createStatusBar } from '../ui/statusBar.js';
 import { createOnceHints, createHintBubble } from '../ui/onceHint.js';
@@ -129,6 +129,9 @@ import { createPoseView } from '../ui/poseView.js';
 import { createPoseOverlay } from '../ui/poseOverlay.js';
 import { createMediapipePose } from '../adapters/pose/mediapipePose.js';
 import { buildTracks, framesOfTrack, pickSubjectAt } from '../domain/poseTracks.js';
+// 자세 분석 짝 파일 · 가동 범위 표 · 테이크 견주기(RM-30)
+import { makePoseRecord, normalizePoseRecord } from '../ports/pose.js';
+import { compareTakes, summarize, summarizeByCount, summaryRows } from '../domain/rom.js';
 import { createPlayhead } from '../ui/playhead.js';
 import { SEL, DATA } from '../ui/domContract.js';
 import { confirmOnce } from '../ui/widgets.js';
@@ -1520,6 +1523,17 @@ let player = pickPlayer(null, {});
 let playerKind = 'null';
 /** 마지막으로 load() 에 넘긴 소스의 식별자(videoId 나 blob URL). 같으면 다시 싣지 않는다(iframe 재로드 방지). */
 let loadedVideoKey = '';
+/**
+ * 지금 화면의 자세 분석이 어느 영상(loadedVideoKey)의 것인가. 비었으면 분석이 없다.
+ * ⚠ loadedVideoKey 와 따로 둔다 — 재생기 종류가 바뀌면(서버 클립 확인 중 null 을 거쳐 file) loadedVideoKey 가
+ *   비어 「영상이 바뀌었다」를 놓쳤다. 그래서 다른 클립 위에 옛 관절이 남았다(RM-30 브라우저 시험에서 잼).
+ */
+let poseOwnerKey = '';
+/**
+ * 되살리기를 이미 해 본 영상(loadedVideoKey). 「분석 지우기」 뒤에 저절로 되살아나지 않게 한다 — 영상을 다시 열면
+ * (실리는 소스가 바뀌면) 비워서 되살아난다. 16-c 의 것이지만 ensurePlayer 가 부팅 중에도 비우므로 여기 둔다(TDZ).
+ */
+let poseRestoredFor = '';
 /** 길이는 상태가 바뀔 때만 다시 읽는다 — getDuration 폴링은 iframe 경계를 넘는다. */
 let videoDurationSec = null;
 let unsubscribeVideoState = () => {};
@@ -1657,11 +1671,22 @@ function ensurePlayer() {
   const key = mediaSourceKey(source);
   if (key !== loadedVideoKey) {
     // ⚠ 영상이 바뀌면 옛 관절은 거짓이 된다 — 다른 영상 위에 남의 자세를 그리게 된다.
-    if (loadedVideoKey && poseFrames.length) dropPoseAnalysis();
+    //   loadedVideoKey 가 아니라 분석의 주인과 견준다(위 poseOwnerKey 의 ⚠). 부팅 중에는 주인이 비어 있어
+    //   16-b 의 `let` 을 읽지 않는다(TDZ).
+    //   걷은 것은 **다시 그려야** 화면에서도 빠진다 — 이 자리는 패널 렌더의 끝(onSync)이라 이미 옛 분석으로
+    //   그려진 뒤다. 그리는 중에 다시 그리지 않게 마이크로태스크로 미룬다(지우고 안 그려 글이 남던 것도 RM-30 에서 잼).
+    if (poseOwnerKey && poseOwnerKey !== key) {
+      const dirty = dropPoseAnalysis();
+      queueMicrotask(() => render(dirty));
+    }
     // ⚠ 유튜브로 갈아타면 실시간은 돌 수 없다(iframe 의 픽셀을 못 읽는다) — 루프를 여기서 맞춘다.
     liveStop();
     loadedVideoKey = key;
+    poseRestoredFor = '';
     player.load(source);
+    // 지난번 분석을 짝 파일에서 되살린다(RM-30). ⚠ 마이크로태스크로 미룬다 — 부팅 중의 첫 호출은 16-b 의
+    //   `let` 들이 서기 전이라 그 자리에서 읽으면 TDZ 로 부팅이 통째로 멈춘다.
+    queueMicrotask(restorePoseRecord);
   }
 }
 
@@ -1954,6 +1979,9 @@ const clipServerReady = clipServer.probe().then((cfg) => {
   libraryAutoTriedFor = '';
   views.settings?.render();
   views.video?.render();
+  // 짝 파일은 서버에만 있다(RM-30) — 서버를 안 뒤에야 되살리고, 사이드바의 「자세 분석」 칩을 채운다.
+  restorePoseRecord();
+  refreshPoseIndex();
   // 서버가 있으면 **보관 폴더가 최근 프로젝트 목록의 주인**이다(2026-09-13).
   // ⚠ 여기서만 부른다 — 매 렌더마다 폴더를 읽으면 목록이 스크롤 중에 다시 그려진다.
   refreshProjectFolder();
@@ -2240,6 +2268,10 @@ function poseFrameAt(sec) {
 
 /** 분석 결과를 버린다. 소스가 바뀌면 옛 관절을 새 영상 위에 그리게 되므로 반드시 함께 지운다. */
 function dropPoseAnalysis() {
+  // ⚠ 화면에서만 지운다(결정 Q37) — 짝 파일은 그대로 두고, 다음에 이 영상을 열면 되살아난다.
+  // 앵커를 고친 지 얼마 안 돼 아직 남기지 않았으면 지우기 전에 그 영상의 짝 파일로 남긴다 — 버리지 않는다.
+  if (poseSaveTimer) flushPoseSave();
+  poseOwnerKey = '';
   poseFrames = [];
   poseTracks = null;
   const dirty = PoseCmd.clearAnalysis(store);
@@ -2295,14 +2327,22 @@ async function runPoseAnalysis() {
     return;
   }
   poseFrames = res.frames;
+  // 견주기가 같은 잣대끼리만 견주게 모델 · 좌표계 · 화면비를 함께 든다(RM-30).
+  poseMeta = {
+    model: estimator.id || '', space: res.space || 'world',
+    aspect: video.videoWidth > 0 && video.videoHeight > 0 ? video.videoWidth / video.videoHeight : 1,
+    fps: POSE_FPS
+  };
+  // 새로 분석했으니 짝 파일에서 되살릴 것이 아니다 — 늦게 온 되살리기가 이 결과를 덮지 않게 표시한다.
+  poseRestoredFor = loadedVideoKey;
+  poseOwnerKey = loadedVideoKey;
   const tracks = rebuildPoseTracks();
-  let maxSubjects = 0;
-  for (const f of poseFrames) if (f.subjects.length > maxSubjects) maxSubjects = f.subjects.length;
   render(PoseCmd.finishAnalysis(store, {
-    frames: poseFrames.length, maxSubjects,
+    frames: poseFrames.length, maxSubjects: maxSubjectsOf(poseFrames),
     trackIds: tracks.ids, ambiguous: tracks.ambiguous.length, lost: tracks.lost.length
   }));
   poseOverlay.invalidate();
+  savePoseRecord();
 }
 
 /** 영상 위를 눌렀다 — 그 자리의 사람을 지금 보는 궤적의 앵커로 삼는다. */
@@ -2315,6 +2355,303 @@ function onPosePick(sec, point) {
   rebuildPoseTracks();
   views.pose?.render();
   poseOverlay.invalidate();
+  schedulePoseSave();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 16-c. 자세 분석 짝 파일 · 가동 범위 표 · 테이크 견주기 (RM-30 · 2026-11-03)
+//
+// ⚠ 원본 관절점은 **클립 곁 짝 파일**(`<subdir>/<프로젝트>/.pose/<파일>.json`)에만 남는다 — 안무표 · store ·
+//   되돌리기에는 들어가지 않는다(결정 Q36). 요약은 남기지 않고 열 때마다 원본에서 다시 센다.
+// ⚠ 서버가 없으면 이 묶음은 아무것도 남기지 않는다 — 짝 파일은 서버 모드에서만 있다(화면의 표는 그대로 뜬다).
+// ⚠ 열쇠는 클립 id 가 아니라 **보관 경로**다. 경로가 없는 클립(보관 폴더에 안 넣은 파일)은 남기지 않는다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 지금 분석의 잣대. 견주기가 같은 모델 · 좌표계 · 화면비끼리만 견주도록 기록과 함께 남긴다. */
+let poseMeta = { model: '', space: 'world', aspect: 1, fps: POSE_FPS };
+/** 짝 파일이 있는 클립 경로. 서버의 클립 목록이 정하고, 남기거나 되살리면 곧바로 더한다. */
+let posePaths = new Set();
+/** 목록을 읽어 온 프로젝트 폴더들. 같으면 다시 읽지 않는다. */
+let posePathsKey = '';
+/** 견줄 테이크의 기록 — 경로마다 한 번 읽는다. `{status:'loading'|'ok'|'missing', frames?, record?}` */
+const poseCompareCache = new Map();
+/** 앵커 고침을 묶어 남기는 타이머. 짝 파일이 수 MB 라 누를 때마다 쓰지 않는다. */
+let poseSaveTimer = null;
+/** 그 타이머가 남길 영상의 보관 경로 — 기다리는 사이 영상을 바꿔도 옳은 자리에 남기려고 미리 잡아 둔다. */
+let poseSavePath = '';
+/** 늦게 끝난 옛 저장이 새 저장의 표시를 덮지 않게 차례를 센다. */
+let poseSaveSeq = 0;
+const POSE_SAVE_DELAY_MS = 1200;
+/** 가동 범위 · 견주기 계산의 기억. 렌더마다 다시 세지 않는다 — 입력(프레임 · 궤적 · 박자 · 마커)이 같으면 같은 답이다. */
+let poseRomMemo = { refs: [], sig: '', value: null };
+let poseCompareMemo = { refs: [], sig: '', value: null };
+
+/** 지금 영상의 보관 경로. 짝 파일의 열쇠이고, 없으면 빈 글자다. */
+// @complexity time=O(1) space=O(1) cc=4
+function poseClipPath() {
+  const source = VideoCmd.mediaState(store).source;
+  return source && source.kind === 'file' && source.path ? source.path : '';
+}
+
+/** 프레임에 사람이 가장 많이 잡힌 수. */
+// @complexity time=O(n) space=O(1) cc=3
+function maxSubjectsOf(frames) {
+  let n = 0;
+  for (const f of frames) if (f.subjects.length > n) n = f.subjects.length;
+  return n;
+}
+
+/** 기록 하나에서 「그때 보던 사람」만 남긴 프레임. 궤적이 서지 않으면 프레임 그대로(summarize 가 첫 사람을 본다). */
+// @complexity time=O(n·k) space=O(n) cc=3
+function framesOfRecord(record) {
+  const tracks = buildTracks(record.frames, record.anchors);
+  const id = tracks.ids.includes(record.activeId) ? record.activeId : (tracks.ids[0] || '');
+  return id ? framesOfTrack(record.frames, tracks, id) : record.frames;
+}
+
+/** 입력이 같은가 — 참조 몇 개와 글자 하나로 가른다. */
+// @complexity time=O(r) space=O(1) cc=3
+function sameInputs(memo, refs, sig) {
+  return memo.sig === sig && memo.refs.length === refs.length && memo.refs.every((r, i) => r === refs[i]);
+}
+
+/** 지금 화면의 분석을 짝 파일 기록으로 — 원본 프레임 · 앵커 · 잣대. */
+// @complexity time=O(n) space=O(n) cc=1
+function poseRecordNow() {
+  const p = PoseCmd.poseState(store);
+  return makePoseRecord({
+    ...poseMeta, fromSec: p.fromSec, toSec: p.toSec, anchors: p.anchors, activeId: p.activeId, frames: poseFrames
+  });
+}
+
+/** 분석 결과를 짝 파일에 남긴다. 실패해도 화면의 결과는 그대로다 — 한 줄로 말할 뿐이다. */
+// @complexity time=O(n) space=O(n) cc=8
+async function savePoseRecord() {
+  const path = poseClipPath();
+  if (!path || !clipServerConfig || !poseFrames.length) return;
+  const seq = ++poseSaveSeq;
+  render(PoseCmd.setStored(store, { stored: 'saving' }));
+  const res = await clipServer.savePose(path, poseRecordNow());
+  // ⚠ 쓰는 사이 영상을 바꿨거나 더 새 저장이 나갔으면 그 표시를 덮지 않는다.
+  if (seq !== poseSaveSeq || poseClipPath() !== path || !poseFrames.length) return;
+  render(PoseCmd.setStored(store, { stored: res.ok ? 'saved' : 'failed' }));
+  if (!res.ok) return;
+  poseCompareCache.delete(path);          // 다른 테이크에서 이 테이크를 견줄 때 옛 기록을 쓰지 않게
+  if (!posePaths.has(path)) { posePaths.add(path); views.project?.render(); }
+}
+
+/** 앵커를 고쳤다 — 잠시 모았다가 한 번 남긴다. 지금 영상의 것만 남긴다. */
+// @complexity time=O(1) space=O(1) cc=3
+function schedulePoseSave() {
+  const path = poseClipPath();
+  if (!path || !clipServerConfig || !poseFrames.length) return;
+  clearTimeout(poseSaveTimer);
+  poseSavePath = path;
+  poseSaveTimer = setTimeout(() => {
+    poseSaveTimer = null;
+    if (poseClipPath() === path) savePoseRecord();
+  }, POSE_SAVE_DELAY_MS);
+}
+
+/**
+ * 기다리던 저장을 지금 그 영상의 자리로 내보낸다 — 분석을 화면에서 걷기 직전에 부른다.
+ * ⚠ 이때는 store 의 영상이 이미 다음 클립일 수 있어 poseClipPath() 가 아니라 잡아 둔 경로로 쓴다.
+ *   화면이 곧 비므로 「남겼습니다」 표시는 하지 않고, 목록의 칩만 맞춘다.
+ */
+// @complexity time=O(n) space=O(n) cc=4
+function flushPoseSave() {
+  clearTimeout(poseSaveTimer);
+  poseSaveTimer = null;
+  const path = poseSavePath;
+  if (!path || !clipServerConfig || !poseFrames.length) return;
+  clipServer.savePose(path, poseRecordNow()).then((res) => {
+    if (!res.ok) return;
+    poseCompareCache.delete(path);
+    if (!posePaths.has(path)) { posePaths.add(path); views.project?.render(); }
+  });
+}
+
+/**
+ * 지금 영상의 짝 파일이 있으면 분석 결과를 되살린다(다시 분석하지 않는다). 멱등 — 영상마다 한 번만 해 본다.
+ * 서버가 클립 크기를 대조해 다른 파일의 짝이면 없는 것으로 준다.
+ */
+// @complexity time=O(n·k) space=O(n) cc=10
+async function restorePoseRecord() {
+  const path = poseClipPath();
+  const mark = loadedVideoKey;
+  if (!path || !clipServerConfig || poseRunning || poseFrames.length || poseRestoredFor === mark) return;
+  poseRestoredFor = mark;
+  const record = normalizePoseRecord(await clipServer.loadPose(path));
+  // ⚠ 읽는 사이 영상을 바꿨거나 분석을 새로 돌렸으면 늦게 온 기록을 얹지 않는다.
+  if (!record || loadedVideoKey !== mark || poseClipPath() !== path || poseRunning || poseFrames.length) return;
+  poseFrames = record.frames;
+  poseOwnerKey = mark;
+  poseMeta = { model: record.model, space: record.space, aspect: record.aspect, fps: record.fps };
+  poseTracks = buildTracks(poseFrames, record.anchors);
+  render(PoseCmd.restoreAnalysis(store, {
+    frames: poseFrames.length, maxSubjects: maxSubjectsOf(poseFrames),
+    trackIds: poseTracks.ids, activeId: record.activeId, anchors: record.anchors,
+    ambiguous: poseTracks.ambiguous.length, lost: poseTracks.lost.length,
+    fromSec: record.fromSec, toSec: record.toSec
+  }));
+  poseOverlay.invalidate();
+  if (!posePaths.has(path)) { posePaths.add(path); views.project?.render(); }
+}
+
+/**
+ * 짝 파일이 있는 클립 경로를 서버 목록에서 다시 읽는다. 클립들이 놓인 프로젝트 폴더가 바뀌었을 때만 읽는다.
+ * ⚠ 사이드바가 그릴 때 부른다(getClips) — 폴더가 같으면 글자 비교 하나로 끝난다.
+ */
+// @complexity time=O(c) space=O(c) cc=7
+function refreshPoseIndex() {
+  if (!clipServerConfig) return;
+  const dirs = new Set();
+  for (const c of VideoCmd.clipList(store).clips) {
+    const parts = c.source && c.source.kind === 'file' ? splitClipPath(c.source.path) : [];
+    if (parts.length >= 3) dirs.add(parts[1]);
+  }
+  const list = [...dirs].sort();
+  const key = list.join('\n');
+  if (key === posePathsKey) return;
+  posePathsKey = key;
+  Promise.all(list.map(d => clipServer.list(d))).then((lists) => {
+    if (posePathsKey !== key) return;
+    const next = new Set();
+    for (const items of lists) for (const item of items) if (item.pose) next.add(item.path);
+    // 방금 남긴 · 되살린 것은 목록이 늦게 와도 지킨다.
+    const own = poseClipPath();
+    if (own && poseFrames.length && posePaths.has(own)) next.add(own);
+    posePaths = next;
+    views.project?.render();
+    views.pose?.render();
+  });
+}
+
+/** 지금 분석에서 보던 사람만 남긴 프레임. */
+// @complexity time=O(n) space=O(n) cc=3
+function poseSubjectFrames() {
+  const p = PoseCmd.poseState(store);
+  if (!poseTracks) rebuildPoseTracks();
+  return p.activeId ? framesOfTrack(poseFrames, poseTracks, p.activeId) : poseFrames;
+}
+
+/**
+ * 가동 범위 표(poseView 의 getRom). 구간은 분석 구간 전체 · 분석 구간에 걸친 마커 · 박자가 있으면 마디마다.
+ * 마디는 summarizeByCount 로 한 번에 나눈다 — 카운트 ↔ 초는 이 영상의 박자다.
+ * @param {string} scope 'all' | 'm:<마커 id>' | 'b:<행>'
+ */
+// @complexity time=O(n·j) space=O(n·j) cc=12
+function poseRomView(scope) {
+  if (!poseFrames.length) return null;
+  const p = PoseCmd.poseState(store);
+  const media = VideoCmd.mediaState(store);
+  const tempo = media.tempo;
+  const cols = store.board(BOARD_MAIN).cols;
+  const markers = media.markers || [];
+  const bpm = isTempoUsable(tempo) ? tempo.bpm : 0;
+  const refs = [poseFrames, poseTracks, markers, tempo];
+  const sig = `${p.activeId}|${cols}|${p.fromSec}|${p.toSec}`;
+  if (!sameInputs(poseRomMemo, refs, sig)) {
+    const frames = poseSubjectFrames();
+    const opts = { model: poseMeta.model, aspect: poseMeta.aspect };
+    const scopes = [{ id: 'all', label: str('pose.rom.all') }];
+    const sums = new Map([['all', summarize(frames, opts)]]);
+    for (const m of markers) {
+      if (m.outSec <= p.fromSec || m.inSec >= p.toSec) continue;      // 분석 밖의 마커는 셀 것이 없다
+      const id = `m:${m.id}`;
+      scopes.push({ id, label: fill('pose.rom.marker', { label: m.label || countRangeLabel(m, cols) }) });
+      sums.set(id, summarize(frames, { ...opts, fromSec: m.inSec, toSec: m.outSec }));
+    }
+    if (bpm > 0) {
+      const rowOf = (sec) => Math.floor(timeToCount(sec, tempo) / cols);
+      for (const { count: row, summary } of summarizeByCount(frames, rowOf, opts)) {
+        if (row < 0) continue;                                         // 박자 기준점보다 앞(카운트가 없는 자리)
+        const id = `b:${row}`;
+        scopes.push({ id, label: fill('pose.rom.bar', { bar: countRangeLabel({ fromCount: row * cols, toCount: (row + 1) * cols }, cols) }) });
+        sums.set(id, summary);
+      }
+    }
+    poseRomMemo = { refs, sig, value: { scopes, sums } };
+  }
+  const { scopes, sums } = poseRomMemo.value;
+  const chosen = sums.has(scope) ? scope : 'all';
+  return { scopes, scope: chosen, rows: summaryRows(sums.get(chosen)), bpm };
+}
+
+/** 견줄 후보 한 줄의 이름 — 테이크 이름과 찍은 날. */
+// @complexity time=O(1) space=O(1) cc=2
+function poseTakeLabel(clip) {
+  const date = formatTakenAt(clip.takenAt, new Date().getFullYear());
+  return date ? `${clip.name} · ${date}` : clip.name;
+}
+
+/** 견줄 테이크의 짝 파일을 읽어 둔다. 다 읽으면 자세 구획만 다시 그린다. */
+// @complexity time=O(n·k) space=O(n) cc=2
+function loadComparePose(path) {
+  poseCompareCache.set(path, { status: 'loading' });
+  clipServer.loadPose(path).then((raw) => {
+    const record = normalizePoseRecord(raw);
+    poseCompareCache.set(path, record ? { status: 'ok', record, frames: framesOfRecord(record) } : { status: 'missing' });
+    views.pose?.render();
+  });
+}
+
+/** 견줄 테이크를 고른다. 못 읽었던 것을 다시 고르면 다시 읽어 본다. */
+// @complexity time=O(c) space=O(1) cc=4
+function selectPoseCompare(id) {
+  const media = VideoCmd.clipList(store);
+  const clip = media.clips.find(c => c.id === id);
+  const path = clip && clip.source ? clip.source.path : '';
+  if (path && poseCompareCache.get(path)?.status === 'missing') poseCompareCache.delete(path);
+  return PoseCmd.setCompare(store, { id, self: media.activeId });
+}
+
+/**
+ * 테이크 견주기(poseView 의 getCompare). 두 테이크는 **마커 이름**으로 짝짓고(결정 Q35), 마커가 없으면 구간 전체만 견준다.
+ * 전 · 후는 찍은 날이 이른 쪽이 전이고, 날을 모르면 고른 테이크가 전 · 지금 테이크가 후다.
+ */
+// @complexity time=O((p+1)·(n+m)) space=O(n+m) cc=14
+function poseCompareView() {
+  const p = PoseCmd.poseState(store);
+  const media = VideoCmd.clipList(store);
+  const self = media.clips.find(c => c.id === media.activeId) || null;
+  const candidates = media.clips
+    .filter(c => c.id !== media.activeId && c.source && c.source.kind === 'file' && posePaths.has(c.source.path))
+    .map(c => ({ id: c.id, label: poseTakeLabel(c) }));
+  const view = { candidates, selectedId: '', status: 'idle', reason: '', before: '', after: '', sections: [] };
+  const other = candidates.some(c => c.id === p.compareId) ? media.clips.find(c => c.id === p.compareId) : null;
+  if (!other) return view;
+  view.selectedId = other.id;
+  if (!poseFrames.length) return { ...view, status: 'need-self' };
+  const entry = poseCompareCache.get(other.source.path);
+  if (!entry) loadComparePose(other.source.path);
+  if (!entry || entry.status === 'loading') return { ...view, status: 'loading' };
+  if (entry.status !== 'ok') return { ...view, status: 'missing' };
+  const selfMarkers = self ? self.markers : [];
+  const refs = [poseFrames, poseTracks, entry, selfMarkers, other.markers];
+  const sig = `${p.activeId}|${self ? self.takenAt : ''}|${other.takenAt}|${self ? self.name : ''}|${other.name}`;
+  if (!sameInputs(poseCompareMemo, refs, sig)) {
+    const mine = { frames: poseSubjectFrames(), model: poseMeta.model, aspect: poseMeta.aspect, markers: selfMarkers, name: self ? self.name : '' };
+    const theirs = { frames: entry.frames, model: entry.record.model, aspect: entry.record.aspect, markers: other.markers, name: other.name };
+    const mineFirst = !!(self && self.takenAt && other.takenAt && self.takenAt < other.takenAt);
+    const [before, after] = mineFirst ? [mine, theirs] : [theirs, mine];
+    const res = compareTakes(before, after);
+    poseCompareMemo = {
+      refs, sig,
+      value: res.ok
+        ? { status: 'ok', reason: '', before: before.name, after: after.name, sections: res.sections }
+        : { status: 'rejected', reason: res.reason || '', before: before.name, after: after.name, sections: [] }
+    };
+  }
+  return { ...view, ...poseCompareMemo.value };
+}
+
+/** 사이드바의 「견주기」 — 그 테이크를 견줄 것으로 고르고 영상 패널의 자세 분석 칸을 연다. */
+// @complexity time=O(c) space=O(1) cc=1
+function comparePoseFromList(clipId) {
+  render(selectPoseCompare(clipId));
+  render(VideoCmd.openPanel(store));
+  views.video?.openTool('step6');
 }
 
 const poseOverlay = createPoseOverlay({
@@ -2337,11 +2674,15 @@ views.pose = createPoseView({
   getReadiness: poseReadiness,
   onRun: runPoseAnalysis,
   onChange: () => { rebuildPoseTracks(); poseOverlay.invalidate(); },
+  getRom: poseRomView,
+  getCompare: poseCompareView,
   commands: {
     clearAnalysis: () => dropPoseAnalysis(),
     setActiveTrack: (args) => PoseCmd.setActiveTrack(store, args),
     addTrack: () => PoseCmd.addTrack(store),
-    clearAnchors: () => PoseCmd.clearAnchors(store),
+    // 앵커를 비우면 궤적이 바뀐다 — 짝 파일도 묶어서 다시 남긴다(RM-30)
+    clearAnchors: () => { const d = PoseCmd.clearAnchors(store); schedulePoseSave(); return d; },
+    setCompare: (args) => selectPoseCompare(args.id),
     setMesh: (args) => PoseCmd.setMesh(store, args),
     // ⚠ 켜고 끄는 것은 store 를 바꾸고, **루프를 맞추는 것은 liveSync 가** 한다(멱등).
     //   커맨드가 직접 루프를 건드리면 어댑터를 아는 자리가 usecases 로 새어 들어간다.
@@ -2978,6 +3319,7 @@ views.project = createProjectPanel({
   setProjectName: setProjectFileName,
   getClips: () => {
     const media = VideoCmd.clipList(store);
+    refreshPoseIndex();       // 클립들의 폴더가 바뀌었을 때만 서버 목록을 다시 읽는다(RM-30)
     return { activeId: media.activeId, clips: media.clips };
   },
   byProgress: clipsByProgress,
@@ -2992,6 +3334,9 @@ views.project = createProjectPanel({
   openVideoPanel: () => render(VideoCmd.openPanel(store)),
   // RM-29 — 그 영상과 찍은 날을 채운 연습 기록 초안을 연다(store 에는 `기록 적기` 를 눌러야 쌓인다)
   logTake: (clipId) => views.practiceLog?.openDraft(VersionCmd.logDraft(projectDeps, { today: localToday(), clipId })),
+  // RM-30 — 자세 분석을 짝 파일로 남긴 테이크에 칩을 달고, 다른 테이크와 견주는 단추를 둔다
+  hasPose: (clip) => !!(clip.source && clip.source.path && posePaths.has(clip.source.path)),
+  comparePose: comparePoseFromList,
   confirmOnce
 });
 

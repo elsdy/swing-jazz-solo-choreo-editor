@@ -112,3 +112,26 @@ export function findStoredClip(clips, file) {
   const numbered = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\((?:[2-9]|\\d{2,})\\)${ext.replace(/\./g, '\\.')}$`);
   return sameSize.find(c => numbered.test(String(c.name || ''))) || null;
 }
+
+/** 자세 분석 짝 파일이 사는 숨은 폴더 이름(RM-30). server.py 의 POSE_DIR 과 같은 값이다. */
+export const POSE_DIR = '.pose';
+
+/**
+ * 클립 보관 경로 → 그 클립의 자세 분석 짝 파일 경로(RM-30, 2026-11-03).
+ * `video-clip/내 안무/take.mp4` → `video-clip/내 안무/.pose/take.mp4.json`.
+ *
+ * 왜 숨은 폴더인가 — 서버의 클립 목록은 점으로 시작하지 않는 **파일**을 모두 영상으로 낸다. 짝 파일을 클립 곁에
+ * `take.pose.json` 으로 두면 목록에 영상처럼 낀다. 점으로 시작하는 폴더 안에 두면 목록(파일만 센다)에서도
+ * 정적 서빙(숨은 경로를 막는다)에서도 저절로 빠지고, 클립 폴더를 옮기면 함께 간다.
+ * ⚠ 이 규칙은 server.py 의 `pose_path_of` 와 **같은 모양으로 두 번** 적혀 있다 — 한쪽만 고치면 짝을 못 찾는다
+ *   (tests/server.test.mjs 가 서버가 돌려준 경로와 이 함수의 값을 맞대 잰다).
+ * @param {unknown} clipPath 보관 경로(`<subdir>/<프로젝트>/<파일>`)
+ * @returns {string} 잘못된 경로(빈 것 · 파일 이름 없음)면 빈 문자열
+ */
+// @complexity time=O(n) space=O(n) cc=2
+export function posePathOf(clipPath) {
+  const parts = splitClipPath(clipPath);
+  if (!parts.length) return '';
+  const file = parts.pop();
+  return [...parts, POSE_DIR, `${file}.json`].join('/');
+}
