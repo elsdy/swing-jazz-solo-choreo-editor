@@ -459,6 +459,7 @@
       min-width: max-content;
       display: grid;
       gap: 10px;
+      --sectionGap: 10px; /* 코러스 · 파트가 바뀌는 행 위의 숨 — 아래 [data-chorus-start] · [data-part-start] 와 인쇄 블록이 함께 읽는다 */
     }
     /* 안무표가 비었을 때만 보이는 안내(2026-09-20). 격자 **위에 겹치지 않는다** - 겹치면
        빈 표의 한가운데가 드롭을 못 받는 자리가 되고, .board-wrap 에 position 을 주면
@@ -599,7 +600,7 @@
       box-shadow: inset 0 3px 0 0 var(--chorusColor);
     }
     /* 코러스가 바뀌는 자리에 숨을 준다. .board 가 grid + gap 이라 이 margin 은 그 위에 더해진다. */
-    .board-row[data-chorus-start] { margin-top: 10px; }
+    .board-row[data-chorus-start] { margin-top: var(--sectionGap); }
     /* 마디 이름 아래의 `코러스-프레이즈` 꼬리표. ⚠ 자식이 아니라 ::after 다 —
        renderRow 가 label.textContent 를 덮어쓰므로 자식은 행을 다시 그릴 때마다 사라진다. */
     .row-label[data-phrase-tag] { flex-direction: column; gap: 3px; }
@@ -624,7 +625,7 @@
     .board-row[data-part-start] .row-label { box-shadow: inset 5px 0 0 0 var(--partColor), inset 0 3px 0 0 var(--partColor); }
     .board-row[data-part-start] .track { box-shadow: inset 0 3px 0 0 var(--partColor); }
     /* 파트가 바뀌는 자리에 숨을 준다(코러스와 같은 결). */
-    .board-row[data-part-start] { margin-top: 10px; }
+    .board-row[data-part-start] { margin-top: var(--sectionGap); }
     .board-row[data-part-hidden] { display: none; }
     /* 첫 마디의 파트 이름 꼬리표 — 자식이 아니라 ::after(renderRow 가 label.textContent 를 덮어쓴다). */
     .row-label[data-part-tag] { flex-direction: column; gap: 3px; }
