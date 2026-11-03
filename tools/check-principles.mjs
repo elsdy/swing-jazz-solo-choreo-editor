@@ -667,6 +667,30 @@ export const RULES = [
     },
   },
   {
+    principle: 'R-12',
+    what: '펼침 리터럴 `{ ...X, …f(X) }` 이 앞에서 펼친 X 를 뒤의 펼침 호출에 넘긴다 — 그 함수가 X 를 고치면 앞의 펼침은 이미 옛 값이다',
+    fix: '호출을 리터럴 **앞**에서 먼저 하고 결과를 이름에 담아 펼친다(`const tail = f(X); return { ...X, ...tail }`)',
+    // @complexity time=O(n·m) space=O(n) cc=6
+    scan(files) {
+      const out = [];
+      for (const f of jsFiles(files)) {
+        const code = blankJs(files[f]);
+        for (const m of code.matchAll(/\{\s*\.\.\.([\w$]+)\s*,/g)) {
+          const close = matchBrace(code, m.index);
+          if (close < 0) continue;
+          const body = code.slice(m.index + m[0].length, close);
+          const esc = m[1].replace(/\$/g, '\\$');
+          const call = body.match(new RegExp(`\\.\\.\\.\\s*([\\w$.]+)\\([^()]*(?<![\\w$.])${esc}(?![\\w$])`));
+          if (!call) continue;
+          const line = lineAt(files[f], m.index);
+          if (excused(files[f], line, 'R-12')) continue;
+          out.push({ file: f, line, snippet: `{ ...${m[1]}, … ...${call[1]}(${m[1]} …) } — ${call[1]} 가 ${m[1]} 를 고치면 앞의 펼침에 실리지 않는다` });
+        }
+      }
+      return out;
+    },
+  },
+  {
     principle: 'D-14',
     what: '이름으로 잇는 명령 배선이 어긋났다 — 그 글쇠나 버튼은 말없이 아무 일도 하지 않는다',
     fix: 'domain/commands 의 COMMANDS · app/main 의 COMMAND_RUNNERS · 마크업의 data-command 를 같은 id 로 맞춘다',

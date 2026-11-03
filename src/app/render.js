@@ -186,6 +186,9 @@ export function createRenderer(store, views, options = {}) {
     if (d.video || d.boards?.[BOARD_MAIN] || d.toolbar) views.thumb?.render();
     // 프로젝트 칸은 영상 목록(이름·날짜·지금 보는 것)을 비춘다 — 영상이 바뀌면 함께 다시 그린다.
     if (d.video) views.project?.render();
+    // 판본 · 연습 기록(RM-29). 기록 줄은 영상 이름을 비추므로 영상이 바뀌어도 다시 그린다.
+    if (d.versions) views.versions?.render();
+    if (d.versions || d.video) views.practiceLog?.render();
     // 오른쪽 위 기준 박자 배지(2026-09-22). 박자를 고치는 것도 받아 적으며 경계를 찍는 것도
     // `video` 를 더럽히므로 이 한 줄이면 둘 다 따라온다.
     if (d.video) views.bpm?.render();

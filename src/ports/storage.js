@@ -147,6 +147,12 @@ export class StorageError extends Error {
  */
 
 /**
+ * ⚠ 2026-11-03(RM-29) — **이 두 계약(VersionRepository · PracticeLogRepository)은 아직 쓰지 않는다.** 판본과 연습 기록은
+ *   별도 저장소가 아니라 **안무표 파일 안**(최상위 versions · practiceLogs, schema.ChoreoVersion · PracticeLog)에 함께 담긴다 —
+ *   파일 하나를 옮기면 판본과 기록이 따라가야 해서다(계획서 Q41). 목록은 본문을 펼치지 않는 요약(domain/project/versions
+ *   versionSummaries)으로 그리고, 요약은 저장하지 않고 본문에서 다시 만든다 — 아래 meta 와 같은 생각이다.
+ *   판본이 파일을 무겁게 만드는 날(수십 벌 · 수 MB)에 이 계약대로 따로 떼어 낸다.
+ *
  * 연습 버전 히스토리. meta 와 doc 을 나누는 이유는 목록을 그리려고 20×20KB 를 파싱하면 안 되기 때문.
  * meta 는 doc 에서 파생 가능한 데이터라 손상돼도 rebuildVersionMeta 로 복구된다.
  * @typedef {Object} VersionRepository

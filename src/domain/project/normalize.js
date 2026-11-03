@@ -17,6 +17,7 @@ import { normalizeRoutine } from '../routines.js';
 import { normalizeMedia } from './media.js';
 import { normalizePhrasing } from '../phrasing.js';
 import { normalizeStepTodos } from '../stepTodos.js';
+import { normalizeVersions, normalizePracticeLogs } from './versions.js';
 import { normalizeParts } from '../parts.js';
 
 /** ids 는 함수(`()=>string`)와 `{uid}` 객체를 모두 받는다 — domain/placements.js 와 같은 규약. */
@@ -90,7 +91,8 @@ export function normalizePlacements(rawPlacements, board, categories, ids) {
  *             placements: import('./schema.js').Placement[],
  *             routines: import('./schema.js').Routine[],
  *             favoriteRoutineIds: Set<string>, media: import('./schema.js').MediaBlock,
- *             fileName: string } | null}
+ *             versions: import('./schema.js').ChoreoVersion[], practiceLogs: import('./schema.js').PracticeLog[],
+ *             baseVersionId: string, fileName: string } | null}
  */
 export function normalizeProject(data, deps) {
   const { ids, defaultCategories = {} } = deps;
@@ -125,5 +127,12 @@ export function normalizeProject(data, deps) {
   // parts 도 같다(2026-11-03, RM-23). 없는 옛 파일은 빈 목록이고, 안무표 밖에서 시작하는 파트는 버린다.
   const parts = normalizeParts(data.parts, { rows });
 
-  return { rows, cols, categories, moveLibrary, placements, routines, favoriteRoutineIds, media, phrasing, stepTodos, parts, fileName: data.fileName || '' };
+  // 판본 · 연습 기록(RM-29). 등록표 밖(안무 본문이 아니라 파일 꼬리)이라 FIELD_TABLE 을 타지 않는다 — 그래서 여기 따로 둔다.
+  // 없는 파일은 빈 목록으로 떨어지고, 그 값은 다시 저장할 때 키째 빠진다(serialize.historyTail).
+  const versions = normalizeVersions(data.versions);
+  const practiceLogs = normalizePracticeLogs(data.practiceLogs);
+  const baseVersionId = typeof data.baseVersionId === 'string' ? data.baseVersionId : '';
+
+  return { rows, cols, categories, moveLibrary, placements, routines, favoriteRoutineIds, media, phrasing, stepTodos,
+    parts, versions, practiceLogs, baseVersionId, fileName: data.fileName || '' };
 }

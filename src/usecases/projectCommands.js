@@ -85,11 +85,45 @@ function commitMainHistory(deps) {
  * 프로젝트 파일과 undo 스냅샷은 원본 state 의 평평한 모양(rows/cols/placements/moveLibrary/…)을 쓴다.
  * 링크 4필드는 최상위로 펼친다(저장 키 순서를 바꾸지 않기 위해).
  */
+// @complexity time=O(n) space=O(n) cc=1
 function mainView(state) {
   // 등록표의 모든 필드(docFields.docView) + 링크 4필드를 최상위로 펼친 것(buildProjectFile 의 입력 모양).
   // ⚠ 손으로 적던 때 phrasing 이 여기서 빠져 **파일에 실리지 않았다**(2026-09-28 에 RM-01 의 왕복 시험이 찾았다).
   const doc = docView(state);
   return { ...doc, ...doc.links };
+}
+
+/**
+ * 판본 · 연습 기록의 꼬리를 buildProjectFile 에 넘기는 옵션(RM-29). 저장 · 작업 문서 두 길이 **같은 것을** 넘긴다 —
+ * 한쪽만 넘기면 새로고침(작업 문서 되살리기)이나 파일 저장에서 판본이 조용히 샌다(등록표 밖이라 docFields 왕복 시험이 못 잡는다).
+ * @param {object} state store.get()
+ */
+// @complexity time=O(1) space=O(1) cc=1
+function historyOptions(state) {
+  return { versions: state.versions, practiceLogs: state.practiceLogs, baseVersionId: state.versionBase };
+}
+
+/**
+ * 지금 안무의 **파일 본문**(평평한 모양) — 판본을 뜰 때와 「지금 본문이 판본 어딘가에 남았나」를 잴 때 쓴다(usecases/versionCommands).
+ * 파일 이름 · 시각 · 판본 꼬리는 싣지 않는다 — 안무 본문만이다.
+ * @param {object} state store.get()
+ * @returns {object}
+ */
+// @complexity time=O(n) space=O(n) cc=1
+export function currentDocBody(state) {
+  return buildProjectFile(mainView(state), { favoriteRoutineIds: state.favorites.routineIds });
+}
+
+/**
+ * 파일 본문(평평한 모양)을 지금 안무표로 연다 — **판본 열기 전용**(RM-29). 전체 불러오기와 같은 길(applyProjectData)이라
+ * 선택이 비고 되돌리기에 한 단계가 쌓인다. 다른 것은 둘: 판본 · 기록 목록을 그대로 두고, 이름칸을 건드리지 않는다.
+ * @param {ProjectDeps} deps
+ * @param {object} body
+ * @returns {import('./store.js').Dirty}
+ */
+// @complexity time=O(n) space=O(n) cc=1
+export function openDocBody(deps, body) {
+  return applyProjectData(deps, body, { withHistory: false, keepName: true });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,7 +156,8 @@ export function draftSnapshot(deps, options = {}) {
   return buildProjectFile(mainView(state), {
     fileName: raw.trim(),
     savedAt: nowIso(env),
-    favoriteRoutineIds: state.favorites.routineIds
+    favoriteRoutineIds: state.favorites.routineIds,
+    ...historyOptions(state)      // RM-29 — 새로고침해도 판본 · 기록이 이어진다
   });
 }
 
@@ -247,7 +282,8 @@ export function saveProject(deps, options = {}) {
   const payload = buildProjectFile(mainView(state), {
     fileName,
     savedAt: nowIso(env),
-    favoriteRoutineIds: state.favorites.routineIds
+    favoriteRoutineIds: state.favorites.routineIds,
+    ...historyOptions(state)      // RM-29 — 판본 · 기록이 있을 때만 꼬리가 붙고 version 이 3 이 된다
   });
   files.downloadJson(payload, `${fileName}-project.json`);
   return pushRecent(deps, 'projects', { fileName, savedAt: payload.savedAt, data: payload });
@@ -309,7 +345,9 @@ export function saveCategories(deps, options = {}) {
  *   ⑥ 렌더 5종(4381-4385) ⑦ saveHistory() (4386)
  * ⚠ renderCategoryOptions 는 categories 대입 **직후**(4346)라 항상 함께 더러워진다.
  */
-function applyProjectData(deps, data) {
+// @complexity time=O(n) space=O(n) cc=6
+function applyProjectData(deps, data, options = {}) {
+  const { withHistory = true, keepName = false } = options;
   const { store, env, storage } = deps;
   const normalized = normalizeProject(data, { ids: env, defaultCategories: DEFAULT_CATEGORIES });
   if (!normalized) {
@@ -326,12 +364,18 @@ function applyProjectData(deps, data) {
   // ⚠ 선택도 함께 비운다(RM-03) — Undo 복원(historyCommands.restoreMain)과 같은 자리·같은 방식이다.
   //   원본은 비우지 않아, 열기 전에 고른 블록을 가리키는 선택이 남고 `루틴으로 편성 (2)` 가 떠 있었다.
   //   부분 채우기(mergeProjectData)는 기존 블록이 남으므로 선택을 건드리지 않는다.
-  writeDoc(store, fields, { selection: new Set(), selectionAnchor: null });   // RM-14 — 앵커도 비운다
+  // 판본 · 기록(RM-29)은 등록표 밖이라 여기서 따로 쓴다. 파일을 열면 그 파일의 것으로 갈아 끼우고(없으면 빈 목록),
+  // 판본을 열 때(openDocBody)는 **그대로 둔다** — 판본 하나를 열었다고 다른 판본과 기록이 사라지면 안 된다.
+  const history = withHistory
+    ? { versions: normalized.versions, practiceLogs: normalized.practiceLogs, versionBase: normalized.baseVersionId }
+    : {};
+  writeDoc(store, fields, { selection: new Set(), selectionAnchor: null, ...history });   // RM-14 — 앵커도 비운다
+  if (withHistory) store.patch('session', { versionSig: '' });
   store.patch('session', { partFolds: new Set() });   // RM-23 — 접힘은 화면의 일이다. 다른 안무표를 열면 모두 펴진다
   store.patch('favorites', { routineIds: normalized.favoriteRoutineIds }); // 4372·4376
   storage.saveRoutineFavorites([...normalized.favoriteRoutineIds]);  // 4373·4377 (두 갈래 모두)
 
-  if (typeof deps.setProjectFileName === 'function') {
+  if (!keepName && typeof deps.setProjectFileName === 'function') {
     deps.setProjectFileName(normalized.fileName);                    // 4379
   }
 
@@ -343,7 +387,7 @@ function applyProjectData(deps, data) {
   // 다시 그릴 것 — 필드마다의 dirty(docFields)를 합친 것 + 툴바(4381 syncBoardSizeUI → boardColsInput.value / boardTitle).
   // 원본 대응: categorySelect 4346 · links 5126 · layout 4381 · legend 4382 · palette 4383 · boards 4384 · routineList 4385.
   // ⚠ 손으로 적던 때 phrasing 이 빠져, 불러온 프레이즈 표시가 행에 다시 입혀지지 않았다(boards.skeleton 이 dataset 을 날린다).
-  const dirty = { ...docDirty(), selection: true, toolbar: true };
+  const dirty = { ...docDirty(), selection: true, toolbar: true, versions: true };
   return mergeDirty(dirty, commitMainHistory(deps));                 // 4386
 }
 

@@ -60,7 +60,7 @@ export const BOARD_POLICY = Object.freeze({
  *   palette?: true, legend?: true, categorySelect?: true, categoryManager?: true,
  *   routineList?: true, routineEditor?: true,
  *   savedLists?: ('projects'|'moves'|'categories')[],
- *   links?: true, toolbar?: true, history?: true, video?: true,
+ *   links?: true, toolbar?: true, history?: true, video?: true, phrasing?: true, versions?: true,
  *   notify?: Notice
  * }} Dirty
  */
@@ -106,6 +106,8 @@ const DIRTY_FLAGS = Object.freeze([
   // 2026-09-13 신설(프레이즈·코러스). 보드의 행 테두리 색과 툴바 버튼이 이 플래그로 다시 그려진다.
   // ⚠ 배치는 건드리지 않으므로 `boards` 를 함께 세우지 마라 — 행을 다시 그릴 이유가 없다.
   'phrasing',
+  // 2026-11-03 신설(RM-29). 사이드바 프로젝트 칸의 판본 목록과 연습 기록 목록이 이 플래그로 다시 그려진다.
+  'versions',
   // 2026-11-03 신설(파트, RM-23). 마디 이름 칸의 띠 · 꼬리표 · 접힌 줄이 이 플래그로 다시 입혀진다.
   // ⚠ 프레이즈와 같다 — 블록이 안 바뀐 파트 변경(이름 · 색 · 긋기 · 접기)에는 boards 를 세우지 않는다.
   'parts'
@@ -291,6 +293,14 @@ function createInitialState(ids) {
     // 2026-09-21 신설(단계별 할 일). UNDO_FIELDS·DOC_FIELDS 의 10번째 필드다 —
     // 이 안무표에 대한 할 일이라 Undo 를 타고 파일에도 실린다(비었으면 안 실린다).
     stepTodos: normalizeStepTodos(null),
+    // 2026-11-03 신설(RM-29) — 판본과 연습 기록. **안무 본문 밖**이다: 등록표(FIELD_TABLE)에 없고 되돌리기 스냅샷에 들지 않는다
+    // (판본마다 안무 본문을 통째로 품어, 넣으면 동작 하나 옮길 때마다 전부 문자열화된다). 파일에는 꼬리로 실린다(비면 빠진다).
+    //   versions       ChoreoVersion[] — 뜬 차례
+    //   practiceLogs   PracticeLog[]   — 날짜 오름차순
+    //   versionBase    지금 본문이 갈라져 나온 판본 id(새 판본의 부모). 판본을 뜨거나 열 때 바뀐다. 없으면 ''
+    versions: [],
+    practiceLogs: [],
+    versionBase: '',
     // 2026-11-03 신설(파트, RM-23). `{name, startRow, endRow, color}` 목록이며 UNDO_FIELDS·DOC_FIELDS 의 11번째 필드다 —
     // 곡 구조는 안무의 일부다. 접힘은 여기 없다 — 화면의 일이라 session.partFolds 에 둔다.
     parts: [],
@@ -317,6 +327,10 @@ function createInitialState(ids) {
       defaultCount: DEFAULT_COUNT_INITIAL,  // 1384 의 가변 모듈 전역
       editingRoutineId: null,               // reState.routineId (1427)
       recentSortMode: 'recent',             // savedSortMode (1518) 'recent' | 'alpha'
+      // 판본을 뜨거나 연 바로 뒤 본문의 서명(RM-29, domain/project/versions.versionSignature). 판본을 열기 전에
+      // 「지금 본문이 판본 어디에도 없어 버려지는가」를 잴 때, 열면서 정규화로 키 차례가 달라진 것을 「바뀌었다」로 오인하지 않으려고 둔다.
+      // ⚠ 휘발성이다 — 새로고침하면 비고, 그때는 판본 본문과 직접 견준다.
+      versionSig: '',
       // 영상 패널의 **휘발성** 상태(2026-09). 저장하지도 Undo 하지도 않는다.
       //   open      패널이 열려 있는가 (닫힌 상태가 기본 — 켜야 보이는 기능이다)
       //   collapsed 헤더만 남기고 접었는가
@@ -450,6 +464,8 @@ export function createStore(initial = {}) {
     get media() { return state.media; },
     get phrasing() { return state.phrasing; },
     get stepTodos() { return state.stepTodos; },
+    get versions() { return state.versions; },
+    get practiceLogs() { return state.practiceLogs; },
     get parts() { return state.parts; },
     get recents() { return state.recents; },
     get palette() { return state.palette; },

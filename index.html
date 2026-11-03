@@ -1051,6 +1051,21 @@
     .project-field-label { font-size: var(--fs-1); color: var(--muted); width: 3.6em; flex: 0 0 auto; }
     .project-field input { flex: 1 1 auto; min-width: 0; font-size: var(--fs-1); padding: 3px 6px; }
     .project-clip-del { width: 100%; font-size: var(--fs-1); }
+    /* RM-29 — 판본 · 연습 기록. 영상 줄의 꼴(.project-clip)을 그대로 빌려 쓴다. */
+    .project-clip-take { padding: 1px 7px; font-size: var(--fs-1); min-height: 22px; }
+    .project-sub { display: grid; gap: var(--sp-1); margin-top: var(--sp-1); }
+    .project-sub-head { display: flex; align-items: center; gap: 6px; }
+    .project-sub-title { flex: 1 1 auto; font-size: var(--fs-1); font-weight: 800; color: var(--muted); }
+    .project-sub-add { padding: 1px 7px; font-size: var(--fs-1); min-height: 22px; }
+    .project-version-head { cursor: default; }
+    .project-version-open { margin-left: auto; padding: 1px 7px; font-size: var(--fs-1); min-height: 22px; }
+    .project-version .project-clip-edit { margin-left: 0; }
+    .project-log-text { font-size: var(--fs-1); font-weight: 600; white-space: normal; }
+    .project-field select { flex: 1 1 auto; min-width: 0; font-size: var(--fs-1); padding: 3px 6px; }
+    .project-log-editor { margin-top: 0; padding-top: 0; border-top: 0; }
+    .project-log-actions button { flex: 1 1 auto; font-size: var(--fs-1); }
+    .project-log-error { font-size: var(--fs-1); color: var(--danger); line-height: 1.4; }
+    .project-log-error[hidden] { display: none; }
 
     .saved-list {
       display: grid;
@@ -3867,6 +3882,9 @@
         </div>
         <div class="project-summary" id="projectSummary"></div>
         <div class="project-clips" id="projectClips"></div>
+        <!-- RM-29(2026-11-03) — 판본과 연습 기록. 안은 ui/versionListView · ui/practiceLogView 가 그린다. -->
+        <div class="project-sub" id="projectVersions"></div>
+        <div class="project-sub" id="practiceLogs"></div>
       </section>
 
       <!-- 2026-09-20 — 빈도 순으로 다시 놓았다. 전에는 첫 카드가 `솔로 동작 추가`(가장 드문 일)라
