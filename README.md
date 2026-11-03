@@ -56,14 +56,14 @@ src/testing/    골든 러너가 쓰는 어댑터 (앱은 쓰지 않는다)
 ## 고칠 때
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 622개 (도메인·어댑터·유스케이스·뷰 570 + 원칙 검사기 자기 시험 18 + 문서 검사 자기 시험 18 + server.py 실물 16)
-node tests/run.mjs                # 격자 알고리즘 골든 173개
-node tools/check-arch.mjs         # 계층 방향과 순수성
-node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지
-node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 다섯
+node --test 'tests/**/*.test.mjs' # 단위 테스트 — 도메인·어댑터·유스케이스·뷰, 검사기 자기 시험, server.py 실물
+node tests/run.mjs                # 격자 알고리즘 골든
+node tools/check-arch.mjs         # 계층 방향과 순수성, src/ · server.py 가 packaging/ 를 모르는지
+node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지, 도움말 `?` 가 가리키는 절이 있는지, 시험 수가 개발 지침 밖에 끼지 않았는지
+node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙
 ```
 
-다섯 다 의존성이 0이다. 골든은 **현재 동작의 기록이지 옳은 동작의 정의가 아니고**, 결함을 고쳐 의도적으로 바꾼 기대값이 섞여 있다 — 어느 시나리오가 그런지와 그 이유는 골든 파일의 `meta.intentionalChanges` 에 있다. 나머지 규칙은 [개발 지침](CLAUDE.md)에 있다.
+시험 수와 원칙 검사가 재는 원칙의 목록은 [개발 지침](CLAUDE.md#고치기-전에-돌리는-것) 한 자리에만 적는다 — 여기에 다시 적으면 `node tools/check-docs.mjs` 가 붉어진다. 다섯 다 의존성이 0이다. 골든은 **현재 동작의 기록이지 옳은 동작의 정의가 아니고**, 결함을 고쳐 의도적으로 바꾼 기대값이 섞여 있다 — 어느 시나리오가 그런지와 그 이유는 골든 파일의 `meta.intentionalChanges` 에 있다. 나머지 규칙은 [개발 지침](CLAUDE.md)에 있다.
 
 ## 문서
 

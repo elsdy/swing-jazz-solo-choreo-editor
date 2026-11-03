@@ -2,7 +2,7 @@
 //
 //   node tools/check-docs.mjs
 //
-// 눈으로 훑으면 반드시 빠뜨린다. 검사하는 것은 여섯이다.
+// 눈으로 훑으면 반드시 빠뜨린다. 검사하는 것은 일곱이다.
 //   ① 등록부에 있는데 파일이 없는 항목 — 목록에서 눌렀을 때 빈 화면이 뜬다
 //   ② 파일은 있는데 등록부에 없는 문서 — 사용자 눈에는 문서가 늘지 않은 것과 같다
 //   ③ 문서끼리 거는 링크의 앵커가 뷰어가 만드는 id 와 맞는지
@@ -12,6 +12,8 @@
 //      먼저 대조하고, 표 밖의 화면 글자에서만 찾은 인용은 따로 센다(RM-10)
 //   ⑥ 화면의 `?` 단추(data-help)가 가리키는 문서 · 앵커가 있는지, 단추 키와 표(src/ui/helpLinks.js)가 짝이 맞는지(RM-26)
 //      — 제목을 고쳐 앵커가 바뀌면 `?` 가 문서 맨 위로 떨어진다. 그것을 여기서 붉게 한다
+//   ⑦ README · ARCHITECTURE 의 코드 블록 node 명령 주석에 시험 수(「N개」)가 다시 끼지 않았는지(tools/docCounts.mjs, RM-64)
+//      — 수는 개발 지침(CLAUDE.md) 한 자리에만 둔다. 여러 자리에 두면 수를 고치는 PR 이 한 자리만 맞추고 나머지가 묵는다
 
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -22,6 +24,7 @@ import { HELP_LINKS, missingHelpAnchors, unmatchedHelpKeys } from '../src/ui/hel
 import { COMMANDS } from '../src/domain/commands.js';
 import { LABELS } from '../src/domain/strings.js';
 import { LABEL_DOCS, NOT_LABELS, checkDocLabels, formatMiss, labelTableTexts } from './docLabels.mjs';
+import { COUNT_DOCS, checkTestCounts, formatCount } from './docCounts.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -156,10 +159,16 @@ for (const text of Object.values(screenFiles)) {
 for (const p of missingHelpAnchors(HELP_LINKS, anchorsOf, resolveDoc)) problems.push(p);
 for (const p of unmatchedHelpKeys(HELP_LINKS, helpKeys)) problems.push(p);
 
+// ── ⑦ 시험 수는 개발 지침 한 자리에 ──────────────────────────────────────────
+const countDocs = Object.fromEntries(COUNT_DOCS.filter(f => existsSync(join(ROOT, f))).map(f => [f, readFileSync(join(ROOT, f), 'utf8')]));
+const countHits = checkTestCounts(countDocs);
+for (const h of countHits) problems.push(formatCount(h));
+
 // ── 보고 ────────────────────────────────────────────────────────────────────
 console.log(stats.join('\n'));
 console.log(`\n등록 문서 ${DOCS.length}건 / 갈래 ${DOC_GROUPS.length}개 / 문서 간 링크 ${links.length}개`);
 console.log(`도움말 ? 단추 ${helpKeys.size}종 / 표 ${HELP_LINKS.length}줄`);
+console.log(`시험 수 한 자리 — ${COUNT_DOCS.join(' · ')} 의 명령 블록에 끼어든 수 ${countHits.length}개`);
 console.log(`라벨 인용 ${labels.checked}개 대조(${LABEL_DOCS.join(' · ')}) — 문자열 표·명령 등록부에서 ${labels.fromTable}개, 표 밖 화면 글자에서만 ${labels.scrapedOnly}개 / 꼴로 거른 것 ${filteredTotal}개(${Object.entries(labels.filtered).map(([k, n]) => `${k} ${n}`).join(' · ')}) / 라벨 아님 목록 ${NOT_LABELS.length}개`);
 for (const n of notes) console.log('  · ' + n);
 
@@ -168,4 +177,4 @@ if (problems.length) {
   for (const p of problems) console.error('  ✗ ' + p);
   process.exit(1);
 }
-console.log(`\n문서 검사 통과 — 등록 누락 0, 깨진 앵커 0, 렌더 누락 0, 라벨 인용 불일치 0 · 라벨 아님 ${NOT_LABELS.length}개`);
+console.log(`\n문서 검사 통과 — 등록 누락 0, 깨진 앵커 0, 렌더 누락 0, 라벨 인용 불일치 0 · 라벨 아님 ${NOT_LABELS.length}개 · 개발 지침 밖 시험 수 0`);

@@ -55,7 +55,7 @@ test('위반이 있으면 종료 코드 1과 파일:줄 — 원칙 꼴로 찍는
   assert.match(good.stdout, /원칙 검사 통과 — 어긴 자리 0/);
 
   // 원칙마다 규칙이 표 한 줄 — { 원칙, 무엇, 고치는 법, scan }
-  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'R-6', 'R-10', 'D-14', 'U-15', 'U-16']);
+  assert.deepEqual(RULES.map(r => r.principle), ['U-10', 'U-11', 'U-12', 'D-5', 'D-22', 'R-6', 'R-10', 'D-14', 'U-15', 'U-16']);
   for (const r of RULES) {
     assert.equal(typeof r.scan, 'function');
     assert.ok(r.what && r.fix, `${r.principle}: 무엇 · 고치는 법이 비었다`);
@@ -104,6 +104,42 @@ test('D-5 0을 덮는 기본값만 잡는다', () => {
   assert.equal(run('D-5', { 'src/domain/a.js': 'const row = Math.max(0, Number(p.row) || 1);\n' }).length, 1);
   // 괄호가 겹친 인자
   assert.equal(run('D-5', { 'src/domain/a.js': 'const s = Number(f(a, (b))) || 2;\n' }).length, 1);
+});
+
+test('[RM-62 요구 3] D-21 — Iso() 뒤 slice(0, 10) 이 붉어진다', () => {
+  // 시험 이름은 계획서(RM-62)의 요구 ↔ 시험 표가 약속한 그대로다. 원칙 번호는 D-21 을 RM-28(포장)이 먼저 잡아 D-22 로 옮겼다.
+  // 걸리는 조각 — RM-62 의 버그 꼴(템플릿 속 `${…}` 도 코드다)과 Date 를 바로 자르는 꼴
+  assert.equal(run('D-22', { 'src/usecases/a.js': 'const n = `project_${nowIso(env).slice(0, 10)}`;\n' }).length, 1);
+  assert.equal(run('D-22', { 'src/adapters/a.js': 'const d = new Date().toISOString().slice(0, 10);\n' }).length, 1);
+  // 통과하는 조각 — 지역 날짜를 부른 것, 이유를 단 예외 표식
+  assert.equal(run('D-22', { 'src/usecases/a.js': 'const n = `project_${localDate(env)}`;\n' }).length, 0);
+  assert.equal(run('D-22', { 'src/adapters/a.js': '// 원칙-예외(D-22): 서버와 맞추는 UTC 날짜 열쇠라 지역 날짜면 틀린다\nconst k = new Date().toISOString().slice(0, 10);\n' }).length, 0);
+  // 주석 · 문자열 속 글자와, 이름을 거쳐 자르는 꼴(String(x).slice)은 잡지 않는다 — 원칙 문서가 밝힌 범위
+  assert.equal(run('D-22', { 'src/a.js': '// nowIso().slice(0, 10) 은 UTC 다\nconst s = "toISOString().slice(0, 10)";\nconst t = String(at).slice(0, 10);\n' }).length, 0);
+});
+
+test('[RM-60 요구 2] D-5 Number.isFinite(Number(x)) 꼴도 잡는다', () => {
+  // null · 빈 글이 Number() 를 지나 0 이 되어 「유한한 수」로 통과한다
+  assert.equal(run('D-5', { 'src/domain/a.js': 'if (!Number.isFinite(Number(sec))) return null;\n' }).length, 1);
+  assert.equal(run('D-5', { 'src/domain/a.js': 'const ok = isFinite(Number(x));\n' }).length, 1);
+  assert.equal(run('D-5', { 'src/domain/a.js': 'const ok = Number.isFinite( Number(f(a, (b))) );\n' }).length, 1, '괄호가 겹쳐도 Number(…) 하나면 잡는다');
+  // 고친 꼴 · Number 가 식의 일부인 꼴 · 다른 변환은 넘긴다
+  assert.equal(run('D-5', { 'src/domain/a.js': "if (typeof x !== 'number' || !Number.isFinite(x)) return null;\n" }).length, 0);
+  assert.equal(run('D-5', { 'src/domain/a.js': 'const ok = Number.isFinite(Number(a) + b);\n' }).length, 0);
+  assert.equal(run('D-5', { 'src/domain/a.js': 'const ok = Number.isFinite(parseFloat(x));\n' }).length, 0);
+  assert.equal(run('D-5', { 'src/domain/a.js': 'const ok = myIsFinite(Number(x));\n' }).length, 0, '이름 끝이 isFinite 인 다른 함수는 아니다');
+  // 주석 · 글 속 예문은 코드가 아니다
+  assert.equal(run('D-5', { 'src/domain/a.js': '// Number.isFinite(Number(sec)) 는 null 을 0 으로 통과시킨다\nconst t = "isFinite(Number(x))";\n' }).length, 0);
+  // 이유 단 예외 표식은 넘긴다
+  assert.equal(run('D-5', { 'src/domain/a.js': '// 원칙-예외(D-5): x 는 앞에서 null 을 걸렀다\nconst ok = Number.isFinite(Number(x));\n' }).length, 0);
+  // 찍는 글이 고치는 법을 말한다
+  const [rule] = only('D-5');
+  assert.match(rule.fix, /typeof x === 'number'/);
+});
+
+test('[RM-60 요구 3] 저장소 전체에 D-5 걸림이 없다', () => {
+  const hits = checkPrinciples(loadRepoFiles(ROOT), only('D-5'));
+  assert.deepEqual(hits.map(h => `${h.file}:${h.line} ${h.snippet}`), []);
 });
 
 test('R-6 마크업 클래스가 둘인 요소의 className 대입만 잡는다', () => {
