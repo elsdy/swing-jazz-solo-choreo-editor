@@ -21,14 +21,16 @@ python3 server.py
 ## 고치기 전에 돌리는 것
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 651개 (도메인·어댑터·유스케이스·뷰 590 + 원칙 검사기 자기 시험 18 + 문서 검사 자기 시험 18(라벨 대조 · 도움말 `?` 앵커 · 문서 갈래) + 계층 검사 자기 시험 3 + server.py 실물 22, ffmpeg 이 있으면 실제로 한 번 자른다)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 687개 (도메인·어댑터·유스케이스·뷰 620 + 원칙 검사기 자기 시험 21 + 문서 검사 자기 시험 21(라벨 대조 · 도움말 `?` 앵커 · 문서 갈래 · 시험 수 한 자리) + 계층 검사 자기 시험 3 + server.py 실물 22, ffmpeg 이 있으면 실제로 한 번 자른다)
 node tests/run.mjs                # 격자 알고리즘 골든 173개
 node tools/check-arch.mjs         # 계층 방향과 순수성, src/ · server.py 가 packaging/ 를 모르는지
-node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 튜토리얼·기능 설명서가 인용한 라벨이 화면에 있는지, 도움말 `?` 가 가리키는 절이 있는지
-node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 아홉(U-10 · U-11 · U-12 · D-5 · R-6 · R-10 · D-14 · U-15 · U-16)
+node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 튜토리얼·기능 설명서가 인용한 라벨이 화면에 있는지, 도움말 `?` 가 가리키는 절이 있는지, 시험 수가 이 자리 밖(README · ARCHITECTURE)에 끼지 않았는지
+node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 열(U-10 · U-11 · U-12 · D-5 · D-22 · R-6 · R-10 · D-14 · U-15 · U-16)
 ```
 
 다섯 다 의존성이 0이고 몇 초 안에 끝난다(서버 테스트는 `python3` 을 띄운다). 고친 뒤에도 돌린다.
+
+**시험 수는 이 블록 한 자리에만 적는다**(2026-11-03, RM-64). README · ARCHITECTURE 의 같은 명령 블록은 숫자 없이 이 자리를 가리킨다 — 수를 세 자리에 두었더니 시험을 늘린 PR 마다 한 자리만 고쳐 622 · 649 · 66 으로 갈렸다. 그 두 문서의 `node` 명령 주석에 「N개」가 다시 끼면 `node tools/check-docs.mjs` 가 파일:줄로 붉어진다(`tools/docCounts.mjs`). 이 자리의 수가 맞는지는 기계가 재지 않는다 — 시험을 더한 PR 은 `node --test` 가 낸 `ℹ tests` 수로 이 줄을 손으로 고친다.
 
 원칙 검사가 걸린 자리는 **고친다**(2026-10-01 — 0 에서 시작했고 지금 저장소에 예외 표식은 없다). 검사기가 글자를 잘못 읽어 걸린 것이 분명할 때만 그 줄이나 윗줄에 `// 원칙-예외(D-5): 이유` 처럼 원칙 번호와 **이유**를 단 표식을 둔다 — 이유가 빈 표식은 통과하지 못한다. 잴 수 있는 원칙이 새로 생기면 `tools/check-principles.mjs` 의 `RULES` 에 한 줄을 더하고, 일부러 어긴 조각이 붉어지는 시험을 `tests/unit/checkPrinciples.test.mjs` 에 함께 둔다.
 
