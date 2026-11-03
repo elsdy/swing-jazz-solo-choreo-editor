@@ -14,20 +14,39 @@
 const SEG = 18;
 
 /**
+ * 테마 마디의 반지름(px) — index.html 의 `:root[data-theme] .flow-step .flow-icon` 지름 34px 의 반이다(RM-58).
+ * ⚠ CSS 를 바꾸면 이 수도 바꾼다 — `tests/unit/videoPanelMarkup.test.mjs` 가 둘을 맞대 본다.
+ */
+export const FLOW_NODE_R = 17;
+
+/**
+ * 마디 아래 이름이 차지하는 높이(px) — 여백 4px(`.flow-name` 의 margin-top) + 12px 글자 한 줄 14px(실측).
+ * ⚠ 이름은 마디 **아래**에 붙는다(CSS `top:100%`). 이 몫을 셈에 넣지 않으면 띠(`overflow:hidden`)가 이름을 자른다.
+ */
+export const FLOW_LABEL_H = 18;
+
+/**
  * 마디 자리와 길을 만든다.
  *
  * 세로는 **가운데가 솟은 완만한 활**이다(원본은 멀어질수록 올라가는 원근 곡선이었다). 좁은 띠에서는
  * 그 굴곡이 크면 라벨이 서로 어긋나 읽기 어려워서, 높이의 3할 안쪽으로 눌렀다.
+ *
+ * 마디와 그 아래 이름은 **언제나 띠 안에 든다**(RM-58) — 모든 마디가 `nodeR ≤ y` 이고
+ * `y + nodeR + labelH ≤ height` 다. 띠가 낮으면 활을 낮춰 맞춘다(띠를 늘이지 않는다 — 결정 2026-11-03).
+ * 그래도 못 담는 띠면 마디를 띠 위에 붙인다 — 마디가 보이는 것이 이름보다 먼저다.
  *
  * @param {object} args
  * @param {number} args.width   그릴 폭(px)
  * @param {number} args.height  그릴 높이(px)
  * @param {number} args.count   마디 수(2 이상)
  * @param {number} [args.padX]  양 끝 여백(px)
+ * @param {number} [args.nodeR]  마디 반지름(px)
+ * @param {number} [args.labelH] 마디 아래 이름 높이(px)
  * @returns {{ points: {x:number,y:number}[], center: string, ribbon: string }|null}
  *   못 그리면 null. `center` 는 길 한가운데 선, `ribbon` 은 원근이 든 띠(닫힌 도형)
  */
-export function flowTrack({ width, height, count, padX = 48 }) {
+// @complexity time=O(n) space=O(n) cc=9
+export function flowTrack({ width, height, count, padX = 48, nodeR = FLOW_NODE_R, labelH = FLOW_LABEL_H }) {
   if (![width, height, count].every(Number.isFinite)) return null;
   if (!(width > 0) || !(height > 0) || !(count >= 2)) return null;
 
@@ -35,9 +54,16 @@ export function flowTrack({ width, height, count, padX = 48 }) {
   const x1 = width - x0;
   if (!(x1 > x0)) return null;
 
+  // 마디가 설 수 있는 세로 범위 — 마디 위가 띠 위를, 이름 아래가 띠 아래를 넘지 않는 곳.
+  const yTop = nodeR;
+  const yBot = Math.max(yTop, height - nodeR - labelH);
+
   // 마디는 **고르게** 둔다(읽기 쉬움이 먼저다). 세로만 활처럼 휜다.
-  const arc = Math.min(height * 0.3, 26);
-  const baseY = height * 0.5 + arc * 0.5;
+  // 활은 그 범위 안에서만 휜다 — 낮은 띠에서는 덜 휜다(RM-58).
+  const arc = Math.min(height * 0.3, 26, yBot - yTop);
+  // 활의 바닥(양 끝 마디)은 띠 가운데보다 반 활만큼 아래 — 다만 이름이 띠 안에 들 만큼만,
+  // 그리고 솟은 가운데 마디가 띠 위를 넘지 않을 만큼만(yTop + arc ≤ yBot 이라 두 끝이 엇갈리지 않는다).
+  const baseY = Math.max(yTop + arc, Math.min(height * 0.5 + arc * 0.5, yBot));
   const yAt = (x) => {
     const t = (x - x0) / (x1 - x0);          // 0..1
     return baseY - arc * Math.sin(Math.PI * t);

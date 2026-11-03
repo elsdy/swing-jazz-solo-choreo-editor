@@ -2977,6 +2977,8 @@
 
        ⚠ 좌표는 ui/videoPanel 이 domain/flowTrack 에서 받아 인라인으로 쓴다. 여기 CSS 는
          **색과 빛만** 정한다 — 자리를 두 곳에서 정하면 창 크기가 바뀔 때 서로 어긋난다.
+       ⚠ 띠 높이(104px) · 마디 지름(34px) · 이름 여백(4px)은 domain/flowTrack 의 FLOW_NODE_R · FLOW_LABEL_H 와
+         같은 수다 — 마디와 이름이 띠 안에 들게 셈한다(RM-58). 바꾸면 videoPanelMarkup 시험이 맞대 본다.
        ⚠ SVG 는 `pointer-events:none` 이다. 누를 수 있는 것은 버튼뿐이고 길은 보여 주기만 한다.
        ⚠ 크기는 상태와 무관하다(기본 테마와 같은 규칙) — 색과 빛만 달라진다. */
     :root[data-theme] .flow-steps {
@@ -3248,6 +3250,14 @@
         gap: 6px;
         padding: 2px 0 4px;
       }
+      /* 테마의 길 띠는 본문 **맨 위**에 선다(RM-61, 2026-11-03).
+         ⚠ 테마 길 띠는 104px 이다(아래 「흐름 길」 절). 마크업 차례대로 연습 줄(order 0, 99px) 밑에 서면
+           26vh 로 끊긴 이 스크롤 칸의 바닥에 걸린다 — 1440×723 · neon 에서 칸 446~634 에 띠가 560~664 라
+           아래 30px 와 마디 이름(646~660)이 잘려, 스크롤해야 보였다.
+         그래서 차례는 영상 → **길 띠(-1)** → 연습 줄(0) → 열린 차례 · 도구(1) → 상태줄(2) 이다.
+         ⚠ 마크업은 그대로다(위 ⚠⚠ — iframe 이 다시 읽힌다). 높이(26vh 상한)도 그대로라 placeBand 가 잰 영상 크기는 같다.
+         ⚠ **테마일 때만**이다. 기본 테마의 낮은 차례 줄은 잘리지 않고, 그 자리는 RM-55 가 다룬다 — 테마 없는 규칙은 손대지 않는다. */
+      :root[data-theme] body[data-videoband="on"] .flow-steps { order: -1; }
       /* 닫힌 단계는 자리를 차지하지 않는다 — 누를 것은 위의 버튼 줄이다. */
       body[data-videoband="on"] .video-body > .vstep > summary { display: none; }
       body[data-videoband="on"] .video-body > .vstep:not([open]) { display: none; }

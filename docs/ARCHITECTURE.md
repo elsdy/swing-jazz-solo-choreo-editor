@@ -21,7 +21,7 @@ node tests/run.mjs                     # 격자 알고리즘 골든
 node --test 'tests/**/*.test.mjs'      # 도메인·어댑터·유스케이스·뷰 단위 시험, 검사기 자기 시험, server.py 실물
 node tools/check-arch.mjs              # 계층 방향과 순수성
 node tools/check-docs.mjs              # 문서 등록 누락과 깨진 앵커, 문서가 인용한 라벨이 화면에 있는지, 시험 수가 개발 지침 밖에 끼지 않았는지
-node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 아홉(U-10 · U-11 · U-12 · D-5 · R-6 · R-10 · D-14 · U-15 · U-16)
+node tools/check-principles.mjs        # 글자로 잡히는 개발 원칙 열(U-10 · U-11 · U-12 · D-5 · D-22 · R-6 · R-10 · D-14 · U-15 · U-16)
 ```
 
 몇 개씩인지는 [개발 지침](../CLAUDE.md#고치기-전에-돌리는-것) 한 자리에만 적는다 — 이 블록에 다시 적으면 `node tools/check-docs.mjs` 가 붉어진다(RM-64).
