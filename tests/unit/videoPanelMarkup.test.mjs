@@ -278,3 +278,90 @@ test('[RM-58 요구 1] 테마 길 띠의 CSS 크기와 flowTrack 의 마디 셈�
     }
   }
 });
+
+// ── RM-54 — 펼친 도구의 `?` 는 맨 위 오른쪽에 겹쳐 두고, 첫 조작 줄은 그 자리를 비운다 ──────────────────
+// `.vtool-help` 는 `?` 의 높이만큼 음수 아래 여백을 써서 본문 첫 줄과 같은 높이에 겹쳐 선다(RM-20 — 본문이 한 줄
+// 밀리지 않게). 짝이 없으면 폰 폭(360~430px)에서 첫 줄 단추가 오른쪽 끝까지 차 `?` 밑으로 파고든다 — 60 경우 중
+// 12 경우에서 「Out 으로」 · 「이 마디에 맵핑」 · 「분석 지우기」를 덮었다(2026-11-03 헤드리스 Chrome 으로 잼).
+// 실제 겹침 픽셀은 node 로 못 잰다 — 여기서는 「음수 여백 ↔ 첫 줄의 비운 자리」 짝과 그 짝이 셋 다에 닿는지를 잰다.
+
+/** 미디어 블록을 걷어 낸 CSS — 모든 폭에 걸리는 규칙만. */
+// @complexity time=O(n·m) space=O(n) cc=3
+function cssOutsideMedia(css) {
+  let out = css;
+  for (const m of css.matchAll(/@media[^{]*\{/g)) {
+    for (const b of mediaBlocks(css, m[0].replace(/^@media\s*/, '').replace(/\s*\{$/, ''))) out = out.replace(b, '');
+  }
+  return out;
+}
+
+/** 블록 안 규칙 중 선택자 목록에 `sel` 이 그대로 든 것의 `prop` 값들(뒤의 것이 이긴다 — 마지막이 실제 값). */
+// @complexity time=O(n) space=O(n) cc=4
+function declsFor(block, sel, prop) {
+  const norm = (s) => s.replace(/\s+/g, ' ').trim();
+  const out = [];
+  for (const m of block.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!m[1].split(',').map(norm).includes(norm(sel))) continue;
+    const v = m[2].match(new RegExp(`(?:^|;|\\s)${prop}\\s*:\\s*([^;]+)`));
+    if (v) out.push(v[1].trim());
+  }
+  return out;
+}
+
+const HELP_SEL = '.vtool-help';
+const FIRST_ROW_SEL = '.vtool-help + .vstep-body > :first-child > .video-field:first-child';
+const ALL_WIDTHS = cssOutsideMedia(CSS_TEXT);
+
+test('[RM-54 요구 0] 펼친 도구의 첫 줄은 ? 자리를 비워 둔다', () => {
+  const qWidth = parseFloat(declsFor(ALL_WIDTHS, '.help-q', 'width').at(-1));
+  assert.ok(qWidth > 0, '`.help-q` 의 width 를 읽지 못했다');
+  const mb = parseFloat(declsFor(ALL_WIDTHS, HELP_SEL, 'margin-bottom').at(-1) ?? '0');
+  if (mb >= 0) return;   // 겹쳐 두지 않으면 짝도 필요 없다(요구 1 이 따로 붉어진다).
+  // 짝 — 모든 폭에 걸리는 첫 줄의 오른쪽 여백이 `?` 폭 이상이다.
+  const pad = declsFor(ALL_WIDTHS, FIRST_ROW_SEL, 'padding-right').at(-1);
+  assert.ok(pad, `\`${HELP_SEL}\` 가 음수 아래 여백(${mb}px)으로 겹쳐 서는데, 첫 조작 줄(\`${FIRST_ROW_SEL}\`)에 오른쪽 여백 짝이 없다`);
+  assert.ok(parseFloat(pad) >= qWidth, `첫 줄의 오른쪽 여백(${pad})이 \`?\` 폭(${qWidth}px)보다 좁다`);
+  // 미디어 블록이 그 여백을 0 으로 되돌리지 않는다(어느 폭에서나 비운다).
+  for (const m of CSS_TEXT.matchAll(/@media([^{]*)\{/g)) {
+    for (const b of mediaBlocks(CSS_TEXT, m[1].trim())) {
+      for (const v of declsFor(b, FIRST_ROW_SEL, 'padding-right')) {
+        assert.ok(parseFloat(v) >= qWidth, `@media ${m[1].trim()} 에서 첫 줄 오른쪽 여백(${v})이 \`?\` 폭보다 좁다`);
+      }
+    }
+  }
+  // 짝 선택자가 도구 셋의 실제 첫 조작 줄에 닿는다 — `?` 바로 뒤 본문 → 그 첫 자식 → 그 첫 자식이 `.video-field`.
+  // 자르기 · 마커는 `.video-cut`, 분석은 `.video-pose-section` 이 사이에 선다. 첫 줄이 바뀌면 여기서 붉어진다.
+  for (const t of toolTabs) {
+    const slice = HTML.slice(t.start, t.end);
+    const help = slice.match(/<div class="vtool-help">[\s\S]*?<\/div>/);
+    assert.ok(help, `${t.summary} 에 .vtool-help 가 없다`);
+    const tags = [...slice.slice(help.index + help[0].length).matchAll(/<([a-z]+)\b([^>]*)>/g)].slice(0, 3);
+    assert.match(tags[0]?.[0] ?? '', /^<div class="vstep-body">$/, `${t.summary}: \`?\` 바로 뒤가 .vstep-body 가 아니다`);
+    assert.match(tags[2]?.[2] ?? '', /\bclass="video-field\b/, `${t.summary}: 본문 첫 자식의 첫 자식이 .video-field 가 아니다 — ${tags[2]?.[0]}`);
+  }
+});
+
+test('[RM-54 요구 1] 도구 ? 는 맨 위 오른쪽에 겹쳐 둔다', () => {
+  assert.equal(declsFor(ALL_WIDTHS, HELP_SEL, 'justify-content').at(-1), 'flex-end', '`.vtool-help` 는 오른쪽(flex-end)에 붙는다');
+  // 본문을 한 줄 밀지 않는다 — 음수 아래 여백이 `?` 높이를 그대로 지운다.
+  const qHeight = parseFloat(declsFor(ALL_WIDTHS, '.help-q', 'height').at(-1));
+  const mb = parseFloat(declsFor(ALL_WIDTHS, HELP_SEL, 'margin-bottom').at(-1) ?? '0');
+  assert.equal(mb, -qHeight, `\`.vtool-help\` 의 아래 여백(${mb}px)이 \`?\` 높이(${qHeight}px)를 지우지 않는다 — 본문이 밀린다`);
+  // 어느 폭에서도 그 겹쳐 두기를 끄지 않는다(좁은 폭만 끄는 길은 고르지 않았다 — 계획서 결정).
+  for (const m of CSS_TEXT.matchAll(/@media([^{]*)\{/g)) {
+    for (const b of mediaBlocks(CSS_TEXT, m[1].trim())) {
+      assert.deepEqual(declsFor(b, HELP_SEL, 'margin-bottom'), [], `@media ${m[1].trim()} 가 \`.vtool-help\` 의 아래 여백을 바꾼다`);
+    }
+  }
+});
+
+test('[RM-54 요구 2] 도구마다 ? 가 하나씩 설명서 절을 가리킨다', () => {
+  const helps = toolTabs.map((t) => {
+    const slice = HTML.slice(t.start, t.end);
+    const qs = [...slice.matchAll(/<div class="vtool-help">\s*<button class="help-q"[^>]*\bdata-help="([^"]+)"/g)];
+    assert.equal(qs.length, 1, `${t.summary} 에 .vtool-help 안의 \`?\` 가 하나여야 한다 — ${qs.length}개`);
+    assert.equal([...slice.matchAll(/class="help-q"/g)].length, 1, `${t.summary} 안의 \`?\` 는 하나뿐이어야 한다`);
+    return qs[0][1];
+  });
+  assert.deepEqual(helps, ['video-trim', 'video-markers', 'video-pose']);
+});

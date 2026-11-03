@@ -489,6 +489,11 @@
     .help-q:hover { border-color: rgba(var(--accent-rgb), 0.7); color: var(--text); transform: none; }
     /* 도구 탭(RM-20)은 summary 를 숨기고 탭이 그 자리를 맡으므로, 그 도구의 `?` 는 펼친 도구의 맨 위 오른쪽에 둔다. */
     .vtool-help { display: flex; justify-content: flex-end; margin-bottom: -18px; position: relative; z-index: 1; }
+    /* 짝(RM-54) — 겹쳐 선 `?` 밑으로 첫 조작 줄이 파고들지 못하게, 그 줄만 오른쪽에 `?` 폭(18px)과 틈만큼 비운다.
+       없으면 폰 폭(360~430px)에서 첫 줄 단추가 오른쪽 끝까지 차 「Out 으로」 · 「이 마디에 맵핑」 · 「분석 지우기」를 덮었다.
+       ⚠ 모든 폭에 건다 — 넓은 폭도 단추가 늘면 같은 자리로 파고든다. 음수 여백(위)과 이 여백은 짝이다 — 한쪽만 고치면
+       tests/unit/videoPanelMarkup.test.mjs 의 [RM-54 요구 0] 이 붉어진다. */
+    .vtool-help + .vstep-body > :first-child > .video-field:first-child { padding-right: 24px; }
     /* 아직 쓸 수 없는 입구는 흐리게 두고, 줄 끝에 까닭을 한 줄 적는다(RM-26). 끄지는 않는다 — 눌러도 같은 까닭을 말한다. */
     .mode-bar button[data-blocked="1"] { opacity: 0.45; }
     .mode-bar .mode-note { flex-basis: 100%; font-size: var(--fs-1); color: var(--muted); line-height: 1.4; }
