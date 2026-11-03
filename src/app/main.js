@@ -1256,9 +1256,12 @@ function runCommand(id, ctx = {}) {
 // Tab 이면 표 위 차례의 다음 `?` 로 선택을 옮겨 다시 연다. 추천은 domain/moveMatch.suggestMoves(동작 고르기 창과 같은 규칙).
 // ⚠ 메인 보드만이다 — 고르기는 메인 보드에만 있다. 루틴 편집기가 열려 있으면 거짓을 돌려줘 글쇠의 기본 동작을 막지 않는다.
 // ⚠ 한글 자모 · IME 글쇠(`Process`)로 열릴 때는 **빈 입력**으로 열고 기본 동작을 막지 않는다 — 첫 자모를 값으로 옮기면
-//   다음 글쇠가 그 자모와 합쳐지지 않아 「ㅈ아」처럼 깨진다. 막지 않으면 브라우저가 그 글쇠를 방금 포커스한 입력에서 조합한다.
+//   글자가 두 번 들어간다. 그런데 막지 않아도 **조합은 이어지지 않는다**(RM-50 · RM-51 이 실제 macOS 2벌식으로 쟀다):
+//   body 에서 시작한 글쇠는 입력기가 조합 없이 맺어, 「스윙」이 「ㅅㅡ윙」, 「한」이 「ㅎㅏㄴ」으로 흩어져 들어간다.
+//   조합은 입력기의 일이라 앱이 고칠 수 없다 — 그래서 askName 에 jamoRejoin 을 켜, 맺힌 뒤 흩어진 자모를
+//   2벌식 규칙(domain/hangul.joinJamo)으로 다시 묶는다. 만든 글쇠 이벤트 시험은 이 길을 못 잡는다 — 실기로 잰다(PRINCIPLES).
 
-/** 한글 자모 · IME 글쇠인가 — 첫 자를 값으로 옮기지 않고 빈 입력에서 조합을 잇는다. */
+/** 한글 자모 · IME 글쇠인가 — 첫 자를 값으로 옮기지 않고 빈 입력으로 열고, 맺힌 뒤 자모를 다시 묶는다. */
 const isImeKey = (ch) => ch === 'Process' || /[\u3131-\u318e\u1100-\u11ff\ua960-\ua97f\ud7b0-\ud7ff]/.test(ch);
 
 /** 메인 보드에서 지금 고른 그룹 — 보드 위에 있는 것만, 루틴 블록은 뺀다(루틴 이름은 루틴 목록이 주인). */
@@ -1305,7 +1308,7 @@ function openNaming(ctx = {}) {
     const pending = chosen.filter(gid => placements.some(p => p.groupId === gid && isPending(p)));
     if (!pending.length) { render({ notify: notice('status', '고른 블록은 모두 이름이 있습니다.') }); return true; }
     const title = pending.length > 1 ? `고른 블록 ${pending.length}개의 이름` : '이 블록의 이름';
-    askName({ anchor: ctx.anchor || blockElOf(pending[0]), title, value: first, suggest }).then(({ value, via }) => {
+    askName({ anchor: ctx.anchor || blockElOf(pending[0]), title, value: first, suggest, jamoRejoin: ime }).then(({ value, via }) => {
       const { named, ...dirty } = CaptureCmd.nameSelected(store, { label: value }) || {};
       render(dirty);
       after(named, via, lastByOrder(pending));
@@ -1320,7 +1323,8 @@ function openNaming(ctx = {}) {
     title: '이 블록의 이름',
     value: first || (isPending(head) ? '' : head.name),
     selectAll: !first,                                       // 이름 있는 블록은 통째로 골라 갈아 끼운다
-    suggest
+    suggest,
+    jamoRejoin: ime                                          // 한글 낱자로 열었을 때만 흩어진 자모를 다시 묶는다(RM-50)
   }).then(({ value, via }) => {
     const { named, ...dirty } = CaptureCmd.nameGroupTo(store, { boardId: BOARD_MAIN, groupId: gid, label: value }) || {};
     render(dirty);
