@@ -599,7 +599,8 @@
     .board-row[data-chorus-start] .row-label {
       box-shadow: inset 0 3px 0 0 var(--chorusColor);
     }
-    /* 코러스가 바뀌는 자리에 숨을 준다. .board 가 grid + gap 이라 이 margin 은 그 위에 더해진다. */
+    /* 코러스가 바뀌는 자리에 숨을 준다. .board 가 grid + gap 이라 이 margin 은 그 위에 더해진다.
+       (인쇄에서는 .board 가 블록이라 margin 이 겹친다 — 인쇄 블록이 같은 합을 따로 적는다, RM-46) */
     .board-row[data-chorus-start] { margin-top: var(--sectionGap); }
     /* 마디 이름 아래의 `코러스-프레이즈` 꼬리표. ⚠ 자식이 아니라 ::after 다 —
        renderRow 가 label.textContent 를 덮어쓰므로 자식은 행을 다시 그릴 때마다 사라진다. */
@@ -3695,8 +3696,13 @@
         overflow: visible !important; background: #fff !important; border: none !important; box-shadow: none !important;
         padding: 0 !important; backdrop-filter: none !important;
       }
-      .board { min-width: 0 !important; gap: var(--printGap) !important; width: 100% !important; }
-      .board-header, .board-row { break-inside: avoid; page-break-inside: avoid; gap: var(--printGap) !important; }
+      /* 쪽 나눔은 블록 흐름으로(RM-46, 개발 원칙 U-22) — .board 가 격자면 WebKit(Safari)은 격자 항목의 break-inside: avoid 를
+         따르지 않아 쪽 끝에 행이 반쪽만 걸렸다(Chrome 은 따랐다). 그래서 종이에서는 .board 를 블록으로 흘린다 — 열 폭은 머리 줄 ·
+         행이 저마다 인라인 grid-template-columns 로 갖고 있어 어긋나지 않는다. 격자 gap 이 사라진 행 사이 틈은 margin-bottom 으로 되살리고,
+         코러스 · 파트가 바뀌는 행은 블록에서 위아래 margin 이 겹쳐(큰 쪽 하나만 남는다) 격자일 때의 「틈 + 숨」이 되도록 margin-top 을 더해 둔다. */
+      .board { display: block !important; min-width: 0 !important; width: 100% !important; }
+      .board-header, .board-row { break-inside: avoid; page-break-inside: avoid; gap: var(--printGap) !important; margin-bottom: var(--printGap) !important; }
+      .board-row[data-chorus-start], .board-row[data-part-start] { margin-top: calc(var(--sectionGap) + var(--printGap)) !important; }
       /* 인쇄 격자 너비(RM-45, 개발 원칙 U-21) — 화면의 --cellW 는 JS 가 그때 화면 폭으로 재어 html 에 적은 px 라,
          그대로 물려받으면 좁은 화면에서는 종이의 절반만 쓰고 넓은 화면에서는 7·8카운트가 종이 밖으로 나갔다.
          종이는 A4 · 여백 10mm 로 못박고(그래서 Chrome · Safari 가 같은 190mm 를 쓴다 — vw 는 Safari 가 화면 폭으로 잰다),
