@@ -21,7 +21,7 @@ python3 server.py
 ## 고치기 전에 돌리는 것
 
 ```
-node --test 'tests/**/*.test.mjs' # 단위 테스트 738개 (도메인·어댑터·유스케이스·뷰 662 + 설치형 앱 안내 대조 5 + 원칙 검사기 자기 시험 23 + 문서 검사 자기 시험 21(라벨 대조 · 도움말 `?` 앵커 · 문서 갈래 · 시험 수 한 자리) + 계층 검사 자기 시험 3 + server.py 실물 24, ffmpeg 이 있으면 실제로 한 번 자른다)
+node --test 'tests/**/*.test.mjs' # 단위 테스트 748개 (도메인·어댑터·유스케이스·뷰 670 + 설치형 앱 안내 대조 5 + 원칙 검사기 자기 시험 23 + 문서 검사 자기 시험 21(라벨 대조 · 도움말 `?` 앵커 · 문서 갈래 · 시험 수 한 자리) + 계층 검사 자기 시험 3 + server.py 실물 26, ffmpeg 이 있으면 실제로 한 번 자른다)
 node tests/run.mjs                # 격자 알고리즘 골든 173개
 node tools/check-arch.mjs         # 계층 방향과 순수성, src/ · server.py 가 packaging/ 를 모르는지
 node tools/check-docs.mjs         # 문서 등록 누락과 깨진 앵커, 튜토리얼·기능 설명서가 인용한 라벨이 화면에 있는지, 도움말 `?` 가 가리키는 절이 있는지, 시험 수가 이 자리 밖(README · ARCHITECTURE)에 끼지 않았는지
@@ -47,7 +47,7 @@ node tools/check-principles.mjs   # 글자로 잡히는 개발 원칙 열둘(U-1
 - `src/ui/`, `src/input/` — DOM 렌더와 제스처. **서로 import 하지 않는다.** 협력자는 `app/main.js` 가 주입한다. 유일한 예외가 `src/ui/domContract.js`.
 - `src/app/` — 조립과 렌더 라우팅.
 - `admin.html` — **서버가 내는 관리 화면**(`/admin`). 보관 위치·모델·LLM 을 정하는 자리다. `src/` 를 import 하지 않는다 — 앱의 모듈이 아니라 서버의 화면이고, 앱이 깨져도 떠야 한다. 앱(`ui/settingsView`)은 서버 설정을 **읽기만** 하고 이 화면으로 보낸다.
-- `server.py` — 저장소 밖의 두 번째 런타임. 정적 파일 + 클립 API(`/api/*`, `/clips/*`, 자르기 `/api/clips/trim` 은 **선택 의존성 ffmpeg** 을 자식 프로세스로 띄운다 — 없으면 그 기능만 501) + 자세 분석 모델 보관(`/api/models/*`, `/models/*` — 파일을 받아 두고 내주기만 한다. 계산은 브라우저가 하므로 파이썬 패키지는 늘지 않는다) + LLM 중계(`/api/llm/*`, Claude·OpenAI·Ollama, 키는 서버에만). `src/` 를 import 하지 않고 `src/` 도 서버 코드를 모른다 — 둘 사이는 HTTP 뿐이다. 경로 규칙(`<subdir>/<프로젝트>/<파일>`)은 `src/domain/clips.js` 와, 안무표 스키마(`PLAN_SCHEMA`)는 `src/domain/choreoPlan.js` 와 **같은 모양으로 두 번** 적혀 있으니 한쪽을 고치면 다른 쪽도 고친다.
+- `server.py` — 저장소 밖의 두 번째 런타임. 정적 파일 + 클립 API(`/api/*`, `/clips/*`, 자르기 `/api/clips/trim` 은 **선택 의존성 ffmpeg** 을 자식 프로세스로 띄운다 — 없으면 그 기능만 501) + 자세 분석 모델 보관(`/api/models/*`, `/models/*` — 파일을 받아 두고 내주기만 한다. 계산은 브라우저가 하므로 파이썬 패키지는 늘지 않는다) + 자세 분석 짝 파일(`/api/pose/*` — 클립 곁 `.pose/<파일>.json`, 클립 크기가 다르면 낡은 것으로 본다. 경로 규칙 `posePathOf` 도 `src/domain/clips.js` 와 두 번 적혀 있다) + LLM 중계(`/api/llm/*`, Claude·OpenAI·Ollama, 키는 서버에만). `src/` 를 import 하지 않고 `src/` 도 서버 코드를 모른다 — 둘 사이는 HTTP 뿐이다. 경로 규칙(`<subdir>/<프로젝트>/<파일>`)은 `src/domain/clips.js` 와, 안무표 스키마(`PLAN_SCHEMA`)는 `src/domain/choreoPlan.js` 와 **같은 모양으로 두 번** 적혀 있으니 한쪽을 고치면 다른 쪽도 고친다.
 
 - `packaging/` — **설치형 앱의 껍데기**(2026-11-03, RM-28). 런처(`launcher.py` — `server.main` 을 부르고 「켜져 있음」 창을 띄운다) · 빌드(`build.py` — 맥 `.dmg`, 윈도우 설치 파일) · 아이콘을 코드로 그리는 `make_icon.py` · 앱 정보 `app.json`. 화살표는 `packaging → server.py` 한쪽이다 — `src/` 와 `server.py` 는 이 폴더의 이름을 쓰지 않고, 포장된 채 도는지는 `server.is_packaged()` 로만 안다. 빌드 중간물(`packaging/build/` · `dist/`)은 git 밖이다. 손 점검표는 `packaging/README.md`.
 
