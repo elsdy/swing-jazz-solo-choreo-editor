@@ -28,9 +28,7 @@ import { SEL, CLS, DATA } from '../ui/domContract.js';
 import { dragPreviewCount, resizeBlocked, resolveGrabZone, grabOffset, BODY_LONG_PRESS_MS, LONGPRESS_MOVE_THRESHOLD_PX } from '../domain/gestureMath.js';
 import * as gesture from '../domain/boardGesture.js';
 import { groupCount } from '../domain/placements.js';
-import { linearOf } from '../domain/grid.js';
-import { planNudge } from '../domain/keyboardEdit.js';
-import { groupSpan, presentOnly } from '../domain/selection.js';
+import { groupSpan, presentOnly, bundleDragPlan } from '../domain/selection.js';
 
 /**
  * 보드 하나에 위임 리스너를 건다.
@@ -150,16 +148,6 @@ export function createBoardController(deps) {
   }
 
   /**
-   * 끄는 블록의 시작에서 놓을 칸까지의 거리(선형 카운트). 블록이 사라졌으면 null.
-   * @returns {number|null}
-   */
-  // @complexity time=O(p) space=O(1) cc=2
-  function bundleDelta(drag, row, startIndex) {
-    const span = groupSpan(board(), drag.groupId);
-    return span ? linearOf(row, startIndex, board().cols) - span.start : null;
-  }
-
-  /**
    * 누른 자리가 블록 시작에서 몇째 칸인가(RM-57) — 몸통을 잡고 끌면 놓을 시작은 포인터 밑 칸에서 이만큼 앞이다.
    * 블록 요소의 rect 는 그 행의 조각만 덮으므로 누른 칸의 선형 위치 − 블록 시작(groupSpan)으로 잰다.
    * @returns {number}
@@ -174,15 +162,12 @@ export function createBoardController(deps) {
    * 묶음이 놓일 자리를 블록마다 프리뷰로 그린다 — 미리보기 = 결과. 하나라도 못 가면(놓아도 안 옮겨지면) 프리뷰를 지운다.
    * @returns {void}
    */
-  // @complexity time=O(k·p) space=O(k) cc=3
+  // 거리 · 놓일 자리의 셈은 domain/selection.bundleDragPlan 한 자리다 — 손가락 끌기(input/touchDrag)도 같은 것을 부른다(RM-48).
+  // @complexity time=O(k·p) space=O(k) cc=2
   function updateBundlePreview(drag, row, startIndex) {
-    const delta = bundleDelta(drag, row, startIndex);
-    const plan = delta === null ? null : planNudge(board(), presentOnly(board(), drag.bundle), delta);
-    if (!plan) { overlays.clearPreview(boardId); return; }
-    const placements = board().placements;
-    overlays.updateBundlePreview(boardId,
-      plan.map(step => ({ row: step.row, startIndex: step.startIndex, count: groupCount(placements, step.groupId) })),
-      `${plan.length}개 함께`);
+    const plan = bundleDragPlan(board(), drag.groupId, drag.bundle, row, startIndex);
+    if (!plan?.steps) { overlays.clearPreview(boardId); return; }
+    overlays.updateBundlePreview(boardId, plan.steps, plan.label);
   }
 
   // ── 그리기·빠른 배치·더블탭의 상태 (RM-08) ──────────────────────────────────
@@ -199,6 +184,8 @@ export function createBoardController(deps) {
    * ⚠ 보드 click 리스너 가운데 이 컨트롤러의 것이 먼저 등록된다(app/main 의 차례) — stopImmediatePropagation 이 그래서 먹는다.
    */
   let swallowClick = false;
+  /** 손가락 네모 고르기를 그리는 중인가(RM-48) — 스크롤 · contextmenu 를 막는 조건이다. */
+  const fingerMarquee = () => !!gestureState.marquee?.finger;
 
   /** 전이 함수가 이벤트마다 읽는 세션 값과 측정 함수. 측정은 전이 함수가 부를 때만 일어난다. */
   const gestureEnv = () => ({
@@ -242,7 +229,7 @@ export function createBoardController(deps) {
         case 'endMove': endPlacementMove(); break;
         case 'move': apply(commands.moveGroup({ groupId: fx.groupId, targetRow: fx.row, targetStartIndex: fx.startIndex })); break;
         case 'copy': apply(commands.copyGroup({ groupId: fx.groupId, targetRow: fx.row, targetStartIndex: fx.startIndex })); break;
-        case 'moveBundle': moveBundle(fx.groupId, fx.row, fx.startIndex); break;
+        case 'moveBundle': moveBundle(fx.groupId, fx.row, fx.startIndex, fx.bundle); break;
         case 'swallowClick': swallowClick = true; break;
         case 'openGroupPicker': quickPicker?.openForGroup(fx.groupId, fx.clientX, fx.clientY); break;
         case 'openPicker': quickPicker.open(fx.row, fx.startIndex, fx.clientX, fx.clientY, fx.count); break;
@@ -284,8 +271,8 @@ export function createBoardController(deps) {
    * @param {string} groupId  끈 블록
    */
   // @complexity time=O(k·p) space=O(k) cc=3
-  function moveBundle(groupId, row, startIndex) {
-    const delta = bundleDelta({ groupId }, row, startIndex);
+  function moveBundle(groupId, row, startIndex, bundle) {
+    const delta = bundleDragPlan(board(), groupId, bundle, row, startIndex)?.delta;
     const dirty = delta ? commands.moveSelection({ delta }) : null;
     if (dirty) apply(dirty);
     if (dirty?.boards) commit();
@@ -419,8 +406,9 @@ export function createBoardController(deps) {
   // ⚠ 마우스의 한 번/두 번 클릭은 그대로 둔다(손에 익었고 과녁도 충분하다). 우클릭은 **더하는**
   //   길이라 빼앗는 것이 없다 — 동작 목록의 이름도 같은 관습이다(우클릭·롱프레스로 메뉴).
   el.addEventListener('contextmenu', (e) => {
-    // 손가락으로 길게 눌러 블록을 옮기는 중(RM-12)이면 안드로이드가 뒤늦게 보내는 contextmenu 로 팝업을 열지 않는다
-    if (currentDrag()?.isTouchDragging) { e.preventDefault(); return; }
+    // 손가락으로 길게 눌러 블록을 옮기거나(RM-12) 네모를 그리는 중(RM-48)이면 안드로이드가 뒤늦게 보내는 contextmenu 로
+    // 팝업 · 브라우저 메뉴를 열지 않는다
+    if (currentDrag()?.isTouchDragging || fingerMarquee()) { e.preventDefault(); return; }
     // 루틴 편집 보드도 연다(RM-12 — 두 번 누르기가 지우지 않아 거기서는 이 팝업의 `× 지우기` 가 지우는 길이다)
     if (!placementActionPopup) return;
     const placementEl = e.target.closest(SEL.placement);
@@ -551,26 +539,38 @@ export function createBoardController(deps) {
     steps(gesture.transitionsFor(e.pointerType).move, e, pointerEv(e));
   });
 
-  // ── 손가락 몸통 옮기기 — 길게 누르기(RM-12, 계획서 결정 「길게 눌러야 옮기기」) ─────────────────────
+  // ── 손가락 길게 누르기 — 몸통 옮기기(RM-12) · 빈 칸 네모 고르기(RM-48) ─────────────────────────────
   // 몸통은 스크롤을 열어 두므로(CSS `.placement` 의 touch-action) 짚고 굴리면 화면이 넘어가고, 그 전에 8px 넘게 움직이면
-  // 시계가 풀린다. 움직이지 않고 BODY_LONG_PRESS_MS 를 채우면 옛 이동 손잡이와 같은 손가락 끌기(touchDrag)가 시작된다.
-  // ⚠ 끌기가 시작된 뒤의 첫 touchmove 를 막아야 브라우저가 스크롤을 열지 않는다(pointercancel 로 끌기를 빼앗기지 않는다) —
+  // 시계가 풀린다. 움직이지 않고 BODY_LONG_PRESS_MS 를 채우면 —
+  //   블록 몸통: 옛 이동 손잡이와 같은 손가락 끌기(touchDrag)가 시작된다. 고른 블록(둘 이상)이면 묶음 전체다(RM-48 · Q116).
+  //   빈 칸   : 네모 고르기가 시작된다(RM-48 · Q115). 동작을 골랐거나 빠른 배치면 그 끌기는 이미 그리기라 시작하지 않는다
+  //             (판정은 domain/boardGesture.touchMarqueeStart). 무장하지 않은 트랙은 스크롤이 열려 있어 시계가 필요하다.
+  // ⚠ 시작된 뒤의 첫 touchmove 를 막아야 브라우저가 스크롤을 열지 않는다(pointercancel 로 끌기 · 네모를 빼앗기지 않는다) —
   //   동작 목록 카드의 길게 누르기(input/paletteInput)와 같은 장치다. 몸짓은 위 pointermove 가 듣는다.
   if (typeof longPress === 'function') {
     longPress(el, {
       delayMs: BODY_LONG_PRESS_MS, moveTolerancePx: LONGPRESS_MOVE_THRESHOLD_PX, resetOnStart: true,
       onLongPress: ({ x, y, event }) => {
-        const placementEl = event.target.closest?.(SEL.placement);
-        if (!placementEl || !placementEl.isConnected || event.target.closest(SEL.nameBtn)) return;
+        if (!event.target?.closest || !event.target.isConnected || event.target.closest(SEL.nameBtn)) return;
         if (pointerSession.isActive() || currentDrag()) return;
+        const placementEl = event.target.closest(SEL.placement);
+        if (!placementEl) {
+          if (event.target.closest(SEL.placementOrHandles)) return;   // 손잡이 — 트리밍의 몫이다
+          step(gesture.touchMarqueeStart, event, { x, y, onPlacement: false });
+          if (fingerMarquee()) swallowClick = true;   // 떼면 오는 합성 click 이 「빈 곳 누름 = 선택 풀기」로 가지 않게
+          return;
+        }
         const rect = placementEl.getBoundingClientRect();
         if (resolveGrabZone(x - rect.left, rect.width) !== 'body') return;
+        const groupId = placementEl.dataset[DATA.groupId];
         overlays.showFloatingTooltip(placementEl);
-        touchDrag.start(placementEl.dataset[DATA.groupId], x, y);
+        touchDrag.start(groupId, x, y, bundleOf(groupId));
         swallowClick = true;   // 떼면 오는 합성 click 이 블록 팝업을 열지 않게
       },
     });
-    el.addEventListener('touchmove', (e) => { if (currentDrag()?.isTouchDragging) e.preventDefault(); }, { passive: false });
+    el.addEventListener('touchmove', (e) => {
+      if (currentDrag()?.isTouchDragging || fingerMarquee()) e.preventDefault();
+    }, { passive: false });
   }
 
   // ── pointerup(보드) — 툴팁 · 손가락 블록 이동 종료(⑪) ───────────────────────────────────

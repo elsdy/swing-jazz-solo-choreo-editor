@@ -552,6 +552,10 @@
       border: 1px solid rgba(var(--muted-rgb), 0.16);
       background: linear-gradient(90deg, rgba(var(--white-rgb), 0.03) 0, rgba(var(--white-rgb), 0.03) calc(var(--cellW) - 1px), rgba(var(--white-rgb), 0.08) calc(var(--cellW) - 1px), rgba(var(--white-rgb), 0.08) var(--cellW));
       background-size: var(--cellW) 100%;
+      /* RM-48 — 빈 칸을 길게 누르면 네모 고르기다. iOS 가 그 누름에 글자 고르기 · 복사 말풍선을 띄우지 않게 한다 */
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
     /* 동작을 골랐거나 빠른 배치가 켜진 보드에서는 트랙 위 손가락 끌기가 스크롤이 아니라 그리기다(RM-11).
        touch-action 은 누르는 순간에 정해지므로 렌더가 data-touch-draw 를 미리 적어 둔다(ui/boardView.syncTouchDraw). */
