@@ -163,7 +163,7 @@ function rowHtml(board, row, entries, styleOf) {
  *   categories?: Record<string, {label?:string, color?:string}>,
  *   routines?: {id:string, color?:string}[],
  *   video?: { kind:'youtube'|'file'|null, url?:string, name?:string, markers?:object[] }|null,
- *   generatedAt?: string
+ *   generatedOn?: string   「만든 날」 — 지역 날짜 `YYYY-MM-DD` 를 그대로 적는다. UTC ISO 를 넘겨 자르게 하지 않는다(D-22)
  * }} input
  * @returns {string}
  */
@@ -187,7 +187,7 @@ export function buildSheetHtml(input) {
   for (let row = first; row <= board.rows; row++) body.push(rowHtml({ ...board, cols }, row, entries, styleOf));
   const header = `<tr><th class="label">마디</th>${Array.from({ length: cols }, (_, i) => `<th>${i + 1}</th>`).join('')}<th class="note">비고</th></tr>`;
   const blocks = entries.size ? [...entries.values()].reduce((n, l) => n + l.length, 0) : 0;
-  const meta = [`${cols}x${board.rows}`, `블록 ${blocks}개`, input.generatedAt ? `만든 날 ${escapeHtml(String(input.generatedAt).slice(0, 10))}` : '']
+  const meta = [`${cols}x${board.rows}`, `블록 ${blocks}개`, input.generatedOn ? `만든 날 ${escapeHtml(String(input.generatedOn))}` : '']
     .filter(Boolean).join(ENTRY_SEP);
   const text = writeCountSheet({ ...board, cols }, { title });
 

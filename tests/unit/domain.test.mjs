@@ -63,7 +63,7 @@ import {
 } from '../../src/domain/project/schema.js';
 import { applySnapshot, pickUndoFields, toLinkBundle } from '../../src/domain/project/snapshot.js';
 import * as History from '../../src/usecases/historyCommands.js';
-import { clearBoard, setBoardRows, shiftAllCounts } from '../../src/usecases/boardCommands.js';
+import { clearBoard, setBoardRows, shiftAllCounts, splitAtPlayhead } from '../../src/usecases/boardCommands.js';
 import { serializeLinks } from '../../src/domain/links.js';
 import { CLEAR_BOARD_BTN_LABEL, CLEAR_BTN_LABEL } from '../../src/input/controls.js';
 import { detectSchemaVersion, migrateProjectFile } from '../../src/domain/project/migrations.js';
@@ -5127,6 +5127,32 @@ test('boundaryCount: 격자에 붙이고 남은 거리를 버리지 않고 돌�
   assert.equal(b.snapped, 8);
   assert.ok(b.offset < 0, '미리 눌렀으면 offset 이 음수다');
   assert.equal(boundaryCount(Number.NaN, T120, 2), null, '읽을 수 없으면 null 이다');
+});
+
+// RM-60 — `Number(null)`·`Number('')` 은 0 이라 `Number.isFinite(Number(sec))` 로 거르면 못 읽는 초가 「0초」로 통과했다.
+test('[RM-60 요구 0] boundaryCount: null · undefined · 빈 글 초는 읽을 수 없어 null 이고 0 은 0초다', () => {
+  for (const sec of [null, undefined, '', '4.5', '  ', true, [], {}]) {
+    assert.equal(boundaryCount(sec, T120, 2), null, `${JSON.stringify(sec)} 는 초가 아니다`);
+  }
+  const zero = boundaryCount(0, T120, 2);
+  assert.ok(zero, '0 은 0초다 — 읽을 수 있다');
+  assert.equal(zero.raw, timeToCount(0, T120));
+});
+
+test('[RM-60 요구 1] splitAtPlayhead 는 sec 가 null 이면 카운트 0 에서 자르지 않는다', () => {
+  // 0초 = 카운트 0. 블록 「a」 는 intro 행 7카운트(-2)에서 1행 2카운트(1)까지 — 카운트 0 경계를 가로지른다.
+  const store = createStore();
+  const seg = (row, startIndex, length) => ({ id: `a-${row}`, groupId: 'a', name: 'a', category: 'basic', row, startIndex, length, subRow: 0 });
+  store.setBoard(BOARD_MAIN, { rows: 4, cols: 8, hasIntroRow: true, placements: [seg(0, 6, 2), seg(1, 0, 2)] });
+  VideoCmd.setTempo(store, { tempo: { bpm: 120, beatsPerCount: 1, anchorSec: 0, anchorCount: 0, points: [] } });
+  const before = JSON.stringify(store.get().boards[BOARD_MAIN].placements);
+  for (const sec of [null, undefined, '']) {
+    const dirty = splitAtPlayhead(store, { boardId: BOARD_MAIN, sec }, { ids: () => 'n1' });
+    assert.equal(dirty.boards, undefined, `sec=${JSON.stringify(sec)} 로 자르면 안 된다`);
+    assert.equal(JSON.stringify(store.get().boards[BOARD_MAIN].placements), before, '배치가 그대로다');
+  }
+  // 대조 — 0 은 0초라서 같은 자리에서 자른다(수 0 은 그대로 읽는다)
+  assert.ok(splitAtPlayhead(store, { boardId: BOARD_MAIN, sec: 0 }, { ids: () => 'n1' }).boards, '0초는 카운트 0 에서 자른다');
 });
 
 test('noteDriftSample: 최근 것만 들고, 읽을 수 없는 값에는 같은 배열을 그대로 돌려준다', () => {

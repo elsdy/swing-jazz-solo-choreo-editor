@@ -15,13 +15,16 @@
 /**
  * 한 자리에 놓을 버튼. `main` 은 그 순간의 주 동작이라 넓고 밝게 그린다.
  * `pressed` 는 켜고 끄는 버튼만 단다 — 있으면 `aria-pressed` 로 실린다.
- * @typedef {{ id: string, label: string, title?: string, cls?: string, main?: boolean, disabled?: boolean, pressed?: boolean, run: () => void }} ThumbAction
+ * `short` 는 칸이 좁아 글자가 넘칠 때 접는 짧은 꼴이다(RM-63). 그린 뒤 **재서 넘칠 때만** 접고, 그때 전체 글자를
+ * `aria-label` 로 남긴다. 주 동작(`main`)에는 달지 않는다 — 접히지 않는다.
+ * @typedef {{ id: string, label: string, short?: string, title?: string, cls?: string, main?: boolean, disabled?: boolean, pressed?: boolean, run: () => void }} ThumbAction
  */
 
 
 import { commandFace } from './commandButtons.js';
 import { CLS } from './domContract.js';
 import { voiceLabel } from './statusBar.js';
+import { str } from '../domain/strings.js';
 /**
  * @param {{
  *   elements?: Record<string, HTMLElement|null>,
@@ -43,6 +46,7 @@ import { voiceLabel } from './statusBar.js';
  *   툴팁에는 지금 글쇠가 실린다. 없으면 등록부의 기본값이다.
  * @returns {{ render(): void }}
  */
+// @complexity time=O(1) space=O(1) cc=4
 export function createThumbBar(options) {
   const { elements = {}, getState, actions, face = commandFace } = options;
   /** 등록부의 명령을 엄지 바의 한 칸으로 — id · 글자 · 툴팁은 등록부의 것이다. */
@@ -57,6 +61,7 @@ export function createThumbBar(options) {
    * 상태마다 버튼이 서넛을 넘지 않게 한다. 엄지로 고르는 자리라 다섯이 넘으면 하나도 안 읽힌다.
    * @returns {ThumbAction[]}
    */
+  // @complexity time=O(1) space=O(1) cc=22?
   function plan() {
     const st = getState();
 
@@ -114,7 +119,15 @@ export function createThumbBar(options) {
       //   영상의 일부로 싱크를 맞추는 일이라, 여기 올 때 영상은 늘 중간 어딘가에 서 있다.
       return keep([
         { id: 'sheet', label: '≡ 동작', title: '동작 목록을 연다', cls: 'ghost', run: actions.toggleSheet },
-        ...(actions.rewind ? [{ id: 'rewind', label: '⏮ 처음으로', title: '영상을 맨 처음으로 되감고 바로 재생한다', cls: 'ghost', run: actions.rewind }] : []),
+        // ⚠ 1200px 창의 띠 조작 줄에서는 칸이 68px 라 `⏮ 처음으로` 가 「처...」 로 잘렸다(RM-63) — 넘치면 `⏮` 로 접는다.
+        ...(actions.rewind ? [{
+          id: 'rewind',
+          label: str('thumb.rewind'),
+          short: str('thumb.rewind.short'),
+          title: str('thumb.rewind.title'),
+          cls: 'ghost',
+          run: actions.rewind
+        }] : []),
         cmd('play', { id: 'play', cls: 'ghost', run: actions.togglePlay }),
         ...tapItems,
         // ⚠ 받는 중의 `cut` 과 **같은 id·같은 라벨·같은 자리**다(2026-09-22). 첫 타든 열째 타든
@@ -151,9 +164,38 @@ export function createThumbBar(options) {
   }
 
   /**
+   * 좁은 칸의 단추를 짧은 꼴로 접는다(RM-63). render 가 **전체 글자로 그리고 붙인 뒤에** 부른다.
+   *
+   * ⚠ 접기는 **잰 결과로만** 고른다(개발 원칙 U-13) — 기본값으로 접지 않는다. 폭을 잴 수 없으면(숨은 줄 · 붙기 전,
+   *   clientWidth 가 0 · undefined) 전체 글자를 둔다.
+   * ⚠ 줄의 단추가 폭을 똑같이 나눠(flex 1 1 0) 가지므로 칸 폭은 글자와 무관하다 — 그래서 접어도 이웃이 넓어지지 않고,
+   *   다시 재면 같은 판정이 나온다(흔들리지 않는다).
+   * ⚠ 다 읽고 나서 쓴다. 읽기 · 쓰기를 섞으면 단추마다 레이아웃을 다시 셈한다.
+   * @param {Array<[HTMLElement, ThumbAction]>} pairs
+   */
+  // @complexity time=O(n) space=O(n) cc=6
+  function foldNarrow(pairs) {
+    const folds = pairs.map(([btn, item]) => {
+      if (!item.short || item.main) return false;
+      const room = btn.clientWidth;
+      return room > 0 && btn.scrollWidth > room;
+    });
+    pairs.forEach(([btn, item], i) => {
+      if (folds[i]) {
+        btn.textContent = item.short;
+        btn.setAttribute('aria-label', item.label);
+      } else {
+        btn.removeAttribute('aria-label');
+      }
+    });
+  }
+
+  /**
    * 다시 그린다. **버튼을 통째로 갈아 끼우지 않는다** — 같은 id 가 남아 있으면 그 자리를 고쳐 쓴다.
    * 누르는 순간에 엘리먼트가 사라지면 그 탭이 허공에 떨어지고, 폰에서는 그것이 「안 눌린다」로 보인다.
+   * 창 폭이 바뀌면 조립부(app/main)가 다시 부른다 — 좁은 칸의 접힘(foldNarrow)이 낡지 않게.
    */
+  // @complexity time=O(n) space=O(n) cc=9
   function render() {
     if (!bar) return;
     const items = plan();
@@ -192,6 +234,8 @@ export function createThumbBar(options) {
     next.forEach((btn, i) => { if (bar.children[i] !== btn) bar.appendChild(btn); });
 
     bar.hidden = items.length === 0;
+    // 붙이고 보인 뒤에 잰다 — 숨은 줄은 폭이 0 이라 접지 않는다.
+    foldNarrow(next.map((btn, i) => [btn, items[i]]));
   }
 
   render();

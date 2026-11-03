@@ -18,7 +18,7 @@ import { activeClipOf } from '../domain/project/media.js';
  * @property {{ copyText: (text: string) => Promise<boolean>|boolean,
  *              downloadText: (text: string, fileName: string, mime?: string) => unknown,
  *              print: () => unknown }} files 어댑터. 세 메서드만 부른다
- * @property {{ nowIso?: () => string }} [env] HTML 의 「만든 날」. 없으면 적지 않는다
+ * @property {{ localDate?: () => string }} [env] HTML 의 「만든 날」 — 이 기계의 지역 날짜 `YYYY-MM-DD`(RM-62). 없으면 적지 않는다
  */
 
 /** 기본 파일 이름. */
@@ -77,7 +77,7 @@ export function sheetHtml(deps, args = {}) {
     categories: state.categories,
     routines: state.routines,
     video: sheetVideo(state),
-    generatedAt: deps.env && typeof deps.env.nowIso === 'function' ? deps.env.nowIso() : ''
+    generatedOn: deps.env && typeof deps.env.localDate === 'function' ? deps.env.localDate() : ''
   });
 }
 
