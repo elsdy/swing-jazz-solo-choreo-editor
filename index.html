@@ -3619,7 +3619,10 @@
       .app { display: block !important; height: auto !important; overflow: visible !important; padding: 0 !important; }
       .appbar, .mode-bar, .sidebar, .video-panel, .thumb-bar, .scroll-lock-btn, .canvas-bar, .links-bar,
       .board-empty, .routine-editor-panel, .file-menu-panel, .toast, .top-actions,
-      .status-bar, .once-hint, .toast-stack { display: none !important; }
+      .status-bar, .once-hint, .toast-stack, .coachmark { display: none !important; }
+      /* 처음 안내(RM-44) — 말풍선은 ui/coachmarks.js 가 넣는 <style> 이라 위 목록에서 빠졌었다(position:fixed 라 Chrome 은 모든 쪽에 찍었다).
+         대상의 숨 쉬는 강조도 종이에서 걷는다. 그 <style> 이 이 블록보다 뒤에 오므로 !important 로 이긴다. */
+      [data-coach="1"] { animation: none !important; box-shadow: none !important; }
       /* ⚠ `.panel` 을 여기 두지 않는다 — 사이드바도 `panel sidebar` 라, 같은 무게의 뒤 규칙이 위의 숨김을 이긴다(RM-21 브라우저 시험). */
       .workspace, .boards-container, .main-board-area, .board-wrap {
         display: block !important; height: auto !important; min-height: 0 !important; max-height: none !important;
