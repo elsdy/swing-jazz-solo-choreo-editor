@@ -80,9 +80,9 @@ export function nextVersionLabel(versions, nameOf) {
 }
 
 /** 판본 본문의 마디 수와 블록(그룹) 수. 본문이 손상돼도 던지지 않는다. */
-// @complexity time=O(n) space=O(n) cc=4
+// @complexity time=O(n) space=O(n) cc=9
 function docCounts(doc) {
-  const rows = doc && Number.isFinite(Number(doc.rows)) ? Math.max(0, Math.trunc(Number(doc.rows))) : 0;
+  const rows = doc && typeof doc.rows === 'number' && Number.isFinite(doc.rows) ? Math.max(0, Math.trunc(doc.rows)) : 0;
   const placements = doc && Array.isArray(doc.placements) ? doc.placements : [];
   const groups = new Set(placements.map(p => (p && p.groupId) || (p && p.id)).filter(Boolean));
   return { bars: rows, blocks: groups.size };
