@@ -145,7 +145,7 @@ test('countSheet: 안무표 → 글 → 안무표 왕복 — 겹친 두 층 · �
 // ── ② 읽기 전용 HTML ───────────────────────────────────────────────────────────
 
 test('sheetHtml: 한 파일 안에 다 있고 import · fetch · script src · link href 가 없다', () => {
-  const html = buildSheetHtml({ title: '링디합', board: SAMPLE, categories: CATS, generatedAt: '2026-11-02T03:00:00.000Z' });
+  const html = buildSheetHtml({ title: '링디합', board: SAMPLE, categories: CATS, generatedOn: '2026-11-02' });
   assert.ok(html.startsWith('<!doctype html>'));
   assert.match(html, /<meta charset="utf-8">/);
   assert.match(html, /<style>[\s\S]+<\/style>/, '스타일이 안에 있다');
@@ -215,7 +215,7 @@ test('sheetCommands: 내보내기는 주입한 fileIO 의 copyText · downloadTe
   const files = new Proxy({}, {
     get: (_, name) => (...args) => { calls.push([name, ...args]); return name === 'copyText'; }
   });
-  const deps = { store, files, env: { nowIso: () => '2026-11-02T03:00:00.000Z' } };
+  const deps = { store, files, env: { localDate: () => '2026-11-02' } };
   assert.equal(typeof globalThis.document, 'undefined', '이 시험은 DOM 없이 돈다');
 
   // 복사 — 글은 이름칸의 이름을 첫 줄에 둔다
