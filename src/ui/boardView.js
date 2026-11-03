@@ -125,6 +125,9 @@ export function createBoardView(options) {
     const { cols, rows } = board;
     el.innerHTML = '';
     rowRefs.clear();
+    // 칸 수를 CSS 에 내놓는다(RM-45) — 인쇄 블록이 종이 너비를 이 수로 나눠 --cellW 를 다시 정한다.
+    // 화면 격자는 이 변수를 읽지 않는다(아래 인라인 문자열이 칸 수를 직접 쓴다).
+    el.style.setProperty('--cols', String(cols));
     const header = document.createElement('div');
     header.className = CLS.boardHeader;
     header.style.gridTemplateColumns = `var(--rowLabelW) calc(var(--cellW) * ${cols}) var(--noteCol, var(--noteW))`;

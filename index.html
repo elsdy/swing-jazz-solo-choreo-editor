@@ -3694,8 +3694,26 @@
         overflow: visible !important; background: #fff !important; border: none !important; box-shadow: none !important;
         padding: 0 !important; backdrop-filter: none !important;
       }
-      .board { min-width: 0 !important; gap: 4px !important; width: 100% !important; }
-      .board-header, .board-row { break-inside: avoid; page-break-inside: avoid; gap: 4px !important; }
+      .board { min-width: 0 !important; gap: var(--printGap) !important; width: 100% !important; }
+      .board-header, .board-row { break-inside: avoid; page-break-inside: avoid; gap: var(--printGap) !important; }
+      /* 인쇄 격자 너비(RM-45, 개발 원칙 U-21) — 화면의 --cellW 는 JS 가 그때 화면 폭으로 재어 html 에 적은 px 라,
+         그대로 물려받으면 좁은 화면에서는 종이의 절반만 쓰고 넓은 화면에서는 7·8카운트가 종이 밖으로 나갔다.
+         종이는 A4 · 여백 10mm 로 못박고(그래서 Chrome · Safari 가 같은 190mm 를 쓴다 — vw 는 Safari 가 화면 폭으로 잰다),
+         칸 너비는 그 폭에서 행 라벨 · 비고 · 틈 둘을 빼고 칸 수(--cols, ui/boardView 가 적는다)로 나눠 다시 정한다.
+         html 의 인라인 값은 건드리지 않고 .board 에서 상속만 끊는다 — 인쇄 창을 닫으면 화면 칸이 그대로다.
+         비고 열은 종이의 25% 안으로 줄이고, 긴 비고는 줄을 바꾼다. */
+      @page { size: A4; margin: 10mm; }
+      .board-wrap {
+        --printW: 190mm; /* A4 210mm − 여백 10mm × 2 — 위 @page 와 짝이다 */
+        --printGap: 4px;
+        --printNoteW: min(var(--noteCol, var(--noteW)), calc(var(--printW) * 0.25));
+      }
+      .board-wrap .board {
+        --noteCol: var(--printNoteW);
+        --cellW: calc((var(--printW) - var(--rowLabelW) - var(--printNoteW) - 2 * var(--printGap)) / var(--cols, 8));
+      }
+      .note-cell { white-space: normal !important; overflow-wrap: anywhere; }
+      .playhead { display: none !important; }
       .corner, .row-label, .note-header, .note-cell {
         background: #fff !important; color: #111 !important; border: 1px solid #999 !important; border-radius: 4px !important; min-height: 0 !important;
       }
