@@ -86,7 +86,7 @@ export const CLS = Object.freeze({
   quickPopupDivider: 'quick-popup-divider',
   kbActive: 'kb-active',              // 1878 · 2134 — 키보드 커서
   newAction: 'new-action',            // ⚠ CSS(947)에만 있고 JS 에서 붙이는 곳이 0곳이다 — 죽은 클래스
-  quickBtnActive: 'quick-btn-active', // 1683 · 4842 — '+ 빠른 배치' 토글 버튼
+  quickBtnActive: 'quick-btn-active', // 1683 · 4842 — `빠른 배치` 토글 버튼
 
   // ── 루틴 ──
   routineCard: 'routine-card',
@@ -159,6 +159,15 @@ export const CLS = Object.freeze({
   isCollapsed: 'is-collapsed',   // .video-panel.is-collapsed — 본문을 접는다(헤더만 남는다)
   isError: 'is-error',           // .video-status.is-error — 재생기 오류 문구
   playhead: 'playhead',          // 재생 헤드. z-index 6 = .snap-indicator 와 동급
+
+  // ── `?` 정리함 (RM-24 · 2026-11-03) — ui/pendingTray 가 줄을 만든다. CSS 는 index.html 의 `.inline-prompt` 규칙 옆 ──
+  pendingRow: 'pending-row',
+  pendingRowPick: 'pending-row-pick',
+  pendingRowSame: 'pending-row-same',
+  pendingRowNote: 'pending-row-note',
+  pendingRowName: 'pending-row-name',
+  pendingRowCat: 'pending-row-cat',
+  isCurrent: 'is-current',       // .pending-row.is-current — 지금 고른 줄(영상이 되풀이하는 블록)
 
   // ── 공통 유틸 클래스 (마크업과 JS 가 함께 쓴다) ──
   row: 'row', wrap: 'wrap', stack: 'stack', section: 'section', softCard: 'soft-card',
@@ -236,6 +245,17 @@ export const SEL = Object.freeze({
   placementsOfGroupRaw(groupId) {
     return `.placement[data-group-id="${groupId}"]`;
   },
+
+  /**
+   * `?` 정리함의 한 줄(RM-24). 줄은 그룹의 groupId 를 `data-group-id` 로 단다.
+   * @param {string} groupId
+   * @returns {string}
+   */
+  pendingRowOf(groupId) {
+    return `.pending-row[data-group-id="${cssEscapeLocal(groupId)}"]`;
+  },
+  /** 정리함 줄의 이름 단추 — 이름 입력(askName)이 이 위에 뜬다. */
+  pendingRowName: '.pending-row-name',
 });
 
 /**

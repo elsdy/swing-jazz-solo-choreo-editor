@@ -332,8 +332,10 @@ bpm = (60 * beatsPerCount * (b.count - a.count)) / (b.sec - a.sec)
 | `KvStore` | 키-값 창구 | 값은 이미 파싱된 JS 값이다. `JSON.stringify/parse` 는 어댑터 몫 |
 | `SnapshotStore` | 현재 보드와 최근 프로젝트 10개 | `listRecents()` 가 **doc 을 포함하지 않는다** |
 | `FileGateway` | 파일 내려받기·읽기 · 글 내려받기 · 클립보드 · 인쇄 | 내려받기 → 저장 순서를 보존한다. `copyText` 는 못 담으면 던지지 않고 `false` 다(RM-21) |
-| `VersionRepository` | 안무 버전 히스토리 | `listVersions()` 가 doc 을 포함하지 않는다. `rebuildVersionMeta()` 로 복구된다 |
-| `PracticeLogRepository` | 연습 기록 | 항목이 ~300B 라 통째로 돌려준다 |
+| `VersionRepository` | 안무 버전 히스토리 | `listVersions()` 가 doc 을 포함하지 않는다. `rebuildVersionMeta()` 로 복구된다 — **구현하지 않았다**(아래) |
+| `PracticeLogRepository` | 연습 기록 | 항목이 ~300B 라 통째로 돌려준다 — **구현하지 않았다**(아래) |
+
+**판본과 연습 기록은 이 둘을 거치지 않는다(2026-11-03, RM-29).** 판(Q41)의 결정대로 안무표 파일 안의 최상위 `versions` · `practiceLogs` 로 함께 저장되고, 저장 · 초안 · 최근 목록 · 서버 보관을 지금의 프로젝트 파일 길 그대로 탄다. 목록에 그릴 요약(`마디 · 블록` 수)은 따로 저장하지 않고 열 때마다 본문에서 다시 만든다(`domain/project/versions` 의 `versionSummaries`) — 「meta 는 doc 에서 파생 가능」을 저장 없이 지킨 꼴이다. 두 계약은 typedef 로만 남아 있다.
 
 `listRecents`·`listVersions` 가 doc 을 빼는 것은 시그니처 선택 중 가장 중요한 것이다. 목록 UI 를 그리려고 20개 × 20KB 를 파싱하면 안 된다. meta 는 doc 에서 파생 가능한 데이터라 손상돼도 재생성할 수 있다.
 
@@ -396,9 +398,9 @@ class StorageError extends Error { code; cause; }
 
 버전은 델타가 아니라 **전체 스냅샷**을 담는다. 델타는 복원이 체인 워크가 되고 중간 하나가 깨지면 그 이후 전부가 죽는다. 크기 논거도 성립하지 않는다 — 현실적인 문서가 20KB 남짓이라 20개 버전이 400KB 다. 차이는 저장하지 않고 표시할 때 계산한다.
 
-**`ChoreoVersion`** — `id`, `projectId`, `parentId`(분기한 버전, 최초는 `null`), `createdAt`, `label`, `note`, `doc`, `reference`(이 버전을 찍어 둔 기준 영상, `MediaRef|null`).
+**`ChoreoVersion`** — `id`, `parentId`(분기한 버전, 최초는 `null`), `createdAt`(ISO 시각), `label`, `note`, `doc`. 구현에서 바뀐 것(2026-11-03, RM-29): 한 파일이 한 안무라 `projectId` 는 두지 않았다. `reference`(기준 영상)도 두지 않았다 — 판(Q42)이 「영상 · 링크는 안무 공통, 판본은 안무표만」으로 정해 `doc` 에서 `mediaRefs` · `links` 를 뺀다.
 
-**`PracticeLog`** — `id`, `projectId`, `versionId`, `at`(사용자가 수정 가능하다 — 어제 것을 오늘 입력한다), `scope`(`null` = 전곡, 또는 구간 드릴), `bpm`, `rating`, `attempts`, `cleanRuns`, `troubleSpots`, `media`, `note`.
+**`PracticeLog`** — `id`, `at`(`YYYY-MM-DD`, 사용자가 고칠 수 있다 — 어제 것을 오늘 입력한다), `versionId`, `clipId`(그 테이크의 영상, 없으면 `''`), `scope`(`null` = 전곡, 또는 `{from, to}` 의 `CountRef` 구간), `bpm`, `rate`(배속), `attempts`, `cleanRuns`(`attempts` 를 넘으면 접는다), `rating`(1~5), `trouble`, `note`. 구현에서 바뀐 것: `projectId` 는 위와 같은 까닭으로 빠졌고, `troubleSpots`(배열)는 한 줄 글 `trouble` 로, `media` 는 영상 목록의 id 하나 `clipId` 로 줄였다. 지운 판본 · 영상을 가리키는 id 는 지우지 않고 남긴다(화면이 `삭제한 판본` 으로 읽는다).
 
 **`CountRef`** — `{row, index}`. `cols` 에 의존하지 않는 구조적 좌표라 보드 크기가 바뀌어도 읽을 수 있다. `row 0` 이 intro 다.
 
@@ -555,5 +557,5 @@ DOM 은 한 자리에 고정하고 CSS 로만 위치를 바꾼다.
 | 시퀀스 엔진 진입점 | 없다. 엔진이 실제로 올 때 어댑터와 함께 만든다. [로드맵 3번](ROADMAP.md)이 그 조사 결과다 |
 | `nullSequenceEngine` | **일부러 만들지 않았다.** 위의 이유 참조 |
 | 저장소 어댑터의 Promise 판 · IndexedDB | 없다. `localStore.js` 는 오늘과 같이 동기 localStorage 다 |
-| 버전·연습 기록 리포지토리 구현 | 없다. 인메모리 참조 구현도 만들지 않았다. `VersionRepository` 등은 typedef 뿐이다 |
+| 버전·연습 기록 리포지토리 구현 | 없다. 인메모리 참조 구현도 만들지 않았다. `VersionRepository` 등은 typedef 뿐이다 — 판본 · 기록은 2026-11-03(RM-29)부터 안무표 파일 안에 산다 |
 | `StorageError` 를 던지는 경로 | 정의만 있다 |

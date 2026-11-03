@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { statusParts, saveTargetState, voiceLabel, createStatusBar, STATUS_NOTICE_MS } from '../../src/ui/statusBar.js';
+import { statusParts, saveTargetState, voiceLabel, voiceTone, createStatusBar, STATUS_NOTICE_MS } from '../../src/ui/statusBar.js';
 import { createRenderer } from '../../src/app/render.js';
 import { createStore, BOARD_MAIN } from '../../src/usecases/store.js';
 import * as CaptureCmd from '../../src/usecases/captureCommands.js';
@@ -17,8 +17,9 @@ const textOf = (parts, id) => (parts.find(p => p.id === id) || {}).text;
 /** 아주 작은 가짜 문서 — 상태줄이 쓰는 것만(createElement · appendChild · textContent · dataset · hidden). */
 function fakeEl() {
   const el = {
-    children: [], dataset: {}, hidden: false, _text: '',
+    children: [], dataset: {}, hidden: false, _text: '', attrs: {},
     appendChild(c) { el.children.push(c); return c; },
+    setAttribute(k, v) { el.attrs[k] = String(v); }, getAttribute(k) { return k in el.attrs ? el.attrs[k] : null; },
     get textContent() { return el._text || el.children.map(c => c.textContent).join(''); },
     set textContent(v) { el._text = v; el.children = []; }
   };
@@ -42,13 +43,18 @@ test('상태줄: 받는 중 · 듣는 중 · 담기 자리 · 되돌릴 수 있�
     history: { canUndo: true }
   }, { formatClock: fmt });
   assert.deepEqual(ids(busy), ['capture', 'voice', 'routine', 'save', 'undo'], '지금 하는 일 → 담기 자리 → 되돌리기 차례');
-  assert.equal(textOf(busy, 'capture'), '● 0:12 부터 받는 중');
-  assert.equal(textOf(busy, 'voice'), '🎤 듣는 중');
+  // 앞의 점 · 마이크는 글자가 아니라 아이콘이다(RM-18) — 조각이 icon 이름을 따로 든다
+  assert.equal(textOf(busy, 'capture'), '0:12 부터 받는 중');
+  assert.equal(busy.find(p => p.id === 'capture').icon, 'circle-dot');
+  assert.equal(textOf(busy, 'voice'), '듣는 중');
+  assert.equal(busy.find(p => p.id === 'voice').icon, 'mic');
+  assert.equal(busy.find(p => p.id === 'voice').tone, 'on');
   assert.equal(textOf(busy, 'save'), '보관 폴더의 `린디.json` 에 담김');
   assert.equal(textOf(busy, 'undo'), '되돌릴 수 있음 (Ctrl+Z)');
 
-  // 켜 두었지만 크롬이 잠깐 멈춘 틈은 `🎤 …` — 엄지 바와 같은 라벨이다(한 함수).
-  assert.equal(voiceLabel({ available: true, wanted: true, listening: false }), '🎤 …');
+  // 켜 두었지만 크롬이 잠깐 멈춘 틈은 `…`(앞에 마이크 아이콘) — 엄지 바와 같은 라벨이다(한 함수).
+  assert.equal(voiceLabel({ available: true, wanted: true, listening: false }), '…');
+  assert.equal(voiceTone({ available: true, wanted: true, listening: false }), 'warn');
   assert.equal(voiceLabel({ available: true, wanted: false, listening: false }), '');
   assert.equal(voiceLabel({ available: false, wanted: true, listening: true }), '', '마이크가 없으면 말하지 않는다');
 
@@ -59,7 +65,7 @@ test('상태줄: 받는 중 · 듣는 중 · 담기 자리 · 되돌릴 수 있�
   assert.deepEqual(saveTargetState(null), { state: 'browser', bound: '' });
   // 브라우저 칸이 받지 않으면(RM-33) 「이 브라우저에만 담김」이 아니라 실패다 — 막힘 다음, 자리보다 먼저.
   assert.deepEqual(saveTargetState({ kind: 'browser', failed: true }), { state: 'stop-failed', bound: '' });
-  assert.deepEqual(statusParts({ save: { kind: 'browser', failed: true } })[0], { id: 'save', text: '⚠ 담기 실패 — 이 브라우저에 담지 못하고 있습니다', tone: 'warn' });
+  assert.deepEqual(statusParts({ save: { kind: 'browser', failed: true } })[0], { id: 'save', icon: 'alert', text: '담기 실패 — 이 브라우저에 담지 못하고 있습니다', tone: 'warn' });
 
   // 담기가 멈췄으면 그것이 가장 앞이고 경고다 — 멈춘 줄 모르고 계속 작업하는 것이 가장 나쁜 실패다.
   const stopped = statusParts({ capture: { startSec: 3 }, save: { kind: 'server', bound: 'a', blocked: true, reason: 'conflict' } });

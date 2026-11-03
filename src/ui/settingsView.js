@@ -1,4 +1,4 @@
-// src/ui/settingsView.js — 상단 `⚙ 설정` 버튼과 설정 팝업 (ui 계층)
+// src/ui/settingsView.js — 상단 `설정` 버튼과 설정 팝업 (ui 계층)
 //
 // 신설 파일이다. 이 앱에는 지금까지 설정 화면이 없었다 — 기본 카운트·정렬처럼 화면에 붙은 조작이 전부였다.
 // 첫 항목은 **영상 보관 폴더**다: 업로드한 영상을 어느 폴더 아래 `video-clip/<프로젝트>/` 로 복사할지.
@@ -18,6 +18,7 @@ import { DEFAULT_THEME, THEMES, normalizeTheme } from '../domain/themes.js';
 import { SYMBOLS, environmentLines } from '../domain/supportMatrix.js';
 import { commandById } from '../domain/commands.js';
 import { escapeHtml } from './widgets.js';
+import { iconLabel, iconLabelHtml, iconHtml } from './icon.js';
 
 const STYLE_ID = 'settings-view-style';
 const CSS = `
@@ -158,7 +159,7 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
 
 /**
  * @typedef {object} SettingsViewDeps
- * @property {HTMLElement} container `⚙ 설정` 버튼을 붙일 곳(.top-actions)
+ * @property {HTMLElement} container `설정` 버튼을 붙일 곳(.top-actions)
  * @property {() => {folderName:string, subdir:string}} getClipSetting localStorage 의 설정을 읽는다
  * @property {(next: {folderName:string, subdir:string}) => void} saveClipSetting
  * @property {{
@@ -202,6 +203,7 @@ const UNSUPPORTED_TEXT = '이 브라우저는 폴더 지정을 지원하지 않�
  * 바깥으로 빼지 않은 이유: 이 절의 DOM 과 상태(지금 무엇을 받는 중인가)가 여기 갇혀 있어야
  * 다른 절이 실수로 건드릴 수 없다.
  */
+// @complexity time=O(n)? space=O(n)? cc=23
 export function createSettingsView(deps) {
   const {
     container,
@@ -247,7 +249,7 @@ export function createSettingsView(deps) {
   openBtn.id = 'settingsOpenBtn';
   openBtn.className = 'ghost';
   openBtn.type = 'button';
-  openBtn.textContent = '⚙ 설정';
+  iconLabel(openBtn, 'settings', '설정', doc);
   openBtn.title = '영상 보관 폴더 등 이 브라우저의 설정';
   if (container) container.appendChild(openBtn);
 
@@ -258,7 +260,7 @@ export function createSettingsView(deps) {
       <div class="settings-head">
         <h2>설정</h2>
         <input class="settings-search" data-role="search" type="search" placeholder="설정 검색 — 폴더 · 모델 · API 키 …" autocomplete="off" />
-        <button class="ghost" data-act="close" type="button">✕ 닫기</button>
+        <button class="ghost" data-act="close" type="button">${iconLabelHtml('x', '닫기')}</button>
       </div>
       <div class="settings-main">
         <nav class="settings-side" data-role="nav" aria-label="설정 갈래"></nav>
@@ -276,7 +278,7 @@ export function createSettingsView(deps) {
         <section class="settings-section" data-cat="storage" data-available="1"
           data-keywords="영상 클립 video clip 경로 path 폴더 디렉터리 저장 업로드 보관">
           <h3>영상 보관 폴더</h3>
-          <div class="helper">영상 패널의 <code>📁 영상 파일 열기</code> 로 고른 영상을 이 폴더 아래에 복사해 둡니다. 그러면 저장한 안무표를 다시 열 때 같은 파일을 다시 고르지 않아도 됩니다. 폴더는 이 브라우저에만 기억되고, 어디로도 올라가지 않습니다.</div>
+          <div class="helper">영상 패널의 <code>영상 파일 열기</code> 로 고른 영상을 이 폴더 아래에 복사해 둡니다. 그러면 저장한 안무표를 다시 열 때 같은 파일을 다시 고르지 않아도 됩니다. 폴더는 이 브라우저에만 기억되고, 어디로도 올라가지 않습니다.</div>
           <div class="settings-row" data-role="browser-row">
             <span class="settings-label">폴더</span>
             <span class="settings-chip is-off" data-role="folder">미지정</span>
@@ -289,7 +291,7 @@ export function createSettingsView(deps) {
           <div class="settings-row" data-role="server-row" hidden>
             <span class="settings-label">보관 위치</span>
             <span class="settings-chip" data-role="server-root">—</span>
-            <button class="ghost accent" data-act="open-admin" type="button">서버 설정 열기 ↗</button>
+            <button class="ghost accent" data-act="open-admin" type="button"><span class="lbl">서버 설정 열기</span>${iconHtml('external')}</button>
           </div>
           <div class="settings-row">
             <span class="settings-label">하위 폴더</span>
@@ -307,7 +309,7 @@ export function createSettingsView(deps) {
           <div class="settings-row">
             <span class="settings-label">하위 폴더</span>
             <input class="settings-text" data-role="projects-subdir" type="text" placeholder="projects" disabled />
-            <button class="ghost accent" data-act="open-admin" type="button">서버 설정 열기 ↗</button>
+            <button class="ghost accent" data-act="open-admin" type="button"><span class="lbl">서버 설정 열기</span>${iconHtml('external')}</button>
             <span class="settings-label">/ 프로젝트 이름.json</span>
           </div>
           <div class="settings-path" data-role="projects-preview"></div>
@@ -321,7 +323,7 @@ export function createSettingsView(deps) {
           <div class="settings-row">
             <span class="settings-label">저장 위치</span>
             <input class="settings-text" data-role="models-dir" type="text" style="width: 22em; max-width: 100%;" placeholder="/절대/경로" />
-            <button class="ghost accent" data-act="models-browse" type="button" title="폴더 고르기 창을 띄웁니다">📂 폴더 고르기</button>
+            <button class="ghost accent" data-act="models-browse" type="button" title="폴더 고르기 창을 띄웁니다">${iconLabelHtml('folder-open', '폴더 고르기')}</button>
             <button class="ghost" data-act="models-apply" type="button">적용</button>
           </div>
           <div class="settings-row" data-role="models-suggest"></div>
@@ -342,7 +344,7 @@ export function createSettingsView(deps) {
         <section class="settings-section" data-role="llm-section" data-cat="models"
           data-keywords="말로 채우기 LLM AI 프롬프트 claude anthropic openai gpt codex ollama lm studio 모델 API 키 key token 주소 baseurl">
           <h3>말로 채우기 — LLM</h3>
-          <div class="helper"><code>✨ 말로 채우기</code> 가 쓰는 모델입니다. 호출은 로컬 서버가 대신 하고, API 키는 서버의 설정 파일에만 남습니다 — 저장소 밖, 안무·영상 폴더와도 다른 자리입니다. 브라우저로 오지 않습니다.</div>
+          <div class="helper"><code>말로 채우기</code> 가 쓰는 모델입니다. 호출은 로컬 서버가 대신 하고, API 키는 서버의 설정 파일에만 남습니다 — 저장소 밖, 안무·영상 폴더와도 다른 자리입니다. 브라우저로 오지 않습니다.</div>
           <div class="settings-row">
             <span class="settings-label">제공자</span>
             <select data-role="llm-provider" class="video-pick">
@@ -600,6 +602,7 @@ export function createSettingsView(deps) {
    * 자세 분석 모델 항목. 서버 모드에서만 보인다 — 파일을 받아 둘 수 있는 것은 서버뿐이다.
    * ⚠ 여기서 모델을 로드하지 않는다. 설정은 "어디에 둘지" 까지이고 쓰는 것은 분석 쪽의 몫이다.
    */
+  // @complexity time=O(n)? space=O(n)? cc=34
   async function renderModels() {
     if (!modelsSection) return;
     const active = !!(models && server && server.isActive());
@@ -630,7 +633,7 @@ export function createSettingsView(deps) {
     if (modelsBrowseBtn) {
       modelsBrowseBtn.hidden = !st.canChoose;
       modelsBrowseBtn.disabled = fetching || browsing;
-      modelsBrowseBtn.textContent = browsing ? '📂 창에서 고르는 중…' : '📂 폴더 고르기';
+      iconLabel(modelsBrowseBtn, 'folder-open', browsing ? '창에서 고르는 중…' : '폴더 고르기', doc);
     }
     // 추천 위치. 창을 못 띄워도 한 번 눌러 고를 수 있는 길이다.
     if (modelsSuggest) {
@@ -737,6 +740,7 @@ export function createSettingsView(deps) {
   function isOpen() { return overlay.dataset.open === '1'; }
 
   /** store 가 아니라 설정·어댑터에서 재도출한다(팝업이 열릴 때와 바뀔 때만). */
+  // @complexity time=O(n)? space=O(n)? cc=20
   async function render() {
     // ⚠ 단축키는 **먼저** 그린다. 아래 셋은 서버를 기다리므로(await), 뒤에 두면 서버가 없는
     //   환경에서 목록이 몇 초 뒤에야 나타난다 — 이 절은 서버와 무관하다.
@@ -774,7 +778,7 @@ export function createSettingsView(deps) {
       noteEl.textContent = !supported
         ? UNSUPPORTED_TEXT
         : (folder
-          ? '브라우저가 세션마다 이 폴더의 사용 허가를 다시 물을 수 있습니다. 그때는 영상 패널의 `📂 보관 폴더에서 불러오기` 를 누르면 됩니다.'
+          ? '브라우저가 세션마다 이 폴더의 사용 허가를 다시 물을 수 있습니다. 그때는 영상 패널의 `보관 폴더에서 불러오기` 를 누르면 됩니다.'
           : '폴더를 지정하면 그 아래에 하위 폴더를 만들어 영상을 복사합니다. 이미 있는 파일은 건드리지 않고, 같은 이름이 있으면 `(2)` 를 붙입니다.');
     }
   }

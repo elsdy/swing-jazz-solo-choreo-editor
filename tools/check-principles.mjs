@@ -380,6 +380,7 @@ function topLevelKeys(code, open) {
  * app/main.js 원문에서 `COMMAND_RUNNERS` 의 키를 글자로 읽는다(D-14).
  * @returns {{ keys: Set<string>, line: number }}
  */
+// @complexity time=O(n) space=O(k) cc=2
 export function commandRunnerTable(mainText) {
   const code = blankJs(mainText);
   const m = code.match(/const COMMAND_RUNNERS = Object\.freeze\(\{/);
@@ -389,6 +390,49 @@ export function commandRunnerTable(mainText) {
 }
 
 /** @typedef {{ file: string, line: number, principle: string, what: string, fix: string }} Violation */
+
+// ── U-19 라벨 앞의 그림 글자 ─────────────────────────────────────────────────
+/**
+ * 단추 라벨 앞에 붙던 그림 글자 — 이모지 · 딩뱃 · 화살표 · 수학 기호(≡ ⊕) · 도형 · 기술 기호(⏯ ⏮) · 곱셈표 · 「+ 」. 뒤에 빈칸이 와야 라벨 앞붙이다.
+ * ①②③ 단계 번호는 이 범위 밖이고, ⚠ 경고 문장은 단추 라벨 자리가 아니라서 아래 자리 판정이 걸러 낸다.
+ */
+export const LABEL_PICTO_RE = /^[×←-⋿⌀-⏿■-➿⤀-⧿⬀-⯿\u{1F000}-\u{1FAFF}+]️?\s+\S/u;
+/** 그 문자열이 단추 라벨 자리에 쓰이는가 — `x.textContent = …` · `label: …` · `button: …` (쉼표 · 세미콜론 · 중괄호 뒤부터 본다 — `label: f(x) || '…'` 도 잡는다). */
+const LABEL_SLOT_RE = /(?:\.textContent|\.innerText)\s*=[^,;{}]*$|(?:^|[\s{,])(?:label|button)\s*:\s*[^,;{}]*$/;
+/** 마크업 단추 하나의 보이는 글자 — 아이콘(svg)과 태그 · 템플릿 자리를 걷고 앞뒤 빈칸을 뺀다. */
+// @complexity time=O(n) space=O(n) cc=1
+const buttonText = (inner) => inner.replace(/<svg\b[\s\S]*?<\/svg>/g, '').replace(/<[^>]*>/g, '').replace(/\$\{[^}]*\}/g, '').trim();
+
+/**
+ * U-19 이 보는 자리 셋: ① index.html 의 `<button>` 글자 ② JS 문자열 속 `<button …>` 마크업 ③ 단추 라벨 자리에 대입하는 JS 문자열.
+ * @param {Record<string, string>} files
+ * @returns {{ file: string, line: number, snippet: string }[]}
+ */
+// @complexity time=O(n) space=O(n) cc=9
+export function pictoLabels(files) {
+  const out = [];
+  // 주석 속 옛 마크업은 단추가 아니다 — 줄바꿈만 남겨 지운다(줄 번호가 그대로다)
+  const html = (files['index.html'] || '').replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, ' '));
+  const body = Math.max(0, html.indexOf('<body', Math.max(0, html.indexOf('</head>')))); // 스타일 주석 속 「<body>」 글자를 건너뛴다
+  for (const m of html.slice(body).matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)) {
+    const text = buttonText(m[1]);
+    if (LABEL_PICTO_RE.test(text)) out.push({ file: 'index.html', line: lineAt(html, body + m.index), snippet: `<button>${text.slice(0, 40)}</button>` });
+  }
+  const targets = [...jsFiles(files, 'src/ui/'), ...jsFiles(files, 'src/input/'), ...jsFiles(files, 'src/app/'), 'src/domain/commands.js'].filter(f => files[f]);
+  for (const f of targets) {
+    const src = files[f];
+    const { blanked, strings } = scanJs(src);
+    for (const s of strings) {
+      for (const m of s.text.matchAll(/<button\b[^>]*>([^<]*)/g)) {
+        if (LABEL_PICTO_RE.test(m[1].trim())) out.push({ file: f, line: lineAt(src, s.offset), snippet: `'<button …>${m[1].trim().slice(0, 40)}'` });
+      }
+      if (!LABEL_PICTO_RE.test(s.text)) continue;
+      const before = blanked.slice(Math.max(0, s.offset - 160), Math.max(0, s.offset - 1));
+      if (LABEL_SLOT_RE.test(before)) out.push({ file: f, line: lineAt(src, s.offset), snippet: `'${s.text.slice(0, 40)}' — 단추 라벨 자리` });
+    }
+  }
+  return out;
+}
 
 export const RULES = [
   {
@@ -623,6 +667,30 @@ export const RULES = [
     },
   },
   {
+    principle: 'R-12',
+    what: '펼침 리터럴 `{ ...X, …f(X) }` 이 앞에서 펼친 X 를 뒤의 펼침 호출에 넘긴다 — 그 함수가 X 를 고치면 앞의 펼침은 이미 옛 값이다',
+    fix: '호출을 리터럴 **앞**에서 먼저 하고 결과를 이름에 담아 펼친다(`const tail = f(X); return { ...X, ...tail }`)',
+    // @complexity time=O(n·m) space=O(n) cc=6
+    scan(files) {
+      const out = [];
+      for (const f of jsFiles(files)) {
+        const code = blankJs(files[f]);
+        for (const m of code.matchAll(/\{\s*\.\.\.([\w$]+)\s*,/g)) {
+          const close = matchBrace(code, m.index);
+          if (close < 0) continue;
+          const body = code.slice(m.index + m[0].length, close);
+          const esc = m[1].replace(/\$/g, '\\$');
+          const call = body.match(new RegExp(`\\.\\.\\.\\s*([\\w$.]+)\\([^()]*(?<![\\w$.])${esc}(?![\\w$])`));
+          if (!call) continue;
+          const line = lineAt(files[f], m.index);
+          if (excused(files[f], line, 'R-12')) continue;
+          out.push({ file: f, line, snippet: `{ ...${m[1]}, … ...${call[1]}(${m[1]} …) } — ${call[1]} 가 ${m[1]} 를 고치면 앞의 펼침에 실리지 않는다` });
+        }
+      }
+      return out;
+    },
+  },
+  {
     principle: 'D-14',
     what: '이름으로 잇는 명령 배선이 어긋났다 — 그 글쇠나 버튼은 말없이 아무 일도 하지 않는다',
     fix: 'domain/commands 의 COMMANDS · app/main 의 COMMAND_RUNNERS · 마크업의 data-command 를 같은 id 로 맞춘다',
@@ -753,6 +821,15 @@ export const RULES = [
         }
       }
       return out;
+    },
+  },
+  {
+    principle: 'U-19',
+    what: '단추 라벨이 이모지 · 기호 글자로 시작한다 — OS 마다 모양 · 크기가 다르고 글자색 · 테마를 따르지 않는다',
+    fix: '그림은 스프라이트 한 벌에서 — ui/icon 의 iconLabel(el, 이름, 글자) · 마크업은 <svg class="icon"><use href="#i-이름"></use></svg><span class="lbl">글자</span>. 명령의 그림은 등록부의 icon 열',
+    // @complexity time=O(n) space=O(n) cc=2
+    scan(files) {
+      return pictoLabels(files).filter(v => !excused(files[v.file] || '', v.line, 'U-19'));
     },
   },
 ];

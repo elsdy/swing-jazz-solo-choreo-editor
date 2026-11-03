@@ -18,6 +18,7 @@
 //     render() 안에서 다시 계산한다. 화면 결과는 같다.
 //  ④ **제목 '동작 목록'(PR #17)은 마크업(1294 부근)에 이미 있다 — 뷰가 만들지 않는다.**
 
+import { iconLabel, iconOnly } from './icon.js';
 import { SEL, CLS } from './domContract.js';
 import { escapeHtml, confirmOnce, makeInlineStarBtn } from './widgets.js';
 import { askText, anchorOf } from './inlinePrompt.js';
@@ -181,13 +182,15 @@ export function createPaletteView(deps) {
    * ⚠ 라벨 원문은 마크업에 있다: `가나다` `추가순` `카테고리`, 방향 버튼은 `↑`/`↓`.
    * @see index.html:2315
    */
+  // @complexity time=O(1) space=O(1) cc=7
   function syncSortButtons() {
     const { sortMode, sortDir } = store.palette;
     if (sortButtons) {
       if (sortButtons.alpha) sortButtons.alpha.classList.toggle(CLS.active, sortMode === 'alpha');
       if (sortButtons.added) sortButtons.added.classList.toggle(CLS.active, sortMode === 'added');
       if (sortButtons.category) sortButtons.category.classList.toggle(CLS.active, sortMode === 'category');
-      if (sortButtons.dir) sortButtons.dir.textContent = sortDir === 'asc' ? '↑' : '↓';
+      // 「↑」 · 「↓」 글자였다(~2026-11-03, RM-18). 이름(aria-label)은 마크업의 「정렬 방향」 그대로다
+      if (sortButtons.dir) iconLabel(sortButtons.dir, sortDir === 'asc' ? 'arrow-up' : 'arrow-down');
     }
   }
 
@@ -200,6 +203,7 @@ export function createPaletteView(deps) {
    * @param {{id:string,name:string,category:string}} move
    * @returns {HTMLElement}
    */
+  // @complexity time=O(n)? space=O(n)? cc=3
   function buildCard(move) {
     const categories = store.categories;
 
@@ -252,10 +256,9 @@ export function createPaletteView(deps) {
     const del = document.createElement('button');
     del.className = CLS.iconBtn;
     del.type = 'button';
-    del.textContent = str('icon.delete');
-    del.title = str('move.card.delete.title');                       // 글자는 문자열 표(RM-10)
+    iconOnly(del, 'x', str('move.card.delete.title'));               // 글자는 문자열 표(RM-10), 그림은 스프라이트(RM-18)
     del.addEventListener('click', () => {
-      confirmOnce(del, str('icon.delete'), () => {
+      confirmOnce(del, str('move.card.delete.title'), () => {
         // 3136-3140. ⚠ 이 경로에는 closeMoveContextMenu 가 없다(메뉴 경로에만 있다).
         render(commands.deleteMove(move.id));
         render(commit(MAIN));
@@ -288,6 +291,7 @@ export function createPaletteView(deps) {
    * 팔레트 전체를 다시 그린다. Dirty.palette 의 유일한 소비자.
    * @see index.html:3055
    */
+  // @complexity time=O(n)? space=O(n)? cc=3
   function renderPalette() {
     syncSortButtons();
     paletteListEl.innerHTML = '';
@@ -308,7 +312,7 @@ export function createPaletteView(deps) {
     if (favs.length > 0) {
       const favHeader = document.createElement('div');
       favHeader.style.cssText = 'font-size:var(--fs-1);font-weight:800;color:var(--now);padding:4px 2px 2px;letter-spacing:0.04em;';
-      favHeader.textContent = '★ 즐겨찾기';
+      iconLabel(favHeader, 'star', '즐겨찾기');                       // 「★ 즐겨찾기」였다(RM-18)
       paletteListEl.appendChild(favHeader);
       favs.forEach(m => paletteListEl.appendChild(buildCard(m)));
       if (others.length > 0) {

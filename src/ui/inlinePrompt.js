@@ -10,6 +10,8 @@
 // ⚠ 한 번에 하나만 뜬다. 새로 열면 앞의 것은 취소(null)로 닫힌다.
 // ⚠ Promise 로 돌려준다 — 창이 모달이 아니므로 값이 나중에 온다. 호출부는 then 에서 커맨드를 부른다.
 
+import { joinJamo } from '../domain/hangul.js';
+
 /** @type {null | ((value: string|null) => void)} */
 let closeCurrent = null;
 
@@ -96,6 +98,10 @@ export function askText(opts) {
  * ⚠ 가리키던 블록(anchor)이 다시 그리기로 떨어져 나가면 입력도 닫는다(via 'gone', null) — 반쯤 친 이름이 엉뚱한 블록에
  *   붙지 않게. 문서의 자식 변화를 보고 anchor.isConnected 를 되묻는다.
  * ⚠ askText 와 같은 「한 번에 하나」다 — 새로 열면 앞의 것은 취소로 닫힌다.
+ * ⚠ jamoRejoin(RM-50) — 한글 낱자 글쇠로 열린 입력에서만 켠다. body 에서 받은 첫 글쇠들을 실제 입력기가 조합 없이 맺어
+ *   「ㅅㅡ윙」처럼 흩어 넣으므로, **맺힌 뒤**(isComposing 이 아닌 input) 흩어진 자모를 domain/hangul.joinJamo 로 다시 묶는다.
+ *   조합 중에는 값을 절대 건드리지 않는다(입력기가 깨진다). compositionend 뒤에 input 이 오지 않는 브라우저(Safari)가 있어
+ *   닫을 때(enter · tab · blur) 한 번 더 거친다. 고른 추천(↓↑ · 누름)은 목록의 이름이라 거치지 않는다.
  *
  * @param {{
  *   anchor?: Element|null,
@@ -104,11 +110,13 @@ export function askText(opts) {
  *   value?: string,
  *   selectAll?: boolean,
  *   suggest?: (query: string) => Array<{ name: string, category?: string }>,
+ *   jamoRejoin?: boolean,
  *   doc?: Document
- * }} opts selectAll 이 참이면 처음 값을 통째로 고른 채 연다(갈아 끼우기). 거짓이면 커서가 값 끝에 선다(첫 글자를 잇는다)
+ * }} opts selectAll 이 참이면 처음 값을 통째로 고른 채 연다(갈아 끼우기). 거짓이면 커서가 값 끝에 선다(첫 글자를 잇는다).
+ *   jamoRejoin 이 참이면 맺힌 뒤 흩어진 한글 자모를 다시 묶는다(위 ⚠)
  * @returns {Promise<NameAnswer>}
  */
-// @complexity time=O(k) space=O(k) cc=14
+// @complexity time=O(k+m) space=O(k+m) cc=22
 export function askName(opts) {
   const doc = opts.doc || document;
   if (closeCurrent) closeCurrent(null);
@@ -168,13 +176,29 @@ export function askName(opts) {
       list.style.display = items.length ? '' : 'none';
     };
     const refresh = () => {
-      items = (suggest(input.value) || []).slice(0, 8);
+      // 조합 중이라 값을 아직 못 묶었어도(「ㅅㅡ윙」) 추천은 묶은 글자(「스윙」)로 찾는다 — 값은 건드리지 않는다.
+      items = (suggest(opts.jamoRejoin ? joinJamo(input.value) : input.value) || []).slice(0, 8);
       active = -1;
       paint();
     };
-    const chosen = () => (active >= 0 && items[active] ? items[active].name : input.value);
+    // 흩어진 자모를 다시 묶는다 — 바뀌었을 때만 값을 갈고, 커서는 끝에서 잰 자리를 지킨다(끝에 있었으면 끝).
+    const rejoin = () => {
+      if (!opts.jamoRejoin) return;
+      const before = input.value;
+      const after = joinJamo(before);
+      if (after === before) return;
+      const fromEnd = before.length - (typeof input.selectionEnd === 'number' ? input.selectionEnd : before.length);
+      input.value = after;
+      const caret = Math.max(0, after.length - fromEnd);
+      if (typeof input.setSelectionRange === 'function') input.setSelectionRange(caret, caret);
+    };
+    const typed = () => { rejoin(); return input.value; };
+    const chosen = () => (active >= 0 && items[active] ? items[active].name : typed());
 
-    input.addEventListener('input', refresh);
+    input.addEventListener('input', (e) => {
+      if (!(e && e.isComposing)) rejoin();     // 조합 중의 값은 입력기의 것이다 — 손대면 조합이 깨진다
+      refresh();
+    });
     input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.isComposing) return;               // 한글 조합 중의 Enter · Tab 은 글자를 맺는 것이다
@@ -191,7 +215,7 @@ export function askName(opts) {
     });
     input.addEventListener('blur', () => {
       if (typeof doc.hasFocus === 'function' && !doc.hasFocus()) return;
-      finish(input.value, 'blur');
+      finish(typed(), 'blur');
     });
 
     doc.body.appendChild(box);
