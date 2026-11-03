@@ -4431,7 +4431,7 @@
           "wrapup": [
             {
               "text": "server.py 를 다시 띄운다 — /api/pose/* 가 새로 생겨, 이미 켜 둔 서버(루프백 8000 · Tailscale 100.86.195.60:8000 둘 다)는 다시 켜야 자세 분석 짝 파일을 남기고 되살린다",
-              "state": "approved"
+              "state": "done"
             }
           ],
           "mergedAt": "2026-11-03"
@@ -4865,8 +4865,8 @@
             "Q113"
           ],
           "defaults": [],
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 92,
           "what": "Chrome 은 인쇄 쪽 너비(약 717px)를 좁은 화면으로 읽는다. 그래서 index.html 의 좁은 화면 규칙(body[data-notes=off] 의 비고 숨김)에 걸려 인쇄에서 비고 열이 빠지고, Safari 는 같은 안무표에서 비고 열을 찍는다. 비고 숨김 규칙을 화면 전용(@media screen)으로 묶어 인쇄에서는 두 브라우저 모두 비고 열을 늘 찍게 맞춘다. RM-21 계획서 요구 ①(「격자 · 동작 이름, 비고만 남은 채」)과 기능 설명서 512줄(「격자와 비고만 흰 종이에」)이 이미 비고를 넣는다고 적고 있어서다. 같은 @media print 근처를 고치는 RM-44 · RM-45 · RM-46 과는 줄이 겹치기만 하고 서로 부르는 것은 없다. 비고 폭(--noteW)을 렌더마다 재는",
           "kind": "bug",
           "seat": "code",
@@ -4899,7 +4899,14 @@
           ],
           "plan": "docs/roadmap/plans/RM-47.md",
           "branch": "rm-47-print-note-column-consistent",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "wrapup": [
+            {
+              "text": "실제 Safari 앱의 인쇄 미리보기로 넓은 창 · 좁은 창(1040px 아래, 비고 접힘)에서 비고 열이 종이의 4분의 1 폭으로 나오는지 본다 — 병합 전 재기는 WKWebView 인쇄 작업이었고 Safari 미리보기 창 자체는 아니었다",
+              "state": "approved"
+            }
+          ],
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-49",
@@ -5132,7 +5139,7 @@
             "Q108"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "영상 패널 도구 탭(자르기 · 마커 · 분석)을 펼치면, 360~430px 폭의 60 경우 가운데 7 경우에서 맨 위 오른쪽의 ? 단추가 첫 줄 조작 단추(「Out 으로」 · 「이 마디에 맵핑」 · 「마커 지우기」 · 「분석 지우기」)를 덮는다. 까닭은 RM-20 이 index.html:469 에 넣은 `.vtool-help{margin-bottom:-18px}` 다. ? 는 오른쪽 위에 그대로 두고, 첫 줄이 ? 아래로 파고들지 못하게 막아 폭 · 테마 · 도구 어느 조합에서도 겹치지 않게 한다. 설명이 말한 「? 를 summary 줄로 올리는 길」은 쓸 수 없다 — 도구의 summary 는 index.html:1995 가 숨긴다.",
           "kind": "bug",
@@ -5152,7 +5159,9 @@
             "docs/HISTORY.md",
             "docs/BUG_REPORTS.md"
           ],
-          "plan": "docs/roadmap/plans/RM-54.md"
+          "plan": "docs/roadmap/plans/RM-54.md",
+          "branch": "rm-54-vtool-help-button-overlaps-first-row-on-phone",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-55",
@@ -6364,10 +6373,13 @@
       "reportedAt": "2026-11-03",
       "fixedBy": "RM-72",
       "bisect": {
-        "state": "running",
+        "state": "goodred",
         "main": "8032ef3b08404ca07cdbdb8af8b43d2031db92d1",
-        "at": "2026-11-03T12:40:01Z",
-        "cmd": "curl http://127.0.0.1:8031/clips/video-clip/rm30/.pose/take-a.mp4.json → 200"
+        "node": "mac-mini",
+        "at": "2026-11-03T13:01:44Z",
+        "cmd": "curl http://127.0.0.1:8031/clips/video-clip/rm30/.pose/take-a.mp4.json → 200",
+        "good": "b3c06abcbabacb32c69c82f8845ae20d74befe88",
+        "why": "좋은 커밋 b3c06ab 도 붉다"
       }
     }
   ],
