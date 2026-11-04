@@ -2652,6 +2652,10 @@
        ⚠ 이 줄은 본문의 제목 노릇을 한다(띠에서는 `<summary>` 를 숨긴다) — 그래서 글자가
          본문(11~12px)보다 커야 한다. 2026-09-21 에 11.5px 에서 14px 로 올렸다. */
     .flow-steps { display: none; }
+    /* 길 SVG 는 테마의 것이다 — 기본 테마에서는 자리를 차지하지 않는다(RM-55, 2026-11-04). 겹쳐 앉는 규칙
+       (`position:absolute`)이 `:root[data-theme]` 에만 있어 흐름 속에 놓인 SVG 가 줄 높이를 키웠다.
+       ⚠ 단추의 인라인 left/top 은 CSS 로 못 이긴다 — 걷는 일은 videoPanel 의 drawFlowTrack 이 한다. */
+    .flow-track { display: none; }
     .flow-step {
       flex: 0 0 auto;
       padding: 9px 17px;
@@ -3063,6 +3067,7 @@
       overflow: hidden;
     }
     :root[data-theme] .flow-track {
+      display: block;
       position: absolute;
       inset: 0;
       pointer-events: none;

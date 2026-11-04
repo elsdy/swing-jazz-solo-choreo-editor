@@ -365,3 +365,56 @@ test('[RM-54 요구 2] 도구마다 ? 가 하나씩 설명서 절을 가리킨�
   });
   assert.deepEqual(helps, ['video-trim', 'video-markers', 'video-pose']);
 });
+
+// ── RM-55 — 기본 테마 띠의 차례 줄 단추가 패널 밖으로 밀림 ─────────────────────────────────────
+// 기본 테마(테마 없음)에는 `<html data-theme>` 가 없어 `.flow-steps{position:relative;overflow:hidden}` ·
+// `.flow-track{position:absolute}` 가 걸리지 않는다. 그런데 drawFlowTrack 이 길 SVG 를 흐름 속에 넣고 단추에
+// 인라인 left/top 을 달아, 1440 폭 띠에서 ①②③ 오른 끝이 515/1132/1742 로 패널(1429) 밖에 나가고 nav 가
+// 435~533px 로 컸다(2026-11-03 실측). 배치는 node 로 못 재니 CSS 글과 JS 글의 짝을 잰다.
+
+const PANEL_JS = readFileSync(join(ROOT, 'src/ui/videoPanel.js'), 'utf8');
+const MAIN_JS = readFileSync(join(ROOT, 'src/app/main.js'), 'utf8');
+
+/** `function <name>(` 의 몸통 글(중괄호 짝을 세어 닫는 자리까지). */
+// @complexity time=O(n) space=O(n) cc=4
+function fnBody(src, name) {
+  const at = src.indexOf(`function ${name}(`);
+  assert.ok(at >= 0, `${name} 함수가 있어야 한다`);
+  let i = src.indexOf('{', src.indexOf(')', at)), depth = 0;
+  const start = i;
+  for (; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}' && --depth === 0) break;
+  }
+  return src.slice(start, i + 1);
+}
+
+test('[RM-55 요구 1] 기본 테마에서는 길 SVG 가 자리를 차지하지 않는다', () => {
+  // 테마 밖(모든 폭)에서 숨기고, 테마 아래 규칙만 다시 보인다.
+  assert.deepEqual(declsFor(ALL_WIDTHS, '.flow-track', 'display').at(-1), 'none',
+    '테마 밖의 `.flow-track` 은 display:none 이어야 한다 — 흐름 속에 놓인 SVG 가 줄 높이를 키운다');
+  assert.equal(declsFor(ALL_WIDTHS, ':root[data-theme] .flow-track', 'display').at(-1), 'block',
+    '`:root[data-theme] .flow-track` 은 길을 다시 보여야 한다');
+  // 띠 미디어 블록이 테마 밖 `.flow-track` 을 다시 켜지 않는다.
+  for (const m of CSS_TEXT.matchAll(/@media([^{]*)\{/g)) {
+    for (const b of mediaBlocks(CSS_TEXT, m[1].trim())) {
+      assert.deepEqual(declsFor(b, '.flow-track', 'display'), [], `@media ${m[1].trim()} 가 테마 밖 \`.flow-track\` 을 다시 켠다`);
+    }
+  }
+});
+
+test('[RM-55 요구 1] 기본 테마의 길 그리기는 SVG 를 걷고 단추의 인라인 자리를 비운다', () => {
+  const body = fnBody(PANEL_JS, 'drawFlowTrack');
+  const themeAt = body.indexOf("hasAttribute('data-theme')");
+  const measureAt = body.indexOf('getBoundingClientRect');
+  assert.ok(themeAt >= 0 && measureAt >= 0, '테마 확인과 재기가 모두 있어야 한다');
+  assert.ok(themeAt < measureAt, '테마 확인이 재기(getBoundingClientRect)보다 앞서야 한다 — 기본 테마는 잴 일이 없다');
+  const branch = body.slice(themeAt, measureAt);
+  assert.match(branch, /\.remove\(\)/, '기본 테마 갈래가 길 SVG 를 걷어야 한다');
+  assert.match(branch, /style\.left\s*=\s*''/, '기본 테마 갈래가 단추의 인라인 left 를 비워야 한다(인라인이 CSS 를 이긴다)');
+  assert.match(branch, /style\.top\s*=\s*''/, '기본 테마 갈래가 단추의 인라인 top 을 비워야 한다');
+  // 테마를 바꾸면 차례 줄을 다시 그린다 — candy → basic 에 옛 좌표가 남지 않게.
+  const setTheme = MAIN_JS.match(/setTheme:\s*\(id\)\s*=>\s*\{([^\n]*)\}/);
+  assert.ok(setTheme, 'main.js 의 setTheme 이 있어야 한다');
+  assert.match(setTheme[1], /views\.video\?\.redrawFlow\(\)/, 'setTheme 이 테마를 바른 뒤 차례 줄을 다시 그려야 한다');
+});
