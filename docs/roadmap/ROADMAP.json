@@ -4322,11 +4322,11 @@
             },
             {
               "text": "윈도우 기계에서 packaging/build.py 로 설치 파일을 짓고 packaging/README.md 의 손 점검표(켜기·영상·자르기·저장·다시 깔기)를 돈다",
-              "state": "approved"
+              "state": "done"
             },
             {
               "text": "지은 기계가 아닌 맥에서 .dmg 를 열어 첫 실행 경고 넘기기(튜토리얼 「설치형 앱으로 켠다」)가 맞는지 본다",
-              "state": "approved"
+              "state": "done"
             }
           ],
           "mergedAt": "2026-11-03"
@@ -4616,7 +4616,7 @@
             "Q118"
           ],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "renderRows 가 끝날 때마다 setNoteWidth 는 비고 칸 폭(--noteW)을 0px 로 썼다가 칸 65개의 scrollWidth 를 다시 재서 다시 쓴다. 그래서 강제 리플로가 두 번 나고, 그린 행 수와 상관없이 매번 중앙값 4.8ms 가 든다(RM-35 의 큰 견본 재기). 이 일에서는 0px 쓰기를 없애고, 칸 안쪽의 내용 폭을 한 번만 읽어 잰다. 잰 폭이 지금과 같으면 다시 쓰지 않는다. 그러면 좁힌 렌더 5.5ms 의 거의 전부를 차지하는 이 몫이 줄어 RM-12 · RM-14 의 움직이는 동안 그리기에 여유가 생긴다. RM-35 가 측정해 올린 병목이고, 비고 열 인쇄 문제인 RM-47 과는 같은 비고 칸을 만지지만 고치는 대상은 다르다.",
           "kind": "feature",
@@ -4644,7 +4644,9 @@
             "docs/roadmap/plans/RM-35.md",
             "docs/roadmap/plans/RM-42.md"
           ],
-          "plan": "docs/roadmap/plans/RM-42.md"
+          "plan": "docs/roadmap/plans/RM-42.md",
+          "branch": "rm-42-note-column-width-single-read-measure",
+          "startedAt": "2026-11-04"
         }
       ]
     },
@@ -5240,7 +5242,13 @@
           ],
           "plan": "docs/roadmap/plans/RM-56.md",
           "branch": "rm-56-candy-theme-block-popup-title-token-color",
-          "startedAt": "2026-11-04"
+          "startedAt": "2026-11-04",
+          "wrapup": [
+            {
+              "text": "폰에서 솜사탕 테마로 블록을 탭해 팝업 제목(블록 이름)이 읽히는지 본다 — 헤드리스 390px 로만 확인했다",
+              "state": "approved"
+            }
+          ]
         },
         {
           "id": "RM-57",
