@@ -4903,7 +4903,7 @@
           "wrapup": [
             {
               "text": "실제 Safari 앱의 인쇄 미리보기로 넓은 창 · 좁은 창(1040px 아래, 비고 접힘)에서 비고 열이 종이의 4분의 1 폭으로 나오는지 본다 — 병합 전 재기는 WKWebView 인쇄 작업이었고 Safari 미리보기 창 자체는 아니었다",
-              "state": "approved"
+              "state": "done"
             }
           ],
           "mergedAt": "2026-11-03"
@@ -5139,8 +5139,8 @@
             "Q108"
           ],
           "defaults": [],
-          "stage": "branch",
-          "pr": null,
+          "stage": "merged",
+          "pr": 93,
           "what": "영상 패널 도구 탭(자르기 · 마커 · 분석)을 펼치면, 360~430px 폭의 60 경우 가운데 7 경우에서 맨 위 오른쪽의 ? 단추가 첫 줄 조작 단추(「Out 으로」 · 「이 마디에 맵핑」 · 「마커 지우기」 · 「분석 지우기」)를 덮는다. 까닭은 RM-20 이 index.html:469 에 넣은 `.vtool-help{margin-bottom:-18px}` 다. ? 는 오른쪽 위에 그대로 두고, 첫 줄이 ? 아래로 파고들지 못하게 막아 폭 · 테마 · 도구 어느 조합에서도 겹치지 않게 한다. 설명이 말한 「? 를 summary 줄로 올리는 길」은 쓸 수 없다 — 도구의 summary 는 index.html:1995 가 숨긴다.",
           "kind": "bug",
           "seat": "code",
@@ -5161,7 +5161,8 @@
           ],
           "plan": "docs/roadmap/plans/RM-54.md",
           "branch": "rm-54-vtool-help-button-overlaps-first-row-on-phone",
-          "startedAt": "2026-11-03"
+          "startedAt": "2026-11-03",
+          "mergedAt": "2026-11-03"
         },
         {
           "id": "RM-55",
@@ -5171,7 +5172,7 @@
           "soft": [],
           "questions": [],
           "defaults": [],
-          "stage": null,
+          "stage": "branch",
           "pr": null,
           "what": "기본 테마(basic)에서는 `<html>` 에 data-theme 이 붙지 않는다. 그런데도 drawFlowTrack 이 길 SVG 를 넣고 단추에 인라인 left/top 을 달아서, 기준(position:relative · overflow:hidden)을 잃은 ①②③ 단추가 패널 오른 끝 밖으로 밀리고 nav 높이가 그릴 때마다 커진다. 이 일은 기본 테마에서는 길을 그리지 않고 단추 자리를 화살표 줄로 되돌린다. 테마를 켜고 끌 때도 다시 그려 맞춘다. RM-58(테마 쪽 길 단추가 띠 아래로 떨어짐)과 drawFlowTrack · index.html 의 차례 줄 CSS 가 겹친다. 그래도 RM-58 이 만들 코드를 부르지는 않으므로 선행으로 두지 않는다.",
           "kind": "bug",
@@ -5201,7 +5202,9 @@
               "days": 14
             }
           ],
-          "plan": "docs/roadmap/plans/RM-55.md"
+          "plan": "docs/roadmap/plans/RM-55.md",
+          "branch": "rm-55-basic-theme-flow-steps-overflow-fix",
+          "startedAt": "2026-11-03"
         },
         {
           "id": "RM-56",
@@ -5811,6 +5814,30 @@
             "why": "이 저장소 server.py 의 경로 거르기 빈틈"
           },
           "slug": "clips-route-serves-hidden-files"
+        },
+        {
+          "id": "RM-73",
+          "name": "폰 폭에서 유튜브 링크 줄이 영상 패널 폭을 넓혀 오른쪽이 잘림",
+          "size": "M",
+          "after": [],
+          "soft": [],
+          "questions": [],
+          "defaults": [],
+          "stage": null,
+          "pr": null,
+          "what": "360~430px 폭에서 ① 영상 고르기에 유튜브 링크가 걸려 있으면 #ytUrlGroup(.yt-url-group — 배지 · 주소 칸 · 제목 칩 · 단추)이 줄바꿈 없이 약 616px 의 min-content 를 가져, 열 정의가 없는 .video-body(display:grid, 기본 auto 열)의 열을 616px 로 넓힌다. .video-body 는 overflow-x:hidden 이라 패널 오른쪽(도구 ? 단추 · 차례 줄 오른쪽 단추 들)이 화면 밖으로 잘려 보이지도 눌리지도 않는다. 잰 값: 헤드리스 Chrome 360×900, getComputedStyle(#videoBody).gridTemplateColumns=616px, #videoTools 폭 616px(뷰포트 360), 요소를 하나씩 숨겨 보니 #ytUrlGroup 을 숨기면 311px 로 준다. 고칠 길 후보: .video-body 에 grid-template-columns:minmax(0,1fr), 또는 .yt-url-group 을 감싸기. RM-54 작업 중 발견.",
+          "kind": "bug",
+          "seat": "code",
+          "addedAt": "2026-11-03T13:29:46Z",
+          "found": {
+            "by": "claude",
+            "kind": "bug",
+            "in": "RM-54",
+            "at": "2026-11-03T13:29:46Z",
+            "side": "feature",
+            "why": "앱 CSS 배치 결함(영상 패널 그리드 열이 min-content 로 넓어짐)"
+          },
+          "slug": "video-panel-youtube-link-row-widens-column-on-phone"
         }
       ]
     }
@@ -6381,6 +6408,18 @@
         "good": "b3c06abcbabacb32c69c82f8845ae20d74befe88",
         "why": "좋은 커밋 b3c06ab 도 붉다"
       }
+    },
+    {
+      "id": "BUG-41",
+      "title": "폰 폭에서 유튜브 링크 줄이 영상 패널 폭을 넓혀 오른쪽이 잘림",
+      "symptom": "360~430px 폭에서 ① 영상 고르기에 유튜브 링크가 걸려 있으면 #ytUrlGroup(.yt-url-group — 배지 · 주소 칸 · 제목 칩 · 단추)이 줄바꿈 없이 약 616px 의 min-content 를 가져, 열 정의가 없는 .video-body(display:grid, 기본 auto 열)의 열을 616px 로 넓힌다. .video-body 는 overflow-x:hidden 이라 패널 오른쪽(도구 ? 단추 · 차례 줄 오른쪽 단추 들)이 화면 밖으로 잘려 보이지도 눌리지도 않는다. 잰 값: 헤드리스 Chrome 360×900, getComputedStyle(#videoBody).gridTemplateColumns=616px, #videoTools 폭 616px(뷰포트 360), 요소를 하나씩 숨겨 보니 #ytUrlGroup 을 숨기면 311px 로 준다. 고칠 길 후보: .video-body 에 grid-template-columns:minmax(0,1fr), 또는 .yt-url-group 을 감싸기. RM-54 작업 중 발견.",
+      "elements": [
+        {
+          "name": "폰 폭에서 유튜브 링크 줄이 영상 패널 폭을 넓혀 오른쪽이 잘림"
+        }
+      ],
+      "reportedAt": "2026-11-03",
+      "fixedBy": "RM-73"
     }
   ],
   "shared": [
