@@ -103,27 +103,37 @@ export function clearGridVars(root, options = {}) {
  *   둘 다 없을 때만 document.documentElement 로 떨어진다. 그래서 첫 인자가 noteRoot 다 —
  *   실수로 documentElement 를 넘기면 한 보드의 측정이 다른 보드의 폭을 덮어쓴다.
  *
- * ⚠ 측정 절차도 원문 그대로 세 단계다: `--noteW` 를 0px 로 쓰고 → 각 칸의 scrollWidth 를 재고 →
- *   `max(60, maxW + 16)` 을 다시 쓴다. 0px 를 먼저 쓰지 않으면 이전 폭이 하한이 되어 칸이 줄지 않는다
- *   (강제 리플로가 두 번 나는 것도 원문 그대로다).
+ * ⚠ 측정은 **읽기 한 번**이다(2026-11-04, RM-42). 원본은 `--noteW` 를 0px 로 쓰고 → 각 칸의 scrollWidth 를
+ *   재고 → 다시 썼다(강제 리플로 두 번, 큰 견본에서 렌더마다 수 ms). 이제 칸 안의 감싸개(`.note-content`,
+ *   inline-block — ui/boardView 가 넣는다)의 offsetWidth 를 읽는다. 감싸개는 칸 폭이 아니라 내용 폭을 따르므로
+ *   0px 를 먼저 쓰지 않아도 이전 폭이 하한이 되지 않는다. 칸의 **왼쪽** 안쪽 여백은 첫 칸의 계산 스타일에서 한 번
+ *   읽어 더한다 — 옛 scrollWidth 는 「왼쪽 여백 + 내용」이었다(Chrome 156 에서 칸 65개를 견줘 64개가 감싸개 폭 + 12,
+ *   남은 하나는 하한 60 아래). 오른쪽 여백 · 테두리는 원래부터 `+16` 이 덮는다. 좌우를 다 더하면 옛 폭보다 12px 넓어진다.
+ *   셈은 `max(60, 내용+왼쪽 여백 + 16)` 그대로다.
+ * ⚠ 잰 폭이 noteRoot 의 인라인 `--noteW` 와 같으면 **쓰지 않는다** — 같은 값을 다시 써도 레이아웃이 더럽혀진다.
+ *   견주는 것은 그 noteRoot 의 값이다(documentElement 가 아니다).
  * ⚠ 칸이 하나도 없으면 **아무것도 쓰지 않고** 그대로 돌아간다(원본 3353의 조기 반환).
- *   그래서 셀렉션은 호출부(ui/boardView)가 하고 여기는 이미 모은 목록을 받는다 —
+ *   그래서 셀렉션은 호출부(ui/boardView · ui/layout)가 하고 여기는 이미 모은 목록을 받는다 —
  *   이 파일이 domContract 를 import 하지 않게 하려는 이유이기도 하다.
  *
  * @see index.html:3351
  * @param {HTMLElement|null|undefined} noteRoot 변수를 쓸 요소(보드별 wrap). 없으면 documentElement
  * @param {ArrayLike<HTMLElement>} noteCells 그 보드의 `.note-cell` 전부 (boardView 가 모은다)
- * @returns {number|null} 실제로 쓴 px 값. 칸이 없어 건너뛰었으면 null
+ * @param {(el: Element) => { paddingLeft: string }} [readStyle] 계산 스타일 읽기(시험이 바꾼다)
+ * @returns {number|null} 잰 px 값(같아서 쓰지 않았어도 그 값). 칸이 없어 건너뛰었으면 null
  */
-export function setNoteWidth(noteRoot, noteCells) {
+// @complexity time=O(n) space=O(n) cc=7
+export function setNoteWidth(noteRoot, noteCells, readStyle = el => getComputedStyle(el)) {
   const cells = noteCells ? Array.from(noteCells) : [];
   if (!cells.length) return null;
   const root = noteRoot || document.documentElement;
-  root.style.setProperty('--noteW', '0px');
   let maxW = 0;
-  cells.forEach(cell => { maxW = Math.max(maxW, cell.scrollWidth); });
-  const width = Math.max(60, maxW + 16);
-  root.style.setProperty('--noteW', `${width}px`);
+  cells.forEach(cell => { maxW = Math.max(maxW, cell.firstElementChild?.offsetWidth || 0); });
+  const style = readStyle(cells[0]);
+  const pad = parseFloat(style.paddingLeft) || 0;
+  const width = Math.max(60, Math.ceil(maxW + pad) + 16);
+  const next = `${width}px`;
+  if (root.style.getPropertyValue('--noteW') !== next) root.style.setProperty('--noteW', next);
   return width;
 }
 

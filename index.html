@@ -526,6 +526,9 @@
       white-space: nowrap;
       color: var(--text);
     }
+    /* 비고 내용 감싸개 — 칸 폭이 아니라 내용 폭을 따라야 ui/cssVars 가 offsetWidth 로 비고 열 폭을 잰다(RM-42).
+       ⚠ inline-block 을 지키고 white-space 는 칸에서 물려받는다(화면 nowrap · 인쇄 normal). */
+    .note-content { display: inline-block; }
     .header-cells {
       display: grid;
       border: 1px solid rgba(var(--muted-rgb), 0.16);

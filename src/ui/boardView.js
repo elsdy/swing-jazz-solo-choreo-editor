@@ -202,13 +202,16 @@ export function createBoardView(options) {
    * @param {any} [deps] 없으면 getViewDeps() 로 읽는다
    * @returns {void}
    */
+  // @complexity time=O(p) space=O(p) cc=11
   function renderRow(row, deps) {
     const d = resolveDeps(deps);
     const board = d.board;
     const ref = rowRefs.get(row);
     if (!ref) return;
     ref.label.textContent = row === 0 ? 'intro' : `${board.cols}x${row}`;
-    ref.note.innerHTML = renderRowNotes(row, d) || `<span class="${CLS.muted}">-</span>`;
+    // ⚠ 감싸개(inline-block) 하나로 싼다 — cssVars.setNoteWidth 가 그 offsetWidth 로 내용 폭을 잰다(RM-42).
+    //   감싸개가 없으면 칸 폭을 잴 수 없어 비고 열이 하한 60px 로 줄어든다.
+    ref.note.innerHTML = `<span class="${CLS.noteContent}">${renderRowNotes(row, d) || `<span class="${CLS.muted}">-</span>`}</span>`;
 
     const placements = board.placements.filter(p => p.row === row && p.startIndex < board.cols);
 
@@ -274,6 +277,7 @@ export function createBoardView(options) {
    * @see index.html:3351
    * @returns {number|null}
    */
+  // @complexity time=O(n) space=O(n) cc=1
   function adjustNoteColumnWidth() {
     return setNoteWidthFn(resolveNoteRoot(), el.querySelectorAll(SEL.noteCell));
   }
