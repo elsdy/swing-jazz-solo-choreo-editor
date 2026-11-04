@@ -1750,8 +1750,8 @@
       min-width: 130px;
     }
     .routine-action-popup .rap-title {
-      font-size: var(--fs-1); font-weight: 700; color: rgba(var(--white-rgb), 0.55);
-      padding: 2px 6px 4px; border-bottom: 1px solid rgba(var(--white-rgb), 0.08);
+      font-size: var(--fs-1); font-weight: 700; color: rgba(var(--text-rgb), 0.55);
+      padding: 2px 6px 4px; border-bottom: 1px solid rgba(var(--text-rgb), 0.08);
       margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .routine-action-popup button {
@@ -3044,6 +3044,12 @@
     :root[data-theme] .quick-popup-item:hover,
     :root[data-theme] .routine-action-popup button:hover {
       background: rgba(var(--t-glow), 0.18);
+    }
+    /* 블록 팝업 제목 — 흰색으로 박혀 솜사탕의 흰 바탕 위에서 빈 띠였다(RM-56). 테마 글자 토큰을 쓴다.
+       대비는 tests/unit/popupThemeContrast.test.mjs 가 테마마다 잰다. */
+    :root[data-theme] .routine-action-popup .rap-title {
+      color: var(--t-dim);
+      border-bottom-color: rgba(var(--t-glow), 0.18);
     }
 
     /* ── 작업 차례 = **길** ──────────────────────────────────────────────────
