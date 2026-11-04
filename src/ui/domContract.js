@@ -27,6 +27,8 @@ export const CLS = Object.freeze({
   trackSpacer: 'track-spacer',
   cellOverlay: 'cell-overlay',
   noteCell: 'note-cell',
+  /** 비고 칸 안의 내용 감싸개(inline-block). 비고 열 폭을 이것의 offsetWidth 로 잰다(RM-42). */
+  noteContent: 'note-content',
 
   // ── 배치 블록 (createPlacementEl 3420-3444) ──
   placement: 'placement',

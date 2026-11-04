@@ -67,11 +67,13 @@ export function isRoutineOverlayMode(win = window) {
 
 /**
  * 비고 칸 폭 재측정. 원본 adjustNoteColumnWidth(3351-3359)를 syncCellSize 가 부르는 자리다.
- * ⚠ 셀렉션(.note-cell 모으기)은 여기서, 실제 쓰기는 cssVars.setNoteWidth 가 한다.
+ * ⚠ 셀렉션(.note-cell 모으기)은 여기서, 재기와 쓰기는 cssVars.setNoteWidth 가 한다 — 렌더 길(boardView)과
+ *   같은 함수라 규칙(감싸개 폭을 읽기만 · 같으면 안 쓰기, RM-42)이 같다.
  * @param {HTMLElement|null} boardEl 그 보드의 `.board` 요소
  * @param {HTMLElement|null} noteRoot `--noteW` 를 쓸 wrap 요소(#mainBoardWrap)
  * @returns {number|null}
  */
+// @complexity time=O(n) space=O(n) cc=2
 function applyNoteWidth(boardEl, noteRoot) {
   if (!boardEl) return null;
   return setNoteWidth(noteRoot, boardEl.querySelectorAll(SEL.noteCell));
