@@ -3128,7 +3128,8 @@ views.settings = createSettingsView({
   // 배운 것을 사람이 읽고 지우는 자리(2026-09-21). 화면은 이 표로 움직이지 않는다.
   flow: { top: (n) => flowLog.top(n), total: () => flowLog.total(), clear: () => flowLog.clear() },
   getTheme: () => normalizeTheme(loadTheme()),
-  setTheme: (id) => { const next = normalizeTheme(id); saveTheme(next); applyTheme(next); },
+  // 테마를 바른 뒤 차례 줄을 다시 그린다(RM-55) — 기본 테마로 돌아오면 길과 단추의 옛 좌표를 걷는다.
+  setTheme: (id) => { const next = normalizeTheme(id); saveTheme(next); applyTheme(next); views.video?.redrawFlow(); },
   // ⚠ 서버 모드면 설정은 **서버의 것**이라 앱은 읽기만 한다(2026-09-13). 보관 위치를 클라이언트가
   //   정하면 브라우저마다 다른 답을 들고 같은 서버를 서로 다르게 설정하게 된다 — 폰과 PC 가 같은
   //   서버를 보면서 갈렸다. 바꾸는 자리는 서버의 관리 화면(/admin) 하나다.

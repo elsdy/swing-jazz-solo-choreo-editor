@@ -1196,19 +1196,28 @@ export function createVideoPanel(deps) {
    *   마디가 버튼과 어긋나고, 그 어긋남은 화면에서 바로 보인다. 렌더 밖에서 띠 크기가 바뀌는 때(창 크기 ·
    *   테마 켜고 끄기 · 띠가 처음 자리 잡기)는 아래 watchFlowTrackSize 의 ResizeObserver 가 다시 부른다(RM-58).
    * ⚠ 마디가 띠 안에 든다는 것(마디 반지름 + 그 아래 이름)은 domain/flowTrack 이 보장한다 — 여기서 고치지 않는다.
+   * ⚠ **기본 테마(테마 없음)에서는 길을 그리지 않는다**(RM-55, 2026-11-04). 길 띠의 기준(`position:relative` ·
+   *   `overflow:hidden`)과 SVG 의 겹쳐 앉기(`position:absolute`)는 `:root[data-theme]` 에만 있어, 기본 테마에서
+   *   그린 SVG 는 흐름 속에 놓여 줄 높이를 키우고(244 → 344px, 그릴 때마다) 단추의 인라인 left/top 이 흐름 속
+   *   단추를 밀어 ③ 이 패널 오른 끝(1429) 밖 1774 까지 나갔다(1440 폭 실측). 그래서 테마가 없으면 SVG 를 걷고
+   *   인라인 자리를 **비운다** — CSS 로 SVG 만 숨겨도 인라인이 CSS 를 이겨 단추는 밀린 채 남는다.
+   *   테마 확인이 재기보다 앞이다 — 기본 테마는 잴 일이 없다. 단추는 갈아 끼우지 않는다.
    */
-  // @complexity time=O(n) space=O(n) cc=7
+  // @complexity time=O(n) space=O(n) cc=9
   function drawFlowTrack(count) {
     if (!flowSteps) return;
     let svg = flowSteps.querySelector('.flow-track');
+    if (!document.documentElement.hasAttribute('data-theme')) {
+      if (svg) svg.remove();
+      for (const btn of flowSteps.querySelectorAll('.flow-step')) { btn.style.left = ''; btn.style.top = ''; }
+      trackSize = '';
+      return;
+    }
     const rect = flowSteps.getBoundingClientRect();
     const w = Math.round(rect.width);
     const h = Math.round(rect.height);
     trackSize = `${w}x${h}`;
-    // 마디 · 이름 몫(RM-58)은 테마의 둥근 마디에만 있다. 기본 테마의 단추는 흐름 속 네모라 그 몫을 0 으로 —
-    // 그러면 셈이 RM-58 전과 같다(기본 테마의 모양 · 자리는 이 일로 바뀌지 않는다. 그쪽의 밀림은 RM-55).
-    const themed = document.documentElement.hasAttribute('data-theme');
-    const track = flowTrack({ width: w, height: h, count, ...(themed ? {} : { nodeR: 0, labelH: 0 }) });
+    const track = flowTrack({ width: w, height: h, count });
     if (!track) { if (svg) svg.remove(); return; }
 
     if (!svg) {
@@ -1875,8 +1884,8 @@ export function createVideoPanel(deps) {
    *
    * ⚠ **크기가 같으면 그리지 않는다.** 그리는 일이 다시 크기를 바꾸면 콜백이 끝없이 돈다 — 테마의 단추는
    *   절대 배치라 띠 크기를 바꾸지 않지만, 마지막에 그린 크기와 견줘 한 번 더 막는다.
-   * ⚠ **길이 띠에 겹쳐 앉는 꼴(테마)일 때만** 다시 그린다. 기본 테마는 단추가 흐름 속에 서서 그린 좌표가
-   *   단추를 밀어낸다(RM-55 의 결함) — 여기서 그것을 더 자주 부르지 않는다. 기본 테마는 손대지 않는다.
+   * ⚠ **길이 띠에 겹쳐 앉는 꼴(테마)일 때만** 다시 그린다. 기본 테마에는 길이 없다(drawFlowTrack 이 걷는다, RM-55) —
+   *   테마를 켜고 끌 때 길을 놓고 걷는 일은 테마를 바르는 쪽(app/main 의 setTheme → redrawFlow)이 부른다.
    * ⚠ 단추를 갈아 끼우지 않는다 — drawFlowTrack 은 좌표만 고친다(누르는 순간 사라지면 클릭이 떨어진다).
    */
   // @complexity time=O(n) space=O(n) cc=6
@@ -2066,6 +2075,11 @@ export function createVideoPanel(deps) {
   return {
     render: renderPanel,
     renderStatus,
+    /**
+     * 차례 줄을 다시 그린다(RM-55) — 테마를 켜고 끈 뒤 부른다. 테마로 들어서면 길과 마디 자리를 놓고, 기본 테마로
+     * 돌아오면 길을 걷고 단추의 인라인 자리를 비운다(옛 좌표가 남으면 단추가 패널 밖으로 밀린다). 띠가 아니면 하는 일이 없다.
+     */
+    redrawFlow: () => renderFlowSteps(),
     /**
      * 도구 하나를 연다(RM-30) — 왼쪽 영상 목록의 `견주기` 가 자세 분석 도구로 바로 들어가는 길이다.
      * 나머지 도구를 닫는 일은 `toggle` 리스너가 한다(사람이 탭을 누른 것과 같은 길). 차례 기록(flow.note)에는 넣지 않는다 —
