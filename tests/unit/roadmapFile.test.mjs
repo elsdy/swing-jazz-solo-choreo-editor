@@ -118,7 +118,8 @@ test('[RM-40 요구 4] 추적 표와 로드맵 파일의 항목이 같다 — �
   assert.deepEqual(mismatches({ rows, inBody: new Map(rows.map(r => [r.id, null])), items, hasPlan }), []);
 });
 
-test('세 칸 항목 줄의 규모가 판과 같다', () => {
+// RM-75: RM-38 의 효과 판정(cpu · usage5h 나빠짐)을 재 보니 이 시험은 앞뒤 모두 0.09초라 인과가 없었다 — 되돌리지 않고 그대로 지킨다
+test('세 칸 항목 줄의 규모가 판과 같다 [RM-75 요구 3]', () => {
   const sized = [...inBody].filter(([, size]) => size);
   assert.ok(sized.length >= 30, `세 칸 항목 줄에서 읽은 괄호 규모가 ${sized.length}개뿐이다 — 항목 줄의 꼴이 바뀌었나`);
   const drift = mismatches({ rows: [], inBody: new Map(sized), items, hasPlan: () => true })
